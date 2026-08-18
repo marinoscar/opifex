@@ -1,0 +1,34 @@
+# =============================================================================
+# Docker Compose - Development Overrides
+# =============================================================================
+# Usage:
+#   docker compose -f base.compose.yml -f dev.compose.yml up
+#
+# Provides development-specific settings: hot reload, exposed ports, volumes.
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # API - Development overrides
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      target: development
+    volumes:
+      - ../../apps/api/src:/app/apps/api/src:ro
+      - ../../apps/api/prisma:/app/apps/api/prisma:ro
+    environment:
+      - NODE_ENV=development
+    command: npm run start:dev
+
+  # ---------------------------------------------------------------------------
+  # Web - Development overrides
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      target: development
+    volumes:
+      - ../../apps/web/src:/app/apps/web/src:ro
+    environment:
+      - NODE_ENV=development
+    command: npm run dev

@@ -1,0 +1,318 @@
+// =============================================================================
+// Prisma Schema - Enterprise App Foundation
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// User & Identity
+// =============================================================================
+
+model User {
+  id                      String    @id @default(uuid()) @db.Uuid
+  email                   String    @unique
+  displayName             String?   @map("display_name")
+  providerDisplayName     String?   @map("provider_display_name")
+  profileImageUrl         String?   @map("profile_image_url")
+  providerProfileImageUrl String?   @map("provider_profile_image_url")
+  isActive                Boolean   @default(true) @map("is_active")
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  identities                UserIdentity[]
+  userRoles                 UserRole[]
+  userSettings              UserSettings?
+  auditEvents               AuditEvent[]     @relation("ActorEvents")
+  settingsUpdates           SystemSettings[] @relation("SettingsUpdater")
+  refreshTokens             RefreshToken[]   @relation("UserRefreshTokens")
+  allowlistEntriesAdded     AllowedEmail[]   @relation("AllowlistAddedBy")
+  allowlistEntry            AllowedEmail?    @relation("AllowlistClaimedBy")
+  deviceCodes               DeviceCode[]     @relation("UserDeviceCodes")
+  storageObjects            StorageObject[]  @relation("UserStorageObjects")
+  personalAccessTokens      PersonalAccessToken[] @relation("UserPersonalAccessTokens")
+
+  @@map("users")
+}
+
+model UserIdentity {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  provider        String
+  providerSubject String   @map("provider_subject")
+  providerEmail   String?  @map("provider_email")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject])
+  @@map("user_identities")
+}
+
+// =============================================================================
+// RBAC - Roles & Permissions
+// =============================================================================
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  description String?
+
+  // Relations
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  description String?
+
+  // Relations
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  // Relations
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId String @map("user_id") @db.Uuid
+  roleId String @map("role_id") @db.Uuid
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+// =============================================================================
+// Settings
+// =============================================================================
+
+model SystemSettings {
+  id              String   @id @default(uuid()) @db.Uuid
+  key             String   @unique
+  value           Json
+  version         Int      @default(1)
+  updatedByUserId String?  @map("updated_by_user_id") @db.Uuid
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  updatedByUser User? @relation("SettingsUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@map("system_settings")
+}
+
+model UserSettings {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  value     Json
+  version   Int      @default(1)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+// =============================================================================
+// Audit
+// =============================================================================
+
+model AuditEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String
+  targetType  String   @map("target_type")
+  targetId    String   @map("target_id")
+  meta        Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  actorUser User? @relation("ActorEvents", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_events")
+}
+
+// =============================================================================
+// Refresh Tokens (for token rotation)
+// =============================================================================
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+
+  // Relations
+  user User @relation("UserRefreshTokens", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// =============================================================================
+// Personal Access Tokens (PAT)
+// =============================================================================
+
+enum PatDurationUnit {
+  minutes
+  days
+  months
+}
+
+model PersonalAccessToken {
+  id            String          @id @default(uuid()) @db.Uuid
+  userId        String          @map("user_id") @db.Uuid
+  name          String
+  tokenHash     String          @unique @map("token_hash")
+  tokenPrefix   String          @map("token_prefix")
+  durationValue Int             @map("duration_value")
+  durationUnit  PatDurationUnit @map("duration_unit")
+  expiresAt     DateTime        @map("expires_at") @db.Timestamptz
+  lastUsedAt    DateTime?       @map("last_used_at") @db.Timestamptz
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  revokedAt     DateTime?       @map("revoked_at") @db.Timestamptz
+
+  // Relations
+  user User @relation("UserPersonalAccessTokens", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("personal_access_tokens")
+}
+
+// =============================================================================
+// Allowlist (Email Access Control)
+// =============================================================================
+
+model AllowedEmail {
+  id          String    @id @default(uuid()) @db.Uuid
+  email       String    @unique
+  addedById   String?   @map("added_by_id") @db.Uuid
+  addedAt     DateTime  @default(now()) @map("added_at") @db.Timestamptz
+  claimedById String?   @unique @map("claimed_by_id") @db.Uuid
+  claimedAt   DateTime? @map("claimed_at") @db.Timestamptz
+  notes       String?
+
+  // Relations
+  addedBy   User? @relation("AllowlistAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+  claimedBy User? @relation("AllowlistClaimedBy", fields: [claimedById], references: [id], onDelete: SetNull)
+
+  @@map("allowed_emails")
+}
+
+// =============================================================================
+// Device Authorization Flow (RFC 8628)
+// =============================================================================
+
+enum DeviceCodeStatus {
+  pending
+  approved
+  denied
+  expired
+}
+
+model DeviceCode {
+  id         String           @id @default(uuid()) @db.Uuid
+  deviceCode String           @unique @map("device_code")
+  userCode   String           @unique @map("user_code")
+  userId     String?          @map("user_id") @db.Uuid
+  status     DeviceCodeStatus @default(pending)
+  clientInfo Json?            @map("client_info")
+  scopes     String[]
+  expiresAt  DateTime         @map("expires_at") @db.Timestamptz
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  user User? @relation("UserDeviceCodes", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([deviceCode])
+  @@index([userCode])
+  @@index([status, expiresAt])
+  @@index([userId])
+  @@map("device_codes")
+}
+
+// =============================================================================
+// Storage Objects
+// =============================================================================
+
+enum StorageObjectStatus {
+  pending    // Upload initiated, awaiting chunks
+  uploading  // Chunks being uploaded
+  processing // Post-upload processing in progress
+  ready      // Available for use
+  failed     // Upload or processing failed
+}
+
+model StorageObject {
+  id              String              @id @default(uuid()) @db.Uuid
+  name            String              // Original filename
+  size            BigInt              // Total size in bytes (BigInt for GB-scale)
+  mimeType        String              @map("mime_type")
+  storageKey      String              @unique @map("storage_key") // S3 object key
+  storageProvider String              @default("s3") @map("storage_provider")
+  bucket          String?
+  status          StorageObjectStatus @default(pending)
+  s3UploadId      String?             @map("s3_upload_id") // S3 multipart upload ID
+  metadata        Json?               // JSONB for flexible metadata
+  uploadedById    String?             @map("uploaded_by_id") @db.Uuid
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  uploadedBy User?                @relation("UserStorageObjects", fields: [uploadedById], references: [id], onDelete: SetNull)
+  chunks     StorageObjectChunk[]
+
+  @@index([uploadedById])
+  @@index([status])
+  @@index([createdAt])
+  @@map("storage_objects")
+}
+
+model StorageObjectChunk {
+  id         String   @id @default(uuid()) @db.Uuid
+  objectId   String   @map("object_id") @db.Uuid
+  partNumber Int      @map("part_number") // S3 part number (1-10000)
+  eTag       String   @map("e_tag") // S3 ETag for verification
+  size       BigInt   // Chunk size in bytes
+  uploadedAt DateTime @default(now()) @map("uploaded_at") @db.Timestamptz
+
+  // Relations
+  object StorageObject @relation(fields: [objectId], references: [id], onDelete: Cascade)
+
+  @@unique([objectId, partNumber])
+  @@index([objectId])
+  @@map("storage_object_chunks")
+}

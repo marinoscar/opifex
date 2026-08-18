@@ -1,0 +1,41 @@
+# =============================================================================
+# Docker Compose - Production Overrides
+# =============================================================================
+# Usage:
+#   docker compose -f base.compose.yml -f prod.compose.yml up
+#
+# Production settings: resource limits, restart policies, no exposed DB port.
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # API - Production settings
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      target: production
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ---------------------------------------------------------------------------
+  # Web - Production settings
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      target: production
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # ---------------------------------------------------------------------------
+  # Nginx - Production settings
+  # ---------------------------------------------------------------------------
+  nginx:
+    restart: unless-stopped

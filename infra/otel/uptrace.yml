@@ -1,0 +1,105 @@
+##
+## Uptrace 2.x configuration
+##
+## Uptrace 2.x restructured this file substantially from 1.7.x:
+##   - `ch:` became `ch_cluster.shards[].replicas[]`
+##   - `projects:` and `auth.users:` became `seed_data.*`, which now also
+##     models orgs, org membership and project membership explicitly
+##   - top-level `secret_key:` became `service.secret`
+##   - `site.url` is new and is used for dashboard links and CORS
+##
+## The container also reads /etc/uptrace/config.yml now, not
+## /etc/uptrace/uptrace.yml — see the mount in otel.compose.yml.
+##
+## Uptrace expands ${VAR} and ${VAR:default}; local-development credentials
+## come from infra/compose/.env, which is git-ignored. See .env.example.
+##
+
+service:
+  env: development
+  secret: "${UPTRACE_SECRET_KEY}"
+
+site:
+  # Where the UI is reached. Also used for CORS and for links in notifications.
+  url: "${UPTRACE_SITE_URL:http://localhost:14318}"
+
+listen:
+  http:
+    addr: ":14318"
+  grpc:
+    addr: ":14317"
+
+# ClickHouse stores spans, logs and metrics. Single-node: one shard, one replica.
+ch_cluster:
+  cluster: uptrace1
+  replicated: false
+  distributed: false
+  shards:
+    - replicas:
+        - addr: clickhouse:9000
+          database: uptrace
+          user: "${UPTRACE_CH_USER:default}"
+          password: "${UPTRACE_CH_PASSWORD:}"
+          dial_timeout: 3s
+          write_timeout: 5s
+          max_retries: 3
+          max_execution_time: 15s
+
+# Redis backs Uptrace 2.x's task queue and cache. This is a NEW dependency in
+# 2.x — 1.7.2 had none. Without it the service still serves the UI, but the
+# background scheduler logs "redis: all ring shards are down" continuously and
+# queued work never runs.
+redis_cache:
+  addrs:
+    1: redis:6379
+  username: ""
+  password: "${UPTRACE_REDIS_PASSWORD:}"
+  db: 0
+
+# PostgreSQL stores Uptrace's own metadata (users, projects, dashboards).
+pg:
+  addr: uptrace-pg:5432
+  user: uptrace
+  password: "${UPTRACE_PGPASSWORD}"
+  database: uptrace
+
+# Bootstrap data, reconciled on every start. In 1.7.x the equivalent was the
+# `projects:` list plus `auth.users:`; 2.x also requires the org and the
+# org/project membership rows that tie a user to a project.
+seed_data:
+  update: true
+  delete: false
+
+  users:
+    - key: admin
+      name: Admin
+      email: "${UPTRACE_ADMIN_EMAIL:admin@localhost}"
+      password: "${UPTRACE_ADMIN_PASSWORD}"
+      email_confirmed: true
+
+  orgs:
+    - key: org1
+      name: Enterprise App
+
+  org_users:
+    - key: org_admin
+      org_key: org1
+      user_key: admin
+      role: owner
+
+  projects:
+    - key: project1
+      name: Enterprise App
+      org_key: org1
+
+  # This token is the one in the collector's uptrace-dsn header.
+  project_tokens:
+    - key: project1_token
+      project_key: project1
+      token: "${UPTRACE_PROJECT1_TOKEN}"
+
+  project_users:
+    - key: project_admin
+      project_key: project1
+      org_user_key: org_admin
+      perm_level: admin

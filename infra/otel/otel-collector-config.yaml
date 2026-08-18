@@ -1,0 +1,66 @@
+# =============================================================================
+# OpenTelemetry Collector Configuration
+# =============================================================================
+# Receives telemetry from the API and exports to Uptrace
+# =============================================================================
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 10s
+    send_batch_size: 10000
+    send_batch_max_size: 11000
+
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 400
+    spike_limit_mib: 100
+
+exporters:
+  # Export to Uptrace
+  otlp/uptrace:
+    endpoint: uptrace:14317
+    tls:
+      insecure: true
+    headers:
+      uptrace-dsn: "http://${env:UPTRACE_PROJECT1_TOKEN}@localhost:14317/1"
+
+  # Debug output (replaces deprecated 'logging' exporter)
+  debug:
+    verbosity: basic
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/uptrace]
+
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/uptrace]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/uptrace]
+
+  telemetry:
+    logs:
+      level: info

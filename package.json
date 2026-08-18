@@ -1,0 +1,30 @@
+{
+  "name": "enterprise-app",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "api": "npm -w apps/api",
+    "web": "npm -w apps/web",
+    "api:dev": "npm -w apps/api run start:dev",
+    "web:dev": "npm -w apps/web run dev",
+    "api:test": "npm -w apps/api test",
+    "web:test": "npm -w apps/web test",
+    "openapi:dump": "npm run openapi:dump --workspace=api -- ../../openapi.json",
+    "openapi:lint": "spectral lint openapi.json --ruleset .spectral.yaml --fail-severity=error"
+  },
+  "overrides": {
+    "@nestjs/common": "^11.1.12",
+    "@nestjs/core": "^11.1.12",
+    "deepmerge-ts": "^8.0.1",
+    "glob": "^13.0.6",
+    "magic-string": "^1.2.0"
+  },
+  "devDependencies": {
+    "@stoplight/spectral-cli": "^6.16.3"
+  }
+}

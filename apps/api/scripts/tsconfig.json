@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // The API tsconfig is scoped to `src/`, so a script that imports from `src`
+    // sits outside its rootDir and tsc refuses to infer one. Widening the root
+    // to the workspace and emitting nothing keeps these one-off scripts
+    // type-checked under the same settings as the app they import.
+    "rootDir": "..",
+    "noEmit": true,
+    "declaration": false,
+    // The base config turns on declaration maps, which tsc rejects once
+    // `declaration` is off.
+    "declarationMap": false,
+    "incremental": false
+  },
+  "include": ["./**/*.ts", "../src/**/*.ts"]
+}
