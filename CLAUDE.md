@@ -455,14 +455,16 @@ Note: `DATABASE_URL` is constructed automatically from these variables at runtim
 
 ### Available Agents
 
-| Agent | Domain | MUST Use For |
-|-------|--------|--------------|
-| `backend-dev` | NestJS API, Fastify, auth, RBAC | **ANY** backend code: endpoints, services, guards, middleware, JWT, OAuth |
-| `frontend-dev` | React, MUI, TypeScript | **ANY** frontend code: components, pages, hooks, theming, responsive design |
-| `database-dev` | PostgreSQL, Prisma | **ANY** database work: schema changes, migrations, seeds, queries |
-| `testing-dev` | Jest, Supertest, RTL | **ANY** testing: unit tests, integration tests, typecheck, test fixtures |
-| `docs-dev` | Technical documentation | **ANY** documentation: ARCHITECTURE.md, SECURITY.md, API.md, README updates |
-| `ops-dev` | Routine operations (Haiku) | Rebuilding/restarting containers, running Prisma migrations, running typecheck. NEVER for state-changing git operations |
+Definitions live in [`.claude/agents/`](.claude/agents/) — each file carries the domain conventions, exemplar paths and boundaries for its area.
+
+| Agent | Model | Domain | MUST Use For |
+|-------|-------|--------|--------------|
+| `backend-dev` | inherit | NestJS API, Fastify, auth, RBAC | **ANY** backend code: endpoints, services, guards, middleware, JWT, OAuth |
+| `frontend-dev` | inherit | React, MUI, TypeScript | **ANY** frontend code: components, pages, hooks, theming, responsive design |
+| `database-dev` | sonnet | PostgreSQL, Prisma | **ANY** database work: schema changes, migrations, seeds, queries |
+| `testing-dev` | sonnet | Jest, Supertest, Vitest, RTL | **ANY** testing: unit tests, integration tests, typecheck, test fixtures |
+| `docs-dev` | sonnet | Technical documentation | **ANY** documentation: ARCHITECTURE.md, SECURITY.md, API.md, README updates |
+| `ops-dev` | haiku | Routine operations | Rebuilding/restarting containers, running Prisma migrations, running typecheck. NEVER for state-changing git operations |
 
 ### Mandatory Delegation Rules
 
