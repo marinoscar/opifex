@@ -41,7 +41,7 @@
     "axe-core": "^4.13.0",
     "jsdom": "^29.1.1",
     "msw": "^2.14.6",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vite": "^8.0.16",
     "vitest": "^4.1.8",
     "vitest-axe": "^1.0.0-pre.5"
