@@ -12,7 +12,7 @@
  * rather than a bare count with no sense of scale.
  */
 
-import { Paper, Stack, Button, Typography, Box } from '@mui/material';
+import { Paper, Stack, Button, Typography, Box, alpha } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import type { DataTableBulkAction } from './types';
 
@@ -58,10 +58,12 @@ export function BulkActionBar({ ids, actions, onClear, total }: BulkActionBarPro
         minWidth: 0,
         maxWidth: '100%',
         borderColor: 'primary.main',
+        // Derived from the palette, never a literal. These were tints of the
+        // OLD primary (#1976d2 / #90caf9) and silently went stale the moment
+        // epic #19 repainted `primary` — a selection highlight that no longer
+        // matches the thing it is highlighting.
         bgcolor: (theme) =>
-          theme.palette.mode === 'dark'
-            ? 'rgba(144, 202, 249, 0.10)'
-            : 'rgba(25, 118, 210, 0.06)',
+          alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08),
       }}
     >
       <Typography variant="body2" sx={{ fontWeight: 600 }} aria-live="polite" role="status">

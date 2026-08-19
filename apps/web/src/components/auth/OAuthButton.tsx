@@ -9,8 +9,8 @@ interface OAuthButtonProps {
 const providerConfig: Record<string, {
   label: string;
   icon: React.ReactNode;
-  color: string;
-  textColor: string;
+  color?: string;
+  textColor?: string;
 }> = {
   google: {
     label: 'Continue with Google',
@@ -33,11 +33,18 @@ const providerConfig: Record<string, {
 };
 
 export function OAuthButton({ provider, onClick }: OAuthButtonProps) {
-  const config = providerConfig[provider.toLowerCase()] || {
+  // The per-provider hexes above are the providers' OWN mandated brand
+  // colours (Google's white-with-#dadce0-border, Microsoft's #2f2f2f,
+  // GitHub's #24292e) and are deliberately literal — they must not follow our
+  // theme. The FALLBACK is different: it used to be '#1976d2', which was
+  // simply MUI's old default primary copied by hand, and it went stale the
+  // moment epic #19 repainted the palette. An unbranded provider should wear
+  // our brand, so it reads from the theme.
+  const config = providerConfig[provider.toLowerCase()] ?? {
     label: `Continue with ${provider}`,
     icon: null,
-    color: '#1976d2',
-    textColor: '#ffffff',
+    color: undefined,
+    textColor: undefined,
   };
 
   return (
@@ -48,15 +55,15 @@ export function OAuthButton({ provider, onClick }: OAuthButtonProps) {
       onClick={onClick}
       startIcon={config.icon}
       sx={{
-        backgroundColor: config.color,
-        color: config.textColor,
+        backgroundColor: config.color ?? 'primary.main',
+        color: config.textColor ?? 'primary.contrastText',
         textTransform: 'none',
         fontWeight: 500,
         py: 1.5,
         borderRadius: 2,
         border: provider === 'google' ? '1px solid #dadce0' : 'none',
         '&:hover': {
-          backgroundColor: config.color,
+          backgroundColor: config.color ?? 'primary.main',
           opacity: 0.9,
         },
       }}

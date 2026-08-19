@@ -34,6 +34,7 @@ import {
   Stack,
   Typography,
   ButtonBase,
+  alpha,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -154,10 +155,9 @@ export function DataCard<Row>({
         ...(selected
           ? {
               borderColor: 'primary.main',
+              // Derived from the palette — see the note in BulkActionBar.
               bgcolor: (theme) =>
-                theme.palette.mode === 'dark'
-                  ? 'rgba(144, 202, 249, 0.10)'
-                  : 'rgba(25, 118, 210, 0.06)',
+                alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08),
             }
           : {}),
       }}
