@@ -203,6 +203,12 @@ import type {
   PatCreatedResponse,
   PatDurationUnit,
 } from '../types';
+import type {
+  MetricsSummary,
+  QueueEntry,
+  RunEvent,
+  RunSummary,
+} from '../types/cockpit';
 
 // Allowlist API
 /**
@@ -318,4 +324,87 @@ export async function createPersonalAccessToken(data: {
 
 export async function revokePersonalAccessToken(id: string): Promise<void> {
   await api.delete<void>(`/pat/${id}`);
+}
+
+// ---------------------------------------------------------------------------
+// Cockpit API (epic #19)
+//
+// ⚠️ NONE OF THESE FOUR ENDPOINTS EXIST IN `apps/api` TODAY. They are declared
+// here anyway, and that is a deliberate choice rather than an oversight:
+//
+//  - The typed boundary is where a response shape is asserted. Writing these
+//    now means the hooks, the panels and their tests are built against
+//    `RunSummary` rather than against `any`, and the day the endpoint lands the
+//    only thing that changes is a `false -> true` in `config/cockpitApi.ts`.
+//  - Each one has an MSW-backed test, so the request path, the query string and
+//    the `{ data }` unwrapping are verified against a stand-in server exactly
+//    the way `getUsers` is. That test is what makes the declaration a
+//    specification of the endpoint rather than a guess about it.
+//
+// What stops them from being CALLED is `COCKPIT_ENDPOINTS[…].available`, which
+// every cockpit hook reads into `usePolledResource`'s `enabled`. Nothing here
+// is reachable from the running app until that flips. The paths below and the
+// paths in that registry must stay in step — the registry is the human-readable
+// half, these are the executable half.
+//
+// There are no `sortBy` unions here (contrast `UserSortField` above, which
+// mirrors a real zod enum in `apps/api`). Inventing one would be fabricating a
+// contract: these get their sort enums from the controllers' query DTOs when
+// those DTOs are written.
+// ---------------------------------------------------------------------------
+
+/**
+ * `GET /metrics/summary` — VISION §10's six success metrics in one payload.
+ *
+ * One request for the whole stat row rather than six, so the dashboard cannot
+ * paint a half-updated set of tiles.
+ */
+export async function getCockpitMetrics(signal?: AbortSignal): Promise<MetricsSummary> {
+  return api.get<MetricsSummary>('/metrics/summary', { signal });
+}
+
+/**
+ * `GET /runs?needsAttention=true` — the escalation list.
+ *
+ * `needsAttention` is a SERVER-side filter, not a client-side one, and that is
+ * load-bearing: the verdict about whether a run needs a human (VISION §9's
+ * watchdog) belongs to the control plane. A UI that filtered by status locally
+ * would be re-implementing the watchdog in the browser, out of date by one
+ * poll interval and wrong the moment the rules change.
+ */
+export async function getRunsNeedingAttention(
+  params?: { limit?: number },
+  signal?: AbortSignal,
+): Promise<RunSummary[]> {
+  const searchParams = new URLSearchParams({ needsAttention: 'true' });
+  if (params?.limit) searchParams.set('limit', String(params.limit));
+
+  return api.get<RunSummary[]>(`/runs?${searchParams}`, { signal });
+}
+
+/** `GET /queue` — work orders waiting to dispatch, in dispatch order. */
+export async function getRunQueue(
+  params?: { limit?: number },
+  signal?: AbortSignal,
+): Promise<QueueEntry[]> {
+  const searchParams = new URLSearchParams();
+  if (params?.limit) searchParams.set('limit', String(params.limit));
+  const query = searchParams.toString();
+
+  return api.get<QueueEntry[]>(query ? `/queue?${query}` : '/queue', { signal });
+}
+
+/**
+ * `GET /events` — the normalized event floor (VISION §9), newest first.
+ *
+ * `limit` defaults to 20 because this feeds a dashboard panel, not an audit
+ * view. The full history belongs on a run's own page, where it can be paged.
+ */
+export async function getActivityFeed(
+  params?: { limit?: number },
+  signal?: AbortSignal,
+): Promise<RunEvent[]> {
+  const searchParams = new URLSearchParams({ limit: String(params?.limit ?? 20) });
+
+  return api.get<RunEvent[]>(`/events?${searchParams}`, { signal });
 }
