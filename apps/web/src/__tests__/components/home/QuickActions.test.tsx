@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { render, mockUser, mockAdminUser } from '../../utils/test-utils';
 import { QuickActions } from '../../../components/home/QuickActions';
 import { DESTINATIONS } from '../../../config/destinations';
+import type { DestinationKey } from '../../../config/destinations';
 
 // Mock useNavigate from react-router-dom
 const mockNavigate = vi.fn();
@@ -717,8 +718,21 @@ describe('QuickActions', () => {
 
       render(<QuickActions />, { wrapperOptions: { user: mockAdminUser } });
 
-      for (const destination of DESTINATIONS) {
-        if (destination.key === 'home') continue;
+      // Scoped to the keys QuickActions actually describes, NOT to every
+      // destination. This loop used to run over the whole table minus `home`,
+      // which passed only because `ACTION_DESCRIPTIONS` happened to cover all
+      // three remaining destinations — an accident, not an invariant. Epic #19
+      // adds the cockpit destinations (runs, queue, projects, cost), which have
+      // no description here and are reached from the rail, so the old form
+      // asserted buttons this component never claimed to render.
+      //
+      // QuickActions is slated for removal in #75, where the sectioned rail and
+      // the bottom-bar overflow take over navigation entirely. Until then this
+      // still guards the real property: the label and path come from
+      // `DESTINATIONS`, not from a second copy inside the component.
+      const described = new Set<DestinationKey>(['settings', 'users', 'system']);
+
+      for (const destination of DESTINATIONS.filter((d) => described.has(d.key))) {
         expect(
           screen.getByRole('button', { name: new RegExp(destination.label, 'i') }),
           `${destination.label} missing from Quick Actions`,

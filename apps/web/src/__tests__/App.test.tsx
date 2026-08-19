@@ -161,5 +161,106 @@ describe('App', () => {
         { timeout: 5000 },
       );
     });
+
+    it('mounts the planned cockpit routes for any authenticated user', async () => {
+      // The four planned destinations carry no permission — no controller
+      // enforces one — so no `RequirePermission` guards their routes either.
+      // A Viewer must reach all four; see `config/destinations.ts`.
+      for (const [path, heading] of [
+        ['/runs', /^runs$/i],
+        ['/queue', /^queue$/i],
+        ['/projects', /^projects$/i],
+        ['/cost', /^cost$/i],
+      ] as const) {
+        signInAs(['user_settings:read']);
+
+        const { unmount } = render(
+          <MemoryRouter initialEntries={[path]}>
+            <App />
+          </MemoryRouter>,
+        );
+
+        await waitFor(
+          () => expect(screen.getByRole('heading', { level: 1, name: heading })).toBeInTheDocument(),
+          { timeout: 5000 },
+        );
+
+        unmount();
+      }
+    });
+  });
+
+  describe('The catch-all', () => {
+    /**
+     * Issue #78. This route used to be `<Navigate to="/" replace />` at the top
+     * level, so a stale bookmark, a renamed route and a plain typo all became
+     * the dashboard silently. Two things are asserted here, and the second is
+     * the one the placement inside `Layout` buys:
+     *   1. a bad URL renders the 404 rather than redirecting;
+     *   2. it renders INSIDE the shell, so the navigation is right there.
+     */
+    it('renders the 404 page inside the shell for an authenticated user', async () => {
+      signInAs(['user_settings:read']);
+
+      render(
+        <MemoryRouter initialEntries={['/no-such-page']}>
+          <App />
+        </MemoryRouter>,
+      );
+
+      await waitFor(
+        () =>
+          expect(
+            screen.getByRole('heading', { level: 1, name: /page not found/i }),
+          ).toBeInTheDocument(),
+        { timeout: 5000 },
+      );
+
+      // The attempted path is echoed — the entire diagnostic value of a 404.
+      expect(screen.getByText('/no-such-page')).toBeInTheDocument();
+      // …and the shell came with it.
+      expect(screen.getByRole('banner')).toBeInTheDocument();
+    });
+
+    it('no longer redirects an unknown path to the dashboard', async () => {
+      signInAs(['user_settings:read']);
+
+      render(
+        <MemoryRouter initialEntries={['/no-such-page']}>
+          <App />
+        </MemoryRouter>,
+      );
+
+      await waitFor(
+        () =>
+          expect(
+            screen.getByRole('heading', { level: 1, name: /page not found/i }),
+          ).toBeInTheDocument(),
+        { timeout: 5000 },
+      );
+      expect(screen.queryByText(/welcome back/i)).not.toBeInTheDocument();
+    });
+
+    it('sends an anonymous visitor to the login page instead', async () => {
+      // Moving the catch-all inside `ProtectedRoute` loses nothing: the guard
+      // already preserves the attempted location in `state.from`.
+      server.use(
+        http.get(`${API_BASE}/auth/me`, () => new HttpResponse(null, { status: 401 })),
+        http.post(`${API_BASE}/auth/refresh`, () => new HttpResponse(null, { status: 401 })),
+      );
+
+      render(
+        <MemoryRouter initialEntries={['/no-such-page']}>
+          <App />
+        </MemoryRouter>,
+      );
+
+      await waitFor(
+        () => expect(screen.getByRole('heading', { name: /welcome/i })).toBeInTheDocument(),
+        { timeout: 5000 },
+      );
+      expect(screen.queryByText(/page not found/i)).not.toBeInTheDocument();
+    });
+
   });
 });
