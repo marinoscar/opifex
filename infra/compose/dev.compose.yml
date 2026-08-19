@@ -9,6 +9,17 @@
 
 services:
   # ---------------------------------------------------------------------------
+  # Nginx - Development overrides
+  # ---------------------------------------------------------------------------
+  nginx:
+    volumes:
+      # Replaces the strict csp.conf from base.compose.yml (Compose merges
+      # volumes keyed by container path). The Vite dev server serves an inline
+      # React Refresh preamble script that `script-src 'self'` blocks, which
+      # leaves the app a blank page; this policy permits it. Development only.
+      - ../nginx/csp.dev.conf:/etc/nginx/csp.conf:ro
+
+  # ---------------------------------------------------------------------------
   # API - Development overrides
   # ---------------------------------------------------------------------------
   api:
