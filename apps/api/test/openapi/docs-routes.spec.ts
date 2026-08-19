@@ -38,7 +38,7 @@ describe('documentation routes', () => {
 
       const body = response.json();
       expect(body.openapi).toBe('3.1.0');
-      expect(body.info.title).toBe('Enterprise App Foundation API');
+      expect(body.info.title).toBe('OPIFEX API');
       expect(Object.keys(body.paths).length).toBeGreaterThan(20);
     });
   });
@@ -50,7 +50,7 @@ describe('documentation routes', () => {
       expect(response.statusCode).toBe(200);
       expect(response.headers['content-type']).toContain('text/html');
       expect(response.body).toContain(
-        '<title>Enterprise App Foundation API Reference</title>',
+        '<title>OPIFEX API Reference</title>',
       );
       expect(response.body).toContain('createApiReference');
     });

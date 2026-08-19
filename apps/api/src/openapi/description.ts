@@ -22,9 +22,9 @@
  */
 export function buildApiDescription(version: string): string {
   return `
-The HTTP API behind the **Enterprise App Foundation** — a production-grade application
-base with Google OAuth sign-in, role- and permission-based authorization, per-user and
-system settings, object storage, and an email allowlist gating who may sign in at all.
+The HTTP API behind **OPIFEX** — a production-grade application base with Google
+OAuth sign-in, role- and permission-based authorization, per-user and system
+settings, object storage, and an email allowlist gating who may sign in at all.
 
 This page is generated from the running server (build \`${version}\`), so it always matches the
 deployment you are pointed at. The machine-readable document is at
@@ -165,6 +165,6 @@ Deactivated users are rejected at authentication time regardless of their roles.
 ## Further reading
 
 Architecture, security and operations documentation lives in the repository under
-[\`docs/\`](https://github.com/marinoscar/EnterpriseAppBase/tree/main/docs).
+[\`docs/\`](https://github.com/marinoscar/opifex/tree/main/docs).
 `.trim();
 }

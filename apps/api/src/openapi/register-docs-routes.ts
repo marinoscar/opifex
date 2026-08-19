@@ -144,7 +144,7 @@ function buildDocsHandlers(
   version: string,
 ): DocsHandlers {
   const page = renderDocsPage({
-    title: 'Enterprise App Foundation API Reference',
+    title: 'OPIFEX API Reference',
     version,
     specUrl: OPENAPI_JSON_PATH,
   });
