@@ -20,7 +20,11 @@ services:
   nginx:
     image: nginx:1.30-alpine
     ports:
-      - "3535:80"
+      # Parameterized so local development keeps the documented
+      # http://localhost:3535 while the dev.marin.cr VPS sets NGINX_PORT=8328
+      # in infra/compose/.env — the opifex slot in that host's nginx
+      # `map $host $backend_port` block. See docs/ssl-nginx-setup.md.
+      - "${NGINX_PORT:-3535}:80"
     volumes:
       - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
@@ -36,38 +40,21 @@ services:
     build:
       context: ../..
       dockerfile: apps/api/Dockerfile
-    environment:
-      - NODE_ENV=${NODE_ENV:-development}
-      - PORT=${PORT:-3000}
-      # Database connection (individual variables)
-      - POSTGRES_HOST=${POSTGRES_HOST:-db}
-      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-appdb}
-      - POSTGRES_SSL=${POSTGRES_SSL:-false}
-      # JWT
-      - JWT_SECRET=${JWT_SECRET}
-      - JWT_ACCESS_TTL_MINUTES=${JWT_ACCESS_TTL_MINUTES:-15}
-      - JWT_REFRESH_TTL_DAYS=${JWT_REFRESH_TTL_DAYS:-14}
-      # OAuth
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL}
-      # AWS
-      - S3_BUCKET=${S3_BUCKET}
-      - S3_REGION=${S3_REGION}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      # Admin bootstrap
-      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL}
-      # Observability
-      - OTEL_ENABLED=${OTEL_ENABLED:-false}
-      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT}
-      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-enterprise-app-api}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
+    # Load every variable from .env rather than enumerating them here. An
+    # explicit `environment:` list silently drops anything added to
+    # .env.example later — APP_URL, COOKIE_SECRET, CORS_ORIGIN, the STORAGE_*
+    # limits and the DEVICE_* settings were all being dropped this way, so a
+    # deployed instance fell back to APP_URL=http://localhost:3535 and sent
+    # OAuth users to localhost. Per-mode overrides still belong in
+    # dev/prod.compose.yml, where `environment:` takes precedence over env_file.
+    env_file:
+      - .env
     networks:
       - app-network
+      # Shared external network carrying the central postgres container
+      # (reachable as hostname `postgres`). Required wherever .env sets
+      # POSTGRES_HOST=postgres, as it does on the dev.marin.cr VPS.
+      - devnet
 
   # ---------------------------------------------------------------------------
   # Web - React Frontend
@@ -85,4 +72,10 @@ services:
 networks:
   app-network:
     driver: bridge
+  # Created once per host with `docker network create devnet`. The central
+  # postgres container shared with the other dev.marin.cr apps lives here and
+  # resolves as hostname `postgres`. See docs/ssl-nginx-setup.md.
+  devnet:
+    external: true
+    name: devnet
 

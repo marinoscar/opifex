@@ -1,0 +1,13 @@
+[
+  {
+    "AllowedOrigins": [
+      "https://opifex.dev.marin.cr",
+      "http://localhost:3535",
+      "http://localhost:5173"
+    ],
+    "AllowedMethods": ["GET", "PUT", "POST", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag", "x-amz-request-id", "x-amz-id-2"],
+    "MaxAgeSeconds": 3000
+  }
+]
