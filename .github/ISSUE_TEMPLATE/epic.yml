@@ -1,0 +1,86 @@
+name: Epic
+description: A multi-feature or multi-session initiative that groups several child issues under one traceable parent.
+title: "[Epic] "
+labels:
+  - epic
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Epics track initiatives that span multiple features or sessions (see `CLAUDE.md` → "MANDATORY: Issue-Driven Development"). Child feature issues should reference this epic's number in their body or task list.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / why this exists
+      description: What gap, pain, or opportunity motivates this initiative? Be concrete — no placeholder text.
+      placeholder: |
+        e.g. Detection latency between a run stalling and a human finding out is currently hours.
+        There is no watchdog, so operators poll manually.
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Intended outcome
+      description: What should be true once this epic is done? Describe the end state, not the tasks.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: VISION roadmap phase
+      description: Which phase from VISION.MD §12 does this epic belong to?
+      options:
+        - "Phase 0 Conventions"
+        - "Phase 1 Contracts"
+        - "Phase 2 Reconciler, read-only"
+        - "Phase 3 Liveness and escalation"
+        - "Phase 4 Execution"
+        - "Phase 5 Cockpit"
+        - "Phase 6 Supervisor, observe-only"
+        - "Phase 7 Earned autonomy"
+        - "Phase 8 Second runner"
+        - "N/A"
+    validations:
+      required: true
+
+  - type: textarea
+    id: child-work
+    attributes:
+      label: Child work
+      description: A markdown task list of child feature issues that make up this epic. Add items as they are filed; keep this list current.
+      placeholder: |
+        - [ ] #101 — Define work-order schema
+        - [ ] #102 — Define runner-capability schema
+        - [ ] #103 — Define run-event schema
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: exit-criteria
+    attributes:
+      label: Exit criteria
+      description: How do we know this epic is done? Prefer objective, checkable conditions over vague goals.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: components
+    attributes:
+      label: Affected components
+      description: Select every component this epic touches.
+      options:
+        - label: api
+        - label: web
+        - label: db
+        - label: infra
+        - label: auth
+        - label: ui
+        - label: core
+        - label: jobs
+        - label: docs
+        - label: tests

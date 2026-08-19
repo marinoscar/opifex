@@ -1,0 +1,77 @@
+name: Feature request
+description: 'Propose new functionality. Filed before an implementation plan is finalized (CLAUDE.md → "MANDATORY: Issue-Driven Development").'
+title: "[Feature] "
+labels:
+  - feature
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: The real problem this solves. Not the solution — the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What you propose to build, in enough detail that a work order could be derived from it.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      description: Pick the primary component. If more than one is touched, pick the largest and note the rest in the description.
+      options:
+        - api
+        - web
+        - db
+        - infra
+        - auth
+        - ui
+        - core
+        - jobs
+        - docs
+        - tests
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - "P0 critical"
+        - "P1 high"
+        - "P2 medium"
+        - "P3 low"
+    validations:
+      required: true
+
+  - type: input
+    id: parent-epic
+    attributes:
+      label: Parent epic
+      description: Issue number of the parent epic, if any.
+      placeholder: "#42"
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: >
+        Must be testable. Per VISION.MD §10, "acceptance criteria are testable" is the
+        definition of a well-formed issue — a work order is generated from this field,
+        and the agent executing it is held to exactly what you write here. Vague
+        criteria produce vague work.
+      placeholder: |
+        - [ ] Given ..., when ..., then ...
+        - [ ] Existing tests for X still pass
+        - [ ] New test covers Y
+    validations:
+      required: true

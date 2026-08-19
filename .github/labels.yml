@@ -1,0 +1,167 @@
+# =============================================================================
+# Opifex label taxonomy — the durable, machine-readable definition.
+#
+# THE `:` vs `/` SEPARATOR IS LOAD-BEARING. Do not "clean it up".
+#
+# Per VISION.MD §3.3, labels are a bidirectional edge, never the state machine.
+# Two disjoint kinds of factory label exist, and the separator is how a human
+# operator tells them apart at a glance, in a list, or in a notification, with
+# zero ambiguity:
+#
+#   factory:*   INPUT  — colon.  Expresses human intent. Opifex OBEYS these.
+#                        You set factory:hold and the reconciler stops acting
+#                        on that issue. You set factory:ready and it may pick
+#                        it up. These are commands you give the factory.
+#
+#   factory/*   MIRROR — slash.  Written by Opifex for visibility only.
+#                        Opifex never reads these as truth — execution state
+#                        lives in Postgres (VISION.MD §3.3). These labels are
+#                        a projection, not a source of authority. Never set
+#                        one by hand expecting it to change behavior.
+#
+# A label Opifex obeys and a label Opifex merely writes must never be
+# confusable, or an operator can set what looks like an instruction and watch
+# it silently do nothing. The separator is the whole guarantee. Colors follow
+# the same split: input labels are warm (you are steering), mirror labels are
+# cool/grey (you are observing).
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Input labels — Opifex OBEYS these (warm palette: you are steering)
+# -----------------------------------------------------------------------------
+- name: "factory:hold"
+  color: "B60205"
+  description: "Human intent: stop the factory from acting on this issue. Obeyed by the reconciler."
+
+- name: "factory:ready"
+  color: "D93F0B"
+  description: "Human intent: this issue is authorized for dispatch. Obeyed by the reconciler."
+
+- name: "factory:clear-quarantine"
+  color: "FBCA04"
+  description: "Human intent: release this issue/work order from quarantine. Obeyed by the reconciler."
+
+# -----------------------------------------------------------------------------
+# Mirror labels — Opifex WRITES these, never reads them as truth (cool/grey
+# palette: you are observing, not steering)
+# -----------------------------------------------------------------------------
+- name: "factory/dispatched"
+  color: "1D76DB"
+  description: "Mirror: a work order for this issue is currently running. Visibility only — do not hand-edit."
+
+- name: "factory/blocked"
+  color: "5319E7"
+  description: "Mirror: the run is parked (rate limit, stall, or awaiting approval). Visibility only — do not hand-edit."
+
+- name: "factory/review"
+  color: "006B75"
+  description: "Mirror: a pull request from this work order is awaiting human review. Visibility only — do not hand-edit."
+
+- name: "factory/quarantine"
+  color: "666666"
+  description: "Mirror: this issue/work order has been quarantined after repeated failure. Visibility only — do not hand-edit."
+
+# -----------------------------------------------------------------------------
+# Type — what kind of issue this is
+# -----------------------------------------------------------------------------
+- name: "epic"
+  color: "5319E7"
+  description: "A multi-feature or multi-session initiative grouping child issues."
+
+- name: "feature"
+  color: "0E8A16"
+  description: "New functionality."
+
+- name: "bug"
+  color: "D73A4A"
+  description: "A defect: something works differently than intended."
+
+- name: "chore"
+  color: "FEF2C0"
+  description: "Tooling, deps, formatting, build, CI — no product behavior change."
+
+- name: "docs"
+  color: "0052CC"
+  description: "Documentation only."
+
+# -----------------------------------------------------------------------------
+# Phase — VISION.MD §12 roadmap phase this work belongs to
+# -----------------------------------------------------------------------------
+- name: "phase:0"
+  color: "5B7FDE"
+  description: "Phase 0 — Conventions: issue templates, ADR structure, trailer vocabulary, CI provenance check."
+
+- name: "phase:1"
+  color: "5B7FDE"
+  description: "Phase 1 — Contracts: work order, runner capability, and run event schemas."
+
+- name: "phase:2"
+  color: "5B7FDE"
+  description: "Phase 2 — Reconciler, read-only: observe and mirror labels, no dispatch."
+
+- name: "phase:3"
+  color: "5B7FDE"
+  description: "Phase 3 — Liveness and escalation: git watcher, event ingestion, watchdog, notification path."
+
+- name: "phase:4"
+  color: "5B7FDE"
+  description: "Phase 4 — Execution: claude-code-local runner, dispatch, budget ceilings, quarantine, auto-resume."
+
+- name: "phase:5"
+  color: "5B7FDE"
+  description: "Phase 5 — Cockpit: web application for projects, runs, queue, cost, the six metrics."
+
+- name: "phase:6"
+  color: "5B7FDE"
+  description: "Phase 6 — Supervisor, observe-only: advisory agent writing to a decision log."
+
+- name: "phase:7"
+  color: "5B7FDE"
+  description: "Phase 7 — Earned autonomy: promotion ladder, trust grants, approval gates, digest."
+
+- name: "phase:8"
+  color: "5B7FDE"
+  description: "Phase 8 — Second runner: only when quota pressure or vendor risk justifies it."
+
+# -----------------------------------------------------------------------------
+# Component — affected area of the codebase
+# -----------------------------------------------------------------------------
+- name: "api"
+  color: "BFD4F2"
+  description: "Backend API."
+
+- name: "web"
+  color: "BFD4F2"
+  description: "Frontend web application."
+
+- name: "db"
+  color: "BFD4F2"
+  description: "Database schema, migrations, queries."
+
+- name: "infra"
+  color: "BFD4F2"
+  description: "Infrastructure, deployment, containers, networking."
+
+- name: "auth"
+  color: "BFD4F2"
+  description: "Authentication and authorization."
+
+- name: "ui"
+  color: "BFD4F2"
+  description: "User interface and presentation."
+
+- name: "core"
+  color: "BFD4F2"
+  description: "Core control-plane logic (reconciler, dispatch, policy)."
+
+- name: "jobs"
+  color: "BFD4F2"
+  description: "Background jobs, schedulers, workers."
+
+- name: "docs-area"
+  color: "BFD4F2"
+  description: "Documentation content (distinct from the `docs` type label)."
+
+- name: "tests"
+  color: "BFD4F2"
+  description: "Test suites and test infrastructure."

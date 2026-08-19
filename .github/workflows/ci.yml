@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# Node version follows the `engines.node` constraint in the root package.json
+# (>=24) and every workspace package.json (apps/api, apps/web).
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # apps/api's typecheck (`tsc --noEmit`) resolves types from the
+      # generated Prisma client, which is not checked into the repo.
+      - name: Generate Prisma client
+        run: npm -w apps/api run prisma:generate
+
+      - name: Typecheck web
+        run: npm -w apps/web run typecheck
+
+      - name: Typecheck api
+        run: npm -w apps/api run typecheck
+
+  test-api:
+    name: Test API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm -w apps/api run prisma:generate
+
+      # `npm run api:test` runs `apps/api`'s default `test` script, which is
+      # every `*.spec.ts` under src/ and test/ EXCEPT paths matching "e2e"
+      # (see apps/api/package.json). As of this workflow, every one of those
+      # specs — including the ones named `*.integration.spec.ts` — resolves
+      # PrismaService through the mock in apps/api/test/mocks/prisma.mock.ts
+      # via apps/api/test/helpers/test-app.helper.ts (`useMockDatabase`
+      # defaults to `true`), and no `*.e2e.spec.ts` files exist in the repo
+      # yet. So this job does not need a database service today.
+      #
+      # apps/api/docs/TESTING.md and docs/TESTING.md both document a real,
+      # non-mocked E2E path (`npm run test:e2e`, `*.e2e.spec.ts`) backed by
+      # infra/compose/test.compose.yml's `db-test` Postgres service. If real
+      # E2E specs are added and wired into `test-api`, this job will need a
+      # `services: postgres:` block matching that compose file's
+      # POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB (postgres/postgres/
+      # opifex_test) plus a DATABASE_URL / apps/api/.env.test for the job —
+      # do not invent one here without re-verifying against that file.
+      - name: Run API tests
+        run: npm run api:test
+
+  test-web:
+    name: Test web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # apps/web's `test:ci` script (vitest run --coverage --reporter=junit)
+      # is the CI-oriented variant; the root `web:test` script maps to plain
+      # `vitest`, which is interactive/watch-oriented outside of CI-mode
+      # detection.
+      - name: Run web tests
+        run: npm -w apps/web run test:ci
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs:
+      - typecheck
+      - test-api
+      - test-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm -w apps/api run prisma:generate
+
+      - name: Build api
+        run: npm -w apps/api run build
+
+      - name: Build web
+        run: npm -w apps/web run build
