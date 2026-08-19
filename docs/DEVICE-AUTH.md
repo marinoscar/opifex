@@ -1,6 +1,6 @@
 # Device Authorization Flow (RFC 8628)
 
-This guide covers the Device Authorization Flow implementation in the Enterprise Application Foundation.
+This guide covers the Device Authorization Flow implementation in OPIFEX.
 
 ## Table of Contents
 

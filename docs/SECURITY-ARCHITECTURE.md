@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document provides a comprehensive overview of the security architecture for the Enterprise Application Foundation. The system implements defense-in-depth security through multiple layers: OAuth 2.0 authentication with Google, JWT-based session management with token rotation, email allowlist access control, Role-Based Access Control (RBAC), and comprehensive audit logging.
+This document provides a comprehensive overview of the security architecture for OPIFEX. The system implements defense-in-depth security through multiple layers: OAuth 2.0 authentication with Google, JWT-based session management with token rotation, email allowlist access control, Role-Based Access Control (RBAC), and comprehensive audit logging.
 
 **Key Security Technologies:**
 - **Authentication**: OAuth 2.0 / OpenID Connect (Google)
