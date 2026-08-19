@@ -57,7 +57,15 @@ import configuration from './config/configuration';
     PatModule,
 
     // Test modules (non-production only)
-    ...(process.env.NODE_ENV !== 'production' ? [TestAuthModule] : []),
+    // TestAuthModule bypasses both OAuth and the email allowlist, so NODE_ENV
+    // alone is not a sufficient gate: a non-production deployment can still be
+    // reachable from the internet (e.g. a dev host serving the Vite dev server,
+    // which requires NODE_ENV=development). TEST_AUTH_ENABLED=false lets such a
+    // deployment turn the bypass off, as .env.example has always documented.
+    ...(process.env.NODE_ENV !== 'production' &&
+    process.env.TEST_AUTH_ENABLED !== 'false'
+      ? [TestAuthModule]
+      : []),
   ],
   providers: [
     // Global validation pipe (Zod)
