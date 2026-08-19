@@ -61,10 +61,16 @@ describe('App', () => {
     // The App will make an API call to check auth, MSW will handle it
     await waitFor(
       () => {
-        // Should either show login page or home page depending on mock auth state
-        const welcomeText = screen.queryByText(/Welcome/i);
-        const homeText = screen.queryByText(/Home Page/i);
-        expect(welcomeText || homeText).toBeTruthy();
+        // Either the login page or the cockpit, depending on the mocked auth
+        // state. The dashboard's h1 is matched by ROLE rather than by text:
+        // "Cockpit" is also the navigation rail's label for `/`, so a bare
+        // text query would pass on the chrome alone.
+        const cockpitHeading = screen.queryByRole('heading', {
+          level: 1,
+          name: /^cockpit$/i,
+        });
+        const loginText = screen.queryByText(/sign in/i);
+        expect(cockpitHeading || loginText).toBeTruthy();
       },
       { timeout: 5000 },
     );
@@ -90,9 +96,13 @@ describe('App', () => {
         </MemoryRouter>,
       );
 
-      await waitFor(() => expect(screen.getByText(/welcome back/i)).toBeInTheDocument(), {
-        timeout: 5000,
-      });
+      await waitFor(
+        () =>
+          expect(
+            screen.getByRole('heading', { level: 1, name: /^cockpit$/i }),
+          ).toBeInTheDocument(),
+        { timeout: 5000 },
+      );
       expect(screen.queryByRole('heading', { name: /system settings/i })).not.toBeInTheDocument();
     });
 
@@ -105,9 +115,13 @@ describe('App', () => {
         </MemoryRouter>,
       );
 
-      await waitFor(() => expect(screen.getByText(/welcome back/i)).toBeInTheDocument(), {
-        timeout: 5000,
-      });
+      await waitFor(
+        () =>
+          expect(
+            screen.getByRole('heading', { level: 1, name: /^cockpit$/i }),
+          ).toBeInTheDocument(),
+        { timeout: 5000 },
+      );
       expect(screen.queryByRole('heading', { name: /user management/i })).not.toBeInTheDocument();
     });
 
@@ -238,7 +252,9 @@ describe('App', () => {
           ).toBeInTheDocument(),
         { timeout: 5000 },
       );
-      expect(screen.queryByText(/welcome back/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { level: 1, name: /^cockpit$/i }),
+      ).not.toBeInTheDocument();
     });
 
     it('sends an anonymous visitor to the login page instead', async () => {

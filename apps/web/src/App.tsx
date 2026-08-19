@@ -15,7 +15,7 @@ import { LoadingSpinner } from './components/common/LoadingSpinner';
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const AuthCallbackPage = lazy(() => import('./pages/AuthCallbackPage'));
 const ActivateDevicePage = lazy(() => import('./pages/ActivateDevicePage'));
-const HomePage = lazy(() => import('./pages/HomePage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 // The four planned cockpit pages. They are lazy like every other page, which
 // costs nothing today and means the chunk boundary is already in place when
 // each one grows a DataTable.
@@ -57,7 +57,7 @@ function AppRoutes() {
               <Route path="/activate" element={<ActivateDevicePage />} />
 
               <Route element={<Layout />}>
-                <Route path="/" element={<HomePage />} />
+                <Route path="/" element={<DashboardPage />} />
                 {/* The planned cockpit pages carry NO `RequirePermission`, and
                     that is the same decision as their `permission: undefined`
                     in `config/destinations.ts`: the permission a route requires

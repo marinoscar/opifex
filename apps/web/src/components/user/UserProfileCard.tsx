@@ -1,3 +1,12 @@
+/**
+ * The signed-in user's identity, as a card.
+ *
+ * Epic #19, issue #75. This component used to be the left-hand column of the
+ * old `HomePage`. It survived the dashboard rewrite — it is a tested, useful
+ * component — but the MOUNT moved: identity is not cockpit content, and
+ * `/settings` had no identity header at all, so it now opens the settings page.
+ */
+
 import {
   Card,
   CardContent,
@@ -13,7 +22,19 @@ import { Settings as SettingsIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
-export function UserProfileCard() {
+export interface UserProfileCardProps {
+  /**
+   * Show the "Account Settings" button.
+   *
+   * Defaults to `true` — every existing caller wants it. `UserSettingsPage`
+   * passes `false`, because a button navigating to the page you are already on
+   * is a dead control, and a dead control on the identity header of the page it
+   * points at is the most conspicuous place to leave one.
+   */
+  showSettingsAction?: boolean;
+}
+
+export function UserProfileCard({ showSettingsAction = true }: UserProfileCardProps = {}) {
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -91,15 +112,17 @@ export function UserProfileCard() {
           </Box>
 
           {/* Settings Button */}
-          <Button
-            fullWidth
-            variant="outlined"
-            startIcon={<SettingsIcon />}
-            onClick={() => navigate('/settings')}
-            sx={{ mt: 2 }}
-          >
-            Account Settings
-          </Button>
+          {showSettingsAction && (
+            <Button
+              fullWidth
+              variant="outlined"
+              startIcon={<SettingsIcon />}
+              onClick={() => navigate('/settings')}
+              sx={{ mt: 2 }}
+            >
+              Account Settings
+            </Button>
+          )}
         </Box>
       </CardContent>
     </Card>
