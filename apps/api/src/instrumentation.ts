@@ -25,7 +25,7 @@ export function initializeOtel(): NodeSDK | null {
   }
 
   const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318';
-  const serviceName = process.env.OTEL_SERVICE_NAME || 'enterprise-app-api';
+  const serviceName = process.env.OTEL_SERVICE_NAME || 'opifex-api';
 
   const resource = resourceFromAttributes({
     [ATTR_SERVICE_NAME]: serviceName,

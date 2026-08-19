@@ -79,7 +79,7 @@ seed_data:
 
   orgs:
     - key: org1
-      name: Enterprise App
+      name: OPIFEX
 
   org_users:
     - key: org_admin
@@ -89,7 +89,7 @@ seed_data:
 
   projects:
     - key: project1
-      name: Enterprise App
+      name: OPIFEX
       org_key: org1
 
   # This token is the one in the collector's uptrace-dsn header.

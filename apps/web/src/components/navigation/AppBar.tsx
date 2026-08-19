@@ -51,7 +51,7 @@ export function AppBar() {
           }}
           onClick={() => navigate('/')}
         >
-          Enterprise App
+          OPIFEX
         </Typography>
 
         {/* The flexible spacer. Removing it without a replacement packs the

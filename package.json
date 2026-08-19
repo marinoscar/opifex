@@ -1,5 +1,5 @@
 {
-  "name": "enterprise-app",
+  "name": "opifex",
   "private": true,
   "workspaces": [
     "apps/*"

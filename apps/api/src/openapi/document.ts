@@ -45,7 +45,7 @@ export const SECURITY_SCHEMES = {
  */
 export function buildOpenApiConfig(version: string = resolveApiVersion()) {
   const builder = new DocumentBuilder()
-    .setTitle('Enterprise App Foundation API')
+    .setTitle('OPIFEX API')
     .setDescription(buildApiDescription(version))
     .setVersion(version)
     // OpenAPI 3.1, not the 3.0 default. This is required, not a preference:
@@ -56,13 +56,13 @@ export function buildOpenApiConfig(version: string = resolveApiVersion()) {
     // Scalar renders 3.1 natively.
     .setOpenAPIVersion('3.1.0')
     .setContact(
-      'Enterprise App Foundation',
-      'https://github.com/marinoscar/EnterpriseAppBase',
+      'OPIFEX',
+      'https://github.com/marinoscar/opifex',
       '',
     )
     .setExternalDoc(
       'Architecture and operations documentation',
-      'https://github.com/marinoscar/EnterpriseAppBase/tree/main/docs',
+      'https://github.com/marinoscar/opifex/tree/main/docs',
     )
     // Same-origin: the UI is served at `/`, this API under `/api`, so a
     // relative server URL is correct for every deployment without templating.

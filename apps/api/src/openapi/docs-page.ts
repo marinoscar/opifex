@@ -112,7 +112,7 @@ export function renderDocsPage(options: DocsPageOptions): string {
   </head>
   <body>
     <div id="eaf-authbar">
-      <strong>Enterprise App Foundation API</strong>
+      <strong>OPIFEX API</strong>
       <span class="eaf-version">${escapeHtml(options.version)}</span>
       <span class="eaf-spacer"></span>
       <span id="eaf-status" class="eaf-pending">Checking your session…</span>

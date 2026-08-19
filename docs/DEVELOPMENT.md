@@ -48,7 +48,7 @@ This application uses **Fastify** as the HTTP adapter, not Express. This has imp
 1. **Clone and install dependencies**
    ```bash
    git clone <repository-url>
-   cd EnterpriseAppBase
+   cd opifex
    npm install
    ```
 

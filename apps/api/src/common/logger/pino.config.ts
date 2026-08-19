@@ -7,7 +7,7 @@ export const pinoConfig: pino.LoggerOptions = {
     bindings: (bindings) => ({
       pid: bindings.pid,
       host: bindings.hostname,
-      service: process.env.OTEL_SERVICE_NAME || 'enterprise-app-api',
+      service: process.env.OTEL_SERVICE_NAME || 'opifex-api',
     }),
   },
   timestamp: pino.stdTimeFunctions.isoTime,
