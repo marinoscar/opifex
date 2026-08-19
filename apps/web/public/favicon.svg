@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img" aria-label="Opifex">
+  <title>Opifex</title>
+  <!--
+    The same drawing as src/components/brand/OpifexMark.tsx — three stacked
+    bars (the queue) crossed by one ascending stroke (dispatch). Kept in sync
+    by hand: a favicon cannot import a React component.
+
+    A favicon is rendered OUTSIDE the page, so `currentColor` has nothing to
+    inherit from. The internal prefers-color-scheme rule is the only way this
+    single file can stay legible on both a light and a dark browser chrome;
+    without it the indigo mark disappears into a dark tab strip.
+
+    Transparent background on purpose: the tab strip supplies its own, and a
+    baked white plate would show as a bright rectangle in dark mode. The
+    opaque brand plate lives in favicon.ico / apple-touch-icon.png instead,
+    where transparency is either unsupported (iOS) or renders badly.
+  -->
+  <style>
+    .mark { stroke: #4338CA; }
+    @media (prefers-color-scheme: dark) {
+      .mark { stroke: #A5B4FC; }
+    }
+  </style>
+  <g class="mark" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="3" y1="7" x2="14" y2="7" />
+    <line x1="3" y1="12" x2="11" y2="12" />
+    <line x1="3" y1="17" x2="8" y2="17" />
+    <path d="M6 20 L21 5" />
+  </g>
+</svg>

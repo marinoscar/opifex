@@ -3,8 +3,41 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="OPIFEX" />
-    <title>OPIFEX</title>
+    <meta name="description" content="Opifex — a control plane that supervises AI coding agents." />
+
+    <!--
+      Icons. Until now this file declared none and `public/` held only a
+      .gitkeep, so every page load 404'd `/favicon.ico`.
+
+      Order matters: browsers that understand `image/svg+xml` take the SVG
+      (one file, sharp at every size, and it carries its own
+      prefers-color-scheme rule so the mark stays legible on a dark tab
+      strip). Everything else falls back to the .ico, which ships 16/32/48px
+      frames of the same drawing on an opaque brand plate.
+
+      All three live in `public/`, so Vite copies them to the site root
+      unhashed — which is required: /favicon.ico is requested by URL
+      convention, not from a bundle graph.
+    -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/x-icon" sizes="16x16 32x32 48x48" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
+    <!--
+      Colors the mobile browser chrome (and the PWA title bar) to match the
+      app's own surface, so the top of the screen does not read as a seam.
+      Two entries with media queries rather than one: a single value would be
+      wrong in one of the two modes, and this app follows the system theme by
+      default (`ThemeContext`'s 'system' mode).
+
+      These are `background.default` from `src/theme/tokens.ts` — keep them in
+      sync by hand; static HTML cannot import the token module.
+    -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F7F8FA" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0F172A" />
+    <meta name="color-scheme" content="light dark" />
+
+    <title>Opifex</title>
   </head>
   <body>
     <div id="root"></div>
