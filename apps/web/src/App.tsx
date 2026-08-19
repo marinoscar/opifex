@@ -15,7 +15,15 @@ import { LoadingSpinner } from './components/common/LoadingSpinner';
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const AuthCallbackPage = lazy(() => import('./pages/AuthCallbackPage'));
 const ActivateDevicePage = lazy(() => import('./pages/ActivateDevicePage'));
-const HomePage = lazy(() => import('./pages/HomePage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+// The four planned cockpit pages. They are lazy like every other page, which
+// costs nothing today and means the chunk boundary is already in place when
+// each one grows a DataTable.
+const RunsPage = lazy(() => import('./pages/RunsPage'));
+const QueuePage = lazy(() => import('./pages/QueuePage'));
+const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
+const CostPage = lazy(() => import('./pages/CostPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const UserSettingsPage = lazy(() => import('./pages/UserSettingsPage'));
 const SystemSettingsPage = lazy(() => import('./pages/SystemSettingsPage'));
 const UserManagementPage = lazy(() => import('./pages/UserManagementPage'));
@@ -49,7 +57,19 @@ function AppRoutes() {
               <Route path="/activate" element={<ActivateDevicePage />} />
 
               <Route element={<Layout />}>
-                <Route path="/" element={<HomePage />} />
+                <Route path="/" element={<DashboardPage />} />
+                {/* The planned cockpit pages carry NO `RequirePermission`, and
+                    that is the same decision as their `permission: undefined`
+                    in `config/destinations.ts`: the permission a route requires
+                    is the one its API controller enforces, and no controller
+                    enforces anything here because no endpoint exists. Guarding
+                    them on an invented string would gate them on a permission
+                    the API can never grant. Each gains its real permission in
+                    the pull request that adds its endpoint. */}
+                <Route path="/runs" element={<RunsPage />} />
+                <Route path="/queue" element={<QueuePage />} />
+                <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/cost" element={<CostPage />} />
                 <Route path="/settings" element={<UserSettingsPage />} />
                 {/* Route-level AUTHORIZATION, not just authentication.
                     `ProtectedRoute` above only establishes that someone is
@@ -86,11 +106,25 @@ function AppRoutes() {
                     </RequirePermission>
                   }
                 />
+
+                {/* The catch-all, and it lives HERE — inside `Layout`, as the
+                    last child — rather than at the top level (issue #78).
+                    Three consequences, all deliberate:
+
+                      1. A bad URL renders a 404 instead of silently becoming
+                         the dashboard. `<Navigate to="/" replace />` made a
+                         renamed route, a stale bookmark and a typo look
+                         identical, and none of them like a mistake.
+                      2. The 404 keeps the app shell, so the rail and the bottom
+                         bar are right there — the fastest way out of a wrong
+                         address is the navigation.
+                      3. It sits inside `ProtectedRoute`, which loses nothing:
+                         that guard already redirects anonymous users to
+                         `/login` carrying `state.from`, so the attempted URL
+                         survives the sign-in round trip. */}
+                <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Route>
-
-            {/* Fallback */}
-            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
       </ErrorBoundary>

@@ -1,5 +1,5 @@
 /**
- * Settings → Personal access tokens (issue #67, epic #51).
+ * Settings → Personal access tokens (upstream template issue #67, epic #51).
  *
  * Two things this migration deletes rather than wraps:
  *

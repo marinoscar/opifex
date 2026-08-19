@@ -1,3 +1,20 @@
+/**
+ * `/settings` — the signed-in user's own preferences.
+ *
+ * Two changes landed here with the cockpit rewrite (epic #19, issues #75/#78):
+ *
+ *  1. **The identity header.** `UserProfileCard` used to sit on the old home
+ *     page, where it competed with cockpit content; this page — the one page
+ *     that is entirely about the current user — had no indication of WHOSE
+ *     settings were being edited. The component moved here unchanged, minus
+ *     its "Account Settings" button, which would have pointed at this page.
+ *  2. **`/settings#theme` works.** See `hooks/useHashScroll.ts` for why it did
+ *     not: the anchor always existed, but react-router does no hash scrolling
+ *     and this page returns a spinner until settings resolve, so the target is
+ *     not in the DOM when the navigation happens. Hence `ready` — the hook must
+ *     fire on the render where the theme card actually exists, not on mount.
+ */
+
 import {
   Container,
   Typography,
@@ -6,11 +23,13 @@ import {
   Snackbar,
 } from '@mui/material';
 import { useState } from 'react';
+import { UserProfileCard } from '../components/user/UserProfileCard';
 import { ThemeSettings } from '../components/settings/ThemeSettings';
 import { ProfileSettings } from '../components/settings/ProfileSettings';
 import { PersonalAccessTokens } from '../components/settings/PersonalAccessTokens';
 import { useUserSettings } from '../hooks/useUserSettings';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
+import { useHashScroll } from '../hooks/useHashScroll';
 
 export default function UserSettingsPage() {
   const {
@@ -24,6 +43,12 @@ export default function UserSettingsPage() {
 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+
+  // Called unconditionally, ABOVE the `isLoading` early return below — hooks
+  // cannot live after a conditional return, and this one specifically needs to
+  // observe the transition INTO the ready state, which is the render the early
+  // return stops happening on.
+  useHashScroll(!isLoading && !!settings);
 
   const handleThemeChange = async (theme: 'light' | 'dark' | 'system') => {
     try {
@@ -64,6 +89,13 @@ export default function UserSettingsPage() {
             {error}
           </Alert>
         )}
+
+        {/* Identity first: whose settings these are, before what they are.
+            The card renders nothing when there is no user, so it needs no
+            guard of its own here. */}
+        <Box sx={{ mb: 3 }}>
+          <UserProfileCard showSettingsAction={false} />
+        </Box>
 
         {settings && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>

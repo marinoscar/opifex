@@ -1,6 +1,6 @@
 /**
  * Admin → System settings → Feature flags: the DataTable column contract
- * (issue #67, epic #51).
+ * (upstream template issue #67, epic #51).
  *
  * ## Why a `List` became a table
  *

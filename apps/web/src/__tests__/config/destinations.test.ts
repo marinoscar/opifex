@@ -4,13 +4,17 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import {
+  BOTTOM_NAV_KEYS,
+  BOTTOM_NAV_MAX_ACTIONS,
   DESTINATIONS,
   DESTINATION_ROUTES,
+  SECTIONS,
   UNOWNED_ROUTES,
+  bottomNavSplit,
   owns,
   resolveActiveDestination,
 } from '../../config/destinations';
-import type { DestinationKey } from '../../config/destinations';
+import type { Destination, DestinationKey } from '../../config/destinations';
 
 /**
  * The route-ownership table is the one piece of this navigation that manual
@@ -28,17 +32,28 @@ const APP_TSX = resolve(dirname(fileURLToPath(import.meta.url)), '../../App.tsx'
 function declaredRoutePaths(): string[] {
   const source = readFileSync(APP_TSX, 'utf8');
   const paths = [...source.matchAll(/path="([^"]+)"/g)].map((match) => match[1]);
-  // `*` is the catch-all, which redirects to `/` rather than rendering a page.
+  // `*` is the catch-all, which renders `NotFoundPage` rather than belonging to
+  // a destination. It is the one route that is deliberately owned by nothing
+  // AND absent from `UNOWNED_ROUTES` — it is not a place, it is the absence of
+  // one.
   return [...new Set(paths)].filter((path) => path !== '*');
 }
 
+const byKey = Object.fromEntries(DESTINATIONS.map((d) => [d.key, d])) as Record<
+  DestinationKey,
+  Destination
+>;
+
 describe('destinations — route ownership', () => {
-  it('finds at least the four destination routes plus the public ones in App.tsx', () => {
+  it('finds the declared routes in App.tsx at all', () => {
     // Guards the regex above: if it silently stopped matching, every assertion
-    // below would pass vacuously over an empty list.
+    // below would pass vacuously over an empty list. The check is that every
+    // destination path appears — NOT a hardcoded count, which is what made the
+    // old version of this test a chore to maintain and a liability to trust.
     const paths = declaredRoutePaths();
-    expect(paths).toEqual(expect.arrayContaining(['/', '/settings', '/admin/users', '/admin/settings']));
-    expect(paths.length).toBeGreaterThanOrEqual(8);
+
+    expect(paths).toEqual(expect.arrayContaining(DESTINATIONS.map((d) => d.path)));
+    expect(paths).toEqual(expect.arrayContaining([...UNOWNED_ROUTES]));
   });
 
   it('claims every route in App.tsx exactly once, or deliberately not at all', () => {
@@ -71,10 +86,20 @@ describe('destinations — route ownership', () => {
     }
   });
 
+  it('routes every destination in the table from App.tsx', () => {
+    // The other direction: a destination the rail offers but `App.tsx` never
+    // routes is a link into a 404. Both halves are needed — the table and the
+    // route list can each grow past the other.
+    const paths = declaredRoutePaths();
+    for (const destination of DESTINATIONS) {
+      expect(paths, `${destination.key} has no route in App.tsx`).toContain(destination.path);
+    }
+  });
+
   it('highlights NOTHING on the deliberately unowned routes', () => {
     // Asserted explicitly so a later contributor does not "fix" this into
     // highlighting something arbitrary. No destination is better than a wrong
-    // one — the login screen does not belong to Home.
+    // one — the login screen does not belong to the cockpit.
     for (const path of UNOWNED_ROUTES) {
       expect(resolveActiveDestination(path), `${path} must activate no destination`).toBeNull();
     }
@@ -107,18 +132,25 @@ describe('destinations — segment-boundary matching', () => {
     expect(resolveActiveDestination('/admin/users-archive')).toBeNull();
   });
 
-  it('activates Home on / only, never on any other path', () => {
-    // Every path starts with '/', so without the exact-match rule Home would
-    // own the entire app and beat nothing only by prefix length.
-    expect(resolveActiveDestination('/')).toBe('home');
-    expect(resolveActiveDestination('/settings')).not.toBe('home');
-    expect(resolveActiveDestination('/admin/settings')).not.toBe('home');
+  it('does not let /runsomething activate Runs', () => {
+    // The same trap, on one of the new destinations.
+    expect(resolveActiveDestination('/runsomething')).toBeNull();
+  });
+
+  it('activates the dashboard on / only, never on any other path', () => {
+    // Every path starts with '/', so without the exact-match rule the dashboard
+    // would own the entire app and beat nothing only by prefix length.
+    expect(resolveActiveDestination('/')).toBe('dashboard');
+    expect(resolveActiveDestination('/settings')).not.toBe('dashboard');
+    expect(resolveActiveDestination('/runs')).not.toBe('dashboard');
+    expect(resolveActiveDestination('/admin/settings')).not.toBe('dashboard');
     expect(owns('/', '/anything')).toBe(false);
   });
 
   it('activates a destination for its child routes', () => {
     expect(resolveActiveDestination('/settings/profile')).toBe('settings');
     expect(resolveActiveDestination('/admin/users/abc-123')).toBe('users');
+    expect(resolveActiveDestination('/runs/wo_opifex_312_a3f91c2_a1')).toBe('runs');
   });
 
   it('gives the longest matching prefix the win', () => {
@@ -129,43 +161,112 @@ describe('destinations — segment-boundary matching', () => {
     expect(resolveActiveDestination('/admin/users')).toBe('users');
     expect(resolveActiveDestination('/admin')).toBeNull();
   });
+
+  it('resolves a project-scoped run list to Projects, not to Runs', () => {
+    // The nested route the longest-prefix rule now earns its keep on twice
+    // over: Runs owns `/runs` and nothing else, so `/projects/:id/runs` stays
+    // with the destination the operator navigated FROM.
+    expect(resolveActiveDestination('/projects/opifex/runs')).toBe('projects');
+  });
 });
 
 describe('destinations — reachability regression', () => {
   /**
-   * The design's central claim is that replacing the drawer makes nothing
-   * unreachable. These are the four rows the deleted `Sidebar` offered, by the
-   * paths it navigated to.
+   * The redesign added four destinations and renamed `home` to `dashboard`.
+   * Neither may cost an existing page its way in — a rename that quietly
+   * orphans `/settings` is precisely the kind of regression the whole
+   * single-source-of-truth exercise is supposed to make impossible.
    */
-  const OLD_SIDEBAR_PATHS = ['/', '/settings', '/admin/users', '/admin/settings'];
+  const PRE_REDESIGN_PATHS = ['/', '/settings', '/admin/users', '/admin/settings'];
 
-  it('still resolves every path the old Sidebar menu offered', () => {
-    for (const path of OLD_SIDEBAR_PATHS) {
+  it('still resolves every path that existed before the redesign', () => {
+    for (const path of PRE_REDESIGN_PATHS) {
       expect(resolveActiveDestination(path), `${path} became unreachable`).not.toBeNull();
     }
   });
 
-  it('still offers every old Sidebar path as a destination', () => {
-    expect(DESTINATIONS.map((destination) => destination.path).sort()).toEqual(
-      [...OLD_SIDEBAR_PATHS].sort(),
-    );
+  it('still offers every pre-redesign path as a destination', () => {
+    // A subset assertion, NOT set equality: the old version of this test
+    // asserted the destination paths were EXACTLY the old four, which made
+    // adding a destination a test failure rather than a feature.
+    const paths = DESTINATIONS.map((destination) => destination.path);
+    for (const path of PRE_REDESIGN_PATHS) {
+      expect(paths, `${path} is no longer a destination`).toContain(path);
+    }
   });
 });
 
 describe('destinations — the table itself', () => {
+  /**
+   * The permissions the API REALLY enforces on a navigable page, verified
+   * against the controllers rather than assumed:
+   *   users.controller.ts           → PERMISSIONS.USERS_READ
+   *   system-settings.controller.ts → PERMISSIONS.SYSTEM_SETTINGS_READ
+   * Nothing else in `apps/api` guards a page this app routes to.
+   */
+  const ENFORCED_PERMISSIONS = ['users:read', 'system_settings:read'];
+
   it('gates the admin destinations on the permission the API enforces', () => {
-    // Verified against the controllers, not assumed:
-    //   users.controller.ts           → PERMISSIONS.USERS_READ
-    //   system-settings.controller.ts → PERMISSIONS.SYSTEM_SETTINGS_READ
-    const byKey = Object.fromEntries(DESTINATIONS.map((d) => [d.key, d]));
     expect(byKey.users.permission).toBe('users:read');
     expect(byKey.system.permission).toBe('system_settings:read');
   });
 
-  it('leaves the non-admin destinations open to any authenticated user', () => {
-    const byKey = Object.fromEntries(DESTINATIONS.map((d) => [d.key, d]));
-    expect(byKey.home.permission).toBeUndefined();
+  it('leaves the account destination open to any authenticated user', () => {
     expect(byKey.settings.permission).toBeUndefined();
+    expect(byKey.dashboard.permission).toBeUndefined();
+  });
+
+  it('only ever requires a permission the API actually enforces', () => {
+    // The doctrine in the file header, as an executable rule. An invented
+    // permission string would not merely be untidy: no role grants it, so the
+    // destination would be invisible to EVERY user including an admin, and the
+    // page would be reachable only by typing its URL.
+    for (const destination of DESTINATIONS) {
+      if (!destination.permission) continue;
+      expect(
+        ENFORCED_PERMISSIONS,
+        `${destination.key} requires ${destination.permission}, which no controller enforces`,
+      ).toContain(destination.permission);
+    }
+  });
+
+  it('gives every PLANNED destination no permission at all', () => {
+    // `apps/api` has no runs, queue, projects or cost module, so there is no
+    // `runs:read` to require. This is the assertion that stops one being
+    // invented ahead of the endpoint.
+    for (const destination of DESTINATIONS) {
+      if (destination.status !== 'planned') continue;
+      expect(
+        destination.permission,
+        `${destination.key} is planned but declares a permission no controller enforces`,
+      ).toBeUndefined();
+    }
+  });
+
+  it('marks exactly the destinations with a real API as live', () => {
+    const live = DESTINATIONS.filter((d) => d.status === 'live').map((d) => d.key);
+    expect(live.sort()).toEqual(['dashboard', 'settings', 'system', 'users']);
+  });
+
+  it('puts every destination in a declared section', () => {
+    const sectionKeys = SECTIONS.map((section) => section.key);
+    for (const destination of DESTINATIONS) {
+      expect(sectionKeys, `${destination.key} has an unknown section`).toContain(
+        destination.section,
+      );
+    }
+  });
+
+  it('gives every declared section at least one destination', () => {
+    // An empty section is a header with nothing under it. The rail drops those
+    // at render time, but a permanently empty one is dead config and should be
+    // deleted rather than tolerated.
+    for (const section of SECTIONS) {
+      expect(
+        DESTINATIONS.some((destination) => destination.section === section.key),
+        `section ${section.key} has no destinations`,
+      ).toBe(true);
+    }
   });
 
   it('declares Icon as a component, never as a rendered element', () => {
@@ -189,7 +290,75 @@ describe('destinations — the table itself', () => {
     }
   });
 
-  it('caps the destination set at four — the bottom bar ceiling', () => {
-    expect(DESTINATIONS.length).toBeLessThanOrEqual(4);
+  it('gives every destination a unique key and a unique path', () => {
+    expect(new Set(DESTINATIONS.map((d) => d.key)).size).toBe(DESTINATIONS.length);
+    expect(new Set(DESTINATIONS.map((d) => d.path)).size).toBe(DESTINATIONS.length);
+  });
+});
+
+describe('destinations — the bottom-bar split', () => {
+  const seeEverything = () => true;
+  const seeNoAdmin = (destination: Destination) => !destination.permission;
+
+  it('leaves room for the More action inside the four-action ceiling', () => {
+    // The ceiling exists so `showLabels` stays valid at 360px. This is the
+    // assertion that fires if someone adds a fourth primary key without
+    // reading why there are three.
+    expect(BOTTOM_NAV_KEYS.length + 1).toBeLessThanOrEqual(BOTTOM_NAV_MAX_ACTIONS);
+  });
+
+  it('promotes the configured keys, in bar order', () => {
+    const { primary } = bottomNavSplit(seeEverything);
+    expect(primary.map((d) => d.key)).toEqual([...BOTTOM_NAV_KEYS]);
+  });
+
+  it('never returns more primaries than the bar can draw alongside More', () => {
+    for (const canSee of [seeEverything, seeNoAdmin, () => false]) {
+      const { primary } = bottomNavSplit(canSee);
+      expect(primary.length).toBeLessThanOrEqual(BOTTOM_NAV_MAX_ACTIONS - 1);
+    }
+  });
+
+  it('loses no visible destination between the two halves', () => {
+    // REACHABILITY is the invariant. The bar may be wrong about which three
+    // destinations matter most; it may never make one unreachable.
+    for (const canSee of [seeEverything, seeNoAdmin]) {
+      const { primary, overflow } = bottomNavSplit(canSee);
+      const split = [...primary, ...overflow].map((d) => d.key).sort();
+      const visible = DESTINATIONS.filter(canSee).map((d) => d.key).sort();
+      expect(split).toEqual(visible);
+    }
+  });
+
+  it('puts a destination in exactly one half', () => {
+    const { primary, overflow } = bottomNavSplit(seeEverything);
+    const overflowKeys = new Set(overflow.map((d) => d.key));
+    for (const destination of primary) {
+      expect(overflowKeys.has(destination.key)).toBe(false);
+    }
+  });
+
+  it('drops a primary the user cannot see rather than leaving a hole', () => {
+    const { primary } = bottomNavSplit((d) => d.key !== 'runs' && !d.permission);
+    expect(primary.map((d) => d.key)).toEqual(['dashboard', 'queue']);
+  });
+
+  it('keeps the overflow in table order, not in permission order', () => {
+    const { overflow } = bottomNavSplit(seeEverything);
+    expect(overflow.map((d) => d.key)).toEqual(['projects', 'cost', 'settings', 'users', 'system']);
+  });
+
+  it('returns an empty overflow when nothing is left over', () => {
+    // The state that makes `BottomNav` hide More entirely: a trigger that opens
+    // an empty sheet is a control that does nothing.
+    const { primary, overflow } = bottomNavSplit((d) => BOTTOM_NAV_KEYS.includes(d.key));
+    expect(primary).toHaveLength(BOTTOM_NAV_KEYS.length);
+    expect(overflow).toEqual([]);
+  });
+
+  it('returns both halves empty for a user who can see nothing', () => {
+    const { primary, overflow } = bottomNavSplit(() => false);
+    expect(primary).toEqual([]);
+    expect(overflow).toEqual([]);
   });
 });

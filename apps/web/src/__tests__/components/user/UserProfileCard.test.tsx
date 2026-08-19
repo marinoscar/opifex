@@ -656,4 +656,31 @@ describe('UserProfileCard', () => {
       expect(avatar).toHaveAttribute('alt', 'Test User');
     });
   });
+
+  /**
+   * Issue #75. The card moved from the deleted home page to the top of
+   * `/settings`, where its own "Account Settings" button would point at the
+   * page it is already on.
+   */
+  describe('showSettingsAction', () => {
+    it('shows the settings button by default', () => {
+      render(<UserProfileCard />);
+      expect(screen.getByRole('button', { name: /account settings/i })).toBeInTheDocument();
+    });
+
+    it('hides it when the host page IS the settings page', () => {
+      // Hidden rather than disabled: the action is not unavailable, it is
+      // meaningless here.
+      render(<UserProfileCard showSettingsAction={false} />);
+      expect(
+        screen.queryByRole('button', { name: /account settings/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('still renders the identity when the action is hidden', () => {
+      render(<UserProfileCard showSettingsAction={false} />);
+      expect(screen.getByText(mockUser.email)).toBeInTheDocument();
+    });
+  });
+
 });

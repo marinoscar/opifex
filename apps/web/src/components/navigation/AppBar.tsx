@@ -1,32 +1,32 @@
 import {
   AppBar as MuiAppBar,
   Toolbar,
-  Typography,
   Box,
   IconButton,
+  Link,
   useTheme,
 } from '@mui/material';
 import {
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
 } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink } from 'react-router-dom';
 import { useThemeContext } from '../../contexts/ThemeContext';
+import { OpifexWordmark } from '../brand/OpifexWordmark';
 import { UserMenu } from './UserMenu';
 
 /**
  * The top bar.
  *
- * Takes NO props as of issue #55: the `onMenuClick` hamburger callback went
- * away with the drawer it opened. It is removed from the props interface
- * entirely rather than left as an unused optional — a dangling optional handler
- * is exactly how a dead affordance survives a refactor and gets quietly rewired
- * later. Navigation below `sm` is the bottom bar, and at `sm` and up it is the
+ * Takes NO props: the `onMenuClick` hamburger callback went away with the
+ * drawer it opened. It is removed from the props interface entirely rather than
+ * left as an unused optional — a dangling optional handler is exactly how a
+ * dead affordance survives a refactor and gets quietly rewired later.
+ * Navigation below `sm` is the bottom bar, and at `sm` and up it is the
  * permanent rail; neither needs anything from here.
  */
 export function AppBar() {
   const theme = useTheme();
-  const navigate = useNavigate();
   const { isDarkMode, toggleMode } = useThemeContext();
 
   return (
@@ -39,20 +39,42 @@ export function AppBar() {
       }}
     >
       <Toolbar>
-        {/* Brand. `edge="start"` alignment now belongs to the title: the
-            hamburger that used to hold this slot was deleted with the drawer. */}
-        <Typography
-          variant="h6"
-          component="div"
+        {/*
+          Brand, and the app's home affordance.
+
+          This was a `<Typography onClick={() => navigate('/')}>` — an
+          accessibility bug rather than a style choice. A clickable text node is
+          not in the tab order, does not respond to Enter or Space, does not
+          announce as a link, and cannot be opened in a new tab. It is now a
+          real anchor (issue #78 found it in passing while fixing the 404).
+
+          NO `aria-label` here on purpose. The accessible name is computed from
+          the wordmark's own `role="img"` / `aria-label="Opifex"`, so there is
+          exactly one place the brand's name is written down. Labelling the link
+          as well would produce two names for one control and the outer one
+          would silently win.
+        */}
+        <Link
+          component={RouterLink}
+          to="/"
+          color="inherit"
+          underline="none"
           sx={{
-            cursor: 'pointer',
-            fontWeight: 600,
+            display: 'inline-flex',
+            alignItems: 'center',
             flexShrink: 0,
+            borderRadius: 1,
+            // The focus ring cannot come from `MuiListItemButton` or
+            // `MuiIconButton` here, and an unfocusable-looking brand link is
+            // the first thing a keyboard user tabs into on every page.
+            '&:focus-visible': {
+              outline: `2px solid ${theme.palette.primary.main}`,
+              outlineOffset: 2,
+            },
           }}
-          onClick={() => navigate('/')}
         >
-          OPIFEX
-        </Typography>
+          <OpifexWordmark height={22} />
+        </Link>
 
         {/* The flexible spacer. Removing it without a replacement packs the
             trailing icon cluster to the LEFT with dead space on the right,

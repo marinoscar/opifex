@@ -15,7 +15,7 @@
  * one — they are retained because they make the comments a coherent decision
  * record, and because `docs/specs/datatable.md` in that project indexes by them.
  *
- * In THIS repo the port is issue #54, epic #51. Nothing here should be read as
+ * In THIS repo the port is upstream template issue #54, epic #51. Nothing here should be read as
  * referring to a local issue of the same number.
  */
 

@@ -1,13 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render, mockAdminUser } from '../../utils/test-utils';
 import { setViewportWidth } from '../../setup';
 import { BottomNav } from '../../../components/navigation/BottomNav';
+import {
+  BOTTOM_NAV_MAX_ACTIONS,
+  DESTINATIONS,
+  bottomNavSplit,
+} from '../../../config/destinations';
 
 /**
- * The phone half of the coverage migrated from the deleted `Sidebar.test.tsx`:
- * four items, permission gating, active highlight, navigate-on-click.
+ * The phone half of the navigation. Issue #72, epic #19.
+ *
+ * The bar now carries three real destinations plus a synthetic More action
+ * that opens an overflow sheet, and the assertion this suite exists for is the
+ * ceiling: FOUR ACTIONS, at every permission shape, because `showLabels` is
+ * only legible at 360px while that holds. Nothing on screen tells you when it
+ * breaks — the labels just start truncating on the narrowest phones, which is
+ * the device least likely to be in the reviewer's hands.
  */
 
 vi.mock('../../../hooks/usePermissions', () => ({
@@ -43,6 +54,11 @@ function renderPhone(route = '/') {
   return result;
 }
 
+/** The bar's own actions — not the links inside an opened sheet. */
+function barActions() {
+  return screen.getAllByRole('button');
+}
+
 describe('BottomNav', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -63,75 +79,99 @@ describe('BottomNav', () => {
     it('renders below sm', () => {
       renderPhone();
 
-      expect(screen.getAllByRole('button').length).toBeGreaterThan(0);
+      expect(barActions().length).toBeGreaterThan(0);
     });
 
     it('appears and disappears across the sm boundary', async () => {
       renderPhone();
-      expect(screen.getByRole('button', { name: 'Home' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Cockpit' })).toBeInTheDocument();
 
       await act(async () => setViewportWidth(600));
-      expect(screen.queryByRole('button', { name: 'Home' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Cockpit' })).not.toBeInTheDocument();
 
       await act(async () => setViewportWidth(599));
-      expect(screen.getByRole('button', { name: 'Home' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Cockpit' })).toBeInTheDocument();
     });
   });
 
-  describe('Destinations', () => {
-    it('renders all four destinations for a fully permitted user', () => {
-      renderPhone();
+  describe('The four-action ceiling', () => {
+    it('never renders more than four actions, at any permission shape', () => {
+      // The load-bearing assertion of the whole component. Every shape a real
+      // user can have, including the ones that add and remove destinations.
+      const shapes = [
+        [],
+        ['users:read'],
+        ['system_settings:read'],
+        ADMIN_PERMISSIONS,
+      ];
 
-      expect(screen.getByRole('button', { name: 'Home' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'User Settings' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'User Management' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'System Settings' })).toBeInTheDocument();
+      for (const granted of shapes) {
+        setPermissions(granted, granted.length > 0);
+        const { unmount } = renderPhone();
+
+        expect(barActions().length, `permissions: [${granted.join(', ')}]`).toBeLessThanOrEqual(
+          BOTTOM_NAV_MAX_ACTIONS,
+        );
+
+        unmount();
+      }
     });
 
-    it('shows the compact label as visible text but the full label as the accessible name', () => {
-      // A 4-up bar at 375px gives each tab ~90px; "User Management" does not fit.
+    it('renders the three primaries plus More for a fully permitted user', () => {
       renderPhone();
 
-      expect(screen.getByText('Users')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'User Management' })).toBeInTheDocument();
+      expect(barActions()).toHaveLength(4);
+      expect(screen.getByRole('button', { name: 'Cockpit' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Runs' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Queue' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'More destinations' })).toBeInTheDocument();
     });
 
-    it('never renders more than four actions — showLabels depends on it', () => {
-      renderPhone();
-
-      expect(screen.getAllByRole('button')).toHaveLength(4);
-    });
-
-    it('hides destinations the user lacks permission for', () => {
+    it('keeps the same three tabs for a user with no admin permissions', () => {
+      // The primaries carry no permission, so the bar's SHAPE is stable across
+      // users — only the sheet's contents change. A bar that reflows between
+      // roles is a bar whose muscle memory is worthless.
       setPermissions([]);
       renderPhone();
 
-      expect(screen.getAllByRole('button')).toHaveLength(2);
-      expect(screen.queryByRole('button', { name: 'User Management' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'System Settings' })).not.toBeInTheDocument();
+      expect(barActions()).toHaveLength(4);
+      expect(screen.getByRole('button', { name: 'Runs' })).toBeInTheDocument();
     });
 
-    it('gates on permission rather than the admin role', () => {
-      setPermissions(['system_settings:read'], false);
+    it('shows the compact label as visible text but the full label as the accessible name', () => {
+      // A 4-up bar at 375px gives each tab ~90px; "User Management" does not fit
+      // — which is exactly why that destination lives in the sheet now.
       renderPhone();
 
-      expect(screen.getByRole('button', { name: 'System Settings' })).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'User Management' })).not.toBeInTheDocument();
+      expect(screen.getByText('Cockpit')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'More destinations' })).toHaveTextContent('More');
     });
   });
 
   describe('Active state', () => {
-    it('selects the destination that owns the route', () => {
+    it('selects the primary that owns the route', () => {
+      renderPhone('/queue');
+
+      expect(screen.getByRole('button', { name: 'Queue' })).toHaveClass('Mui-selected');
+      expect(screen.getByRole('button', { name: 'Cockpit' })).not.toHaveClass('Mui-selected');
+    });
+
+    it('selects More when the route belongs to an overflow destination', () => {
+      // The operator IS somewhere. "Nothing selected" while standing on
+      // /settings would be a lie about location, not a tasteful absence.
       renderPhone('/settings');
 
-      expect(screen.getByRole('button', { name: 'User Settings' })).toHaveClass('Mui-selected');
-      expect(screen.getByRole('button', { name: 'Home' })).not.toHaveClass('Mui-selected');
+      expect(screen.getByRole('button', { name: 'More destinations' })).toHaveClass(
+        'Mui-selected',
+      );
     });
 
     it('resolves a child route to its parent destination', () => {
       renderPhone('/admin/users/abc-123');
 
-      expect(screen.getByRole('button', { name: 'User Management' })).toHaveClass('Mui-selected');
+      expect(screen.getByRole('button', { name: 'More destinations' })).toHaveClass(
+        'Mui-selected',
+      );
     });
 
     it('selects NOTHING on a route no destination owns', () => {
@@ -139,7 +179,7 @@ describe('BottomNav', () => {
       // selected" — and an unowned route is exactly where that must show.
       renderPhone('/settingsfoo');
 
-      for (const action of screen.getAllByRole('button')) {
+      for (const action of barActions()) {
         expect(action).not.toHaveClass('Mui-selected');
       }
     });
@@ -148,7 +188,7 @@ describe('BottomNav', () => {
       setPermissions([]);
       renderPhone('/admin/settings');
 
-      for (const action of screen.getAllByRole('button')) {
+      for (const action of barActions()) {
         expect(action).not.toHaveClass('Mui-selected');
       }
     });
@@ -159,23 +199,178 @@ describe('BottomNav', () => {
       const user = userEvent.setup();
       renderPhone('/');
 
-      await user.click(screen.getByRole('button', { name: 'User Settings' }));
+      await user.click(screen.getByRole('button', { name: 'Runs' }));
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'User Settings' })).toHaveClass('Mui-selected');
+        expect(screen.getByRole('button', { name: 'Runs' })).toHaveClass('Mui-selected');
       });
     });
 
-    it('reaches every destination the old Sidebar offered', async () => {
+    it('reaches every primary destination', async () => {
       const user = userEvent.setup();
       renderPhone('/');
 
-      for (const name of ['User Settings', 'User Management', 'System Settings', 'Home']) {
+      for (const name of ['Runs', 'Queue', 'Cockpit']) {
         await user.click(screen.getByRole('button', { name }));
         await waitFor(() => {
           expect(screen.getByRole('button', { name })).toHaveClass('Mui-selected');
         });
       }
+    });
+  });
+
+  describe('The More sheet', () => {
+    it('opens a labelled dialog holding exactly the overflow set', async () => {
+      const user = userEvent.setup();
+      renderPhone('/');
+
+      await user.click(screen.getByRole('button', { name: 'More destinations' }));
+
+      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
+      const { overflow } = bottomNavSplit(() => true);
+
+      for (const destination of overflow) {
+        expect(
+          within(sheet).getByRole('link', { name: destination.label }),
+        ).toHaveAttribute('href', destination.path);
+      }
+      // EXACTLY the overflow: no destination appears both on the bar and in the
+      // sheet, and none is invented locally.
+      expect(within(sheet).getAllByRole('link')).toHaveLength(overflow.length);
+      expect(
+        within(sheet).queryByRole('link', { name: 'Cockpit' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('every destination is reachable from the bar or the sheet', async () => {
+      // The claim the overflow design has to make good on: adding four
+      // destinations must not strand any of them on a phone.
+      const user = userEvent.setup();
+      renderPhone('/');
+
+      // Collected BEFORE the sheet opens: the modal marks the rest of the
+      // document `aria-hidden`, so a role query would not find the bar's own
+      // tabs while it is up — correctly, since they are not reachable then.
+      const onBar = barActions().map((action) => action.getAttribute('aria-label'));
+
+      await user.click(screen.getByRole('button', { name: 'More destinations' }));
+      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
+
+      for (const destination of DESTINATIONS) {
+        const inSheet = within(sheet).queryByRole('link', { name: destination.label });
+        expect(
+          onBar.includes(destination.label) || inSheet !== null,
+          `${destination.key} is unreachable`,
+        ).toBe(true);
+      }
+    });
+
+    it('hides the destinations the user lacks permission for', async () => {
+      const user = userEvent.setup();
+      setPermissions([]);
+      renderPhone('/');
+
+      await user.click(screen.getByRole('button', { name: 'More destinations' }));
+      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
+
+      expect(within(sheet).getByRole('link', { name: 'User Settings' })).toBeInTheDocument();
+      expect(
+        within(sheet).queryByRole('link', { name: 'User Management' }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(sheet).queryByRole('link', { name: 'System Settings' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('gates on permission rather than the admin role', async () => {
+      const user = userEvent.setup();
+      setPermissions(['system_settings:read'], false);
+      renderPhone('/');
+
+      await user.click(screen.getByRole('button', { name: 'More destinations' }));
+      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
+
+      expect(within(sheet).getByRole('link', { name: 'System Settings' })).toBeInTheDocument();
+      expect(
+        within(sheet).queryByRole('link', { name: 'User Management' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('groups the sheet by section', async () => {
+      const user = userEvent.setup();
+      renderPhone('/');
+
+      await user.click(screen.getByRole('button', { name: 'More destinations' }));
+      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
+
+      expect(within(sheet).getByRole('list', { name: 'Operate' })).toBeInTheDocument();
+      expect(within(sheet).getByRole('list', { name: 'Account' })).toBeInTheDocument();
+      expect(within(sheet).getByRole('list', { name: 'Administration' })).toBeInTheDocument();
+    });
+
+    it('drops a section that empties under permission filtering', async () => {
+      // No orphan "Administration" header above nothing for a Viewer.
+      const user = userEvent.setup();
+      setPermissions([]);
+      renderPhone('/');
+
+      await user.click(screen.getByRole('button', { name: 'More destinations' }));
+      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
+
+      expect(within(sheet).queryByRole('list', { name: 'Administration' })).not.toBeInTheDocument();
+      expect(within(sheet).queryByText('Administration')).not.toBeInTheDocument();
+    });
+
+    it('closes when a destination is chosen', async () => {
+      // Otherwise the sheet sits over the page it just navigated to, which on a
+      // phone reads as "the tap did nothing".
+      const user = userEvent.setup();
+      renderPhone('/');
+
+      await user.click(screen.getByRole('button', { name: 'More destinations' }));
+      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
+      await user.click(within(sheet).getByRole('link', { name: 'User Settings' }));
+
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      });
+      expect(screen.getByRole('button', { name: 'More destinations' })).toHaveClass(
+        'Mui-selected',
+      );
+    });
+
+    it('closes on Escape without navigating', async () => {
+      const user = userEvent.setup();
+      renderPhone('/');
+
+      await user.click(screen.getByRole('button', { name: 'More destinations' }));
+      await screen.findByRole('dialog', { name: 'More destinations' });
+
+      await user.keyboard('{Escape}');
+
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      });
+      // Still on `/`, so the Cockpit tab is still the selected one.
+      expect(screen.getByRole('button', { name: 'Cockpit' })).toHaveClass('Mui-selected');
+    });
+
+    it('reports its expanded state on the trigger', async () => {
+      const user = userEvent.setup();
+      renderPhone('/');
+
+      const more = screen.getByRole('button', { name: 'More destinations' });
+      expect(more).toHaveAttribute('aria-expanded', 'false');
+      expect(more).toHaveAttribute('aria-haspopup', 'dialog');
+
+      await user.click(more);
+
+      // Held by reference rather than re-queried: with the sheet open the bar
+      // is behind the modal's `aria-hidden`, so a role query would (rightly)
+      // not see it.
+      await waitFor(() => {
+        expect(more).toHaveAttribute('aria-expanded', 'true');
+      });
     });
   });
 });

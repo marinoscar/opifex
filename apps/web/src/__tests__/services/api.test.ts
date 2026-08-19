@@ -1,7 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
-import { api, ApiError } from '../../services/api';
+import {
+  api,
+  ApiError,
+  getCockpitMetrics,
+  getRunsNeedingAttention,
+  getRunQueue,
+  getActivityFeed,
+} from '../../services/api';
+import { COCKPIT_ENDPOINTS } from '../../config/cockpitApi';
 
 describe('ApiService', () => {
   beforeEach(() => {
@@ -657,6 +665,198 @@ describe('ApiService', () => {
       const result = await api.get('/legacy');
 
       expect(result).toEqual({ users: [], count: 0 });
+    });
+  });
+});
+
+/**
+ * The cockpit endpoints (epic #19).
+ *
+ * ⚠️ None of these four exist in `apps/api` yet, and nothing in the running app
+ * calls them — `COCKPIT_ENDPOINTS[…].available` is `false` for all of them, and
+ * every cockpit hook reads that into `usePolledResource`'s `enabled`.
+ *
+ * They are tested anyway, against MSW stand-ins, for the same reason they are
+ * declared: this suite is what turns four typed function signatures into a
+ * SPECIFICATION of the endpoints — request path, query string, `{ data }`
+ * unwrapping, abort-signal forwarding — rather than a guess about them. The day
+ * the API lands, a mismatch shows up here and not in a component reading
+ * `undefined`.
+ */
+describe('Cockpit API', () => {
+  beforeEach(() => {
+    api.setAccessToken('test-token');
+  });
+
+  describe('getCockpitMetrics', () => {
+    it('GETs the metrics summary and unwraps the envelope', async () => {
+      const summary = {
+        generatedAt: '2026-08-19T12:00:00.000Z',
+        window: { from: '2026-08-12T12:00:00.000Z', to: '2026-08-19T12:00:00.000Z' },
+        metrics: {
+          detectionLatency: { value: 45, trend: [90, 45] },
+          deadTimePerDay: { value: 1.5, trend: [] },
+          firstPassAcceptance: { value: 0.82, trend: [] },
+          attemptsPerWorkOrder: { value: 1.4, trend: [] },
+          costPerMergedPr: { value: 12.4, trend: [] },
+          quotaBurn: { value: null, trend: [] },
+        },
+      };
+
+      server.use(
+        http.get('*/api/metrics/summary', () => HttpResponse.json({ data: summary })),
+      );
+
+      const result = await getCockpitMetrics();
+
+      expect(result).toEqual(summary);
+      // `null` survives the round trip as `null`. If this ever came back as 0
+      // the dashboard would report a measurement nobody took.
+      expect(result.metrics.quotaBurn.value).toBeNull();
+    });
+
+    it('forwards an abort signal', async () => {
+      server.use(
+        http.get('*/api/metrics/summary', () => HttpResponse.json({ data: {} })),
+      );
+
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(getCockpitMetrics(controller.signal)).rejects.toThrow();
+    });
+
+    it('requests the path the endpoint registry documents', async () => {
+      let requestPath = '';
+      server.use(
+        http.get('*/api/metrics/summary', ({ request }) => {
+          requestPath = new URL(request.url).pathname;
+          return HttpResponse.json({ data: {} });
+        }),
+      );
+
+      await getCockpitMetrics();
+
+      // The registry is the human-readable half of this contract and the
+      // function is the executable half; they must not drift apart.
+      expect(requestPath).toBe(`/api${COCKPIT_ENDPOINTS.metrics.path}`);
+    });
+  });
+
+  describe('getRunsNeedingAttention', () => {
+    it('filters server-side and returns the run list', async () => {
+      let query: URLSearchParams | null = null;
+
+      server.use(
+        http.get('*/api/runs', ({ request }) => {
+          query = new URL(request.url).searchParams;
+          return HttpResponse.json({ data: [{ id: 'run-1' }] });
+        }),
+      );
+
+      const result = await getRunsNeedingAttention({ limit: 5 });
+
+      expect(result).toEqual([{ id: 'run-1' }]);
+      // The watchdog's verdict belongs to the control plane. A UI filtering by
+      // status locally would be a second, lagging copy of the escalation rules.
+      expect(query!.get('needsAttention')).toBe('true');
+      expect(query!.get('limit')).toBe('5');
+    });
+
+    it('omits the limit when none is given', async () => {
+      let query: URLSearchParams | null = null;
+
+      server.use(
+        http.get('*/api/runs', ({ request }) => {
+          query = new URL(request.url).searchParams;
+          return HttpResponse.json({ data: [] });
+        }),
+      );
+
+      await getRunsNeedingAttention();
+
+      expect(query!.get('needsAttention')).toBe('true');
+      expect(query!.has('limit')).toBe(false);
+    });
+  });
+
+  describe('getRunQueue', () => {
+    it('GETs the queue with a limit', async () => {
+      let url = '';
+      server.use(
+        http.get('*/api/queue', ({ request }) => {
+          url = request.url;
+          return HttpResponse.json({ data: [{ id: 'queue-1' }] });
+        }),
+      );
+
+      const result = await getRunQueue({ limit: 5 });
+
+      expect(result).toEqual([{ id: 'queue-1' }]);
+      expect(new URL(url).searchParams.get('limit')).toBe('5');
+    });
+
+    it('GETs the bare path when no limit is given', async () => {
+      let url = '';
+      server.use(
+        http.get('*/api/queue', ({ request }) => {
+          url = request.url;
+          return HttpResponse.json({ data: [] });
+        }),
+      );
+
+      await getRunQueue();
+
+      // No trailing `?` — a bare path, matching the registry entry exactly.
+      expect(new URL(url).search).toBe('');
+    });
+  });
+
+  describe('getActivityFeed', () => {
+    it('defaults to the endpoint-documented limit of 20', async () => {
+      let query: URLSearchParams | null = null;
+
+      server.use(
+        http.get('*/api/events', ({ request }) => {
+          query = new URL(request.url).searchParams;
+          return HttpResponse.json({ data: [] });
+        }),
+      );
+
+      await getActivityFeed();
+
+      expect(query!.get('limit')).toBe('20');
+    });
+
+    it('honours an explicit limit', async () => {
+      let query: URLSearchParams | null = null;
+
+      server.use(
+        http.get('*/api/events', ({ request }) => {
+          query = new URL(request.url).searchParams;
+          return HttpResponse.json({ data: [{ id: 'event-1' }] });
+        }),
+      );
+
+      const result = await getActivityFeed({ limit: 10 });
+
+      expect(query!.get('limit')).toBe('10');
+      expect(result).toEqual([{ id: 'event-1' }]);
+    });
+  });
+
+  describe('error handling', () => {
+    it('throws a typed ApiError when the endpoint does not exist yet', async () => {
+      // Which is the state of the world today — and precisely why the hooks
+      // never call these: `enabled: false` means the dashboard never has to
+      // turn a 404 into a story about the runs.
+      server.use(
+        http.get('*/api/metrics/summary', () =>
+          HttpResponse.json({ message: 'Not Found', code: 'NOT_FOUND' }, { status: 404 }),
+        ),
+      );
+
+      await expect(getCockpitMetrics()).rejects.toBeInstanceOf(ApiError);
     });
   });
 });

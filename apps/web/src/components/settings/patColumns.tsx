@@ -1,6 +1,6 @@
 /**
  * Settings → Personal access tokens: the DataTable column contract
- * (issue #67, epic #51).
+ * (upstream template issue #67, epic #51).
  *
  * ## What `GET /api/pat` honours: nothing
  *

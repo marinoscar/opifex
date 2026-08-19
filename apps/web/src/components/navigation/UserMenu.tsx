@@ -50,11 +50,18 @@ export function UserMenu() {
   // the sidebar gated the same page on the `admin` ROLE — the two disagreed for
   // any Contributor granted that permission. There is now one answer.
   //
-  // Home is dropped: the brand in the AppBar already routes there, and a menu
-  // row duplicating on-screen chrome is the exact bloat this epic removes.
+  // The filter is the SECTION, not a list of excluded keys (issue #70). This
+  // menu used to drop `home` by name, which meant every destination added
+  // anywhere in the app arrived here by default — four planned cockpit pages
+  // would have landed in the avatar menu without anyone deciding they should.
+  // Now the menu owns exactly one section, and the rail's Administration group
+  // plus the phone's More sheet cover the rest on every surface.
+  //
+  // The practical result is a fixed three-row menu — identity, User Settings,
+  // Logout — which is what an avatar menu is for: the ACCOUNT, not the app.
   const menuDestinations = DESTINATIONS.filter(
     (destination) =>
-      destination.key !== 'home' &&
+      destination.section === 'account' &&
       (!destination.permission || hasPermission(destination.permission)),
   );
 

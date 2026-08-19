@@ -1,0 +1,77 @@
+name: Bug report
+description: 'Report a defect. Filed before the fix starts (CLAUDE.md → "MANDATORY: Issue-Driven Development"). Search open issues first — do not file a duplicate.'
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What's wrong, in a sentence or two.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Exact, numbered steps to reproduce.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - api
+        - web
+        - db
+        - infra
+        - auth
+        - ui
+        - core
+        - jobs
+        - docs
+        - tests
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment-logs
+    attributes:
+      label: Environment / logs
+      description: Node version, OS, relevant log output or stack trace, if known.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "Critical — data loss or system down"
+        - "High — major function broken, no workaround"
+        - "Medium — function broken, workaround exists"
+        - "Low — cosmetic or minor inconvenience"
+    validations:
+      required: true

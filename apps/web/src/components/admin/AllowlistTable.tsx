@@ -1,5 +1,5 @@
 /**
- * Admin → Allowlist (issue #67, epic #51).
+ * Admin → Allowlist (upstream template issue #67, epic #51).
  *
  * The hand-rolled `TableContainer` block is deleted wholesale. Three specific
  * conversions, each of them a shape the card renderer could not otherwise have:

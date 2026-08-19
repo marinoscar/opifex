@@ -20,14 +20,28 @@
  * `theme/light.ts` / `theme/dark.ts` as they stand, NOT carried over from the
  * upstream palette this suite was ported from. They are recorded so that a
  * future palette change shows up as a diff in intent, not just as a pass/fail
- * flip — several pairs clear their floor by very little (`primary.main` on
- * paper in the light theme is 4.60:1 against a 4.5:1 requirement).
+ * flip.
+ *
+ * **Re-measured for the epic #19 cockpit palette.** Both palettes are now
+ * assembled from `theme/tokens.ts` (brand indigo, a cool-neutral surface ramp,
+ * and the semantic channels pinned to the run-status vocabulary), so every
+ * ratio below moved. The headroom improved across the board — the old light
+ * `primary.main` (#1976d2 on white) cleared AA normal text by 0.10, the indigo
+ * that replaced it clears it by 3.40 — but the numbers are re-pinned rather
+ * than dropped, because the point of recording them is to notice the NEXT
+ * move, not to celebrate this one.
+ *
+ * The palette-wide properties (every STATUS color against every surface,
+ * luminance separation between confusable statuses, brand-versus-status
+ * collision) are asserted in `src/__tests__/theme/tokens.test.ts`. This file
+ * stays scoped to the pairs the DataTable itself paints.
  *
  * ## Translucent FOREGROUNDS must be composited too
  *
  * This palette states its text colors as `rgba()` with alpha
  * (`text.primary` is `rgba(0, 0, 0, 0.87)`, `text.secondary` is
- * `rgba(0, 0, 0, 0.6)`), where the upstream palette used opaque hex. That
+ * `rgba(0, 0, 0, 0.6)`, and the dark secondary tier is
+ * `rgba(247, 248, 250, 0.7)`), where the upstream palette used opaque hex. That
  * difference is load-bearing here: `contrastRatio()` only composites a
  * translucent color when it is given the opaque surface behind it, so calling
  * it with two arguments would treat `rgba(0, 0, 0, 0.6)` as pure black and
@@ -84,13 +98,14 @@ describe('DataTable — WCAG contrast (computed against the real theme)', () => 
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     });
 
-    // Measured: 16.67:1. `text.primary` is opaque #ffffff in the dark palette.
+    // Measured: 13.77:1. `text.primary` is opaque #F7F8FA (`neutral[50]`) on
+    // the #1E293B card — no longer pure white on near-black.
     it('dark theme: text.primary on background.paper meets AA normal text (4.5:1)', () => {
       const ratio = contrastRatio(darkPalette.text!.primary!, DARK_PAPER, DARK_PAPER);
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     });
 
-    // Measured: 8.73:1. rgba(255,255,255,0.7) composited over #1e1e1e.
+    // Measured: 7.50:1. rgba(247,248,250,0.7) composited over #1E293B.
     it('dark theme: text.secondary on background.paper meets AA normal text (4.5:1)', () => {
       const ratio = contrastRatio(darkPalette.text!.secondary!, DARK_PAPER, DARK_PAPER);
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
@@ -111,7 +126,7 @@ describe('DataTable — WCAG contrast (computed against the real theme)', () => 
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     });
 
-    // Measured: 13.50:1.
+    // Measured: 11.02:1.
     it('dark theme: text.primary over the selected-row tint (composited over paper) meets AA', () => {
       const ratio = contrastRatio(darkPalette.text!.primary!, SELECTED_ROW_TINT_DARK, DARK_PAPER);
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
@@ -133,7 +148,7 @@ describe('DataTable — WCAG contrast (computed against the real theme)', () => 
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     });
 
-    // Measured: 8.05:1.
+    // Measured: 6.87:1.
     it('dark theme: text.secondary over the detail wash (composited over paper) meets AA', () => {
       const ratio = contrastRatio(
         darkPalette.text!.secondary!,
@@ -150,15 +165,16 @@ describe('DataTable — WCAG contrast (computed against the real theme)', () => 
     // row's border all use. WCAG 1.4.11 (non-text contrast) sets the floor at
     // 3:1 against its background, not the stricter 4.5:1 for body text.
 
-    // Measured: 4.60:1 — #1976d2 on #ffffff. The tightest ratio in this file:
-    // it clears AA normal text by 0.10, so any darkening of `background.paper`
-    // or lightening of `primary.main` needs re-checking here first.
+    // Measured: 7.90:1 — the brand indigo #4338CA on #ffffff. This pair used
+    // to be the tightest in the file (#1976d2 cleared AA normal text by 0.10).
+    // The accent is additionally held to 4.5:1 against BOTH surfaces in
+    // `tokens.test.ts`, because it paints link text and not only borders.
     it('light theme: primary.main on background.paper meets the UI-component floor (3:1)', () => {
       const ratio = contrastRatio(lightPalette.primary!.main!, LIGHT_PAPER);
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_UI_COMPONENT);
     });
 
-    // Measured: 9.53:1 — #90caf9 on #1e1e1e.
+    // Measured: 7.34:1 — #A5B4FC on #1E293B.
     it('dark theme: primary.main on background.paper meets the UI-component floor (3:1)', () => {
       const ratio = contrastRatio(darkPalette.primary!.main!, DARK_PAPER);
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_UI_COMPONENT);
@@ -182,30 +198,44 @@ describe('DataTable — WCAG contrast (computed against the real theme)', () => 
 
   describe('error (destructive) palette', () => {
     // Destructive row/bulk actions (`destructive: true`) paint in
-    // `theme.palette.error.main`. Neither `light.ts` nor `dark.ts` overrides
-    // `error`, so this pins MUI's OWN default (#d32f2f light, #f44336 dark) —
-    // if a future palette change ever adds a custom override, this test starts
-    // exercising it for free.
+    // `theme.palette.error.main`. That is no longer MUI's default: epic #19
+    // pins `error` to the `failed` RUN-STATUS token, so a destructive action
+    // and a failed run are the same red. The previous version of this block
+    // anticipated exactly that — "if a future palette change ever adds a custom
+    // override, this test starts exercising it for free".
+    //
+    // The '#d32f2f' / '#f44336' literals are therefore gone: the values are
+    // read from the palette, and the pinning test below asserts WHICH token
+    // they come from. Hardcoding the new hexes would just recreate the coupling
+    // this change resolved.
 
-    // Measured: 4.98:1.
-    it('light theme: the default error.main on background.paper meets the UI-component floor', () => {
-      const ratio = contrastRatio('#d32f2f', LIGHT_PAPER);
+    // Measured: 6.47:1 — #B91C1C on #ffffff.
+    it('light theme: error.main on background.paper meets the UI-component floor', async () => {
+      const { lightTheme } = await import('../../../theme');
+      const ratio = contrastRatio(lightTheme.palette.error.main, LIGHT_PAPER);
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_UI_COMPONENT);
+      // A destructive action's LABEL is colored text, not just an icon, so it
+      // is held to the stricter normal-text floor too.
+      expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     });
 
-    // Measured: 4.53:1.
-    it('dark theme: the default error.main on background.paper meets the UI-component floor', () => {
-      const ratio = contrastRatio('#f44336', DARK_PAPER);
+    // Measured: 5.29:1 — #F87171 on #1E293B.
+    it('dark theme: error.main on background.paper meets the UI-component floor', async () => {
+      const { darkTheme } = await import('../../../theme');
+      const ratio = contrastRatio(darkTheme.palette.error.main, DARK_PAPER);
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_UI_COMPONENT);
+      expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     });
 
-    // The two literals above are MUI's defaults, asserted against the real
-    // themes so a palette that starts overriding `error` fails here loudly
-    // rather than leaving these two tests quietly checking a dead constant.
-    it('pins the error.main values these ratios were computed from', async () => {
+    // Pins WHERE error.main comes from. Re-point `error` at a bespoke red and
+    // the two tests above keep passing (any legible red would) while the design
+    // rule they exist to protect is quietly broken — a destructive action and a
+    // failed run drifting into two different reds.
+    it('sources error.main from the failed run-status token', async () => {
       const { lightTheme, darkTheme } = await import('../../../theme');
-      expect(lightTheme.palette.error.main).toBe('#d32f2f');
-      expect(darkTheme.palette.error.main).toBe('#f44336');
+      const { statusTokens } = await import('../../../theme/tokens');
+      expect(lightTheme.palette.error.main).toBe(statusTokens.light.failed.fg);
+      expect(darkTheme.palette.error.main).toBe(statusTokens.dark.failed.fg);
     });
   });
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
-import { render } from '../utils/test-utils';
+import { render, mockUser } from '../utils/test-utils';
 import UserSettingsPage from '../../pages/UserSettingsPage';
 
 // Mock the hooks
@@ -308,4 +308,83 @@ describe('UserSettingsPage', () => {
       });
     });
   });
+
+  /**
+   * The identity header, moved here from the old home page (issue #75).
+   *
+   * `/settings` is the one page that is entirely about the current user and it
+   * had no indication of WHOSE settings were being edited. The cockpit, which
+   * is about the fleet rather than about a person, is where it did not belong.
+   */
+  describe('Identity header', () => {
+    it('shows who is signed in', () => {
+      render(<UserSettingsPage />);
+
+      expect(screen.getByText(mockUser.email)).toBeInTheDocument();
+      expect(screen.getByText(mockUser.displayName!)).toBeInTheDocument();
+      expect(screen.getByText('Member since')).toBeInTheDocument();
+    });
+
+    it('drops the card\'s "Account Settings" button, which pointed here', () => {
+      // A button navigating to the page you are already on is a dead control,
+      // and this is the most conspicuous place to leave one.
+      render(<UserSettingsPage />);
+
+      expect(
+        screen.queryByRole('button', { name: /account settings/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('renders above the settings cards', () => {
+      render(<UserSettingsPage />);
+
+      const email = screen.getByText(mockUser.email);
+      const themeCard = document.getElementById('theme')!;
+
+      expect(
+        email.compareDocumentPosition(themeCard) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+  });
+
+  /**
+   * `/settings#theme` (issue #78).
+   *
+   * The `#theme` anchor always existed — `ThemeSettings` renders
+   * `<Card id="theme">`. The bug was that react-router does no hash scrolling
+   * and this page returns a spinner until settings resolve, so the target is
+   * absent at navigation time. Hence the `ready` gate.
+   */
+  describe('Hash navigation', () => {
+    it('scrolls to and focuses the theme card once settings have loaded', () => {
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+
+      render(<UserSettingsPage />, { wrapperOptions: { route: '/settings#theme' } });
+
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(document.activeElement).toBe(document.getElementById('theme'));
+    });
+
+    it('does nothing while the page is still a spinner', () => {
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+
+      mockUseUserSettings.mockReturnValue({
+        settings: null,
+        isLoading: true,
+        error: null,
+        isSaving: false,
+        updateSettings: vi.fn(),
+        updateTheme: vi.fn(),
+        updateProfile: vi.fn(),
+        refresh: vi.fn(),
+      });
+
+      render(<UserSettingsPage />, { wrapperOptions: { route: '/settings#theme' } });
+
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
+  });
+
 });

@@ -1,5 +1,5 @@
 /**
- * Admin → Users (issue #67, epic #51).
+ * Admin → Users (upstream template issue #67, epic #51).
  *
  * The hand-rolled `TableContainer` / `TablePagination` / `MoreVert` block this
  * file used to be is gone wholesale — not wrapped — and replaced by the shared

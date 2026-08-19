@@ -1665,7 +1665,7 @@ apps/web/src/
 - ✅ Test RBAC logic with integration tests
 - ✅ Log security events to audit table
 - ✅ Use environment variables for all secrets
-- ✅ Keep dependencies updated (Dependabot is configured at `.github/dependabot.yml` for weekly npm, GitHub Actions, and Docker updates; `npm audit` currently reports 0 vulnerabilities on this branch — note there is no automated `npm audit` gate in CI, so run it manually before releases)
+- ✅ Keep dependencies updated (Dependabot is configured at `.github/dependabot.yml` for weekly npm updates across the root, `apps/api`, and `apps/web` workspaces, plus weekly GitHub Actions updates — there is no Docker/base-image ecosystem entry yet; `npm audit` currently reports 0 vulnerabilities on this branch — note there is no automated `npm audit` gate in CI, so run it manually before releases)
 - ✅ Add users to allowlist before sharing OAuth login link
 - ✅ Use user deactivation (`isActive: false`) instead of allowlist removal to revoke access
 

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **CI**: GitHub Actions pipeline (`.github/workflows/ci.yml`) with `typecheck`, `test-api`, `test-web`, and `build` jobs, running on pull requests and pushes to `main`.
+- **Dependency updates**: Dependabot configuration (`.github/dependabot.yml`) for weekly npm updates across the root, `apps/api`, and `apps/web` workspaces, plus weekly GitHub Actions updates.
+- **Governance**: GitHub issue templates (Epic, Feature request, Bug report), a pull request template with required provenance trailers, a machine-readable label taxonomy (`.github/labels.yml`), and `.github/CODEOWNERS`.
+
 ## [1.1.0] - 2026-06-10
 
 ### Changed
@@ -131,7 +139,6 @@ Enterprise Application Foundation - A production-grade full-stack application fo
 #### Testing
 - Backend: Jest + Supertest for unit and integration tests
 - Frontend: Vitest + React Testing Library
-- CI pipeline with GitHub Actions
 
 ### API Endpoints
 

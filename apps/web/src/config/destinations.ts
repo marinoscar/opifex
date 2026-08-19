@@ -1,13 +1,15 @@
 /**
- * The destination model — canonical keys, route ownership, and active state.
+ * The destination model — canonical keys, sections, route ownership, and
+ * active state.
  *
- * Issue #55, epic #51. This file is the SINGLE source of truth for the app's
- * navigation targets. Before it existed the same four menu paths were spelled
- * out in four places (`App.tsx`, `Sidebar.tsx`, `UserMenu.tsx`,
- * `home/QuickActions.tsx`), each with its own idea of who was allowed to see
- * them — which is how a Contributor holding `system_settings:read` ended up
- * with a working System Settings page, a menu entry pointing at it, and no
- * sidebar row: three gates, three answers.
+ * Issues #70 (destination model) and #71 (rail sections), epic #19. This file
+ * is the SINGLE source of truth for the app's navigation targets. Before it
+ * existed the same four menu paths were spelled out in four places
+ * (`App.tsx`, `Sidebar.tsx`, `UserMenu.tsx`, `home/QuickActions.tsx`), each
+ * with its own idea of who was allowed to see them — which is how a
+ * Contributor holding `system_settings:read` ended up with a working System
+ * Settings page, a menu entry pointing at it, and no sidebar row: three gates,
+ * three answers.
  *
  * Two rules make the ownership table trustworthy:
  *
@@ -25,17 +27,47 @@
  */
 
 import type { SvgIconComponent } from '@mui/icons-material';
-import HomeIcon from '@mui/icons-material/Home';
+import SpeedIcon from '@mui/icons-material/Speed';
+import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
+import PendingActionsIcon from '@mui/icons-material/PendingActions';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import PaidIcon from '@mui/icons-material/Paid';
 import SettingsIcon from '@mui/icons-material/Settings';
 import PeopleIcon from '@mui/icons-material/People';
 import AdminIcon from '@mui/icons-material/AdminPanelSettings';
 
-export type DestinationKey = 'home' | 'settings' | 'users' | 'system';
+export type DestinationKey =
+  | 'dashboard'
+  | 'runs'
+  | 'queue'
+  | 'projects'
+  | 'cost'
+  | 'settings'
+  | 'users'
+  | 'system';
+
+/**
+ * Sections group destinations in the rail and in the phone's overflow sheet.
+ *
+ * There are deliberately only three, and there is deliberately NO separate
+ * `/admin` sub-area. A second navigation model for administration would mean
+ * two ways to be "somewhere" in the app, and it would strand the
+ * longest-prefix rule below on its only real justification (`/admin/users`
+ * versus `/admin/settings` as siblings). Administration is a SECTION, not a
+ * place.
+ */
+export type DestinationSection = 'operate' | 'account' | 'admin';
+
+export const SECTIONS: readonly { key: DestinationSection; label: string }[] = [
+  { key: 'operate', label: 'Operate' },
+  { key: 'account', label: 'Account' },
+  { key: 'admin', label: 'Administration' },
+];
 
 /**
  * Does `prefix` own `path`? True when the path equals the prefix or continues
  * with a `/`. `'/'` matches only itself — every path starts with it, so the
- * root has to be exact or Home would own the entire app.
+ * root has to be exact or the dashboard would own the entire app.
  */
 export function owns(prefix: string, path: string): boolean {
   if (prefix === '/') return path === '/';
@@ -44,11 +76,15 @@ export function owns(prefix: string, path: string): boolean {
 
 /**
  * Route prefixes each destination owns. Child routes are covered by their
- * parent prefix (`/admin/users/:id`, `/settings/profile`, …) and do not need
+ * parent prefix (`/admin/users/:id`, `/projects/:id/runs`, …) and do not need
  * their own entries.
  */
 export const DESTINATION_ROUTES: Record<DestinationKey, readonly string[]> = {
-  home: ['/'],
+  dashboard: ['/'],
+  runs: ['/runs'],
+  queue: ['/queue'],
+  projects: ['/projects'],
+  cost: ['/cost'],
   settings: ['/settings'],
   users: ['/admin/users'],
   system: ['/admin/settings'],
@@ -81,18 +117,29 @@ export const UNOWNED_ROUTES: readonly string[] = [
  */
 export interface Destination {
   key: DestinationKey;
-  /** Full label — the expanded rail, the bottom bar, the user menu. */
+  /** Full label — the expanded rail, the More sheet, the user menu. */
   label: string;
-  /** Shown in the 56px collapsed rail, which will not hold "System Settings". */
+  /** Shown in the 56px collapsed rail and the bottom bar. Max 8 characters. */
   compactLabel: string;
   Icon: SvgIconComponent;
   path: string;
+  section: DestinationSection;
   /** API permission required to reach it; absent means "any authenticated user". */
   permission?: string;
+  /**
+   * `live` — the page is wired to an API that exists.
+   * `planned` — the page renders an honest not-yet-wired state.
+   *
+   * A planned destination is still NAVIGABLE on purpose: the cockpit's shape
+   * is part of what the app communicates (VISION §10), and a route that 404s
+   * until Phase 4 teaches the operator nothing. What it must never do is
+   * pretend to have data — see `components/common/NotWiredState.tsx`.
+   */
+  status: 'live' | 'planned';
 }
 
 /**
- * The four destinations, in navigation order.
+ * The destinations, in navigation order.
  *
  * GATING IS BY PERMISSION, NOT BY ROLE, and the permission is the one the API
  * actually enforces — verified against the controllers rather than assumed:
@@ -110,14 +157,68 @@ export interface Destination {
  * `isAdmin` is no longer a navigation gate anywhere. It still exists (and
  * `AdminOnly` with it) for non-navigation uses, but a role check here is what
  * produced the split-brain described in the file header.
+ *
+ * ## Planned destinations carry NO permission, and that is load-bearing
+ *
+ * The doctrine above is that a `permission` here is a string some controller
+ * REALLY enforces. `apps/api` has no runs, queue, projects or cost module, so
+ * there is no `runs:read` to require; inventing one would make this file lie,
+ * and — worse — would hide four destinations behind a permission the API can
+ * never grant, since it is in no role's permission set. A test asserts the
+ * invariant in both directions. When the runs controller lands, its
+ * destination flips to `live` and gains its real permission in the SAME pull
+ * request that adds the endpoint.
+ *
+ * Gating them on `system_settings.features` instead was considered and
+ * rejected: `GET /api/system-settings` 403s for non-admins, so a viewer's
+ * navigation would collapse to nothing. Never gate always-mounted chrome on
+ * an admin-only fetch.
  */
 export const DESTINATIONS: readonly Destination[] = [
   {
-    key: 'home',
-    label: 'Home',
-    compactLabel: 'Home',
-    Icon: HomeIcon,
+    key: 'dashboard',
+    label: 'Cockpit',
+    compactLabel: 'Cockpit',
+    Icon: SpeedIcon,
     path: '/',
+    section: 'operate',
+    status: 'live',
+  },
+  {
+    key: 'runs',
+    label: 'Runs',
+    compactLabel: 'Runs',
+    Icon: RocketLaunchIcon,
+    path: '/runs',
+    section: 'operate',
+    status: 'planned',
+  },
+  {
+    key: 'queue',
+    label: 'Queue',
+    compactLabel: 'Queue',
+    Icon: PendingActionsIcon,
+    path: '/queue',
+    section: 'operate',
+    status: 'planned',
+  },
+  {
+    key: 'projects',
+    label: 'Projects',
+    compactLabel: 'Projects',
+    Icon: AccountTreeIcon,
+    path: '/projects',
+    section: 'operate',
+    status: 'planned',
+  },
+  {
+    key: 'cost',
+    label: 'Cost',
+    compactLabel: 'Cost',
+    Icon: PaidIcon,
+    path: '/cost',
+    section: 'operate',
+    status: 'planned',
   },
   {
     key: 'settings',
@@ -125,6 +226,8 @@ export const DESTINATIONS: readonly Destination[] = [
     compactLabel: 'Settings',
     Icon: SettingsIcon,
     path: '/settings',
+    section: 'account',
+    status: 'live',
   },
   {
     key: 'users',
@@ -132,7 +235,9 @@ export const DESTINATIONS: readonly Destination[] = [
     compactLabel: 'Users',
     Icon: PeopleIcon,
     path: '/admin/users',
+    section: 'admin',
     permission: 'users:read',
+    status: 'live',
   },
   {
     key: 'system',
@@ -140,17 +245,21 @@ export const DESTINATIONS: readonly Destination[] = [
     compactLabel: 'System',
     Icon: AdminIcon,
     path: '/admin/settings',
+    section: 'admin',
     permission: 'system_settings:read',
+    status: 'live',
   },
 ];
 
 /**
  * Which destination, if any, owns `pathname`.
  *
- * Longest prefix wins where prefixes overlap. That rule earns its keep
- * immediately here: `/admin/users` and `/admin/settings` are siblings under a
- * common `/admin`, so the day anything claims the bare `/admin` prefix, the
- * more specific sibling must still win on its own route.
+ * Longest prefix wins where prefixes overlap. That rule earns its keep twice
+ * over: `/admin/users` and `/admin/settings` are siblings under a common
+ * `/admin`, so the day anything claims the bare `/admin` prefix the more
+ * specific sibling must still win on its own route — and `/projects/:id/runs`
+ * must resolve to Projects rather than to Runs, which it does because Runs
+ * owns `/runs` and nothing else.
  */
 export function resolveActiveDestination(pathname: string): DestinationKey | null {
   let best: { key: DestinationKey; length: number } | null = null;
@@ -168,4 +277,63 @@ export function resolveActiveDestination(pathname: string): DestinationKey | nul
   }
 
   return best?.key ?? null;
+}
+
+/**
+ * The hard ceiling on bottom-bar actions.
+ *
+ * FOUR is not a style preference. At 360px — the narrowest phone this app
+ * targets — four labelled tabs give each ~90px, which is exactly enough for
+ * an icon over one short word. A fifth forces a choice between the tab and
+ * `showLabels`, and dropping the labels is not available to this app: "Runs"
+ * versus "Queue" versus "Cost" are not distinguishable as icons alone, and
+ * Material 3 caps a label-less bar at five anyway. So the bar holds at most
+ * three real destinations plus the synthetic More action below.
+ */
+export const BOTTOM_NAV_MAX_ACTIONS = 4;
+
+/**
+ * The destinations that get a tab of their own on a phone, in bar order.
+ *
+ * Chosen by what an operator opens while walking away from the desk — the
+ * cockpit, what is running, what is waiting. Projects, Cost and everything
+ * administrative are reference material, and reference material belongs
+ * behind More rather than competing for one of three thumb-reachable slots.
+ */
+export const BOTTOM_NAV_KEYS: readonly DestinationKey[] = ['dashboard', 'runs', 'queue'];
+
+export interface BottomNavSplit {
+  /** Rendered as real tabs, in `BOTTOM_NAV_KEYS` order. */
+  primary: Destination[];
+  /** Rendered inside the More sheet, in `DESTINATIONS` order. */
+  overflow: Destination[];
+}
+
+/**
+ * Split the destinations this user can see into bar tabs and sheet entries.
+ *
+ * `canSee` is passed in rather than read from `usePermissions` here because
+ * this module is pure config — it has no hooks, which is what lets the split
+ * be unit-tested against arbitrary permission shapes without a React tree.
+ *
+ * The `slice` is not decoration. It guarantees `primary.length + 1 <=
+ * BOTTOM_NAV_MAX_ACTIONS` even if someone later appends a fourth key to
+ * `BOTTOM_NAV_KEYS`, and anything it drops falls through to `overflow` rather
+ * than disappearing — the bar can be wrong about PRIORITY, never about
+ * REACHABILITY.
+ */
+export function bottomNavSplit(canSee: (destination: Destination) => boolean): BottomNavSplit {
+  const visible = DESTINATIONS.filter(canSee);
+
+  const preferred = BOTTOM_NAV_KEYS.map((key) =>
+    visible.find((destination) => destination.key === key),
+  ).filter((destination): destination is Destination => destination !== undefined);
+
+  const primary = preferred.slice(0, BOTTOM_NAV_MAX_ACTIONS - 1);
+  const primaryKeys = new Set(primary.map((destination) => destination.key));
+
+  return {
+    primary,
+    overflow: visible.filter((destination) => !primaryKeys.has(destination.key)),
+  };
 }

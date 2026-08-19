@@ -1,5 +1,5 @@
 /**
- * Admin → Users: the "Manage roles" dialog (issue #67, epic #51).
+ * Admin → Users: the "Manage roles" dialog (upstream template issue #67, epic #51).
  *
  * ## Why a dialog and not the nested menu it replaces
  *
