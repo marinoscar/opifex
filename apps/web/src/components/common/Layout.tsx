@@ -7,8 +7,8 @@ import { BottomNav } from '../navigation/BottomNav';
 /**
  * The app shell — two navigation treatments, one per size class.
  *
- * Issue #55, epic #51. The `Sidebar` drawer this used to mount is gone from
- * every breakpoint:
+ * Epic #19 (issues #71 and #72). The `Sidebar` drawer this used to mount is
+ * gone from every breakpoint:
  *
  *   compact (< sm)  →  bottom bar only. No drawer, no hamburger, and so NO
  *                      DRAWER STATE TO MANAGE — which is why this component no

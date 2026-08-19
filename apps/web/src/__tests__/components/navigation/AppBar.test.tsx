@@ -28,7 +28,7 @@ describe('AppBar', () => {
     /**
      * NEGATIVE assertions, and deliberately so. The hamburger and the
      * `onMenuClick` prop it called were deleted with the temporary drawer in
-     * issue #55; navigation is the bottom bar below `sm` and the permanent rail
+     * epic #19; navigation is the bottom bar below `sm` and the permanent rail
      * at `sm` and up. Nothing else in the suite would notice a hamburger coming
      * back — it would simply be an extra button — so these tests are the only
      * thing standing between a stray re-add and a dead affordance shipping.

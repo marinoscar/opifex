@@ -72,7 +72,7 @@ describe('App', () => {
 
   describe('Route-level authorization', () => {
     /**
-     * Issue #55. `ProtectedRoute` establishes only that SOMEONE is logged in.
+     * Epic #19. `ProtectedRoute` establishes only that SOMEONE is logged in.
      * Authorization now happens at the route too, through `RequirePermission`
      * — which until this change was dead code with zero usages anywhere in the
      * app despite existing, tested, in `components/common/`.

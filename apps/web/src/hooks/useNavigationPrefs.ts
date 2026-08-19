@@ -1,7 +1,7 @@
 /**
  * `user_settings.navigation` — the navigation rail's collapse preference.
  *
- * Issue #55, epic #51. **No new endpoint and no new request pattern**: this
+ * Issue #71 (rail sections), epic #19. **No new endpoint and no new request pattern**: this
  * reads and writes the same `GET`/`PATCH /api/user-settings` the rest of the
  * app already uses, through the same `useUserSettings` hook, exactly like the
  * `dataTables` namespace. The server side already merges this namespace
