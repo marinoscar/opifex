@@ -1,6 +1,6 @@
 import { trace, SpanKind, SpanStatusCode } from '@opentelemetry/api';
 
-const tracer = trace.getTracer('enterprise-app-api');
+const tracer = trace.getTracer('opifex-api');
 
 /**
  * Decorator to add tracing to a method

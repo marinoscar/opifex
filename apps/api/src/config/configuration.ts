@@ -58,7 +58,7 @@ export default () => {
   otel: {
     enabled: process.env.OTEL_ENABLED === 'true',
     endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
-    serviceName: process.env.OTEL_SERVICE_NAME || 'enterprise-app-api',
+    serviceName: process.env.OTEL_SERVICE_NAME || 'opifex-api',
   },
 
   // Storage Configuration
