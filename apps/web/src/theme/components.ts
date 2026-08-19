@@ -126,9 +126,8 @@ export const componentOverrides = (): Components<Theme> => ({
    * This was hand-rolled twice inside `NavigationRail.tsx` (the destination
    * rows and the collapse toggle), each with its own copy of the same two
    * declarations. Stating it here means a keyboard user cannot lose the ring
-   * because one call site was missed — and the rail's local copies become
-   * redundant rather than load-bearing, so they can be deleted when the
-   * navigation work lands.
+   * because one call site was missed — and both of the rail's local copies are
+   * now deleted (issue #71).
    *
    * `outlineOffset: -2` keeps the ring INSIDE the row. A positive offset
    * overflows the 56px collapsed rail and gets clipped.
@@ -145,6 +144,28 @@ export const componentOverrides = (): Components<Theme> => ({
           '&:hover': {
             backgroundColor: alpha(theme.palette.primary.main, 0.16),
           },
+        },
+      }),
+    },
+  },
+
+  /**
+   * The same ring for icon-only controls, because the rail's collapse toggle
+   * is an `IconButton` rather than a `ListItemButton` and carried the SECOND
+   * hand-rolled copy. Deleting that copy without stating the rule here would
+   * have traded a duplicated ring for a missing one — and an icon-only button
+   * is precisely where a keyboard user has the least context to recover from
+   * losing track of focus.
+   *
+   * The offset is positive here: an `IconButton` is a circle with its own
+   * padding, so an inset ring would cut across the glyph.
+   */
+  MuiIconButton: {
+    styleOverrides: {
+      root: ({ theme }) => ({
+        '&.Mui-focusVisible': {
+          outline: `2px solid ${theme.palette.primary.main}`,
+          outlineOffset: 2,
         },
       }),
     },

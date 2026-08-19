@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { act, screen } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../../utils/test-utils';
 import { setViewportWidth } from '../../setup';
@@ -7,10 +7,13 @@ import { AppBar } from '../../../components/navigation/AppBar';
 
 describe('AppBar', () => {
   describe('Rendering', () => {
-    it('should render app title', () => {
+    it('renders the wordmark as a single named image', () => {
+      // ONE accessible name for the whole lockup. `OpifexWordmark` draws the
+      // mark and the letters inside one `<svg role="img">` precisely so it
+      // announces once instead of twice.
       render(<AppBar />);
 
-      expect(screen.getByText(/opifex/i)).toBeInTheDocument();
+      expect(screen.getByRole('img', { name: 'Opifex' })).toBeInTheDocument();
     });
 
     it('should render as banner landmark', () => {
@@ -119,23 +122,38 @@ describe('AppBar', () => {
   });
 
   describe('Navigation', () => {
-    it('should navigate to home when title is clicked', async () => {
+    /**
+     * The brand was a `<Typography onClick={() => navigate('/')}>` — an
+     * accessibility bug, not a style choice: a clickable text node is not in
+     * the tab order, ignores Enter and Space, announces as nothing, and cannot
+     * be opened in a new tab. These assertions are about it being a real
+     * anchor, which is the only property that fixes all four at once.
+     */
+    it('wraps the wordmark in a real link to the cockpit', () => {
+      render(<AppBar />);
+
+      const brand = screen.getByRole('link', { name: 'Opifex' });
+      expect(brand.tagName).toBe('A');
+      expect(brand).toHaveAttribute('href', '/');
+      expect(within(brand).getByRole('img', { name: 'Opifex' })).toBeInTheDocument();
+    });
+
+    it('is reachable and activatable from the keyboard', async () => {
       const user = userEvent.setup();
 
       render(<AppBar />);
 
-      const title = screen.getByText(/opifex/i);
-      await user.click(title);
+      await user.tab();
 
-      // Navigation should be triggered
-      expect(title).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Opifex' })).toHaveFocus();
     });
 
-    it('should have clickable title', () => {
+    it('takes its accessible name from the wordmark, not from a second label', () => {
+      // Two names for one control is how a link ends up announcing something
+      // other than what it draws. The name is written down once, in the SVG.
       render(<AppBar />);
 
-      const title = screen.getByText(/opifex/i);
-      expect(title).toHaveStyle({ cursor: 'pointer' });
+      expect(screen.getByRole('link', { name: 'Opifex' })).not.toHaveAttribute('aria-label');
     });
   });
 
@@ -160,7 +178,7 @@ describe('AppBar', () => {
     it('should render all elements on desktop', () => {
       render(<AppBar />);
 
-      expect(screen.getByText(/opifex/i)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Opifex' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /toggle theme/i })).toBeInTheDocument();
     });
   });

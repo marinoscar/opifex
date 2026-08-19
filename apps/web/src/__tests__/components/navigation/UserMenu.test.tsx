@@ -188,13 +188,18 @@ describe('UserMenu', () => {
       });
     });
 
-    it('should show system settings for admin users', async () => {
+    it('should NOT show system settings even for admin users', async () => {
+      // Issue #70. The menu used to carry every destination except Home, so an
+      // admin found System Settings and User Management in it. It now carries
+      // the ACCOUNT section only: the rail's Administration group and the
+      // phone's More sheet both reach those pages, and a third copy of them in
+      // the avatar menu is the duplication this epic exists to remove.
       const user = userEvent.setup();
 
       mockUsePermissions.mockReturnValue({
-        permissions: new Set(['system_settings:read']),
+        permissions: new Set(['system_settings:read', 'users:read']),
         roles: new Set(['admin']),
-        hasPermission: (perm: string) => perm === 'system_settings:read',
+        hasPermission: () => true,
         hasAnyPermission: vi.fn(),
         hasAllPermissions: vi.fn(),
         hasRole: vi.fn(),
@@ -209,8 +214,10 @@ describe('UserMenu', () => {
       await user.click(screen.getByRole('button'));
 
       await waitFor(() => {
-        expect(screen.getByRole('menuitem', { name: /system settings/i })).toBeInTheDocument();
+        expect(screen.getByRole('menu')).toBeInTheDocument();
       });
+      expect(screen.queryByRole('menuitem', { name: 'System Settings' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: 'User Management' })).not.toBeInTheDocument();
     });
 
     it('should NOT show system settings for non-admin users', async () => {
@@ -242,39 +249,6 @@ describe('UserMenu', () => {
 
       const settingsItem = screen.getByRole('menuitem', { name: /settings/i });
       await user.click(settingsItem);
-
-      // Menu should close after navigation
-      await waitFor(() => {
-        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
-      });
-    });
-
-    it('should navigate to system settings for admins', async () => {
-      const user = userEvent.setup();
-
-      mockUsePermissions.mockReturnValue({
-        permissions: new Set(['system_settings:read']),
-        roles: new Set(['admin']),
-        hasPermission: (perm: string) => perm === 'system_settings:read',
-        hasAnyPermission: vi.fn(),
-        hasAllPermissions: vi.fn(),
-        hasRole: vi.fn(),
-        hasAnyRole: vi.fn(),
-        isAdmin: true,
-      });
-
-      render(<UserMenu />, {
-        wrapperOptions: { user: mockAdminUser },
-      });
-
-      await user.click(screen.getByRole('button'));
-
-      await waitFor(() => {
-        expect(screen.getByRole('menuitem', { name: /system settings/i })).toBeInTheDocument();
-      });
-
-      const systemSettingsItem = screen.getByRole('menuitem', { name: /system settings/i });
-      await user.click(systemSettingsItem);
 
       // Menu should close after navigation
       await waitFor(() => {
@@ -331,32 +305,6 @@ describe('UserMenu', () => {
         expect(logoutItem).toBeInTheDocument();
       });
     });
-
-    it('should display admin icon for system settings', async () => {
-      const user = userEvent.setup();
-
-      mockUsePermissions.mockReturnValue({
-        permissions: new Set(['system_settings:read']),
-        roles: new Set(['admin']),
-        hasPermission: (perm: string) => perm === 'system_settings:read',
-        hasAnyPermission: vi.fn(),
-        hasAllPermissions: vi.fn(),
-        hasRole: vi.fn(),
-        hasAnyRole: vi.fn(),
-        isAdmin: true,
-      });
-
-      render(<UserMenu />, {
-        wrapperOptions: { user: mockAdminUser },
-      });
-
-      await user.click(screen.getByRole('button'));
-
-      await waitFor(() => {
-        const systemSettingsItem = screen.getByRole('menuitem', { name: /system settings/i });
-        expect(systemSettingsItem).toBeInTheDocument();
-      });
-    });
   });
 
   describe('Accessibility', () => {
@@ -397,11 +345,17 @@ describe('UserMenu', () => {
 
   describe('Sourced from the destination table', () => {
     /**
-     * Issue #55. This menu already gated System Settings on
+     * Issues #70/#71. This menu already gated System Settings on
      * `system_settings:read` while the sidebar gated the same page on the
      * `admin` ROLE — so a Contributor granted that permission saw the menu
-     * entry, reached a working page, and had no sidebar row. Both surfaces now
-     * read `config/destinations.ts`, so there is one answer per destination.
+     * entry, reached a working page, and had no sidebar row. Both surfaces read
+     * `config/destinations.ts` now, so there is one answer per destination.
+     *
+     * The filter is the SECTION rather than a list of excluded keys. That is
+     * the change worth testing: with `key !== 'home'`, every destination added
+     * anywhere in the app arrived in the avatar menu by default, and the four
+     * planned cockpit pages would have landed here without anyone deciding
+     * they should.
      */
     function setPermissions(granted: string[], isAdmin = false) {
       mockUsePermissions.mockReturnValue({
@@ -416,78 +370,59 @@ describe('UserMenu', () => {
       });
     }
 
-    it('shows System Settings to a non-admin holding system_settings:read', async () => {
-      // The exact user the old split-brain stranded.
+    async function openMenu() {
       const user = userEvent.setup();
-      setPermissions(['system_settings:read'], false);
+      await user.click(screen.getByRole('button'));
+      await waitFor(() => {
+        expect(screen.getByRole('menu')).toBeInTheDocument();
+      });
+      return user;
+    }
+
+    it('offers exactly the account section, whatever the user holds', async () => {
+      // A FIXED SHAPE — identity header, User Settings, Logout — for every
+      // permission set. An avatar menu is about the account, not the app.
+      const accountLabels = DESTINATIONS.filter((d) => d.section === 'account').map(
+        (d) => d.label,
+      );
+
+      for (const granted of [[], ['users:read', 'system_settings:read']]) {
+        setPermissions(granted, granted.length > 0);
+        const { unmount } = render(<UserMenu />, { wrapperOptions: { user: mockAdminUser } });
+        await openMenu();
+
+        for (const label of accountLabels) {
+          expect(screen.getByRole('menuitem', { name: label })).toBeInTheDocument();
+        }
+        // The account destinations plus Logout, and nothing invented locally.
+        expect(screen.getAllByRole('menuitem')).toHaveLength(accountLabels.length + 1);
+
+        unmount();
+      }
+    });
+
+    it('omits the cockpit destinations — the rail and the More sheet own them', async () => {
+      setPermissions(['users:read', 'system_settings:read'], true);
+
+      render(<UserMenu />, { wrapperOptions: { user: mockAdminUser } });
+      await openMenu();
+
+      for (const destination of DESTINATIONS.filter((d) => d.section !== 'account')) {
+        expect(
+          screen.queryByRole('menuitem', { name: destination.label }),
+          `${destination.key} should not be in the avatar menu`,
+        ).not.toBeInTheDocument();
+      }
+    });
+
+    it('labels and targets its entries from the destination table', async () => {
+      setPermissions([]);
 
       render(<UserMenu />);
-      await user.click(screen.getByRole('button'));
+      await openMenu();
 
-      await waitFor(() => {
-        expect(screen.getByRole('menuitem', { name: 'System Settings' })).toBeInTheDocument();
-      });
-    });
-
-    it('shows User Management to a user holding users:read', async () => {
-      // A destination this menu never offered before, so /admin/users was
-      // reachable from the sidebar only.
-      const user = userEvent.setup();
-      setPermissions(['users:read'], true);
-
-      render(<UserMenu />, { wrapperOptions: { user: mockAdminUser } });
-      await user.click(screen.getByRole('button'));
-
-      await waitFor(() => {
-        expect(screen.getByRole('menuitem', { name: 'User Management' })).toBeInTheDocument();
-      });
-    });
-
-    it('grants nothing on the admin role alone', async () => {
-      const user = userEvent.setup();
-      setPermissions([], true);
-
-      render(<UserMenu />, { wrapperOptions: { user: mockAdminUser } });
-      await user.click(screen.getByRole('button'));
-
-      await waitFor(() => {
-        expect(screen.getByRole('menu')).toBeInTheDocument();
-      });
-      expect(screen.queryByRole('menuitem', { name: 'User Management' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('menuitem', { name: 'System Settings' })).not.toBeInTheDocument();
-    });
-
-    it('omits Home — the AppBar brand already routes there', async () => {
-      // A menu row duplicating on-screen chrome is the bloat this epic removes.
-      const user = userEvent.setup();
-      setPermissions(['users:read', 'system_settings:read'], true);
-
-      render(<UserMenu />, { wrapperOptions: { user: mockAdminUser } });
-      await user.click(screen.getByRole('button'));
-
-      await waitFor(() => {
-        expect(screen.getByRole('menu')).toBeInTheDocument();
-      });
-      expect(screen.queryByRole('menuitem', { name: 'Home' })).not.toBeInTheDocument();
-    });
-
-    it('labels and targets every entry from the destination table', async () => {
-      const user = userEvent.setup();
-      setPermissions(['users:read', 'system_settings:read'], true);
-
-      render(<UserMenu />, { wrapperOptions: { user: mockAdminUser } });
-      await user.click(screen.getByRole('button'));
-
-      await waitFor(() => {
-        expect(screen.getByRole('menu')).toBeInTheDocument();
-      });
-
-      const expected = DESTINATIONS.filter((d) => d.key !== 'home').map((d) => d.label);
-      for (const label of expected) {
-        expect(screen.getByRole('menuitem', { name: label })).toBeInTheDocument();
-      }
-      // The destinations plus Logout, and nothing invented locally.
-      expect(screen.getAllByRole('menuitem')).toHaveLength(expected.length + 1);
+      const settings = DESTINATIONS.find((d) => d.key === 'settings')!;
+      expect(screen.getByRole('menuitem', { name: settings.label })).toBeInTheDocument();
     });
   });
 });

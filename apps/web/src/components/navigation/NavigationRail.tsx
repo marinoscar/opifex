@@ -1,13 +1,14 @@
 /**
- * The navigation rail — tablet and desktop chrome for the four destinations.
+ * The navigation rail — tablet and desktop chrome for every destination.
  *
- * Issue #55, epic #51. This REPLACES `Sidebar`'s temporary drawer at `sm` and
- * up. The drawer it replaces was `variant="temporary"` at EVERY breakpoint,
- * which is why it needed hardcoded AppBar-height offsets, `disablePortal`, and
- * a `setTimeout(() => navigate(path), 0)` to let the close animation finish
- * before the route changed. A rail is always visible, so navigating costs ZERO
- * taps where a drawer costs one before navigation can even begin — and with no
- * drawer to close, that navigate-after-close race cannot occur at all.
+ * Issue #71 (rail sections), epic #19. This REPLACES `Sidebar`'s temporary
+ * drawer at `sm` and up. The drawer it replaces was `variant="temporary"` at
+ * EVERY breakpoint, which is why it needed hardcoded AppBar-height offsets,
+ * `disablePortal`, and a `setTimeout(() => navigate(path), 0)` to let the close
+ * animation finish before the route changed. A rail is always visible, so
+ * navigating costs ZERO taps where a drawer costs one before navigation can
+ * even begin — and with no drawer to close, that navigate-after-close race
+ * cannot occur at all.
  *
  * TWO TREATMENTS, ONE COMPONENT
  * -----------------------------
@@ -20,8 +21,27 @@
  * The medium tier is ALWAYS collapsed regardless of that preference. Honouring
  * a stale `railCollapsed: false` below `lg` would render a 220px rail on a
  * 600px screen — a third of the viewport spent on chrome.
+ *
+ * SECTIONS, AND WHY THEY LOOK DIFFERENT IN EACH TREATMENT
+ * ------------------------------------------------------
+ * Eight destinations in one undifferentiated column is a list to be read
+ * rather than a map to be scanned. `SECTIONS` groups them, and each group is
+ * its own `<ul>` with the section name as its accessible name — so a screen
+ * reader user gets the grouping that a sighted user gets from the header,
+ * which is the whole point of grouping at all.
+ *
+ * The header itself is EXPANDED-ONLY. 56px does not hold "Administration" at
+ * any legible size, and an abbreviation ("Admin", "Ops") would be a second
+ * vocabulary for the same thing. Collapsed, the grouping is carried by a
+ * `<Divider>` between groups instead — same information, no text.
+ *
+ * A section with zero visible destinations renders NOTHING: no orphan header,
+ * no orphan divider. That is not a cosmetic detail — a Viewer sees no
+ * Administration destinations at all, and a header with nothing under it reads
+ * as a loading failure.
  */
 
+import { Fragment } from 'react';
 import {
   Box,
   Divider,
@@ -42,7 +62,8 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useNavigationPrefs } from '../../hooks/useNavigationPrefs';
-import { DESTINATIONS, resolveActiveDestination } from '../../config/destinations';
+import { DESTINATIONS, SECTIONS, resolveActiveDestination } from '../../config/destinations';
+import type { Destination } from '../../config/destinations';
 
 /**
  * 56px so a 24px icon clears 16px of horizontal padding without the caption
@@ -79,6 +100,11 @@ function RailRow({ to, Icon, label, compactLabel, active, expanded }: RailRowPro
     // A real link: focusable, middle-clickable, and it survives a keyboard user
     // tabbing the rail. The `onClick` handler this replaces gave up all three,
     // and needed a `setTimeout` to sequence itself against the drawer close.
+    //
+    // The focus-visible ring that used to be spelled out in this `sx` now lives
+    // in the theme's `MuiListItemButton` override. It was hand-rolled here
+    // twice — once on this row and once on the collapse toggle — which is one
+    // copy per call site and therefore one chance per call site to be missed.
     <ListItemButton
       component={RouterLink}
       to={to}
@@ -103,13 +129,6 @@ function RailRow({ to, Icon, label, compactLabel, active, expanded }: RailRowPro
               px: 0.5,
               py: 0.75,
             }),
-        // Keyboard focus must be visible on every navigation control. Stated
-        // explicitly rather than relying on the theme's default, which a later
-        // theme change could quietly remove.
-        '&.Mui-focusVisible': {
-          outline: `2px solid ${theme.palette.primary.main}`,
-          outlineOffset: -2,
-        },
       }}
     >
       <ListItemIcon
@@ -179,6 +198,16 @@ export function NavigationRail() {
     (destination) => !destination.permission || hasPermission(destination.permission),
   );
 
+  // Sections are built AFTER the permission filter and then emptied ones are
+  // dropped, in that order. Doing it the other way round is how an orphan
+  // "Administration" header ends up above nothing on a Viewer's screen.
+  const populatedSections = SECTIONS.map((section) => ({
+    ...section,
+    destinations: visibleDestinations.filter(
+      (destination: Destination) => destination.section === section.key,
+    ),
+  })).filter((section) => section.destinations.length > 0);
+
   return (
     <Box
       component="nav"
@@ -217,25 +246,54 @@ export function NavigationRail() {
       }}
     >
       <Box sx={{ flexGrow: 1, py: 1, minWidth: 0 }}>
-        <List dense disablePadding>
-          {visibleDestinations.map((destination) => (
-            <RailRow
-              key={destination.key}
-              to={destination.path}
-              Icon={destination.Icon}
-              label={destination.label}
-              compactLabel={destination.compactLabel}
-              active={activeDestination === destination.key}
-              expanded={expanded}
-            />
-          ))}
-        </List>
+        {populatedSections.map((section, index) => (
+          <Fragment key={section.key}>
+            {/* The separator goes BETWEEN groups, never before the first one,
+                and only in the treatment that has no header to do the job. */}
+            {!expanded && index > 0 && <Divider sx={{ mx: 1, my: 0.5 }} />}
+
+            <List
+              dense
+              disablePadding
+              component="ul"
+              // Names the group for assistive technology in BOTH treatments,
+              // including the collapsed one where the visible header is absent.
+              // The divider above is a purely visual cue and announces nothing.
+              aria-label={section.label}
+              sx={{ minWidth: 0 }}
+            >
+              {expanded && (
+                <Typography
+                  component="li"
+                  variant="overline"
+                  color="text.secondary"
+                  sx={{ display: 'block', px: 2, pt: index > 0 ? 1.5 : 0.5, lineHeight: 2 }}
+                >
+                  {section.label}
+                </Typography>
+              )}
+
+              {section.destinations.map((destination) => (
+                <RailRow
+                  key={destination.key}
+                  to={destination.path}
+                  Icon={destination.Icon}
+                  label={destination.label}
+                  compactLabel={destination.compactLabel}
+                  active={activeDestination === destination.key}
+                  expanded={expanded}
+                />
+              ))}
+            </List>
+          </Fragment>
+        ))}
       </Box>
 
       {/* The collapse toggle is DESKTOP-ONLY: the medium tier is forced
           collapsed, so a toggle there would either do nothing or produce a
           220px rail on a 600px screen. A real <button> with `aria-expanded` —
-          not an icon-shaped div, and not a link. */}
+          not an icon-shaped div, and not a link. Its focus ring comes from the
+          theme's `MuiIconButton` override, alongside the rail rows'. */}
       {isDesktop && (
         <>
           <Divider />
@@ -252,12 +310,6 @@ export function NavigationRail() {
               onClick={toggleRailCollapsed}
               aria-expanded={expanded}
               aria-label={expanded ? 'Collapse navigation' : 'Expand navigation'}
-              sx={{
-                '&.Mui-focusVisible': {
-                  outline: `2px solid ${theme.palette.primary.main}`,
-                  outlineOffset: -2,
-                },
-              }}
             >
               {expanded ? (
                 <ChevronLeftIcon fontSize="small" />

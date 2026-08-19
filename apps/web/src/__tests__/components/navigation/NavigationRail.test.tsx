@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { render, mockAdminUser } from '../../utils/test-utils';
 import { setViewportWidth } from '../../setup';
 import { NavigationRail } from '../../../components/navigation/NavigationRail';
+import { DESTINATIONS, SECTIONS } from '../../../config/destinations';
 
 /**
  * Coverage migrated from the deleted `Sidebar.test.tsx` — four items, admin
@@ -59,23 +60,37 @@ describe('NavigationRail', () => {
   });
 
   describe('Destinations', () => {
-    it('renders all four destinations for a fully permitted user', () => {
+    it('renders one link per destination the user can see', () => {
+      // Counted against the TABLE, not against a literal. The old version of
+      // this assertion was `toHaveLength(4)`, which turned adding a destination
+      // into a test failure rather than into a covered change.
       setPermissions(ADMIN_PERMISSIONS, true);
 
       render(<NavigationRail />, { wrapperOptions: { user: mockAdminUser } });
 
       const nav = screen.getByRole('navigation', { name: /main navigation/i });
-      expect(within(nav).getAllByRole('link')).toHaveLength(4);
-      expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'User Settings' })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'User Management' })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'System Settings' })).toBeInTheDocument();
+      expect(within(nav).getAllByRole('link')).toHaveLength(DESTINATIONS.length);
+      for (const destination of DESTINATIONS) {
+        expect(screen.getByRole('link', { name: destination.label })).toBeInTheDocument();
+      }
+    });
+
+    it('offers the planned cockpit destinations to every authenticated user', () => {
+      // They carry no permission BECAUSE no controller enforces one — see
+      // `config/destinations.ts`. A Viewer must still see them, or the app's
+      // shape is visible only to admins.
+      render(<NavigationRail />);
+
+      expect(screen.getByRole('link', { name: 'Runs' })).toHaveAttribute('href', '/runs');
+      expect(screen.getByRole('link', { name: 'Queue' })).toHaveAttribute('href', '/queue');
+      expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('href', '/projects');
+      expect(screen.getByRole('link', { name: 'Cost' })).toHaveAttribute('href', '/cost');
     });
 
     it('hides the admin destinations from a user without the permissions', () => {
       render(<NavigationRail />);
 
-      expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Cockpit' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'User Settings' })).toBeInTheDocument();
       expect(screen.queryByRole('link', { name: 'User Management' })).not.toBeInTheDocument();
       expect(screen.queryByRole('link', { name: 'System Settings' })).not.toBeInTheDocument();
@@ -111,7 +126,7 @@ describe('NavigationRail', () => {
 
       render(<NavigationRail />, { wrapperOptions: { user: mockAdminUser } });
 
-      expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
+      expect(screen.getByRole('link', { name: 'Cockpit' })).toHaveAttribute('href', '/');
       expect(screen.getByRole('link', { name: 'User Settings' })).toHaveAttribute(
         'href',
         '/settings',
@@ -149,7 +164,7 @@ describe('NavigationRail', () => {
         'aria-current',
         'page',
       );
-      expect(screen.getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current');
+      expect(screen.getByRole('link', { name: 'Cockpit' })).not.toHaveAttribute('aria-current');
     });
 
     it('marks exactly one row active on a nested admin route', () => {
@@ -266,12 +281,110 @@ describe('NavigationRail', () => {
 
       render(<NavigationRail />, { wrapperOptions: { user: mockAdminUser } });
 
+      // Sections do not reorder the table: the rail's DOM order is the
+      // destination order, grouped. Anything else and the tab order stops
+      // matching what the eye is reading down the column.
       expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
         '/',
+        '/runs',
+        '/queue',
+        '/projects',
+        '/cost',
         '/settings',
         '/admin/users',
         '/admin/settings',
       ]);
+    });
+  });
+  /**
+   * Issue #71. Eight destinations in one undifferentiated column is a list to
+   * be read rather than a map to be scanned, so the rail groups them. The
+   * grouping is announced identically in both treatments (each group is its own
+   * named `<ul>`) but DRAWN differently: a header when there is room for one,
+   * a divider when there is not.
+   */
+  describe('Sections', () => {
+    it('names every populated group for assistive technology, in both treatments', async () => {
+      setPermissions(ADMIN_PERMISSIONS, true);
+
+      render(<NavigationRail />, { wrapperOptions: { user: mockAdminUser } });
+
+      for (const section of SECTIONS) {
+        expect(screen.getByRole('list', { name: section.label })).toBeInTheDocument();
+      }
+
+      // Collapsed, the visible header is gone but the accessible name is not —
+      // that is the whole reason the name lives on the list rather than only in
+      // the header text.
+      await act(async () => setViewportWidth(800));
+
+      for (const section of SECTIONS) {
+        expect(screen.getByRole('list', { name: section.label })).toBeInTheDocument();
+      }
+    });
+
+    it('shows a visible section header when expanded', () => {
+      setPermissions(ADMIN_PERMISSIONS, true);
+
+      render(<NavigationRail />, { wrapperOptions: { user: mockAdminUser } });
+
+      for (const section of SECTIONS) {
+        expect(screen.getByText(section.label)).toBeInTheDocument();
+      }
+    });
+
+    it('replaces the headers with dividers when collapsed', async () => {
+      // 56px does not hold "Administration" at a legible size, and an
+      // abbreviation would be a second vocabulary for the same thing.
+      setPermissions(ADMIN_PERMISSIONS, true);
+
+      render(<NavigationRail />, { wrapperOptions: { user: mockAdminUser } });
+
+      await act(async () => setViewportWidth(800));
+
+      for (const section of SECTIONS) {
+        expect(screen.queryByText(section.label)).not.toBeInTheDocument();
+      }
+      // One separator BETWEEN each pair of groups, never a leading or trailing
+      // one. The medium tier has no collapse toggle, so these are the only
+      // dividers in the rail.
+      const nav = screen.getByRole('navigation', { name: 'Main navigation' });
+      expect(within(nav).getAllByRole('separator')).toHaveLength(SECTIONS.length - 1);
+    });
+
+    it('drops a section that empties under permission filtering', async () => {
+      // A Viewer has no Administration destinations. A header with nothing
+      // under it — or a divider fencing off empty space — reads as a failure to
+      // load rather than as an absence.
+      setPermissions([]);
+
+      render(<NavigationRail />);
+
+      expect(screen.queryByText('Administration')).not.toBeInTheDocument();
+      expect(screen.queryByRole('list', { name: 'Administration' })).not.toBeInTheDocument();
+      expect(screen.getByRole('list', { name: 'Operate' })).toBeInTheDocument();
+      expect(screen.getByRole('list', { name: 'Account' })).toBeInTheDocument();
+
+      await act(async () => setViewportWidth(800));
+
+      const nav = screen.getByRole('navigation', { name: 'Main navigation' });
+      // Two groups left, so exactly one divider — not two with a gap where
+      // Administration used to be.
+      expect(within(nav).getAllByRole('separator')).toHaveLength(1);
+    });
+
+    it('keeps every destination inside its declared section', () => {
+      setPermissions(ADMIN_PERMISSIONS, true);
+
+      render(<NavigationRail />, { wrapperOptions: { user: mockAdminUser } });
+
+      for (const section of SECTIONS) {
+        const list = screen.getByRole('list', { name: section.label });
+        const expected = DESTINATIONS.filter((d) => d.section === section.key).map((d) => d.path);
+        expect(within(list).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(
+          expected,
+        );
+      }
     });
   });
 });
