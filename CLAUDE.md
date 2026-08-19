@@ -12,7 +12,7 @@ Web Application Foundation with React UI + Node API + PostgreSQL. Production-gra
 - **Frontend**: React + TypeScript, Material UI (MUI)
 - **Database**: PostgreSQL with Prisma ORM
 - **Auth**: Passport strategies (Google OAuth required)
-- **Testing**: Jest + Supertest (backend), React Testing Library + Jest (frontend)
+- **Testing**: Jest + Supertest (backend), Vitest + React Testing Library + MSW (frontend, 70% coverage thresholds)
 - **Observability**: OpenTelemetry, Uptrace, Pino structured logging
 - **Containerization**: Docker + Docker Compose
 - **Reverse Proxy**: Nginx (same-origin routing)
