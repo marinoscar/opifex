@@ -1,22 +1,40 @@
+/**
+ * The dark palette, built entirely from `tokens.ts`. See `light.ts` for the
+ * reasoning that applies to both files; only the dark-specific notes are here.
+ *
+ * The surfaces move from the old `#121212`/`#1e1e1e` pure greys to the cool
+ * neutral ramp (`neutral[900]` page, `neutral[800]` card). A status-dense
+ * screen needs a background with a slight hue so that the six status hues read
+ * as deliberate rather than as tint on a dead grey; the step between page and
+ * card also does more work in dark mode than any shadow can (see
+ * `tokens.elevation`).
+ */
+
 import { PaletteOptions } from '@mui/material/styles';
+import { brand, brandSecondary, statusTokens, surface, text } from './tokens';
 
 export const darkPalette: PaletteOptions = {
   primary: {
-    main: '#90caf9',
-    light: '#e3f2fd',
-    dark: '#42a5f5',
+    main: brand.dark.accent,
+    light: brand.dark.accentHover,
+    contrastText: brand.dark.onAccent,
   },
   secondary: {
-    main: '#ce93d8',
-    light: '#f3e5f5',
-    dark: '#ab47bc',
+    main: brandSecondary.dark.main,
+    contrastText: brandSecondary.dark.contrastText,
   },
+  error: { main: statusTokens.dark.failed.fg },
+  warning: { main: statusTokens.dark.stalled.fg },
+  info: { main: statusTokens.dark.running.fg },
+  success: { main: statusTokens.dark.succeeded.fg },
   background: {
-    default: '#121212',
-    paper: '#1e1e1e',
+    default: surface.dark.default,
+    paper: surface.dark.paper,
   },
   text: {
-    primary: '#ffffff',
-    secondary: 'rgba(255, 255, 255, 0.7)',
+    primary: text.dark.primary,
+    secondary: text.dark.secondary,
+    disabled: text.dark.disabled,
   },
+  divider: surface.dark.divider,
 };
