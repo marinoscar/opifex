@@ -1,5 +1,5 @@
 /**
- * Admin → System settings → Feature flags (issue #67, epic #51).
+ * Admin → System settings → Feature flags (upstream template issue #67, epic #51).
  *
  * The `List` / `ListItem` / `ListItemSecondaryAction` block is deleted
  * wholesale in favour of the shared `DataTable` — see `featureFlagColumns.tsx`

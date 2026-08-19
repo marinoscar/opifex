@@ -1,5 +1,5 @@
 /**
- * Admin → Allowlist: the DataTable column contract (issue #67, epic #51).
+ * Admin → Allowlist: the DataTable column contract (upstream template issue #67, epic #51).
  *
  * ## What `GET /api/allowlist` actually honours
  *

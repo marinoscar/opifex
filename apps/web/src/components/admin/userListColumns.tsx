@@ -1,5 +1,5 @@
 /**
- * Admin → Users: the DataTable column contract (issue #67, epic #51).
+ * Admin → Users: the DataTable column contract (upstream template issue #67, epic #51).
  *
  * A sibling module rather than columns inlined in `UserList.tsx`, for the
  * reason every migrated table in this epic follows: the column list is the
