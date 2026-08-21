@@ -88,7 +88,7 @@ export class GitHubWriteService {
     issueNumber: number,
     label: string,
   ): Promise<WriteResult> {
-    return this.perform(
+    return this.guardedWrite(
       WriteAction.AddLabel,
       `Add '${label}' to ${repo.owner}/${repo.name}#${issueNumber}`,
       async () => {
@@ -114,7 +114,7 @@ export class GitHubWriteService {
     issueNumber: number,
     label: string,
   ): Promise<WriteResult> {
-    return this.perform(
+    return this.guardedWrite(
       WriteAction.RemoveLabel,
       `Remove '${label}' from ${repo.owner}/${repo.name}#${issueNumber}`,
       async () => {
@@ -238,7 +238,7 @@ export class GitHubWriteService {
     body: string,
     description: string,
   ): Promise<WriteResult> {
-    return this.perform(action, description, async () => {
+    return this.guardedWrite(action, description, async () => {
       const { data } = await this.http.request<{ html_url?: string }>(
         `/repos/${repo.owner}/${repo.name}/issues/${issueNumber}/comments`,
         { method: 'POST', body: { body } },
@@ -253,8 +253,16 @@ export class GitHubWriteService {
    * Every adapter routes through here, so "writes are off" cannot be true for
    * some of them and false for others — and the descriptor is attached in one
    * place rather than by each method remembering to.
+   *
+   * Public because the issue-creation gate (#108) is a separate service that
+   * must not bypass the kill switch. It is NOT a general escape hatch: the
+   * guarantee that only the gate can open an issue is enforced the same way
+   * the never-trustable list is, by a source-level assertion that exactly one
+   * place issues a POST to an issues endpoint. A method that could be reached
+   * but is asserted unreachable is the same shape of guarantee, checked in the
+   * same place.
    */
-  private async perform(
+  async guardedWrite(
     action: WriteAction,
     description: string,
     execute: () => Promise<{ url: string | null; noop: boolean }>,

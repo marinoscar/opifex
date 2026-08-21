@@ -194,10 +194,11 @@ describe('GitHubWriteService', () => {
         'addLabel',
         // The kill-switch getter, not a write.
         'enabled',
-        // Private plumbing: the single kill-switch check, and the shared
-        // comment poster the four comment adapters route through.
-        'perform',
+        // The single kill-switch check. Public so the issue-creation gate
+        // (#108) routes its own write through it rather than around it.
+        'guardedWrite',
         'postAuthorizationRecord',
+        // The shared comment poster the four comment adapters route through.
         'postComment',
         'postEscalationNote',
         'postGeneralComment',

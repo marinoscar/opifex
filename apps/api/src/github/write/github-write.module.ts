@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 
+import { GitHubReadModule } from '../read/github-read.module';
 import { GitHubWriteService } from './github-write.service';
+import { GitHubIssueGateService } from './issue-gate.service';
 
 /**
  * Write capability, in its own module on purpose.
@@ -12,7 +14,12 @@ import { GitHubWriteService } from './github-write.service';
  * structurally rather than by anyone remembering it.
  */
 @Module({
-  providers: [GitHubWriteService],
-  exports: [GitHubWriteService],
+  // The gate reads open issues to dedupe against them, so the WRITE module
+  // imports the read one. The dependency runs in that direction only, and
+  // must keep doing so: the read module importing this one is what would give
+  // the read-only reconciler a path to a write adapter.
+  imports: [GitHubReadModule],
+  providers: [GitHubWriteService, GitHubIssueGateService],
+  exports: [GitHubWriteService, GitHubIssueGateService],
 })
 export class GitHubWriteModule {}
