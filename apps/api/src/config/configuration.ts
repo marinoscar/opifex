@@ -101,6 +101,12 @@ export default () => {
     // Bounds the in-memory conditional-request cache. Roughly: watched
     // repositories x pollable resources x pages.
     etagCacheMaxEntries: parseInt(process.env.GITHUB_ETAG_CACHE_MAX || '2000', 10),
+    // The global write kill switch. DEFAULTS OFF, and the default is the
+    // point: VISION §12 requires the reconciler to observe for a week and
+    // record what it WOULD have done before it is allowed to do it. Note the
+    // comparison is against 'true' rather than !== 'false', so an unset,
+    // misspelled or empty value all mean off.
+    writesEnabled: process.env.GITHUB_WRITES_ENABLED === 'true',
   },
 
   logLevel: process.env.LOG_LEVEL || 'info',

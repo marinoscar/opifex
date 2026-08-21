@@ -317,8 +317,14 @@ export class GitHubHttpService {
     if (response.status === 404) {
       // GitHub returns 404 rather than 403 for a private repository the token
       // cannot see, so "missing" and "invisible" are genuinely the same answer.
+      //
+      // GitHub's own message is kept in the text because 404 is overloaded on
+      // some endpoints and the message is the only thing separating the cases:
+      // removing a label that is not on an issue answers 404 "Label does not
+      // exist", while a wrong issue number answers 404 "Not Found". A caller
+      // that had only the status would have to treat both as benign.
       return new GitHubNotFoundError(
-        `Not found (or not visible to this token): ${method} ${path}`,
+        `${message} (${method} ${path})`,
         404,
         method,
         path,
