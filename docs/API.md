@@ -1345,15 +1345,24 @@ assumed, because a work order pins its base commit on that branch.
   "name": "opifex",
   "observeEnabled": true,
   "dispatchEnabled": false,
+  "mirrorLabelsEnabled": false,
   "budgetCeilingUsd": 5.0,
   "wallClockTimeoutMinutes": 30,
   "pathConstraints": ["apps/api/**"]
 }
 ```
 
-Only `owner` and `name` are required. `dispatchEnabled` defaults to **false**:
-a newly registered repository is observed, never run, until a human says
+Only `owner` and `name` are required. `dispatchEnabled` and
+`mirrorLabelsEnabled` both default to **false**: a newly registered repository
+is observed, written to by nothing, and never run, until a human says
 otherwise.
+
+The three switches are separate on purpose, so VISION §12's observation week
+can end in stages — observe, then write mirror labels, then dispatch. Proving
+the write path before dispatch exists is the point of doing labels first, and
+a single `enabled` flag would make the first write and the first run happen on
+one flip. `mirrorLabelsEnabled` is gated a second time by the global
+`GITHUB_WRITES_ENABLED`; both must be on for a label to be written.
 
 **Response:** `201` with the repository, including its `fullName` and the
 `defaultBranch` read from GitHub.

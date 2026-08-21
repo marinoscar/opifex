@@ -54,6 +54,33 @@ export interface NormalizedIssue {
    * than dropped, so an operator who mistyped `factory:hold` finds out.
    */
   unknownInputLabels: string[];
+  /**
+   * `factory/*` labels currently on the issue — FOR THE DIFF ENGINE ONLY.
+   *
+   * ## Read this before using the field
+   *
+   * VISION §3.3 says mirror labels are "written by Opifex for visibility and
+   * never read as truth". This field does not break that rule, but only
+   * because of a distinction worth stating precisely:
+   *
+   *  - Reading a mirror label **as truth** means letting it influence what
+   *    SHOULD be true. That is forbidden. It would make the control plane's
+   *    desired state depend on its own previous output, and a mirror write
+   *    that failed — or one a human hand-edited — would roll that state
+   *    backwards. `desired-state.ts` therefore never sees this field, and a
+   *    test asserts the projection is byte-identical with and without it.
+   *
+   *  - Reading a mirror label **as the current state of the output** is
+   *    required. Without it the reconciler cannot tell an already-correct
+   *    label from a missing one, so it would rewrite every label every tick,
+   *    and could never remove a stale one (#48).
+   *
+   * The short version: the projection computes what labels SHOULD exist from
+   * inputs only; the diff engine compares that against this to decide what to
+   * write. Never pass this into a projection.
+   */
+  observedMirrorLabels: string[];
+
   /** True when this "issue" is really a pull request. GitHub conflates them. */
   isPullRequest: boolean;
   url: string;

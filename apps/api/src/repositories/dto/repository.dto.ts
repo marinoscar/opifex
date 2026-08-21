@@ -46,6 +46,16 @@ const repositoryPolicySchema = z.object({
    * it, and a single `enabled` flag would leave no other option.
    */
   dispatchEnabled: z.boolean().optional(),
+  /**
+   * Opifex may write `factory/*` mirror labels to this repository.
+   *
+   * A third switch, not folded into `dispatchEnabled`, so VISION §12's
+   * observation week can end in stages: observe, then write labels, then
+   * dispatch. Collapsing them would make the first write and the first RUN
+   * happen on one flag flip, and proving the write path before dispatch
+   * exists is the whole point of doing labels first.
+   */
+  mirrorLabelsEnabled: z.boolean().optional(),
   /** Per-run spend ceiling in USD. Null clears it. */
   budgetCeilingUsd: z.number().positive().max(10000).nullable().optional(),
   /** Per-run wall-clock ceiling in minutes. Null clears it. */
@@ -87,6 +97,7 @@ export const repositoryResponseSchema = z.object({
   defaultBranch: z.string(),
   observeEnabled: z.boolean(),
   dispatchEnabled: z.boolean(),
+  mirrorLabelsEnabled: z.boolean(),
   budgetCeilingUsd: z.string().nullable(),
   wallClockTimeoutMinutes: z.number().int().nullable(),
   pathConstraints: z.array(z.string()),
