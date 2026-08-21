@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { GitHubRateLimitError } from '../github/github.errors';
+import { INPUT_LABELS } from '../github/labels/factory-labels';
 import { GitHubHttpService } from '../github/github-http.service';
 import { RateLimitService } from '../github/rate-limit.service';
 import { GitHubReadService } from '../github/read/github-read.service';
@@ -145,6 +146,8 @@ export class ReconcilerService {
         // rather than a quiet feedback loop where Opifex reads its own output.
         assertNoMirrorLabelsObserved(result.issues);
 
+        const workOrders = await this.loadWorkOrders(repository.id);
+
         const state: ObservedState = {
           repository: {
             id: repository.id,
@@ -157,13 +160,12 @@ export class ReconcilerService {
               : null,
           },
           issues: result.issues,
-          workOrders: await this.loadWorkOrders(repository.id),
-          // Empty here, and that is the SAFE default: an empty set clears no
-          // quarantine at all. Resolving it needs the issue timeline (#49),
-          // which is a separate read — and erring toward "nothing is cleared"
-          // is the right way to be wrong about VISION §8's rule that only a
-          // human may release a quarantine.
-          humanClearedQuarantine: new Set<number>(),
+          workOrders,
+          humanClearedQuarantine: await this.resolveHumanQuarantineClears(
+            { owner: repository.owner, name: repository.name },
+            result.issues,
+            workOrders,
+          ),
         };
 
         const projection = projectDesiredState(state);
@@ -199,6 +201,74 @@ export class ReconcilerService {
     }
 
     return { observed, failures, allFromCache, projections, actions };
+  }
+
+  /**
+   * Which issues a HUMAN has released from quarantine.
+   *
+   * ## Why this is a separate read, and why it is narrow
+   *
+   * VISION §8 puts clearing quarantine on the never-trustable list: "it cannot
+   * clear its own quarantine." An agent that can apply
+   * `factory:clear-quarantine` to release itself has the appearance of a
+   * guardrail and none of the substance — so the load-bearing fact is not that
+   * the label is PRESENT but that a human PUT IT THERE.
+   *
+   * Only the issue timeline carries the applier, and the plain label list does
+   * not, which is why this cannot be folded into the issue read. A timeline
+   * call per issue would be ruinous against the rate-limit budget (#40), so it
+   * is asked only where the answer could possibly matter: an issue that both
+   * carries the label AND has a quarantined work order. In a healthy
+   * repository that set is empty and this costs nothing.
+   *
+   * A timeline read that FAILS is treated as "not cleared". Failing closed is
+   * the only safe direction here: the cost of being wrong is either a
+   * quarantine that stays until the next tick, or one released without a human
+   * — and VISION §8 is unambiguous about which of those is unacceptable.
+   */
+  private async resolveHumanQuarantineClears(
+    repo: { owner: string; name: string },
+    issues: { number: number; inputLabels: string[] }[],
+    workOrders: ObservedWorkOrder[],
+  ): Promise<Set<number>> {
+    const quarantined = new Set(
+      workOrders.filter((w) => w.status === 'quarantined').map((w) => w.issueNumber),
+    );
+
+    const candidates = issues.filter(
+      (issue) =>
+        quarantined.has(issue.number) &&
+        issue.inputLabels.includes(INPUT_LABELS.CLEAR_QUARANTINE),
+    );
+
+    const cleared = new Set<number>();
+    for (const issue of candidates) {
+      try {
+        const byHuman = await this.github.wasLabelAppliedByHuman(
+          repo,
+          issue.number,
+          INPUT_LABELS.CLEAR_QUARANTINE,
+        );
+        if (byHuman) {
+          cleared.add(issue.number);
+        } else {
+          this.logger.warn(
+            `Refusing to clear quarantine on ${repo.owner}/${repo.name}#${issue.number}: ` +
+              `${INPUT_LABELS.CLEAR_QUARANTINE} is present but was not applied by a human ` +
+              `(VISION §8 — a run cannot clear its own quarantine)`,
+          );
+        }
+      } catch (error) {
+        // Fail closed, loudly.
+        this.logger.warn(
+          `Could not verify who applied ${INPUT_LABELS.CLEAR_QUARANTINE} on ` +
+            `${repo.owner}/${repo.name}#${issue.number}; leaving it quarantined: ` +
+            `${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    return cleared;
   }
 
   /**
