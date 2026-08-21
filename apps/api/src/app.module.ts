@@ -16,6 +16,7 @@ import { DeviceAuthModule } from './device-auth/device-auth.module';
 import { StorageModule } from './storage/storage.module';
 import { PatModule } from './pat/pat.module';
 import { GitHubModule } from './github/github.module';
+import { RepositoriesModule } from './repositories/repositories.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { TestAuthModule } from './test-auth/test-auth.module';
 
@@ -59,6 +60,7 @@ import configuration from './config/configuration';
 
     // GitHub edge (epic #15)
     GitHubModule,
+    RepositoriesModule,
 
     // Test modules (non-production only)
     // TestAuthModule bypasses both OAuth and the email allowlist, so NODE_ENV
