@@ -7,6 +7,12 @@ import { RateLimitService } from '../github/rate-limit.service';
 import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoriesService } from '../repositories/repositories.service';
+import { assertNoMirrorLabelsObserved, projectDesiredState } from './projection/desired-state';
+import type {
+  DesiredState,
+  ObservedState,
+  ObservedWorkOrder,
+} from './projection/desired-state.types';
 import type { TickFailure, TickRecord, TickOutcome } from './reconciler.types';
 import { TickLeaseService } from './tick-lease.service';
 
@@ -68,7 +74,7 @@ export class ReconcilerService {
     const startedAt = new Date();
 
     if (!this.enabled) {
-      return this.finish(startedAt, 'skipped-disabled', 0, [], true);
+      return this.finish(startedAt, 'skipped-disabled', 0, [], true, []);
     }
 
     // Checked BEFORE taking the lease: a tick that cannot afford to read
@@ -77,18 +83,18 @@ export class ReconcilerService {
       this.logger.warn(
         `Reconciler tick skipped: GitHub budget at or below the reserve of ${this.rateLimitFloor}`,
       );
-      return this.finish(startedAt, 'skipped-rate-limited', 0, [], true);
+      return this.finish(startedAt, 'skipped-rate-limited', 0, [], true, []);
     }
 
     const outcome = await this.lease.withLease(() => this.observeAll());
 
     if (!outcome.acquired) {
-      return this.finish(startedAt, 'skipped-locked', 0, [], true);
+      return this.finish(startedAt, 'skipped-locked', 0, [], true, []);
     }
 
-    const { observed, failures, allFromCache } = outcome.result;
+    const { observed, failures, allFromCache, projections } = outcome.result;
     const status: TickOutcome = failures.length > 0 ? 'partial' : 'completed';
-    return this.finish(startedAt, status, observed, failures, allFromCache);
+    return this.finish(startedAt, status, observed, failures, allFromCache, projections);
   }
 
   /**
@@ -103,9 +109,11 @@ export class ReconcilerService {
     observed: number;
     failures: TickFailure[];
     allFromCache: boolean;
+    projections: DesiredState[];
   }> {
     const repositories = await this.repositories.listObserved();
     const failures: TickFailure[] = [];
+    const projections: DesiredState[] = [];
     let observed = 0;
     let allFromCache = true;
 
@@ -127,6 +135,34 @@ export class ReconcilerService {
         );
         allFromCache = allFromCache && result.allFromCache;
         observed += 1;
+
+        // Belt and braces on VISION §3.3: the read adapter already strips
+        // mirror labels, and this makes a regression there a loud failure here
+        // rather than a quiet feedback loop where Opifex reads its own output.
+        assertNoMirrorLabelsObserved(result.issues);
+
+        const state: ObservedState = {
+          repository: {
+            id: repository.id,
+            owner: repository.owner,
+            name: repository.name,
+            observeEnabled: repository.observeEnabled,
+            dispatchEnabled: repository.dispatchEnabled,
+            budgetCeilingUsd: repository.budgetCeilingUsd
+              ? Number(repository.budgetCeilingUsd)
+              : null,
+          },
+          issues: result.issues,
+          workOrders: await this.loadWorkOrders(repository.id),
+          // Empty here, and that is the SAFE default: an empty set clears no
+          // quarantine at all. Resolving it needs the issue timeline (#49),
+          // which is a separate read — and erring toward "nothing is cleared"
+          // is the right way to be wrong about VISION §8's rule that only a
+          // human may release a quarantine.
+          humanClearedQuarantine: new Set<number>(),
+        };
+
+        projections.push(projectDesiredState(state));
 
         // Recorded so the next tick starts with the repository that has waited
         // longest — `listObserved` orders on this column.
@@ -151,7 +187,50 @@ export class ReconcilerService {
       }
     }
 
-    return { observed, failures, allFromCache };
+    return { observed, failures, allFromCache, projections };
+  }
+
+  /**
+   * This repository's work orders, reduced to what the projection reads.
+   *
+   * Selected rather than loaded whole: the projection is a pure function over
+   * plain data, and handing it Prisma models would couple it to the client and
+   * make an offline fixture impossible to build.
+   */
+  private async loadWorkOrders(repositoryId: string): Promise<ObservedWorkOrder[]> {
+    const workOrders = await this.prisma.workOrder.findMany({
+      where: { repositoryId },
+      select: {
+        id: true,
+        identity: true,
+        issueNumber: true,
+        attempt: true,
+        status: true,
+        runs: {
+          // The newest run is the live one; earlier runs on the same work
+          // order are history the projection does not act on.
+          orderBy: { startedAt: 'desc' },
+          take: 1,
+          select: { id: true, status: true, costUsd: true, pullRequestUrl: true },
+        },
+      },
+    });
+
+    return workOrders.map((workOrder) => ({
+      id: workOrder.id,
+      identity: workOrder.identity,
+      issueNumber: workOrder.issueNumber,
+      attempt: workOrder.attempt,
+      status: workOrder.status,
+      run: workOrder.runs[0]
+        ? {
+            id: workOrder.runs[0].id,
+            status: workOrder.runs[0].status,
+            costUsd: workOrder.runs[0].costUsd ? Number(workOrder.runs[0].costUsd) : null,
+            pullRequestUrl: workOrder.runs[0].pullRequestUrl,
+          }
+        : null,
+    }));
   }
 
   private finish(
@@ -160,6 +239,7 @@ export class ReconcilerService {
     repositoriesObserved: number,
     failures: TickFailure[],
     allFromCache: boolean,
+    projections: DesiredState[],
   ): TickRecord {
     const finishedAt = new Date();
     const record: TickRecord = {
@@ -171,6 +251,7 @@ export class ReconcilerService {
       failures,
       allFromCache,
       rateLimitRemaining: this.rateLimit.snapshot()?.remaining ?? null,
+      projections,
     };
 
     this.lastTick = record;

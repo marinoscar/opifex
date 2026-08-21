@@ -25,7 +25,10 @@ describe('ReconcilerService', () => {
   let github: { listIssues: jest.Mock };
   let http: { canSpend: jest.Mock };
   let rateLimit: RateLimitService;
-  let prisma: { repository: { update: jest.Mock } };
+  let prisma: {
+    repository: { update: jest.Mock };
+    workOrder: { findMany: jest.Mock };
+  };
 
   function build(config: Record<string, unknown> = {}): ReconcilerService {
     const values: Record<string, unknown> = {
@@ -59,7 +62,10 @@ describe('ReconcilerService', () => {
     };
     http = { canSpend: jest.fn().mockReturnValue(true) };
     rateLimit = new RateLimitService();
-    prisma = { repository: { update: jest.fn().mockResolvedValue({}) } };
+    prisma = {
+      repository: { update: jest.fn().mockResolvedValue({}) },
+      workOrder: { findMany: jest.fn().mockResolvedValue([]) },
+    };
   });
 
   describe('when disabled', () => {
@@ -216,6 +222,90 @@ describe('ReconcilerService', () => {
 
       expect(record.outcome).toBe('completed');
       expect(record.repositoriesObserved).toBe(0);
+    });
+  });
+
+  describe('the projection', () => {
+    it('is computed for each observed repository and carried on the record', async () => {
+      // It is the deliverable of VISION §12's observation week, not a
+      // debugging aid — reviewing what the reconciler CONCLUDED, before it
+      // could act, is the point of the week.
+      github.listIssues.mockResolvedValue({
+        issues: [
+          {
+            number: 312,
+            title: 'x',
+            body: null,
+            state: 'open',
+            author: 'a',
+            labels: [],
+            inputLabels: ['factory:ready'],
+            unknownInputLabels: [],
+            isPullRequest: false,
+            url: 'u',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+        truncated: false,
+        allFromCache: false,
+      });
+
+      const record = await build().tick();
+
+      expect(record.projections).toHaveLength(1);
+      expect(record.projections[0].issues[0]).toMatchObject({
+        issueNumber: 312,
+        // Dispatch is disabled by default on a repository, so `factory:ready`
+        // alone must NOT produce a dispatch intent.
+        intent: 'ignore',
+      });
+    });
+
+    it('clears no quarantine until the timeline is consulted', async () => {
+      // The safe default while #49 is outstanding: an empty
+      // `humanClearedQuarantine` releases nothing, which is the right way to
+      // be wrong about VISION §8's only-a-human rule.
+      github.listIssues.mockResolvedValue({
+        issues: [
+          {
+            number: 312,
+            title: 'x',
+            body: null,
+            state: 'open',
+            author: 'a',
+            labels: [],
+            inputLabels: ['factory:clear-quarantine'],
+            unknownInputLabels: [],
+            isPullRequest: false,
+            url: 'u',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+        truncated: false,
+        allFromCache: false,
+      });
+      prisma.workOrder.findMany.mockResolvedValue([
+        {
+          id: 'wo',
+          identity: 'wo_app_312_a3f91c2_a1',
+          issueNumber: 312,
+          attempt: 1,
+          status: 'quarantined',
+          runs: [],
+        },
+      ]);
+
+      const record = await build().tick();
+
+      expect(record.projections[0].issues[0].intent).toBe('quarantined');
+    });
+
+    it('carries no projection for a tick that observed nothing', async () => {
+      repositories.listObserved.mockResolvedValue([]);
+
+      expect((await build().tick()).projections).toEqual([]);
     });
   });
 

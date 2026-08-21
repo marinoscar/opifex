@@ -1,3 +1,5 @@
+import type { DesiredState } from './projection/desired-state.types';
+
 /**
  * What one tick did, recorded whether or not it found anything to do.
  *
@@ -22,6 +24,15 @@ export interface TickRecord {
   allFromCache: boolean;
   /** Rate-limit budget remaining when the tick finished, if known. */
   rateLimitRemaining: number | null;
+  /**
+   * What the tick computed SHOULD be true, one entry per repository observed.
+   *
+   * Carried on the record because it is the deliverable of VISION §12's
+   * observation week, not a debugging aid: reviewing what the reconciler
+   * concluded, before it could act on any of it, is the whole point of the
+   * week. #50 persists these.
+   */
+  projections: DesiredState[];
 }
 
 export type TickOutcome =
