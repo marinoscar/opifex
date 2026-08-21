@@ -109,6 +109,22 @@ export default () => {
     writesEnabled: process.env.GITHUB_WRITES_ENABLED === 'true',
   },
 
+  // Reconciler (epic #16)
+  //
+  // DEFAULTS OFF. The tick reads GitHub on a schedule, so a deployment that
+  // has not been pointed at any repository yet, and every test that boots
+  // AppModule, would otherwise start polling. As with GITHUB_WRITES_ENABLED,
+  // the comparison is against 'true' so unset, misspelled and empty all mean
+  // off.
+  reconciler: {
+    enabled: process.env.RECONCILER_ENABLED === 'true',
+    // VISION §13: start with polling, add webhooks only when tick latency
+    // demonstrably hurts. One minute is frequent enough that a human editing
+    // a label sees an effect promptly, and with ETags an unchanged repository
+    // costs no rate-limit budget at all.
+    intervalMs: parseInt(process.env.RECONCILER_INTERVAL_MS || '60000', 10),
+  },
+
   logLevel: process.env.LOG_LEVEL || 'info',
   };
 };
