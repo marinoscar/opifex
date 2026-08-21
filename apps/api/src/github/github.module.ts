@@ -36,3 +36,9 @@ import { RateLimitService } from './rate-limit.service';
   exports: [GitHubHttpService, RateLimitService, EtagCacheService],
 })
 export class GitHubModule {}
+
+// `GitHubReadModule` is NOT re-exported here, and neither will the write
+// module be. Importing the transport must not confer either capability —
+// a consumer asks for read access explicitly, which is what makes the
+// read-only guarantee visible in its imports list rather than buried in a
+// module graph.

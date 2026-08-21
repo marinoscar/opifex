@@ -163,10 +163,27 @@ export class GitHubHttpService {
    */
   async paginate<T>(
     path: string,
-    options: GitHubRequestOptions & { perPage?: number; maxPages?: number } = {},
+    options: GitHubRequestOptions & {
+      perPage?: number;
+      maxPages?: number;
+      /**
+       * Pull the array out of a page body that is not itself an array.
+       *
+       * Several GitHub endpoints wrap their results in an envelope — check
+       * runs return `{ total_count, check_runs: [...] }`, search returns
+       * `{ items: [...] }` — while paginating with the same `Link` header as
+       * the plain list endpoints. Without this the concatenation silently
+       * collects nothing and the caller sees an empty result rather than an
+       * error, which reads as "CI has nothing to say" exactly where a false
+       * green is most expensive (#107).
+       */
+      extract?: (page: unknown) => T[];
+    } = {},
   ): Promise<{ items: T[]; pages: number; truncated: boolean; allFromCache: boolean }> {
     const perPage = options.perPage ?? 100;
     const maxPages = options.maxPages ?? 10;
+    const extract =
+      options.extract ?? ((page: unknown) => (Array.isArray(page) ? (page as T[]) : []));
 
     const items: T[] = [];
     let next: string | null = this.buildUrl(path, { ...options.query, per_page: perPage });
@@ -174,13 +191,14 @@ export class GitHubHttpService {
     let allFromCache = true;
 
     while (next && pages < maxPages) {
-      const response: GitHubResponse<T[]> = await this.requestAbsolute<T[]>(next, options);
+      const response: GitHubResponse<unknown> = await this.requestAbsolute<unknown>(
+        next,
+        options,
+      );
       pages += 1;
       allFromCache = allFromCache && response.fromCache;
 
-      if (Array.isArray(response.data)) {
-        items.push(...response.data);
-      }
+      items.push(...extract(response.data));
       next = parseNextLink(response.link);
     }
 
