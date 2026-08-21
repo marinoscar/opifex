@@ -18,6 +18,7 @@ function issue(overrides: Partial<NormalizedIssue> = {}): NormalizedIssue {
     labels: [],
     inputLabels: [],
     unknownInputLabels: [],
+    observedMirrorLabels: [],
     isPullRequest: false,
     url: 'https://github.com/acme/app/issues/312',
     createdAt: new Date('2026-08-01T00:00:00Z'),
@@ -383,6 +384,32 @@ describe('projectDesiredState', () => {
   });
 
   describe('mirror labels are inert', () => {
+    it('ignores observedMirrorLabels entirely', () => {
+      // The field exists for the DIFF ENGINE, which must know what is
+      // currently written in order to avoid redundant writes and remove stale
+      // labels. The projection must never see it: letting it in would make
+      // what SHOULD be true depend on Opifex's own previous output, so a
+      // failed mirror write or a human hand-edit would roll the control
+      // plane's state backwards.
+      const clean = project(observed({ issues: [issue({ inputLabels: [INPUT_LABELS.READY] })] }));
+      const dirty = project(
+        observed({
+          issues: [
+            issue({
+              inputLabels: [INPUT_LABELS.READY],
+              observedMirrorLabels: [
+                MIRROR_LABELS.QUARANTINE,
+                MIRROR_LABELS.BLOCKED,
+                MIRROR_LABELS.DISPATCHED,
+              ],
+            }),
+          ],
+        }),
+      );
+
+      expect(dirty).toEqual(clean);
+    });
+
     it('produces the same projection whether or not mirror labels are present', () => {
       // VISION §3.3. The read adapter strips them, but if one ever reached the
       // projection it must change nothing — otherwise Opifex reads its own

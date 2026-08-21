@@ -306,6 +306,11 @@ export function toNormalizedIssue(raw: RawIssue): NormalizedIssue {
     labels: visible.map(toNormalizedLabel),
     inputLabels: visible.map((l) => l.name).filter((name): name is InputLabel => isInputLabel(name)),
     unknownInputLabels: visible.map((l) => l.name).filter(isUnknownInputLabel),
+    // Kept OUT of `labels` and surfaced separately: the diff engine needs to
+    // know what is currently written in order to avoid redundant writes and
+    // to remove stale labels, while the projection must never see them. See
+    // the field's doc comment for why those are different things.
+    observedMirrorLabels: all.filter((label) => isMirrorLabel(label.name)).map((l) => l.name),
     // GitHub's issues endpoint returns pull requests as issues, distinguished
     // only by the presence of this key.
     isPullRequest: raw.pull_request !== undefined,

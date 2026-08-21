@@ -1,3 +1,4 @@
+import type { ReconcileAction } from './diff/actions.types';
 import type { DesiredState } from './projection/desired-state.types';
 
 /**
@@ -33,6 +34,14 @@ export interface TickRecord {
    * week. #50 persists these.
    */
   projections: DesiredState[];
+  /**
+   * What the tick decided to do — and, during the observation week, did NOT do.
+   *
+   * VISION §12: "Every tick records what it observed, what it computed, and
+   * what it would have done." This is the third of those, and reviewing it is
+   * how the week's exit criterion is met.
+   */
+  actions: ReconcileAction[];
 }
 
 export type TickOutcome =

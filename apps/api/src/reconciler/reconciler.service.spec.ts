@@ -307,6 +307,48 @@ describe('ReconcilerService', () => {
 
       expect((await build().tick()).projections).toEqual([]);
     });
+
+    it('computes actions but executes none of them', async () => {
+      // VISION §12's observation week: the tick records what it WOULD have
+      // done. The reconciler module has no write adapter in its injector, so
+      // this is structural rather than a flag — but the record has to carry
+      // the list, or the week produces nothing reviewable.
+      github.listIssues.mockResolvedValue({
+        issues: [
+          {
+            number: 312,
+            title: 'x',
+            body: null,
+            state: 'open',
+            author: 'a',
+            labels: [],
+            inputLabels: [],
+            unknownInputLabels: [],
+            // A stale mirror label, which is a state that DOES produce an
+            // action even with no input labels set.
+            observedMirrorLabels: ['factory/dispatched'],
+            isPullRequest: false,
+            url: 'u',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+        truncated: false,
+        allFromCache: false,
+      });
+
+      const record = await build().tick();
+
+      expect(record.actions).toEqual([
+        expect.objectContaining({ type: 'remove-mirror-label', label: 'factory/dispatched' }),
+      ]);
+    });
+
+    it('records an empty action list for a quiet tick', async () => {
+      // A healthy steady state must cost nothing, or a week of log is
+      // unreviewable.
+      expect((await build().tick()).actions).toEqual([]);
+    });
   });
 
   describe('the record', () => {

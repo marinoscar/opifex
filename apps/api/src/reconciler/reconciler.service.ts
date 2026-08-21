@@ -7,6 +7,8 @@ import { RateLimitService } from '../github/rate-limit.service';
 import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoriesService } from '../repositories/repositories.service';
+import type { ReconcileAction } from './diff/actions.types';
+import { computeActions } from './diff/diff-engine';
 import { assertNoMirrorLabelsObserved, projectDesiredState } from './projection/desired-state';
 import type {
   DesiredState,
@@ -74,7 +76,7 @@ export class ReconcilerService {
     const startedAt = new Date();
 
     if (!this.enabled) {
-      return this.finish(startedAt, 'skipped-disabled', 0, [], true, []);
+      return this.finish(startedAt, 'skipped-disabled', 0, [], true, [], []);
     }
 
     // Checked BEFORE taking the lease: a tick that cannot afford to read
@@ -83,18 +85,18 @@ export class ReconcilerService {
       this.logger.warn(
         `Reconciler tick skipped: GitHub budget at or below the reserve of ${this.rateLimitFloor}`,
       );
-      return this.finish(startedAt, 'skipped-rate-limited', 0, [], true, []);
+      return this.finish(startedAt, 'skipped-rate-limited', 0, [], true, [], []);
     }
 
     const outcome = await this.lease.withLease(() => this.observeAll());
 
     if (!outcome.acquired) {
-      return this.finish(startedAt, 'skipped-locked', 0, [], true, []);
+      return this.finish(startedAt, 'skipped-locked', 0, [], true, [], []);
     }
 
-    const { observed, failures, allFromCache, projections } = outcome.result;
+    const { observed, failures, allFromCache, projections, actions } = outcome.result;
     const status: TickOutcome = failures.length > 0 ? 'partial' : 'completed';
-    return this.finish(startedAt, status, observed, failures, allFromCache, projections);
+    return this.finish(startedAt, status, observed, failures, allFromCache, projections, actions);
   }
 
   /**
@@ -110,10 +112,12 @@ export class ReconcilerService {
     failures: TickFailure[];
     allFromCache: boolean;
     projections: DesiredState[];
+    actions: ReconcileAction[];
   }> {
     const repositories = await this.repositories.listObserved();
     const failures: TickFailure[] = [];
     const projections: DesiredState[] = [];
+    const actions: ReconcileAction[] = [];
     let observed = 0;
     let allFromCache = true;
 
@@ -162,7 +166,14 @@ export class ReconcilerService {
           humanClearedQuarantine: new Set<number>(),
         };
 
-        projections.push(projectDesiredState(state));
+        const projection = projectDesiredState(state);
+        projections.push(projection);
+
+        // Computed, NOT executed. VISION §12: the reconciler runs read-only
+        // for a week and the action list with its reasons is what gets
+        // reviewed at the end of it. #48 adds the executor, behind its own
+        // flag; nothing here can act on these.
+        actions.push(...computeActions(state, projection));
 
         // Recorded so the next tick starts with the repository that has waited
         // longest — `listObserved` orders on this column.
@@ -187,7 +198,7 @@ export class ReconcilerService {
       }
     }
 
-    return { observed, failures, allFromCache, projections };
+    return { observed, failures, allFromCache, projections, actions };
   }
 
   /**
@@ -240,6 +251,7 @@ export class ReconcilerService {
     failures: TickFailure[],
     allFromCache: boolean,
     projections: DesiredState[],
+    actions: ReconcileAction[],
   ): TickRecord {
     const finishedAt = new Date();
     const record: TickRecord = {
@@ -252,14 +264,16 @@ export class ReconcilerService {
       allFromCache,
       rateLimitRemaining: this.rateLimit.snapshot()?.remaining ?? null,
       projections,
+      actions,
     };
 
     this.lastTick = record;
 
     if (outcome === 'completed') {
       this.logger.log(
-        `Tick completed in ${record.durationMs}ms: ${repositoriesObserved} repositories` +
-          (allFromCache && repositoriesObserved > 0 ? ' (all from cache, no quota spent)' : ''),
+        `Tick completed in ${record.durationMs}ms: ${repositoriesObserved} repositories, ` +
+          `${actions.length} actions computed (none executed)` +
+          (allFromCache && repositoriesObserved > 0 ? ', all from cache' : ''),
       );
     } else if (outcome === 'partial' || outcome === 'failed') {
       this.logger.warn(
