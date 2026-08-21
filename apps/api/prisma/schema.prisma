@@ -1040,3 +1040,91 @@ model Escalation {
   @@index([status, deliveryAttempts])
   @@map("escalations")
 }
+
+// =============================================================================
+// Opifex Domain - Reconciliation Log
+// =============================================================================
+
+/// One reconciler tick, recorded whether or not it did anything.
+///
+/// ## Why not `AuditEvent`
+///
+/// #50 asks for this decision to be made deliberately and written down, on the
+/// true premise that `AuditEvent` is written by four services today rather
+/// than being unused. It is reused for none of this, for three reasons:
+///
+///  1. **No actor.** Every `AuditEvent` row answers "which user did what to
+///     which target". A tick has no user — it is the control plane acting on
+///     its own schedule. Storing a null actor on every row would make the
+///     column meaningless for the rows that do have one.
+///  2. **Volume.** A tick a minute is ~1,440 rows a day, indefinitely, against
+///     a table currently holding a handful of user-audit rows per day. Mixing
+///     them buries the audit trail in telemetry and makes the audit table's
+///     indexes carry traffic they were never designed for.
+///  3. **Retention.** These are prunable within weeks; user-audit rows are
+///     exactly the kind of record you do not quietly delete. One table cannot
+///     have two retention policies, and inheriting the stricter one for
+///     telemetry means keeping gigabytes forever.
+///
+/// ## Retention, and the payload split
+///
+/// #50 requires a retention policy from day one, and there is a tension: every
+/// tick must be recorded (a log with gaps cannot be reviewed — a missing entry
+/// is indistinguishable from a tick that never ran), but a full state
+/// projection attached to every tick grows without bound.
+///
+/// Resolved by splitting the row: every tick writes a summary row, and the
+/// heavy `projections`/`actions` JSON is stored ONLY when the tick had
+/// something to say — it computed actions, or it failed. A quiet tick in a
+/// healthy factory is a few hundred bytes. `ReconcileTickCleanupTask` prunes
+/// rows past `RECONCILER_LOG_RETENTION_DAYS` (default 14, deliberately longer
+/// than the one-week observation window so the week is still reviewable at the
+/// end of it).
+model ReconcileTick {
+  id String @id @default(uuid()) @db.Uuid
+
+  startedAt  DateTime @map("started_at") @db.Timestamptz
+  finishedAt DateTime @map("finished_at") @db.Timestamptz
+  durationMs Int      @map("duration_ms")
+
+  /// `completed`, `partial`, `failed`, `skipped-locked`, `skipped-disabled`,
+  /// `skipped-rate-limited`. A plain string rather than an enum: outcomes are
+  /// a diagnostic vocabulary that will grow as the loop does, and a migration
+  /// per new outcome buys nothing here.
+  outcome String
+
+  repositoriesObserved Int @map("repositories_observed")
+  /// How many actions the tick COMPUTED. During the observation week nothing
+  /// executes them, which is why this is separate from any executed count.
+  actionsComputed      Int @map("actions_computed")
+  /// How many were actually performed. Zero for the whole observation week,
+  /// and the column exists from the start so "we thought we were read-only"
+  /// is checkable against the log rather than against memory.
+  actionsExecuted      Int @default(0) @map("actions_executed")
+
+  /// True when every GitHub read was answered from the ETag cache. The number
+  /// that says whether polling is affordable at all (#40).
+  allFromCache       Boolean @map("all_from_cache")
+  rateLimitRemaining Int?    @map("rate_limit_remaining")
+
+  /// Per-repository failures, `[{ repository, reason }]`. Always present.
+  failures Json
+
+  /// The computed desired state, stored only for a tick that had something to
+  /// say. Null on a quiet tick — see the retention note above.
+  projections Json?
+  /// The action list with its reasons and evidence. Null on a quiet tick.
+  ///
+  /// This is the deliverable of VISION §12's observation week: reviewing what
+  /// the reconciler WOULD have done, before it could do any of it.
+  actions     Json?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // The review query: newest first, and the pruning query, both covered.
+  @@index([startedAt])
+  // "Show me the ticks that did something", which is how a week of log is
+  // actually read.
+  @@index([outcome, startedAt])
+  @@map("reconcile_ticks")
+}

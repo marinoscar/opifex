@@ -116,6 +116,13 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
     name: 'The Factory',
     tags: [
       {
+        name: 'Reconciler',
+        description:
+          'The reconciliation log: what each tick observed, what it computed should be true, and ' +
+          'what it would have done. During the observation week nothing is executed, so this is ' +
+          'the record used to validate the control loop before it is allowed to act.',
+      },
+      {
         name: 'Repositories',
         description:
           'Which repositories Opifex watches, and the policy for each: whether the reconciler ' +

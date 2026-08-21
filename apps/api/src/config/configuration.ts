@@ -123,6 +123,10 @@ export default () => {
     // a label sees an effect promptly, and with ETags an unchanged repository
     // costs no rate-limit budget at all.
     intervalMs: parseInt(process.env.RECONCILER_INTERVAL_MS || '60000', 10),
+    // How long tick records are kept. Deliberately longer than VISION §12's
+    // one-week observation window, so the week is still fully reviewable on
+    // the day it ends rather than half-pruned.
+    logRetentionDays: parseInt(process.env.RECONCILER_LOG_RETENTION_DAYS || '14', 10),
   },
 
   logLevel: process.env.LOG_LEVEL || 'info',

@@ -9,6 +9,7 @@ import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoriesService } from '../repositories/repositories.service';
 import type { ReconcileAction } from './diff/actions.types';
+import { ReconcileLogService } from './log/reconcile-log.service';
 import { computeActions } from './diff/diff-engine';
 import { assertNoMirrorLabelsObserved, projectDesiredState } from './projection/desired-state';
 import type {
@@ -56,6 +57,7 @@ export class ReconcilerService {
     private readonly http: GitHubHttpService,
     private readonly rateLimit: RateLimitService,
     private readonly prisma: PrismaService,
+    private readonly log: ReconcileLogService,
   ) {
     this.rateLimitFloor = this.config.get<number>('github.rateLimitReserve') ?? 100;
   }
@@ -74,6 +76,24 @@ export class ReconcilerService {
    * reviewable during the observation week.
    */
   async tick(): Promise<TickRecord> {
+    return this.record(await this.runTick());
+  }
+
+  /**
+   * Persist the tick, then return it.
+   *
+   * Recording is separated from running so that a storage failure cannot
+   * change the tick's own outcome — `ReconcileLogService.record` swallows its
+   * errors for the same reason. A tick that reconciled correctly but failed to
+   * write its log row is not a failed tick, and reporting it as one would put
+   * a phantom reconciler bug in front of whoever reviews the week.
+   */
+  private async record(tick: TickRecord): Promise<TickRecord> {
+    await this.log.record(tick);
+    return tick;
+  }
+
+  private async runTick(): Promise<TickRecord> {
     const startedAt = new Date();
 
     if (!this.enabled) {

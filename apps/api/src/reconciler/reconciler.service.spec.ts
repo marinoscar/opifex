@@ -7,6 +7,7 @@ import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoriesService } from '../repositories/repositories.service';
 import { ReconcilerService } from './reconciler.service';
+import { ReconcileLogService } from './log/reconcile-log.service';
 import { TickLeaseService } from './tick-lease.service';
 
 function repository(overrides: Record<string, unknown> = {}) {
@@ -44,6 +45,9 @@ describe('ReconcilerService', () => {
       http as unknown as GitHubHttpService,
       rateLimit,
       prisma as unknown as PrismaService,
+      // Recording is a separate concern from reconciling — these suites are
+      // about what the tick DECIDES, and #50's own spec covers persistence.
+      { record: jest.fn().mockResolvedValue(undefined) } as unknown as ReconcileLogService,
     );
   }
 

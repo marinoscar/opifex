@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 
 import { GitHubReadModule } from '../github/read/github-read.module';
 import { RepositoriesModule } from '../repositories/repositories.module';
+import { ReconcileLogCleanupTask } from './log/reconcile-log.cleanup.task';
+import { ReconcileLogService } from './log/reconcile-log.service';
+import { ReconcilerController } from './reconciler.controller';
 import { ReconcilerService } from './reconciler.service';
 import { ReconcilerTask } from './reconciler.task';
 import { TickLeaseService } from './tick-lease.service';
@@ -17,7 +20,14 @@ import { TickLeaseService } from './tick-lease.service';
  */
 @Module({
   imports: [GitHubReadModule, RepositoriesModule],
-  providers: [TickLeaseService, ReconcilerService, ReconcilerTask],
-  exports: [ReconcilerService],
+  controllers: [ReconcilerController],
+  providers: [
+    TickLeaseService,
+    ReconcileLogService,
+    ReconcileLogCleanupTask,
+    ReconcilerService,
+    ReconcilerTask,
+  ],
+  exports: [ReconcilerService, ReconcileLogService],
 })
 export class ReconcilerModule {}
