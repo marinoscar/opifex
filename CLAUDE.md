@@ -57,6 +57,7 @@ Every feature and bug fix MUST be tracked by a GitHub issue, filed **before** im
 - **Larger initiative**: If the work will span multiple features or sessions, file an Epic instead with `gh issue create --template epic.yml`. Child feature issues must reference the epic number in their body or task list.
 - **Bug fix**: Before starting the fix, create (or confirm an existing) issue with `gh issue create --template bug_report.yml`. Fill in the description, reproduction steps, expected vs. actual behavior, component, and environment/logs if known. Do not file a duplicate if one already exists for the same bug — reuse it.
 - **Link the work**: Reference the issue number in commit messages and/or the PR description (`Fixes #123` / `Relates to #123`), per the `.github/pull_request_template.md` convention.
+- **Always open a PR**: Work on an issue is not finished until a pull request is open for it. See [MANDATORY: Always Open a Pull Request](#mandatory-always-open-a-pull-request) below. A branch pushed without a PR is invisible — it closes no issue, triggers no review, and puts exactly the hole in the provenance chain that VISION.MD §5 says is undetectable after the fact.
 - **Keep it current**: Update or close the issue as the corresponding PR resolves it, so issue state reflects real progress.
 - **Scope**: This applies to feature and bug work specifically. Routine `chore`/`docs`/`refactor` commits don't each need their own tracking issue.
 
@@ -83,11 +84,15 @@ Every feature or fix MUST be developed in a Git worktree. The main checkout stay
 
 **Finishing feature work:**
 1. Ensure all changes are committed inside the worktree
-2. Remove the worktree:
+2. Push the branch and **open the pull request** — see
+   [MANDATORY: Always Open a Pull Request](#mandatory-always-open-a-pull-request).
+   Do this before removing the worktree, so a failing check can still be
+   reproduced and fixed in the tree it was built in.
+3. Remove the worktree:
    ```bash
    git worktree remove worktrees/<short-name>
    ```
-3. The branch remains for PR/merge
+4. The branch remains, now with an open PR against it
 
 ### Rules
 - NEVER checkout feature branches in the main working directory
@@ -95,11 +100,52 @@ Every feature or fix MUST be developed in a Git worktree. The main checkout stay
 - One worktree per feature branch (Git enforces this)
 - If the worktree already exists for the requested feature, work inside it (don't recreate)
 
-## MANDATORY: Claude Commit-Only Git Rules
+## MANDATORY: Always Open a Pull Request
+
+**Every piece of issue-tracked work ends in an open pull request.** Committing and
+pushing is not finishing. A branch with no PR closes no issue, requests no review, runs
+no required checks, and leaves the `Issue → PR → Commit` edge of the provenance graph
+missing — which VISION.MD §5 is explicit is not detectable after the fact.
+
+### When to open it
+- **As soon as the work is reviewable.** Don't sit on a finished branch waiting to be
+  asked. Opening the PR *is* the last step of the task, not a separate errand.
+- **Open it early as a draft** if the work is real but incomplete, or if you want CI to
+  run against it while you keep going. A draft PR is always better than an invisible
+  branch.
+- **One PR per issue**, or one per coherent slice of an epic. Do not bundle unrelated
+  issues into a single PR — the closing keywords would then all resolve together and the
+  review would have no natural scope.
+
+### What it must contain
+- **Fill in `.github/pull_request_template.md`.** Treat its headings as a layout to
+  populate, not as suggestions to skim.
+- **A closing keyword is required**: `Fixes #123` / `Closes #123` / `Resolves #123`, so
+  the issue closes on merge. VISION.MD §5: *"No PR without one — a single orphan puts a
+  hole in the graph."*
+- **Say what you could not verify.** A PR that claims more than was actually run is worse
+  than one that admits a gap, because the gap is then invisible to the reviewer too.
+
+### After it is open
+- **Drive it to green.** A red or conflicted PR is work now, not "waiting on review".
+  Diagnose the failure, fix it, and push — do not report the failure and stop.
+- **Never reuse a merged PR** for follow-up work. A merged PR is finished; restart the
+  branch from the latest `main` and open a new one.
+
+### The one exception
+If the human explicitly says not to open a PR yet, don't. Their instruction wins over
+this rule — but push the branch anyway and tell them the PR is waiting on their word, so
+the work is at least recoverable.
+
+---
+
+## MANDATORY: Claude Commit Rules
 
 Claude: these rules are **MANDATORY**. Follow them exactly.  
-Your job is **only** to create clean, frequent commits while implementing the requested work.  
-Assume the branch already exists and is checked out. Do **not** create branches or PRs.
+Your job is to create clean, frequent commits while implementing the requested work, and
+then to open the pull request that carries them (see the section above).  
+Assume the branch already exists and is checked out unless the worktree workflow above
+says otherwise. Do **not** create branches outside that workflow.
 
 ---
 
