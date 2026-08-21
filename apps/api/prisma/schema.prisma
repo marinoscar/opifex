@@ -15,28 +15,28 @@ datasource db {
 // =============================================================================
 
 model User {
-  id                      String    @id @default(uuid()) @db.Uuid
-  email                   String    @unique
-  displayName             String?   @map("display_name")
-  providerDisplayName     String?   @map("provider_display_name")
-  profileImageUrl         String?   @map("profile_image_url")
-  providerProfileImageUrl String?   @map("provider_profile_image_url")
-  isActive                Boolean   @default(true) @map("is_active")
-  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  id                      String   @id @default(uuid()) @db.Uuid
+  email                   String   @unique
+  displayName             String?  @map("display_name")
+  providerDisplayName     String?  @map("provider_display_name")
+  profileImageUrl         String?  @map("profile_image_url")
+  providerProfileImageUrl String?  @map("provider_profile_image_url")
+  isActive                Boolean  @default(true) @map("is_active")
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  identities                UserIdentity[]
-  userRoles                 UserRole[]
-  userSettings              UserSettings?
-  auditEvents               AuditEvent[]     @relation("ActorEvents")
-  settingsUpdates           SystemSettings[] @relation("SettingsUpdater")
-  refreshTokens             RefreshToken[]   @relation("UserRefreshTokens")
-  allowlistEntriesAdded     AllowedEmail[]   @relation("AllowlistAddedBy")
-  allowlistEntry            AllowedEmail?    @relation("AllowlistClaimedBy")
-  deviceCodes               DeviceCode[]     @relation("UserDeviceCodes")
-  storageObjects            StorageObject[]  @relation("UserStorageObjects")
-  personalAccessTokens      PersonalAccessToken[] @relation("UserPersonalAccessTokens")
+  identities            UserIdentity[]
+  userRoles             UserRole[]
+  userSettings          UserSettings?
+  auditEvents           AuditEvent[]          @relation("ActorEvents")
+  settingsUpdates       SystemSettings[]      @relation("SettingsUpdater")
+  refreshTokens         RefreshToken[]        @relation("UserRefreshTokens")
+  allowlistEntriesAdded AllowedEmail[]        @relation("AllowlistAddedBy")
+  allowlistEntry        AllowedEmail?         @relation("AllowlistClaimedBy")
+  deviceCodes           DeviceCode[]          @relation("UserDeviceCodes")
+  storageObjects        StorageObject[]       @relation("UserStorageObjects")
+  personalAccessTokens  PersonalAccessToken[] @relation("UserPersonalAccessTokens")
 
   @@map("users")
 }
@@ -61,8 +61,8 @@ model UserIdentity {
 // =============================================================================
 
 model Role {
-  id          String   @id @default(uuid()) @db.Uuid
-  name        String   @unique
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String  @unique
   description String?
 
   // Relations
@@ -73,8 +73,8 @@ model Role {
 }
 
 model Permission {
-  id          String   @id @default(uuid()) @db.Uuid
-  name        String   @unique
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String  @unique
   description String?
 
   // Relations
@@ -269,24 +269,24 @@ model DeviceCode {
 // =============================================================================
 
 enum StorageObjectStatus {
-  pending    // Upload initiated, awaiting chunks
-  uploading  // Chunks being uploaded
+  pending // Upload initiated, awaiting chunks
+  uploading // Chunks being uploaded
   processing // Post-upload processing in progress
-  ready      // Available for use
-  failed     // Upload or processing failed
+  ready // Available for use
+  failed // Upload or processing failed
 }
 
 model StorageObject {
   id              String              @id @default(uuid()) @db.Uuid
-  name            String              // Original filename
-  size            BigInt              // Total size in bytes (BigInt for GB-scale)
+  name            String // Original filename
+  size            BigInt // Total size in bytes (BigInt for GB-scale)
   mimeType        String              @map("mime_type")
   storageKey      String              @unique @map("storage_key") // S3 object key
   storageProvider String              @default("s3") @map("storage_provider")
   bucket          String?
   status          StorageObjectStatus @default(pending)
   s3UploadId      String?             @map("s3_upload_id") // S3 multipart upload ID
-  metadata        Json?               // JSONB for flexible metadata
+  metadata        Json? // JSONB for flexible metadata
   uploadedById    String?             @map("uploaded_by_id") @db.Uuid
   createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz
@@ -306,7 +306,7 @@ model StorageObjectChunk {
   objectId   String   @map("object_id") @db.Uuid
   partNumber Int      @map("part_number") // S3 part number (1-10000)
   eTag       String   @map("e_tag") // S3 ETag for verification
-  size       BigInt   // Chunk size in bytes
+  size       BigInt // Chunk size in bytes
   uploadedAt DateTime @default(now()) @map("uploaded_at") @db.Timestamptz
 
   // Relations
@@ -315,4 +315,378 @@ model StorageObjectChunk {
   @@unique([objectId, partNumber])
   @@index([objectId])
   @@map("storage_object_chunks")
+}
+
+// =============================================================================
+// Opifex Domain - Projects & Repositories
+// =============================================================================
+//
+// VISION §3.3 draws the ownership line these models implement: GitHub holds
+// the RECORD OF WORK (issues, branches, PRs, reviews); Opifex holds the STATE
+// OF EXECUTION (queue position, run status, heartbeats, cost, quota timers,
+// retry counters). Nothing below duplicates something GitHub is authoritative
+// about - `issueNumber` is a pointer, not a copy of the issue.
+
+/// A grouping of repositories that share configuration and a budget.
+///
+/// Deliberately thin. VISION §11 states Opifex is single-operator by design
+/// and that multi-user "is not a deferred feature - it is a different
+/// product", so a project is an organisational convenience, not a tenancy
+/// boundary. A repository may exist without one.
+model Project {
+  id          String   @id @default(uuid()) @db.Uuid
+  slug        String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  repositories Repository[]
+
+  @@map("projects")
+}
+
+/// A GitHub repository Opifex watches, plus the per-repository policy the
+/// reconciler and dispatcher read.
+///
+/// `observeEnabled` and `dispatchEnabled` are separate on purpose: VISION §12
+/// requires an observation week with no dispatch, and #43 needs to end that
+/// week ONE REPOSITORY AT A TIME rather than by flipping a global switch.
+/// Collapsing them into a single "enabled" flag removes the only safe way to
+/// do that.
+model Repository {
+  id        String  @id @default(uuid()) @db.Uuid
+  projectId String? @map("project_id") @db.Uuid
+
+  owner         String
+  name          String
+  defaultBranch String @default("main") @map("default_branch")
+
+  /// The reconciler reads this repository each tick.
+  observeEnabled  Boolean @default(true) @map("observe_enabled")
+  /// Work orders for this repository may actually be dispatched to a runner.
+  /// Defaults to FALSE: a newly registered repository is observed, never run,
+  /// until a human says otherwise.
+  dispatchEnabled Boolean @default(false) @map("dispatch_enabled")
+
+  /// Per-run spend ceiling in USD, inherited by work orders that do not set
+  /// their own. Null means "no repository-level ceiling"; the global ceiling
+  /// still applies.
+  budgetCeilingUsd        Decimal? @map("budget_ceiling_usd") @db.Decimal(10, 4)
+  /// Per-run wall-clock ceiling, inherited the same way.
+  wallClockTimeoutMinutes Int?     @map("wall_clock_timeout_minutes")
+  /// Default glob path constraints applied to work orders from this
+  /// repository. Empty means unconstrained.
+  pathConstraints         String[] @map("path_constraints")
+
+  /// Reconciler bookkeeping: when the last tick observed this repository.
+  /// Null until the first successful observation.
+  lastObservedAt DateTime? @map("last_observed_at") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  project    Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  workOrders WorkOrder[]
+
+  @@unique([owner, name])
+  @@index([projectId])
+  // The reconciler's tick query: "which repositories am I observing, oldest
+  // observation first". Both columns are in the index so it never touches the
+  // table to order.
+  @@index([observeEnabled, lastObservedAt])
+  @@map("repositories")
+}
+
+// =============================================================================
+// Opifex Domain - Work Orders
+// =============================================================================
+
+/// Where a work order sits in the control loop.
+///
+/// This is NOT `RunStatus`. A work order is a queue citizen; a run is an
+/// execution. `held` and `queued` have no run at all, and `superseded` is the
+/// other half of abandon-and-re-run (VISION §3.4) - the abandoned work order
+/// keeps its record rather than being deleted, because "we tried this three
+/// times" is the input to success metric 4.
+enum WorkOrderStatus {
+  /// Projected from an issue; the reconciler has not queued it yet.
+  pending
+  /// Eligible for dispatch, waiting its turn.
+  queued
+  /// Withheld by policy - a `factory:hold` input label, or an approval gate.
+  held
+  /// Handed to a runner; a Run exists.
+  dispatched
+  /// Its run finished successfully.
+  succeeded
+  /// Its run failed terminally and it was not re-run.
+  failed
+  /// Needs a human. By VISION §8 it cannot clear its own quarantine.
+  quarantined
+  /// Abandoned in favour of a later attempt (VISION §3.4).
+  superseded
+  /// Withdrawn by an operator, or its source issue closed.
+  cancelled
+}
+
+/// A vendor-neutral, self-contained specification: a repository at a pinned
+/// commit plus a task spec, and a projection of a GitHub issue - never an
+/// independent source of truth (VISION §4).
+///
+/// ## Identity
+///
+/// Identity is deterministic, which is what makes re-runs idempotent: a runner
+/// checks whether its branch already exists before doing anything.
+///
+///   identity  wo_{repo}_{issue}_{baseCommit[0:7]}_a{attempt}
+///   branch    factory/{issue}-{baseCommit[0:7]}-a{attempt}
+///
+/// (VISION §4 writes the placeholders in angle brackets; braces here because
+/// GitHub's API strips angle brackets out of issue bodies.)
+///
+/// Both strings are STORED rather than recomputed on read. Re-run idempotency
+/// is built on that string matching exactly, so a consumer that re-derives it
+/// can disagree with the control plane about what a work order is -
+/// `apps/web/src/types/cockpit.ts` documents the same rule for the UI side.
+///
+/// ## Attempt counting
+///
+/// `attempt` is part of the identity, so abandon-and-re-run produces a NEW row
+/// rather than mutating this one. Success metric 4, "attempts per work order",
+/// is therefore `count(WorkOrder) group by (repositoryId, issueNumber)` - an
+/// index lookup, never a scan of `run_events`. The per-run retry counter is a
+/// different number and lives on `Run.attemptCount`.
+model WorkOrder {
+  id           String @id @default(uuid()) @db.Uuid
+  /// `wo_opifex_312_a3f91c2_a1`. Unique: this is the idempotency key.
+  identity     String @unique
+  repositoryId String @map("repository_id") @db.Uuid
+
+  /// The GitHub issue this work order projects. A pointer into the record,
+  /// not a copy of it.
+  issueNumber Int    @map("issue_number")
+  /// The pinned base commit, full 40-character SHA. The identity and branch
+  /// carry the 7-character prefix; this is the real thing a runner checks out.
+  baseCommit  String @map("base_commit")
+  /// 1-based. Bumped by abandon-and-re-run, never mutated in place.
+  attempt     Int    @default(1)
+  /// `factory/312-a3f91c2-a1`. Unique for the same reason `identity` is: two
+  /// work orders must never target one branch.
+  branch      String @unique
+
+  status WorkOrderStatus @default(pending)
+
+  /// The task specification handed to the runner, rendered from the issue.
+  taskSpec           String   @map("task_spec")
+  /// Testable acceptance criteria, one per element. Non-empty is enforced at
+  /// the boundary (#108), not by the column, so an imported legacy row can
+  /// still be stored.
+  acceptanceCriteria String[] @map("acceptance_criteria")
+  /// Glob constraints on what the runner may touch. Empty means the
+  /// repository default applies.
+  pathConstraints    String[] @map("path_constraints")
+
+  /// Resolved ceilings - the repository defaults are copied in at projection
+  /// time rather than read through, so changing a repository's budget cannot
+  /// retroactively change what an in-flight run was authorised to spend.
+  budgetCeilingUsd        Decimal? @map("budget_ceiling_usd") @db.Decimal(10, 4)
+  wallClockTimeoutMinutes Int?     @map("wall_clock_timeout_minutes")
+
+  /// Provenance (VISION §5). ADR identifiers such as `ADR-0042` that informed
+  /// this work, and the issue-comment URL of the authorization record once
+  /// dispatch has posted it.
+  decisionRefs            String[] @map("decision_refs")
+  authorizationCommentUrl String?  @map("authorization_comment_url")
+
+  /// Why it is held or quarantined, in one line, for the cockpit. Null
+  /// whenever the status is neither.
+  holdReason String? @map("hold_reason")
+
+  queuedAt  DateTime? @map("queued_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  runs       Run[]
+
+  // Belt and braces alongside the unique `identity`: the identity string is
+  // built from exactly these four columns, so a bug that formats it wrongly
+  // still cannot produce a duplicate attempt.
+  @@unique([repositoryId, issueNumber, baseCommit, attempt])
+  // Attempt counting per issue (success metric 4) without scanning events.
+  @@index([repositoryId, issueNumber])
+  // The queue screen: what is waiting, oldest first.
+  @@index([status, queuedAt])
+  @@map("work_orders")
+}
+
+// =============================================================================
+// Opifex Domain - Runs
+// =============================================================================
+
+/// The lifecycle state of a run as the operator reads it.
+///
+/// Mirrors `RunStatus` in `apps/web/src/types/cockpit.ts` exactly - that union
+/// is the vocabulary the status colour tokens and the status registry are
+/// keyed by, and a drift between the two would silently render an unknown
+/// status as a blank chip.
+///
+/// Derived from VISION §9's three failure modes plus the two non-failure
+/// states, and deliberately NOT a mirror of the six normalized event types:
+/// events are what a runner REPORTS, a status is what the control plane
+/// CONCLUDED. `stalled` and `quarantined` have no corresponding event at all -
+/// they are watchdog and policy verdicts.
+enum RunStatus {
+  /// Events are flowing; nothing to do.
+  running
+  /// Completed, pull request open.
+  succeeded
+  /// Silent or looping; the response is to kill and re-run.
+  stalled
+  /// Parked with a reset time; auto-resumes without a human.
+  blocked
+  /// Terminal failure.
+  failed
+  /// Needs a human; by VISION §8 it cannot clear its own quarantine.
+  quarantined
+}
+
+/// One execution of one work order by one runner.
+///
+/// A run outlives a single invocation of the runner: VISION §9's `blocked`
+/// response is "park, auto-resume with jitter", and each resume is a fresh
+/// invocation against the same work order. Those invocations are `RunAttempt`
+/// rows; the operator-facing status, cost and liveness live here so the
+/// cockpit has one row per unit of work rather than one per retry.
+model Run {
+  id          String @id @default(uuid()) @db.Uuid
+  workOrderId String @map("work_order_id") @db.Uuid
+
+  /// Which runner executed it - `claude-code-local`, `claude-code-cloud`.
+  /// A plain key rather than a foreign key at this point in the schema's
+  /// history; #39 introduces the `Runner` registry it references.
+  runnerKey     String  @map("runner_key")
+  /// The runner's own version string, for the `Runner:` commit trailer.
+  runnerVersion String? @map("runner_version")
+
+  status RunStatus @default(running)
+
+  startedAt DateTime  @default(now()) @map("started_at") @db.Timestamptz
+  endedAt   DateTime? @map("ended_at") @db.Timestamptz
+
+  /// When the last event of ANY source arrived. Null until the first one does.
+  ///
+  /// This - not `startedAt` - is what the watchdog and the attention panel
+  /// measure age from, and it is denormalized out of `run_events` on purpose:
+  /// "which runs have been silent for longer than their threshold" must be an
+  /// index scan over a few hundred runs, not an aggregate over an unbounded
+  /// event table.
+  lastEventAt DateTime? @map("last_event_at") @db.Timestamptz
+  /// ISO reset time for a `blocked` run; null for every other status. The
+  /// watchdog resumes at this time plus jitter.
+  resumesAt   DateTime? @map("resumes_at") @db.Timestamptz
+
+  /// One line: what the watchdog concluded and what the operator should do.
+  /// Populated only when a HUMAN must act. `resumesAt` is the "the system will
+  /// handle it" signal, and the two are separate fields because collapsing
+  /// them into one message destroys exactly the distinction the operator
+  /// needs (see `RunSummary` in the web types).
+  attentionReason String? @map("attention_reason")
+  /// Why the run stopped, in the runner's own words, for the run-summary PR
+  /// comment.
+  stopReason      String? @map("stop_reason")
+
+  /// How many times the runner has been invoked for this run: 1 on dispatch,
+  /// incremented by each auto-resume or kill-and-retry. Denormalized from
+  /// `RunAttempt` so the quarantine threshold is a column comparison.
+  attemptCount Int @default(0) @map("attempt_count")
+
+  /// Cumulative spend. Null when the runner reports no cost at all - VISION §6
+  /// makes cost reporting a declared capability, so "unknown" and "zero" are
+  /// genuinely different and must not both be 0.
+  costUsd      Decimal? @map("cost_usd") @db.Decimal(10, 4)
+  tokensInput  Int?     @map("tokens_input")
+  tokensOutput Int?     @map("tokens_output")
+
+  /// Present once the run has opened a pull request.
+  pullRequestUrl    String? @map("pull_request_url")
+  pullRequestNumber Int?    @map("pull_request_number")
+  /// The head commit the run left on its branch, for the git-derived liveness
+  /// watcher to compare against.
+  headCommit        String? @map("head_commit")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  workOrder WorkOrder    @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  attempts  RunAttempt[]
+
+  @@index([workOrderId])
+  // The watchdog's whole query: live runs ordered by how long they have been
+  // silent. `status` first because it is the selective half.
+  @@index([status, lastEventAt])
+  // The blocked-run sweeper: "what is due to resume".
+  @@index([resumesAt])
+  // The runs list, newest first.
+  @@index([startedAt])
+  @@map("runs")
+}
+
+/// How one invocation of the runner ended.
+enum RunAttemptOutcome {
+  /// Still in flight.
+  running
+  succeeded
+  /// The runner reported a terminal failure.
+  failed
+  /// The watchdog killed it - silent or looping (VISION §9).
+  killed
+  /// Parked on a structured block reason; a later attempt resumes it.
+  blocked
+}
+
+/// One invocation of a runner inside a run.
+///
+/// First-class and countable because VISION §3.4's recovery model is abandon
+/// and re-run: "how many times did we have to poke this" is an operational
+/// number, and answering it by counting `run.started` events would conflate a
+/// re-invocation with a runner that emits its start event twice.
+model RunAttempt {
+  id     String @id @default(uuid()) @db.Uuid
+  runId  String @map("run_id") @db.Uuid
+  /// 1-based within the run.
+  number Int
+
+  outcome RunAttemptOutcome @default(running)
+
+  /// The runner's own handle for this invocation - a session id, a job id -
+  /// so a run can be correlated back to vendor-side logs. Opaque to Opifex.
+  runnerRunId String? @map("runner_run_id")
+
+  startedAt DateTime  @default(now()) @map("started_at") @db.Timestamptz
+  endedAt   DateTime? @map("ended_at") @db.Timestamptz
+
+  /// Why this invocation ended, one line.
+  stopReason   String?   @map("stop_reason")
+  /// Structured block reason with its reset time, when the outcome is
+  /// `blocked` - a rate limit, a quota window. What the resume schedule reads.
+  blockedUntil DateTime? @map("blocked_until") @db.Timestamptz
+
+  costUsd Decimal? @map("cost_usd") @db.Decimal(10, 4)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, number])
+  @@index([runId])
+  @@index([outcome])
+  @@map("run_attempts")
 }
