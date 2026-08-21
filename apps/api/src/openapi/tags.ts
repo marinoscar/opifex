@@ -113,6 +113,19 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
     ],
   },
   {
+    name: 'The Factory',
+    tags: [
+      {
+        name: 'Repositories',
+        description:
+          'Which repositories Opifex watches, and the policy for each: whether the reconciler ' +
+          'observes it, whether work orders may be dispatched against it, and its budget and path ' +
+          'ceilings. Observation and dispatch are separate switches on purpose, so dispatch can be ' +
+          'enabled one repository at a time.',
+      },
+    ],
+  },
+  {
     name: 'Operations',
     tags: [
       {

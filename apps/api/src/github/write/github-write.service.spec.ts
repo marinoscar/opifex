@@ -1,0 +1,210 @@
+import { ConfigService } from '@nestjs/config';
+
+import { GitHubHttpService } from '../github-http.service';
+import { GitHubNotFoundError } from '../github.errors';
+import { GitHubWriteService } from './github-write.service';
+import { ApprovalRequirement, Reversibility, WriteAction } from './reversibility';
+
+const REPO = { owner: 'acme', name: 'app' };
+
+function httpMock() {
+  return { request: jest.fn().mockResolvedValue({ data: {} }) } as unknown as jest.Mocked<
+    Pick<GitHubHttpService, 'request'>
+  >;
+}
+
+function build(http: ReturnType<typeof httpMock>, writesEnabled: boolean) {
+  const config = {
+    get: (key: string) => (key === 'github.writesEnabled' ? writesEnabled : undefined),
+  } as unknown as ConfigService;
+  return new GitHubWriteService(http as unknown as GitHubHttpService, config);
+}
+
+describe('GitHubWriteService', () => {
+  let http: ReturnType<typeof httpMock>;
+
+  beforeEach(() => {
+    http = httpMock();
+  });
+
+  describe('the kill switch', () => {
+    it('defaults OFF when the config says nothing', () => {
+      // VISION §12's observation week is the default posture, not an opt-in.
+      const config = { get: () => undefined } as unknown as ConfigService;
+      const service = new GitHubWriteService(http as unknown as GitHubHttpService, config);
+
+      expect(service.enabled).toBe(false);
+    });
+
+    it('issues no HTTP request at all while disabled', async () => {
+      await build(http, false).addLabel(REPO, 312, 'factory/dispatched');
+
+      expect(http.request).not.toHaveBeenCalled();
+    });
+
+    it('still returns a fully-formed result, because the diff log IS the deliverable', async () => {
+      // With writes off the calling path must be the REAL one, exercised for a
+      // week — not a branch that has never run. A suppressed write therefore
+      // produces a record as complete as a performed one.
+      const result = await build(http, false).addLabel(REPO, 312, 'factory/dispatched');
+
+      expect(result).toMatchObject({
+        action: WriteAction.AddLabel,
+        reversibility: Reversibility.Reversible,
+        performed: false,
+      });
+      expect(result.description).toContain('factory/dispatched');
+      expect(result.description).toContain('acme/app#312');
+    });
+
+    it('suppresses pre-authorized record-writing too', async () => {
+      // The carve-out is about APPROVAL, not about the kill switch. During the
+      // observation week nothing reaches GitHub, mandated or not.
+      const result = await build(http, false).postRunSummary(REPO, 9, 'summary');
+
+      expect(result.performed).toBe(false);
+      expect(http.request).not.toHaveBeenCalled();
+    });
+
+    it('performs the write when enabled', async () => {
+      const result = await build(http, true).addLabel(REPO, 312, 'factory/dispatched');
+
+      expect(result.performed).toBe(true);
+      expect(http.request).toHaveBeenCalledWith(
+        '/repos/acme/app/issues/312/labels',
+        expect.objectContaining({ method: 'POST', body: { labels: ['factory/dispatched'] } }),
+      );
+    });
+  });
+
+  describe('every result carries its classification', () => {
+    it.each([
+      ['addLabel', () => build(http, true).addLabel(REPO, 1, 'x'), Reversibility.Reversible, ApprovalRequirement.Gated],
+      ['removeLabel', () => build(http, true).removeLabel(REPO, 1, 'x'), Reversibility.Reversible, ApprovalRequirement.Gated],
+      ['postGeneralComment', () => build(http, true).postGeneralComment(REPO, 1, 'x'), Reversibility.Irreversible, ApprovalRequirement.Gated],
+      ['postRunSummary', () => build(http, true).postRunSummary(REPO, 1, 'x'), Reversibility.Irreversible, ApprovalRequirement.PreAuthorizedRecord],
+      ['postAuthorizationRecord', () => build(http, true).postAuthorizationRecord(REPO, 1, {}), Reversibility.Irreversible, ApprovalRequirement.PreAuthorizedRecord],
+      ['postEscalationNote', () => build(http, true).postEscalationNote(REPO, 1, 'x'), Reversibility.Irreversible, ApprovalRequirement.PreAuthorizedRecord],
+    ])('%s', async (_name, call, reversibility, approval) => {
+      // The approval engine in epic #22 consumes this. Establishing it at the
+      // adapter means it is a decision made here, not one guessed later by
+      // whoever writes that engine.
+      const result = await call();
+
+      expect(result.reversibility).toBe(reversibility);
+      expect(result.approval).toBe(approval);
+    });
+  });
+
+  describe('idempotency', () => {
+    it('does not check before adding a label, since GitHub accepts a duplicate', async () => {
+      // Checking first would cost one request per tick to avoid an error that
+      // does not occur — the add-labels endpoint returns 200 for a label
+      // already present.
+      await build(http, true).addLabel(REPO, 312, 'bug');
+
+      expect(http.request).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats "label does not exist" on removal as the end state already holding', async () => {
+      // A reconciler computing "this label should be absent" must not fail
+      // every tick after the first one that removed it.
+      http.request.mockRejectedValue(
+        new GitHubNotFoundError('Label does not exist (DELETE /x)', 404, 'DELETE', '/x'),
+      );
+
+      const result = await build(http, true).removeLabel(REPO, 312, 'factory/dispatched');
+
+      expect(result.noop).toBe(true);
+      expect(result.performed).toBe(true);
+    });
+
+    it('does NOT swallow a 404 for a wrong issue number', async () => {
+      // GitHub answers 404 for both cases and only the message separates them.
+      // Swallowing this one hides a wrong issue number for weeks.
+      http.request.mockRejectedValue(
+        new GitHubNotFoundError('Not Found (DELETE /x)', 404, 'DELETE', '/x'),
+      );
+
+      await expect(build(http, true).removeLabel(REPO, 999, 'bug')).rejects.toBeInstanceOf(
+        GitHubNotFoundError,
+      );
+    });
+
+    it('URL-encodes a label name on removal', async () => {
+      // `factory:clear-quarantine` and anything with a slash or space would
+      // otherwise change the path rather than the label.
+      await build(http, true).removeLabel(REPO, 312, 'factory/dispatched');
+
+      expect(http.request).toHaveBeenCalledWith(
+        '/repos/acme/app/issues/312/labels/factory%2Fdispatched',
+        expect.objectContaining({ method: 'DELETE' }),
+      );
+    });
+  });
+
+  describe('the authorization record', () => {
+    it('posts the work order as tagged, fenced JSON', async () => {
+      // VISION §5's premise is that the GitHub graph extracts into a knowledge
+      // graph. An unfenced blob of JSON in prose does not extract, and an HTML
+      // marker is what lets a later reader find it without guessing.
+      await build(http, true).postAuthorizationRecord(REPO, 312, {
+        id: 'wo_app_312_a3f91c2_a1',
+      });
+
+      const [, options] = http.request.mock.calls[0] as [string, { body: { body: string } }];
+      expect(options.body.body).toContain('<!-- opifex:authorization-record -->');
+      expect(options.body.body).toContain('```json');
+      expect(options.body.body).toContain('"wo_app_312_a3f91c2_a1"');
+    });
+
+    it('marks the run summary and escalation notes too', async () => {
+      const service = build(http, true);
+      await service.postRunSummary(REPO, 9, 'ran fine');
+      await service.postEscalationNote(REPO, 312, 'stalled');
+
+      const bodies = http.request.mock.calls.map(
+        ([, options]) => (options as { body: { body: string } }).body.body,
+      );
+      expect(bodies[0]).toContain('<!-- opifex:run-summary -->');
+      expect(bodies[1]).toContain('<!-- opifex:escalation -->');
+    });
+
+    it('leaves a general comment unmarked', async () => {
+      // Only the records VISION mandates are machine-extractable markers; a
+      // marker on an ordinary comment would make it look like one.
+      await build(http, true).postGeneralComment(REPO, 312, 'just a note');
+
+      const [, options] = http.request.mock.calls[0] as [string, { body: { body: string } }];
+      expect(options.body.body).toBe('just a note');
+    });
+  });
+
+  describe('what this service cannot do', () => {
+    it('exposes no member outside the classified set', () => {
+      // If a method is added without a `WriteAction`, it shows up here. The
+      // never-trustable list is enforced by ABSENCE (see reversibility.spec),
+      // and this is the guard that the absence stays true as the class grows:
+      // a new adapter has to be added to this list deliberately.
+      const members = Object.getOwnPropertyNames(GitHubWriteService.prototype).filter(
+        (name) => name !== 'constructor',
+      );
+
+      expect(members.sort()).toEqual([
+        'addLabel',
+        // The kill-switch getter, not a write.
+        'enabled',
+        // The single kill-switch check. Public so the issue-creation gate
+        // (#108) routes its own write through it rather than around it.
+        'guardedWrite',
+        'postAuthorizationRecord',
+        // The shared comment poster the four comment adapters route through.
+        'postComment',
+        'postEscalationNote',
+        'postGeneralComment',
+        'postRunSummary',
+        'removeLabel',
+      ]);
+    });
+  });
+});

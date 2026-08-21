@@ -1304,6 +1304,87 @@ The storage system provides file upload and management capabilities with support
 
 ---
 
+### Repositories
+
+Which repositories Opifex watches, and the policy for each. Requires
+`projects:read` to read and `projects:write` to change.
+
+Observation and dispatch are **separate switches** on purpose. VISION §12
+requires the reconciler to run read-only for an observation week before it is
+allowed to act, and that week has to end one repository at a time — a single
+`enabled` flag would leave no way to do that except globally.
+
+#### GET /repositories
+List registered repositories. Paginated.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `page` | number | `1` | 1-based page number |
+| `pageSize` | number | `25` | Max 100 |
+| `observeEnabled` | boolean | — | Filter to what the reconciler reads |
+| `dispatchEnabled` | boolean | — | Filter to what may be dispatched |
+| `projectId` | uuid | — | Filter by project |
+
+#### GET /repositories/{id}
+Get one registered repository.
+
+#### POST /repositories
+Register a repository.
+
+**Verifies the repository is reachable** with the configured GitHub credential
+before accepting it — an entry Opifex cannot read would turn every subsequent
+reconciler tick into a 404. The default branch is read from GitHub rather than
+assumed, because a work order pins its base commit on that branch.
+
+**Request:**
+```json
+{
+  "owner": "marinoscar",
+  "name": "opifex",
+  "observeEnabled": true,
+  "dispatchEnabled": false,
+  "budgetCeilingUsd": 5.0,
+  "wallClockTimeoutMinutes": 30,
+  "pathConstraints": ["apps/api/**"]
+}
+```
+
+Only `owner` and `name` are required. `dispatchEnabled` defaults to **false**:
+a newly registered repository is observed, never run, until a human says
+otherwise.
+
+**Response:** `201` with the repository, including its `fullName` and the
+`defaultBranch` read from GitHub.
+
+**Errors:**
+
+| Status | Cause |
+|---|---|
+| `400` | Not reachable (does not exist, or the token cannot see it), or archived |
+| `409` | Already registered |
+| `503` | The GitHub credential is missing, expired, or lacks access |
+
+#### PATCH /repositories/{id}
+Update the policy. Omitted fields are left unchanged; an explicit `null` clears
+a ceiling.
+
+**Enabling dispatch re-verifies reachability** — that is the moment a
+repository stops being observed and starts being written to, so a token whose
+access was revoked since registration must not have dispatch turned on against
+it. Disabling never re-verifies: that has to work precisely when GitHub is
+unreachable.
+
+#### DELETE /repositories/{id}
+De-register a repository. Returns `204`.
+
+**Refused with `400` while the repository has work orders.** Deleting would
+cascade away runs and their provenance, and VISION §5's premise is that the
+chain survives. Set `observeEnabled` and `dispatchEnabled` to `false` instead.
+
+---
+
 ### Health
 
 **Public endpoints** - Used for Kubernetes liveness/readiness probes.
