@@ -115,6 +115,8 @@ export class RepositoriesService {
         // Never defaulted true, whatever the caller asks for on creation is
         // still their explicit choice — but the absence of a choice means off.
         dispatchEnabled: dto.dispatchEnabled ?? false,
+        // Same reasoning as dispatch: absence of a choice means off.
+        mirrorLabelsEnabled: dto.mirrorLabelsEnabled ?? false,
         budgetCeilingUsd: dto.budgetCeilingUsd ?? null,
         wallClockTimeoutMinutes: dto.wallClockTimeoutMinutes ?? null,
         pathConstraints: dto.pathConstraints ?? [],
@@ -155,6 +157,9 @@ export class RepositoriesService {
         ...(dto.projectId !== undefined && { projectId: dto.projectId }),
         ...(dto.observeEnabled !== undefined && { observeEnabled: dto.observeEnabled }),
         ...(dto.dispatchEnabled !== undefined && { dispatchEnabled: dto.dispatchEnabled }),
+        ...(dto.mirrorLabelsEnabled !== undefined && {
+          mirrorLabelsEnabled: dto.mirrorLabelsEnabled,
+        }),
         ...(dto.budgetCeilingUsd !== undefined && { budgetCeilingUsd: dto.budgetCeilingUsd }),
         ...(dto.wallClockTimeoutMinutes !== undefined && {
           wallClockTimeoutMinutes: dto.wallClockTimeoutMinutes,
@@ -264,6 +269,7 @@ function toResponse(repository: Repository) {
     defaultBranch: repository.defaultBranch,
     observeEnabled: repository.observeEnabled,
     dispatchEnabled: repository.dispatchEnabled,
+    mirrorLabelsEnabled: repository.mirrorLabelsEnabled,
     budgetCeilingUsd: repository.budgetCeilingUsd?.toString() ?? null,
     wallClockTimeoutMinutes: repository.wallClockTimeoutMinutes,
     pathConstraints: repository.pathConstraints,

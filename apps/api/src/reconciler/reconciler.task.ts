@@ -2,7 +2,9 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
+import { MirrorLabelExecutor } from './execute/mirror-label.executor';
 import { ReconcilerService } from './reconciler.service';
+import { RepositoriesService } from '../repositories/repositories.service';
 
 const INTERVAL_NAME = 'reconciler-tick';
 
@@ -29,6 +31,8 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly scheduler: SchedulerRegistry,
     private readonly reconciler: ReconcilerService,
+    private readonly executor: MirrorLabelExecutor,
+    private readonly repositories: RepositoriesService,
   ) {}
 
   onModuleInit(): void {
@@ -74,7 +78,25 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
    */
   private async runOnce(): Promise<void> {
     try {
-      await this.reconciler.tick();
+      // COMPUTE, then APPLY — two steps, two components. This method is the
+      // only place they meet, which is what keeps `ReconcilerService` unable
+      // to act on its own conclusions.
+      const record = await this.reconciler.tick();
+
+      if (record.actions.length === 0) return;
+
+      const enabledFor = new Set(
+        (await this.repositories.listObserved())
+          .filter((repository) => repository.mirrorLabelsEnabled)
+          .map((repository) => `${repository.owner}/${repository.name}`),
+      );
+
+      // Skip the call entirely when nothing has opted in, rather than handing
+      // the executor a list it will suppress item by item. During the
+      // observation week this is every tick.
+      if (enabledFor.size === 0) return;
+
+      await this.executor.execute(record.actions, enabledFor);
     } catch (error) {
       this.logger.error(
         `Reconciler tick threw, which tick() is supposed to prevent: ${

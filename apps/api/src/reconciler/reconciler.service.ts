@@ -33,12 +33,14 @@ import { TickLeaseService } from './tick-lease.service';
  * tick, so manual intervention is a first-class input rather than a
  * perturbation it has to be told about.
  *
- * ## Read-only, by construction
+ * ## This service cannot write, and that is still true after #48
  *
- * VISION §12 requires this to run read-only for a week before it is allowed to
- * write. This service therefore imports `GitHubReadModule` and NOT the write
- * module — the guarantee is in the module graph, not in a flag anyone can
- * flip by accident. #48 adds the mirror-label writer, behind its own flag.
+ * It depends on the GitHub READ service and on nothing that can write. #48
+ * added a mirror-label executor to the module, but not to this class:
+ * `ReconcilerTask` calls this to COMPUTE an action list and then hands that
+ * list to the executor separately. The component that decides what should
+ * happen remains incapable of making it happen, which is the property VISION
+ * §12's observation week actually rests on.
  */
 @Injectable()
 export class ReconcilerService {

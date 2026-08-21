@@ -28,6 +28,7 @@ function repositoryRow(overrides: Record<string, unknown> = {}) {
     defaultBranch: 'main',
     observeEnabled: true,
     dispatchEnabled: false,
+    mirrorLabelsEnabled: false,
     budgetCeilingUsd: null,
     wallClockTimeoutMinutes: null,
     pathConstraints: [],
@@ -102,6 +103,15 @@ describe('RepositoriesService', () => {
 
       expect(result.observeEnabled).toBe(true);
       expect(result.dispatchEnabled).toBe(false);
+    });
+
+    it('defaults mirror labels OFF as well', async () => {
+      // A newly registered repository is observed and written to by nothing.
+      // VISION §12's week ends in stages, so this is a separate flip from
+      // dispatch.
+      const result = await service.register({ owner: 'acme', name: 'app' });
+
+      expect(result.mirrorLabelsEnabled).toBe(false);
     });
 
     it('honours an explicit dispatch choice', async () => {

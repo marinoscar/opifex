@@ -371,6 +371,20 @@ model Repository {
   /// until a human says otherwise.
   dispatchEnabled Boolean @default(false) @map("dispatch_enabled")
 
+  /// Opifex may write `factory/*` mirror labels to this repository.
+  ///
+  /// A THIRD switch, separate from both `observeEnabled` and
+  /// `dispatchEnabled`, because mirror labels are the first thing Opifex ever
+  /// writes to a repository and are worth proving on their own. VISION §12's
+  /// observation week ends in stages: observe, then write labels, then
+  /// dispatch. Collapsing this into `dispatchEnabled` would mean the first
+  /// write and the first RUN happen on the same flag flip, which is exactly
+  /// the "prove the write path before dispatch exists" step #48 is for.
+  ///
+  /// Gated a second time by the global `GITHUB_WRITES_ENABLED`: both must be
+  /// on for a label to be written.
+  mirrorLabelsEnabled Boolean @default(false) @map("mirror_labels_enabled")
+
   /// Per-run spend ceiling in USD, inherited by work orders that do not set
   /// their own. Null means "no repository-level ceiling"; the global ceiling
   /// still applies.
