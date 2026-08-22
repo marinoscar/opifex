@@ -129,6 +129,46 @@ export default () => {
     logRetentionDays: parseInt(process.env.RECONCILER_LOG_RETENTION_DAYS || '14', 10),
   },
 
+  // Notifications (epic #17, #58)
+  //
+  // The last link in the chain VISION §1 complains about: everything upstream
+  // can work perfectly and detection latency is still measured in hours if
+  // nobody is actually told.
+  notifications: {
+    // Web Push (RFC 8030 + VAPID). No third-party account and no per-vendor
+    // credential - the key pair is generated once with `npx web-push
+    // generate-vapid-keys` and lives in the environment like every other
+    // secret. See docs/adr/0004-notification-transport.md.
+    //
+    // Absent keys DISABLE the transport rather than making it fail silently:
+    // the dispatcher records `failed` with a reason naming the missing
+    // configuration, so an unconfigured install is visible in the cockpit
+    // instead of looking like a system nothing has ever needed to say.
+    vapidPublicKey: process.env.VAPID_PUBLIC_KEY || '',
+    vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || '',
+    // The `mailto:` a push service contacts if our requests misbehave. Part
+    // of the VAPID spec, not optional decoration.
+    vapidSubject: process.env.VAPID_SUBJECT || '',
+
+    // How long a dispatched escalation may go without a device receipt
+    // before it is treated as undelivered.
+    //
+    // Web Push gives no delivery guarantee: a 201 means the push service
+    // ACCEPTED the message, not that a phone showed it. #58 is explicit that
+    // an escalation which silently failed to send is indistinguishable from
+    // no escalation, so the service worker posts a receipt back and this is
+    // how long we wait for it.
+    receiptTimeoutMs: parseInt(process.env.NOTIFY_RECEIPT_TIMEOUT_MS || '120000', 10),
+
+    // A SECOND, independent path, used only when Web Push could not deliver.
+    //
+    // #58: "a delivery failure must itself escalate through a different
+    // path." A generic POST, so it works with ntfy, a chat webhook, or
+    // anything that accepts JSON. Off unless set: it sends escalation text to
+    // a third party, which is the operator's decision to make, not a default.
+    fallbackWebhookUrl: process.env.NOTIFY_FALLBACK_WEBHOOK_URL || '',
+  },
+
   logLevel: process.env.LOG_LEVEL || 'info',
   };
 };

@@ -38,6 +38,7 @@ model User {
   storageObjects          StorageObject[]       @relation("UserStorageObjects")
   personalAccessTokens    PersonalAccessToken[] @relation("UserPersonalAccessTokens")
   escalationsAcknowledged Escalation[]          @relation("EscalationAcknowledgedBy")
+  pushSubscriptions       PushSubscription[]
 
   @@map("users")
 }
@@ -1028,6 +1029,50 @@ enum EscalationStatus {
 }
 
 /// One attempt to get a human's attention.
+/// A browser push subscription: one device an operator can be reached on.
+///
+/// VISION §8 sets the bar at *"one tap from a phone"*, and #58 is explicit
+/// that everything upstream can work perfectly while detection latency is
+/// still measured in hours if nobody is actually told.
+model PushSubscription {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  /// The push service URL the browser issued.
+  ///
+  /// Unique because it IS the device's identity in the Web Push protocol: a
+  /// browser re-subscribing with the same key material gets the same
+  /// endpoint back, and inserting a second row for it would push twice to
+  /// one phone.
+  endpoint String @unique
+  /// The subscription's public key and auth secret, for payload encryption.
+  /// The payload is encrypted end to end - the push service relays bytes it
+  /// cannot read, which is why escalation detail can travel through it.
+  p256dh   String
+  auth     String
+
+  /// What subscribed, so an operator revoking a device can tell which it is.
+  userAgent String? @map("user_agent")
+
+  /// Consecutive delivery failures, and when each side last happened.
+  ///
+  /// A push service answering 404 or 410 means the subscription is
+  /// permanently gone; anything else may be transient. Kept per subscription
+  /// rather than inferred from escalations so a dead phone can be pruned
+  /// without reading the escalation history.
+  failureCount  Int       @default(0) @map("failure_count")
+  lastSuccessAt DateTime? @map("last_success_at") @db.Timestamptz
+  lastFailureAt DateTime? @map("last_failure_at") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
 model Escalation {
   id    String  @id @default(uuid()) @db.Uuid
   /// The run this is about. Null for a `system` escalation, which has no run.
