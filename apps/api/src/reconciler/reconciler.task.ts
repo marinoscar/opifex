@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
 import { GitLivenessService } from '../liveness/git-liveness.service';
+import { WatchdogService } from '../watchdog/watchdog.service';
+import type { ReconcileAction } from './diff/actions.types';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
 import { ReconcilerService } from './reconciler.service';
 import { RepositoriesService } from '../repositories/repositories.service';
@@ -35,6 +37,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     private readonly executor: MirrorLabelExecutor,
     private readonly repositories: RepositoriesService,
     private readonly liveness: GitLivenessService,
+    private readonly watchdog: WatchdogService,
   ) {}
 
   onModuleInit(): void {
@@ -102,6 +105,31 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Judge every live run for silence.
+   *
+   * Independently caught, like the liveness sweep: a watchdog failure must not
+   * stop the reconciler, and a reconciler failure must not stop the watchdog.
+   * They answer different questions and one being broken is when the other
+   * matters most.
+   */
+  private async sweepWatchdog(): Promise<ReconcileAction[]> {
+    try {
+      const result = await this.watchdog.sweep();
+      if (result.silentRuns > 0) {
+        this.logger.warn(
+          `Watchdog: ${result.silentRuns} of ${result.runsJudged} run(s) silent past threshold`,
+        );
+      }
+      return result.actions;
+    } catch (error) {
+      this.logger.error(
+        `Watchdog sweep failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
+  }
+
   private async runOnce(): Promise<void> {
     try {
       // Liveness FIRST, so the tick's projection sees the freshest run state.
@@ -110,12 +138,23 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // #54 is measuring.
       await this.sweepLiveness();
 
+      // Then judge liveness, on the freshest state the sweep just produced.
+      // Running the watchdog BEFORE the sweep would judge every run one tick
+      // stale — and for a stall, one tick stale is exactly the latency #54 is
+      // trying to minimise.
+      const watchdogActions = await this.sweepWatchdog();
+
       // COMPUTE, then APPLY — two steps, two components. This method is the
       // only place they meet, which is what keeps `ReconcilerService` unable
       // to act on its own conclusions.
       const record = await this.reconciler.tick();
 
-      if (record.actions.length === 0) return;
+      // The watchdog's actions are computed alongside the reconciler's and,
+      // in Phase 3, executed just as little. The mirror-label executor below
+      // ignores everything that is not a label action, so a kill-and-re-run
+      // passing through it is inert by construction rather than by a check.
+      const actions = [...watchdogActions, ...record.actions];
+      if (actions.length === 0) return;
 
       const enabledFor = new Set(
         (await this.repositories.listObserved())
@@ -128,7 +167,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // observation week this is every tick.
       if (enabledFor.size === 0) return;
 
-      await this.executor.execute(record.actions, enabledFor);
+      await this.executor.execute(actions, enabledFor);
     } catch (error) {
       this.logger.error(
         `Reconciler tick threw, which tick() is supposed to prevent: ${

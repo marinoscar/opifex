@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { GitHubReadModule } from '../github/read/github-read.module';
 import { GitHubWriteModule } from '../github/write/github-write.module';
 import { LivenessModule } from '../liveness/liveness.module';
+import { WatchdogModule } from '../watchdog/watchdog.module';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
 import { RepositoriesModule } from '../repositories/repositories.module';
 import { ReconcileLogCleanupTask } from './log/reconcile-log.cleanup.task';
@@ -38,7 +39,13 @@ import { TickLeaseService } from './tick-lease.service';
  * `Repository.mirrorLabelsEnabled` per repository. Both must be on.
  */
 @Module({
-  imports: [GitHubReadModule, GitHubWriteModule, LivenessModule, RepositoriesModule],
+  imports: [
+    GitHubReadModule,
+    GitHubWriteModule,
+    LivenessModule,
+    WatchdogModule,
+    RepositoriesModule,
+  ],
   controllers: [ReconcilerController],
   providers: [
     TickLeaseService,
