@@ -30,6 +30,20 @@ export interface DispatchLimits {
   globalMaxConcurrent: number | null;
   /** Live runs across the whole fleet right now. */
   globalLiveRuns: number;
+  /**
+   * The operator has accepted that a preview runner will be load-bearing.
+   *
+   * See docs/adr/0007-preview-runner-acknowledgement.md. VISION §11 requires a
+   * GA fallback for every preview runner; VISION §3.7 forbids building a second
+   * runner before it is needed. With one runner the fallback cannot exist, so
+   * without this the only runner is permanently ineligible.
+   *
+   * What is kept is "never SILENTLY load-bearing" — the acknowledgement is a
+   * deployment decision and it is named in the recorded reason, not just in a
+   * config file. What is given up is "never load-bearing", which a
+   * single-runner fleet cannot honour by construction.
+   */
+  allowPreviewWithoutGaFallback?: boolean;
 }
 
 export type DispatchOutcome = 'dispatch' | 'queued';
@@ -189,13 +203,28 @@ export function decideDispatch(
       }
       if (isPreview(entry.capabilities) && !hasGaFallback(input.needs)) {
         // The one rejection that is about the FLEET rather than the runner.
-        return verdict(
-          entry,
-          input.needs,
-          false,
-          `declares stability tier '${entry.capabilities.stabilityTier}' and no GA runner can ` +
-            `take this work order, so selecting it would make a preview runner load-bearing`,
-        );
+        if (!limits.allowPreviewWithoutGaFallback) {
+          return verdict(
+            entry,
+            input.needs,
+            false,
+            `declares stability tier '${entry.capabilities.stabilityTier}' and no GA runner can ` +
+              `take this work order, so selecting it would make a preview runner load-bearing`,
+          );
+        }
+        // Eligible, and the reason SAYS why it was allowed. #64 requires the
+        // decision be reconstructible from the reason alone, and "this ran on
+        // a preview runner because somebody accepted that" is exactly the fact
+        // a reader six weeks later needs and cannot recover from anywhere else.
+        if (headroom > 0) {
+          return verdict(
+            entry,
+            input.needs,
+            true,
+            `declares stability tier '${entry.capabilities.stabilityTier}' with no GA fallback, ` +
+              'permitted because the operator has acknowledged a load-bearing preview runner',
+          );
+        }
       }
       if (headroom === 0) {
         return verdict(

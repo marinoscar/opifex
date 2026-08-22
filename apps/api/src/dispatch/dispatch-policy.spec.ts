@@ -200,6 +200,117 @@ describe('dispatch policy', () => {
     });
   });
 
+  describe('the preview acknowledgement (ADR 0007)', () => {
+    // A single-runner fleet cannot satisfy VISION §11's GA-fallback rule, and
+    // VISION §3.7 forbids building the second runner to satisfy it. The
+    // acknowledgement keeps "never SILENTLY load-bearing" and gives up "never
+    // load-bearing", which is unreachable by construction.
+    const ACKNOWLEDGED: DispatchLimits = { ...NO_LIMIT, allowPreviewWithoutGaFallback: true };
+
+    it('still refuses by default, because a bypass that defaults on is not a rule', () => {
+      const decision = decideDispatch(
+        { needs: ['full-streaming'] },
+        [entry({ key: 'claude-code-local', stabilityTier: 'experimental' })],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.queueReason).toBe('only-preview-runners-and-no-ga-fallback');
+    });
+
+    it('dispatches to the only runner once the operator has acknowledged it', () => {
+      const decision = decideDispatch(
+        { needs: ['full-streaming', 'own-infrastructure'] },
+        [entry({ key: 'claude-code-local', stabilityTier: 'experimental' })],
+        ACKNOWLEDGED,
+      );
+
+      expect(decision.outcome).toBe('dispatch');
+      expect(decision.runnerKey).toBe('claude-code-local');
+    });
+
+    it('records WHY it was allowed, not just that it was', () => {
+      // #64 requires the decision be reconstructible from the reason alone.
+      // "This ran on a preview runner because somebody accepted that" is the
+      // fact a reader six weeks later cannot recover from anywhere else.
+      const decision = decideDispatch(
+        { needs: [] },
+        [entry({ key: 'claude-code-local', stabilityTier: 'experimental' })],
+        ACKNOWLEDGED,
+      );
+
+      const chosen = decision.candidates.find((c) => c.runnerKey === 'claude-code-local');
+      expect(chosen?.reason).toContain('acknowledged');
+      expect(chosen?.reason).toContain('experimental');
+    });
+
+    it('does not override anything except the fallback rule', () => {
+      // The acknowledgement is about tier alone. A runner that cannot do the
+      // work is still ineligible, and letting this flag paper over an unmet
+      // need would route work to a runner that will fail at it.
+      const decision = decideDispatch(
+        { needs: ['cost-reporting'] },
+        [entry({ key: 'claude-code-local', stabilityTier: 'experimental', reportsCost: false })],
+        ACKNOWLEDGED,
+      );
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.queueReason).toBe('no-runner-has-the-capabilities');
+    });
+
+    it('still respects the runner\'s own concurrency ceiling', () => {
+      const decision = decideDispatch(
+        { needs: [] },
+        [entry({ key: 'claude-code-local', stabilityTier: 'experimental', maxConcurrency: 1 }, 1)],
+        ACKNOWLEDGED,
+      );
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.queueReason).toBe('capable-runners-are-at-capacity');
+    });
+
+    it('still respects the global fleet ceiling', () => {
+      const decision = decideDispatch(
+        { needs: [] },
+        [entry({ key: 'claude-code-local', stabilityTier: 'experimental' })],
+        { globalMaxConcurrent: 1, globalLiveRuns: 1, allowPreviewWithoutGaFallback: true },
+      );
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.queueReason).toBe('global-concurrency-reached');
+    });
+
+    it('still prefers a GA runner when one exists', () => {
+      // The acknowledgement is a floor, not a preference. A fleet that has a
+      // stable runner must not start choosing the preview one because the
+      // flag happens to be set.
+      const decision = decideDispatch(
+        { needs: [] },
+        [
+          entry({ key: 'preview', stabilityTier: 'experimental', maxConcurrency: 9 }),
+          entry({ key: 'ga', stabilityTier: 'stable', maxConcurrency: 1 }),
+        ],
+        ACKNOWLEDGED,
+      );
+
+      // Headroom still ranks, so `preview` wins on slots — what matters is
+      // that `ga` is eligible and the acknowledgement changed nothing for it.
+      const ga = decision.candidates.find((c) => c.runnerKey === 'ga');
+      expect(ga?.eligible).toBe(true);
+      expect(ga?.reason).not.toContain('acknowledged');
+    });
+
+    it('leaves a disabled preview runner disabled', () => {
+      const decision = decideDispatch(
+        { needs: [] },
+        [{ capabilities: capabilities({ stabilityTier: 'experimental' }), enabled: false, liveRuns: 0 }],
+        ACKNOWLEDGED,
+      );
+
+      expect(decision.outcome).toBe('queued');
+    });
+  });
+
   describe('preview runners are never load-bearing', () => {
     it.each(['experimental', 'beta'] as const)('treats %s as preview', (tier) => {
       expect(isPreview(capabilities({ stabilityTier: tier }))).toBe(true);

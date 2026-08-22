@@ -53,6 +53,8 @@ export class DispatchService {
     const decision = decideDispatch({ needs, identity }, pool, {
       globalMaxConcurrent: this.config.get<number | null>('dispatch.maxConcurrent') ?? null,
       globalLiveRuns,
+      allowPreviewWithoutGaFallback:
+        this.config.get<boolean>('dispatch.allowPreviewRunner') === true,
     });
 
     // Logged at `log` for a dispatch and `warn` for a queue: a work order that
