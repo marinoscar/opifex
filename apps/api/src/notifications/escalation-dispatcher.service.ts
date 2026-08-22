@@ -9,6 +9,24 @@ import { FallbackWebhookTransport, WEBHOOK_TARGET } from './fallback-webhook.tra
 import { PushSubscriptionsService } from './push-subscriptions.service';
 import { WebPushTransport } from './web-push.transport';
 
+/**
+ * How many times one escalation is sent before it is given up on.
+ *
+ * #136: a `failed` escalation used to be retried never, so a push service
+ * that returned a 500 for thirty seconds lost the escalation permanently —
+ * the exact failure #58 exists to eliminate, arrived at by a different route.
+ *
+ * The reconciler tick IS the backoff: at the default one-minute interval this
+ * is roughly five minutes of trying, which is the right order of magnitude
+ * for a notification whose whole value is its latency. A dedicated backoff
+ * column would buy precision this does not need.
+ *
+ * After the cap the row stays `failed`, and that is the honest end state:
+ * nobody was told, `GET /escalations/latency` counts it under
+ * `awaitingNotification`, and the cockpit shows it.
+ */
+export const MAX_DELIVERY_ATTEMPTS = 5;
+
 export interface DispatchResult {
   /** Escalations handed to a transport this pass. */
   dispatched: number;
@@ -18,6 +36,10 @@ export interface DispatchResult {
   timedOut: number;
   /** Escalations re-routed to the fallback path after Web Push failed. */
   rerouted: number;
+  /** Previously-failed escalations tried again this pass. */
+  retried: number;
+  /** Escalations that hit the attempt cap and will not be tried again. */
+  abandoned: number;
 }
 
 /**
@@ -57,13 +79,26 @@ export class EscalationDispatcher {
    * one; sweeping after means a dispatch always gets its full window.
    */
   async dispatchPending(now: Date = new Date()): Promise<DispatchResult> {
-    const result: DispatchResult = { dispatched: 0, failed: 0, timedOut: 0, rerouted: 0 };
+    const result: DispatchResult = {
+      dispatched: 0,
+      failed: 0,
+      timedOut: 0,
+      rerouted: 0,
+      retried: 0,
+      abandoned: 0,
+    };
 
-    for (const escalation of await this.loadRaised()) {
+    for (const escalation of await this.loadPending()) {
+      // A retry, not a first attempt. Counted separately so a transport that
+      // is limping along is visible as such rather than looking healthy
+      // because the escalations eventually went out.
+      if (escalation.deliveryAttempts > 0) result.retried += 1;
+
       const outcome = await this.deliver(escalation, now);
       result.dispatched += outcome.dispatched;
       result.failed += outcome.failed;
       result.rerouted += outcome.rerouted;
+      result.abandoned += outcome.abandoned;
     }
 
     result.timedOut = await this.sweepOverdue(now);
@@ -109,9 +144,24 @@ export class EscalationDispatcher {
     return { escalationId: escalation.id, recorded: true };
   }
 
-  private async loadRaised() {
+  /**
+   * Everything still owed to a human.
+   *
+   * `failed` is included, bounded by the attempt cap — #136. An escalation
+   * that failed once is not finished with; it is one the operator has still
+   * not been told about, and the transport that refused it a minute ago may
+   * well take it now.
+   *
+   * `dispatched` is deliberately NOT here: a transport already has custody,
+   * and sending it again would put two notifications on the phone for one
+   * stall. `sweepOverdue` is what deals with a dispatch that never arrived.
+   */
+  private async loadPending() {
     return this.prisma.escalation.findMany({
-      where: { status: 'raised' },
+      where: {
+        status: { in: ['raised', 'failed'] },
+        deliveryAttempts: { lt: MAX_DELIVERY_ATTEMPTS },
+      },
       // Oldest first: the one that has been waiting longest is the one whose
       // detection latency is worst, and #59 measures to notification.
       orderBy: { raisedAt: 'asc' },
@@ -126,6 +176,7 @@ export class EscalationDispatcher {
         detail: true,
         raisedAt: true,
         progressStoppedAt: true,
+        deliveryAttempts: true,
         run: {
           select: {
             workOrder: {
@@ -146,9 +197,9 @@ export class EscalationDispatcher {
    * none of them took it.
    */
   private async deliver(
-    escalation: Awaited<ReturnType<EscalationDispatcher['loadRaised']>>[number],
+    escalation: Awaited<ReturnType<EscalationDispatcher['loadPending']>>[number],
     now: Date,
-  ): Promise<{ dispatched: number; failed: number; rerouted: number }> {
+  ): Promise<{ dispatched: number; failed: number; rerouted: number; abandoned: number }> {
     const receiptId = randomBytes(32).toString('hex');
     const appUrl = this.config.get<string>('appUrl') ?? '';
     const payload = buildPayload(escalation, receiptId, appUrl);
@@ -175,7 +226,7 @@ export class EscalationDispatcher {
           deliveryAttempts: { increment: 1 },
         },
       });
-      return { dispatched: 1, failed: 0, rerouted: 0 };
+      return { dispatched: 1, failed: 0, rerouted: 0, abandoned: 0 };
     }
 
     // Nothing took it. #58: "a delivery failure must itself escalate through
@@ -185,7 +236,7 @@ export class EscalationDispatcher {
     const reason = describeFailure(targets.length, outcomes, this.push.isConfigured());
     const rerouted = await this.reroute(escalation.id, payload, reason, now);
 
-    if (rerouted) return { dispatched: 1, failed: 0, rerouted: 1 };
+    if (rerouted) return { dispatched: 1, failed: 0, rerouted: 1, abandoned: 0 };
 
     await this.prisma.escalation.update({
       where: { id: escalation.id },
@@ -196,15 +247,23 @@ export class EscalationDispatcher {
       },
     });
 
-    // At `error`, with a marker an infrastructure alert can match. This is
-    // the end of the line: nobody has been told, and the only remaining
-    // channel is the server's own logs and the cockpit's `failed` list.
+    // Was that the last try? Read from the value the update just wrote, not
+    // from the stale row we loaded, so the count cannot drift.
+    const attempts = escalation.deliveryAttempts + 1;
+    const abandoned = attempts >= MAX_DELIVERY_ATTEMPTS;
+
+    // At `error`, with a marker an infrastructure alert can match. Two
+    // different sentences, because they are two different situations: one
+    // will be tried again shortly, and one never will.
     this.logger.error(
-      `NOTIFICATION FAILED — nobody has been told about escalation ${escalation.id} ` +
-        `(${escalation.summary}). ${reason}`,
+      abandoned
+        ? `NOTIFICATION ABANDONED — escalation ${escalation.id} (${escalation.summary}) failed ` +
+            `${attempts} times and will NOT be retried. Nobody has been told. ${reason}`
+        : `NOTIFICATION FAILED — escalation ${escalation.id} (${escalation.summary}), attempt ` +
+            `${attempts} of ${MAX_DELIVERY_ATTEMPTS}, will retry next tick. ${reason}`,
     );
 
-    return { dispatched: 0, failed: 1, rerouted: 0 };
+    return { dispatched: 0, failed: 1, rerouted: 0, abandoned: abandoned ? 1 : 0 };
   }
 
   /** The second path. Returns true when it took the message. */
