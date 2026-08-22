@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
+import { GitLivenessService } from '../liveness/git-liveness.service';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
 import { ReconcilerService } from './reconciler.service';
 import { RepositoriesService } from '../repositories/repositories.service';
@@ -33,6 +34,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     private readonly reconciler: ReconcilerService,
     private readonly executor: MirrorLabelExecutor,
     private readonly repositories: RepositoriesService,
+    private readonly liveness: GitLivenessService,
   ) {}
 
   onModuleInit(): void {
@@ -76,8 +78,38 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
    * dead factory, which is precisely the silent failure this system exists to
    * eliminate.
    */
+  /**
+   * Derive git liveness for every live run.
+   *
+   * Separated and independently caught: the git watcher is one of two
+   * INDEPENDENT liveness sources (VISION §9), and a failure in it must not
+   * stop the reconciler tick that follows. An outage in one source is exactly
+   * when the other matters most.
+   */
+  private async sweepLiveness(): Promise<void> {
+    try {
+      const result = await this.liveness.sweep();
+      if (result.eventsRecorded > 0 || result.disagreements.length > 0) {
+        this.logger.log(
+          `Git liveness: ${result.runsWatched} run(s), ${result.eventsRecorded} new event(s), ` +
+            `${result.disagreements.length} disagreement(s) with runner-reported liveness`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Git liveness sweep failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   private async runOnce(): Promise<void> {
     try {
+      // Liveness FIRST, so the tick's projection sees the freshest run state.
+      // Deriving it after would mean every conclusion is one tick stale — and
+      // for a stalled run, one tick stale is the difference the watchdog in
+      // #54 is measuring.
+      await this.sweepLiveness();
+
       // COMPUTE, then APPLY — two steps, two components. This method is the
       // only place they meet, which is what keeps `ReconcilerService` unable
       // to act on its own conclusions.
