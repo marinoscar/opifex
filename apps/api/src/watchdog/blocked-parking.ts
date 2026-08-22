@@ -163,7 +163,14 @@ export function actionsForParking(
       // Phase 4's dispatch path exists (#66 does that wiring and says so).
       return [{ ...base, type: 'resume', reason: decision.reason }];
     case 'escalate':
-      return [{ ...base, type: 'escalate', reason: decision.reason }];
+      // `system` rather than `run_stalled`: the run is not stalled, it is
+      // correctly blocked. What has failed is that nothing can date the
+      // block, which is a gap in what the runner reported rather than a
+      // problem with the run itself — and an operator triaging these needs to
+      // tell those apart.
+      return [
+        { ...base, type: 'escalate', escalationKind: 'system', reason: decision.reason },
+      ];
     case 'waiting':
       // The system is working. A blocked run waiting out its quota is Opifex
       // succeeding, and emitting an action every tick would bury the real ones.

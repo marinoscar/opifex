@@ -123,6 +123,13 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
           'the record used to validate the control loop before it is allowed to act.',
       },
       {
+        name: 'Escalations',
+        description:
+          'What needs a human, with the lifecycle that distinguishes raised from delivered from ' +
+          'acknowledged. VISION §9 makes escalation an action rather than telemetry: a stalled ' +
+          'run nobody is told about is the exact failure this system exists to eliminate.',
+      },
+      {
         name: 'Run Events',
         description:
           'Where runners report what they are doing, validated against the six normalized event ' +

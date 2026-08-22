@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { EscalationsModule } from '../escalations/escalations.module';
 import { GitHubReadModule } from '../github/read/github-read.module';
 import { GitHubWriteModule } from '../github/write/github-write.module';
 import { LivenessModule } from '../liveness/liveness.module';
@@ -45,6 +46,10 @@ import { TickLeaseService } from './tick-lease.service';
     LivenessModule,
     WatchdogModule,
     RepositoriesModule,
+    // Escalation records, written by the task and by nothing else in here.
+    // `ReconcilerService` still cannot reach them, which keeps "decides" and
+    // "acts" on opposite sides of the same line the executor is on.
+    EscalationsModule,
   ],
   controllers: [ReconcilerController],
   providers: [

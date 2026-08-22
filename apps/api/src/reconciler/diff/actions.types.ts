@@ -94,6 +94,22 @@ export interface ReconcileAction {
   runId?: string;
 
   /**
+   * Which kind of escalation this is, for `escalate` actions.
+   *
+   * Carried on the action rather than inferred downstream, because the
+   * component that decided to escalate is the one that knows why — and
+   * deduplication is per (run, kind), so guessing it wrong would either
+   * suppress a real second problem or page twice about one.
+   */
+  escalationKind?:
+    | 'run_stalled'
+    | 'run_looping'
+    | 'run_failed'
+    | 'quarantined'
+    | 'budget_exceeded'
+    | 'system';
+
+  /**
    * When a parked run should be woken (#56).
    *
    * Carries the jitter already applied, not the raw reset time — the whole

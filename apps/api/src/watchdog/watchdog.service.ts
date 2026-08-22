@@ -14,6 +14,16 @@ import type { StreamingFidelity, WatchedRunState } from './watchdog.types';
 
 export interface WatchdogSweepResult {
   runsJudged: number;
+  /**
+   * Every run this sweep actually looked at, live and blocked.
+   *
+   * Reported so the caller can tell "judged and found healthy" apart from
+   * "not judged at all". Only the first clears an outstanding escalation: a
+   * run that dropped out of the sweep has not recovered, it has vanished, and
+   * quietly resolving its escalation would be exactly the silent failure this
+   * system exists to eliminate.
+   */
+  judgedRunIds: string[];
   /** Actions computed. During Phase 3 none of the kills execute. */
   actions: ReconcileAction[];
   silentRuns: number;
@@ -106,6 +116,7 @@ export class WatchdogService {
 
     return {
       runsJudged: runs.length,
+      judgedRunIds: [...runs.map((run) => run.runId), ...parking.judgedRunIds],
       silentRuns: verdicts.length,
       loopingRuns,
       loopCheckUnavailable,
@@ -130,6 +141,7 @@ export class WatchdogService {
   private async sweepBlocked(now: Date): Promise<{
     parked: number;
     resumable: number;
+    judgedRunIds: string[];
     actions: ReconcileAction[];
   }> {
     const runs = await this.loadBlockedRuns();
@@ -161,7 +173,7 @@ export class WatchdogService {
       }
     }
 
-    return { parked, resumable, actions };
+    return { parked, resumable, judgedRunIds: runs.map((run) => run.runId), actions };
   }
 
   /**

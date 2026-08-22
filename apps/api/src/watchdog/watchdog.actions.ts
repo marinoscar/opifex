@@ -53,6 +53,7 @@ export function actionsForSilence(verdict: SilenceVerdict): ReconcileAction[] {
     {
       ...base,
       type: 'escalate',
+      escalationKind: 'run_stalled',
       // Written to be decidable from a phone (#57): what stopped, where, how
       // long ago, and what Opifex intends to do about it.
       reason:
@@ -113,6 +114,7 @@ export function actionsForLoop(
     {
       ...base,
       type: 'escalate',
+      escalationKind: 'run_looping',
       reason:
         `${run.workOrderIdentity} (${run.repository}#${run.issueNumber}) is looping — ` +
         `${verdict.reason}. Re-running it unchanged would loop again, so the work order needs ` +

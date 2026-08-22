@@ -2,8 +2,9 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
+import { EscalationsService } from '../escalations/escalations.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
-import { WatchdogService } from '../watchdog/watchdog.service';
+import { WatchdogService, type WatchdogSweepResult } from '../watchdog/watchdog.service';
 import type { ReconcileAction } from './diff/actions.types';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
 import { ReconcilerService } from './reconciler.service';
@@ -38,6 +39,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     private readonly repositories: RepositoriesService,
     private readonly liveness: GitLivenessService,
     private readonly watchdog: WatchdogService,
+    private readonly escalations: EscalationsService,
   ) {}
 
   onModuleInit(): void {
@@ -113,7 +115,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
    * They answer different questions and one being broken is when the other
    * matters most.
    */
-  private async sweepWatchdog(): Promise<ReconcileAction[]> {
+  private async sweepWatchdog(): Promise<WatchdogSweepResult> {
     try {
       const result = await this.watchdog.sweep();
       if (result.parkedRuns > 0 || result.resumableRuns > 0) {
@@ -133,12 +135,69 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
               : ''),
         );
       }
-      return result.actions;
+      return result;
     } catch (error) {
       this.logger.error(
         `Watchdog sweep failed: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return [];
+      // No runs judged, rather than an empty sweep: a watchdog that threw has
+      // established nothing about any run, and reporting them healthy would
+      // resolve their escalations on the strength of a failure.
+      return {
+        runsJudged: 0,
+        judgedRunIds: [],
+        actions: [],
+        silentRuns: 0,
+        loopingRuns: 0,
+        loopCheckUnavailable: 0,
+        parkedRuns: 0,
+        resumableRuns: 0,
+      };
+    }
+  }
+
+  /**
+   * Turn `escalate` actions into escalation records.
+   *
+   * VISION §9: escalation is an action, not telemetry — so it happens here,
+   * alongside the label executor, and NOT inside the components that decide
+   * to escalate. Detection stays a pure function over data; persistence stays
+   * in the one place that is allowed to act.
+   *
+   * Independently caught for the same reason the sweeps are: an escalation
+   * that cannot be written must not take down the tick that would notice the
+   * next problem.
+   */
+  private async raiseEscalations(
+    actions: ReconcileAction[],
+    judgedRunIds: string[],
+  ): Promise<void> {
+    try {
+      const { raised, deduplicated } = await this.escalations.raiseFrom(actions);
+      if (raised > 0) {
+        this.logger.warn(`Escalations: ${raised} raised, ${deduplicated} suppressed as duplicates`);
+      }
+
+      // A run the watchdog judged and did NOT escalate about has recovered.
+      // Conservatively per RUN rather than per kind: if anything at all is
+      // still wrong with a run, nothing about it is cleared automatically.
+      // Over-resolving would delete a problem nobody ever saw.
+      const stillEscalating = new Set(
+        actions
+          .filter((action) => action.type === 'escalate')
+          .map((action) => action.runId)
+          .filter((runId): runId is string => Boolean(runId)),
+      );
+      const recovered = judgedRunIds.filter((runId) => !stillEscalating.has(runId));
+
+      const resolved = await this.escalations.resolveStale(recovered);
+      if (resolved > 0) {
+        this.logger.log(`Escalations: ${resolved} resolved because the condition cleared`);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Raising escalations failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -154,7 +213,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // Running the watchdog BEFORE the sweep would judge every run one tick
       // stale — and for a stall, one tick stale is exactly the latency #54 is
       // trying to minimise.
-      const watchdogActions = await this.sweepWatchdog();
+      const watchdog = await this.sweepWatchdog();
 
       // COMPUTE, then APPLY — two steps, two components. This method is the
       // only place they meet, which is what keeps `ReconcilerService` unable
@@ -165,7 +224,15 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // in Phase 3, executed just as little. The mirror-label executor below
       // ignores everything that is not a label action, so a kill-and-re-run
       // passing through it is inert by construction rather than by a check.
-      const actions = [...watchdogActions, ...record.actions];
+      const actions = [...watchdog.actions, ...record.actions];
+
+      // BEFORE the mirror-label gate below. Notification is a reconciler
+      // output on the same footing as dispatch (VISION §9), so it must not
+      // sit behind a flag that exists to keep label writes off during the
+      // observation week — the whole point of that week is being told what
+      // the system would have done.
+      await this.raiseEscalations(actions, watchdog.judgedRunIds);
+
       if (actions.length === 0) return;
 
       const enabledFor = new Set(
