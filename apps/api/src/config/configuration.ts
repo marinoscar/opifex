@@ -179,6 +179,13 @@ export default () => {
       // goes silent and is caught by the watchdog (#54), which is the failure
       // this system exists to notice. Widening it is a deliberate act.
       permissionMode: process.env.CLAUDE_CODE_PERMISSION_MODE || 'acceptEdits',
+      // A wall-clock backstop for work orders that name no ceiling of their
+      // own. VISION §1's origin story is four hours dead; an unbounded run
+      // that wedges is exactly that shape. Unset means genuinely unbounded,
+      // which is a deliberate choice rather than an oversight.
+      defaultTimeoutMinutes: process.env.RUNNER_DEFAULT_TIMEOUT_MINUTES
+        ? parseInt(process.env.RUNNER_DEFAULT_TIMEOUT_MINUTES, 10)
+        : 60,
     },
   },
 
