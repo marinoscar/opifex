@@ -116,6 +116,14 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
   private async sweepWatchdog(): Promise<ReconcileAction[]> {
     try {
       const result = await this.watchdog.sweep();
+      if (result.parkedRuns > 0 || result.resumableRuns > 0) {
+        // Logged at `log` rather than `warn`: a parked run is the system
+        // working, and VISION §1's rate-limit case is where Opifex most
+        // visibly recovers hours with nobody involved.
+        this.logger.log(
+          `Watchdog: ${result.parkedRuns} run(s) parked, ${result.resumableRuns} due to resume`,
+        );
+      }
       if (result.silentRuns > 0 || result.loopingRuns > 0) {
         this.logger.warn(
           `Watchdog: ${result.runsJudged} run(s) judged — ${result.silentRuns} silent, ` +

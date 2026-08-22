@@ -2,6 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 import type { ReconcileAction } from '../reconciler/diff/actions.types';
+import {
+  actionsForParking,
+  decideParking,
+  type BlockedRunState,
+} from './blocked-parking';
 import { detectLoop, type ToolObservation } from './loop-detection';
 import { detectSilentRuns } from './silent-detection';
 import { actionsForLoop, actionsForSilence } from './watchdog.actions';
@@ -22,6 +27,10 @@ export interface WatchdogSweepResult {
    * included unmeasurable ones would be a false reassurance.
    */
   loopCheckUnavailable: number;
+  /** Runs newly parked with a scheduled resume. */
+  parkedRuns: number;
+  /** Parked runs whose scheduled time has arrived. */
+  resumableRuns: number;
 }
 
 /**
@@ -92,13 +101,112 @@ export class WatchdogService {
       actions.push(...actionsForLoop(loop, run));
     }
 
+    const parking = await this.sweepBlocked(now);
+    actions.push(...parking.actions);
+
     return {
       runsJudged: runs.length,
       silentRuns: verdicts.length,
       loopingRuns,
       loopCheckUnavailable,
+      parkedRuns: parking.parked,
+      resumableRuns: parking.resumable,
       actions,
     };
+  }
+
+  /**
+   * Park blocked runs and wake the ones whose time has come.
+   *
+   * The other half of VISION §1's origin story:
+   *
+   * > An agent hits a rate limit at 2pm. I find out at 6pm. Four hours dead.
+   *
+   * This is where Opifex most visibly recovers hours with no human involved,
+   * which is why a parked run produces no action at all while it waits — the
+   * system working should be quiet, and an action every tick would bury the
+   * ones that need attention.
+   */
+  private async sweepBlocked(now: Date): Promise<{
+    parked: number;
+    resumable: number;
+    actions: ReconcileAction[];
+  }> {
+    const runs = await this.loadBlockedRuns();
+    const actions: ReconcileAction[] = [];
+    let parked = 0;
+    let resumable = 0;
+
+    for (const run of runs) {
+      const decision = decideParking(run, now);
+      actions.push(...actionsForParking(run, decision));
+
+      if (decision.kind === 'park') {
+        parked += 1;
+        // Persisted so the next tick sees it already scheduled and waits,
+        // rather than re-deciding and moving the time again — which would
+        // leave the run chasing its own jitter and never resuming.
+        await this.prisma.run.update({
+          where: { id: run.runId },
+          data: { resumesAt: decision.resumeAt },
+        });
+        this.logger.log(decision.reason);
+      } else if (decision.kind === 'resume') {
+        resumable += 1;
+        this.logger.log(
+          `${decision.reason} — computed resume action (not dispatched; Phase 4 wires that, #66)`,
+        );
+      } else if (decision.kind === 'escalate') {
+        this.logger.warn(decision.reason);
+      }
+    }
+
+    return { parked, resumable, actions };
+  }
+
+  /**
+   * Blocked runs, with the reason and reset time #53 carried through.
+   *
+   * `blockedSince` comes from the newest `run.blocked` event rather than the
+   * run's own timestamps: a run can block, resume and block again, and the
+   * patience clock for an undated block has to start at the CURRENT block.
+   */
+  private async loadBlockedRuns(): Promise<BlockedRunState[]> {
+    const runs = await this.prisma.run.findMany({
+      where: { status: 'blocked' },
+      select: {
+        id: true,
+        startedAt: true,
+        resumesAt: true,
+        workOrder: {
+          select: {
+            identity: true,
+            issueNumber: true,
+            repository: { select: { owner: true, name: true } },
+          },
+        },
+        events: {
+          where: { type: 'run_blocked' },
+          orderBy: { occurredAt: 'desc' },
+          take: 1,
+          select: { occurredAt: true, blockedReason: true, blockedUntil: true },
+        },
+      },
+    });
+
+    return runs.map((run) => {
+      const event = run.events[0];
+      return {
+        runId: run.id,
+        workOrderIdentity: run.workOrder.identity,
+        repository: `${run.workOrder.repository.owner}/${run.workOrder.repository.name}`,
+        issueNumber: run.workOrder.issueNumber,
+        blockedSince: event?.occurredAt ?? run.startedAt,
+        resetAt: event?.blockedUntil ?? null,
+        reason: event?.blockedReason ?? null,
+        resumesAt: run.resumesAt,
+      };
+    });
   }
 
   /**

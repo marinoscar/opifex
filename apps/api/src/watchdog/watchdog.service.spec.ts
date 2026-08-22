@@ -21,8 +21,15 @@ function runRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe('WatchdogService', () => {
+  /** Live runs for the first query; the blocked query still returns none. */
+  function mockLiveRuns(rows: unknown[]) {
+    prisma.run.findMany.mockImplementation(async (query: { where: { status: unknown } }) =>
+      query.where.status === 'blocked' ? [] : rows,
+    );
+  }
+
   let prisma: {
-    run: { findMany: jest.Mock };
+    run: { findMany: jest.Mock; update?: jest.Mock };
     runEvent: { findMany: jest.Mock };
   };
   let service: WatchdogService;
@@ -32,6 +39,12 @@ describe('WatchdogService', () => {
       run: { findMany: jest.fn().mockResolvedValue([runRow()]) },
       runEvent: { findMany: jest.fn().mockResolvedValue([]) },
     };
+    // Blocked runs are a second query against `run.findMany`; by default the
+    // suite has none, so the first call returns live runs and the second none.
+    prisma.run.findMany.mockImplementation(async (query: { where: { status: unknown } }) =>
+      query.where.status === 'blocked' ? [] : [runRow()],
+    );
+    prisma.run.update = jest.fn().mockResolvedValue({});
     service = new WatchdogService(prisma as unknown as PrismaService);
   });
 
@@ -106,7 +119,7 @@ describe('WatchdogService', () => {
 
   describe('a healthy run', () => {
     it('produces no actions at all', async () => {
-      prisma.run.findMany.mockResolvedValue([
+      mockLiveRuns([
         runRow({ lastEventAt: new Date(NOW.getTime() - 5_000) }),
       ]);
 
@@ -119,7 +132,7 @@ describe('WatchdogService', () => {
 
   describe('capability-derived thresholds, end to end', () => {
     it('spares a non-streaming runner at an age that would kill a streaming one', async () => {
-      prisma.run.findMany.mockResolvedValue([
+      mockLiveRuns([
         runRow({
           runnerKey: 'claude-code-cloud',
           runner: { capability: { streamingFidelity: 'none' } },
@@ -133,7 +146,7 @@ describe('WatchdogService', () => {
     it('spares a runner with no capability manifest at all', async () => {
       // An unregistered runner is an operational gap; killing its runs is the
       // wrong way to report one.
-      prisma.run.findMany.mockResolvedValue([
+      mockLiveRuns([
         runRow({
           runner: null,
           lastEventAt: new Date(NOW.getTime() - 30 * 60_000),
@@ -162,7 +175,7 @@ describe('WatchdogService', () => {
 
     beforeEach(() => {
       // Healthy on the silence axis, so only the loop check can fire.
-      prisma.run.findMany.mockResolvedValue([
+      mockLiveRuns([
         runRow({ lastEventAt: new Date(NOW.getTime() - 5_000) }),
       ]);
     });
@@ -192,7 +205,7 @@ describe('WatchdogService', () => {
     it('counts an unmeasurable run separately from a clean one', async () => {
       // A count of zero looping runs that quietly included unmeasurable ones
       // would be a false reassurance.
-      prisma.run.findMany.mockResolvedValue([
+      mockLiveRuns([
         runRow({
           lastEventAt: new Date(NOW.getTime() - 5_000),
           runner: { capability: { streamingFidelity: 'none' } },
@@ -209,7 +222,7 @@ describe('WatchdogService', () => {
       // A run cannot be both: silence means no events at all, a loop is
       // defined by events flowing. Computing two different kill responses for
       // one run would put contradictory instructions in front of the operator.
-      prisma.run.findMany.mockResolvedValue([
+      mockLiveRuns([
         runRow({ lastEventAt: new Date(NOW.getTime() - 10 * 60_000) }),
       ]);
 
@@ -239,6 +252,120 @@ describe('WatchdogService', () => {
 
       expect(result.loopingRuns).toBe(0);
       expect(result.actions).toEqual([]);
+    });
+  });
+
+  describe('parking blocked runs', () => {
+    function blockedRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'blocked-run',
+        startedAt: new Date(NOW.getTime() - 60 * 60_000),
+        resumesAt: null,
+        workOrder: {
+          identity: 'wo_opifex_318_c1d2e3f_a1',
+          issueNumber: 318,
+          repository: { owner: 'marinoscar', name: 'opifex' },
+        },
+        events: [
+          {
+            occurredAt: new Date(NOW.getTime() - 5 * 60_000),
+            blockedReason: 'rate-limit',
+            blockedUntil: new Date(NOW.getTime() + 4 * 60 * 60_000),
+          },
+        ],
+        ...overrides,
+      };
+    }
+
+    function mockBlocked(rows: unknown[]) {
+      prisma.run.findMany.mockImplementation(async (query: { where: { status: unknown } }) =>
+        query.where.status === 'blocked' ? rows : [],
+      );
+    }
+
+    it('parks a newly blocked run and persists the scheduled resume', async () => {
+      // Persisted so the NEXT tick sees it scheduled and waits, rather than
+      // re-deciding and moving the time again — which would leave the run
+      // chasing its own jitter and never resuming.
+      mockBlocked([blockedRow()]);
+
+      const result = await service.sweep(NOW);
+
+      expect(result.parkedRuns).toBe(1);
+      expect(result.actions.map((a) => a.type)).toEqual(['park']);
+      const [{ data }] = prisma.run.update!.mock.calls[0];
+      expect(data.resumesAt.getTime()).toBeGreaterThanOrEqual(
+        NOW.getTime() + 4 * 60 * 60_000,
+      );
+    });
+
+    it('is silent while a parked run simply waits', async () => {
+      // A blocked run waiting out its quota is Opifex succeeding. An action
+      // every tick would bury the ones that need attention.
+      mockBlocked([blockedRow({ resumesAt: new Date(NOW.getTime() + 60 * 60_000) })]);
+
+      const result = await service.sweep(NOW);
+
+      expect(result.actions).toEqual([]);
+      expect(prisma.run.update).not.toHaveBeenCalled();
+    });
+
+    it('computes a resume once the scheduled time has passed', async () => {
+      mockBlocked([blockedRow({ resumesAt: new Date(NOW.getTime() - 60_000) })]);
+
+      const result = await service.sweep(NOW);
+
+      expect(result.resumableRuns).toBe(1);
+      expect(result.actions.map((a) => a.type)).toEqual(['resume']);
+    });
+
+    it('escalates an undated block rather than parking it forever', async () => {
+      mockBlocked([
+        blockedRow({
+          events: [
+            {
+              occurredAt: new Date(NOW.getTime() - 60 * 60_000),
+              blockedReason: 'unknown',
+              blockedUntil: null,
+            },
+          ],
+        }),
+      ]);
+
+      const result = await service.sweep(NOW);
+
+      expect(result.actions.map((a) => a.type)).toEqual(['escalate']);
+    });
+
+    it('dates the patience clock from the CURRENT block, not the run start', async () => {
+      // A run can block, resume and block again. Measuring from the run's own
+      // start would escalate a fresh block on a long-lived run instantly.
+      mockBlocked([
+        blockedRow({
+          startedAt: new Date(NOW.getTime() - 10 * 60 * 60_000),
+          events: [
+            {
+              occurredAt: new Date(NOW.getTime() - 60_000),
+              blockedReason: 'unknown',
+              blockedUntil: null,
+            },
+          ],
+        }),
+      ]);
+
+      expect((await service.sweep(NOW)).actions).toEqual([]);
+    });
+
+    it('reads the newest run.blocked event for the reason and reset', async () => {
+      mockBlocked([blockedRow()]);
+
+      await service.sweep(NOW);
+
+      const blockedQuery = prisma.run.findMany.mock.calls.find(
+        ([q]: [{ where: { status: unknown } }]) => q.where.status === 'blocked',
+      )![0];
+      expect(blockedQuery.select.events.where).toEqual({ type: 'run_blocked' });
+      expect(blockedQuery.select.events.take).toBe(1);
     });
   });
 
