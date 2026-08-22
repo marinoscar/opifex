@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "identity": "wo_opifex_312_a3f91c2_a3",
+  "branch": "factory/312-a3f91c2-a3",
+  "repository": { "owner": "marinoscar", "name": "opifex" },
+  "baseCommit": "a3f91c2000000000000000000000000000000000",
+  "attempt": 3,
+  "issue": {
+    "number": 312,
+    "url": "https://github.com/marinoscar/opifex/issues/312"
+  },
+  "taskSpec": "Add a paginated GET /api/widgets endpoint behind the existing auth guard.",
+  "acceptanceCriteria": ["GET /api/widgets returns 200 with a paginated list"],
+  "pathConstraints": [],
+  "budgetCeilingUsd": 2.5,
+  "wallClockTimeoutMinutes": 15,
+  "needs": []
+}
