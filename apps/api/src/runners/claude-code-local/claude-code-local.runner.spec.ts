@@ -173,8 +173,12 @@ describe('ClaudeCodeLocalRunner', () => {
       // someone deliberately adds it to one list or the other, which is a
       // reviewable act rather than an accident.
       const INTERNALS = [
+        'consumeLine',
+        'runnerTag',
         'statusOf',
         'settle',
+        'costOf',
+        'completionSummary',
         'failureReason',
         'event',
         'liveRunCount',
@@ -523,20 +527,39 @@ describe('ClaudeCodeLocalRunner', () => {
       expect(capabilities.version).toBe('unavailable');
     }, 30_000);
 
-    it('declares no streaming fidelity while the output is not parsed', async () => {
-      // The honesty test for this slice. The CLI is capable of full
-      // streaming; this runner is not yet reading it, and #61 is explicit
-      // that overstating it "produces a control plane that trusts signal it
-      // is not actually receiving".
+    it('declares the fidelity the mapper actually delivers', async () => {
+      // Each of these is earned by a mapping that exists in
+      // stream-json-mapper.ts, not by what the CLI is capable of. Slice 1
+      // shipped declaring 'none' for exactly that reason.
       const binary = await fakeClaude('honest', 'echo "2.1.240 (Claude Code)"; exit 0');
       const runner = build({ 'runners.claudeCodeLocal.binary': binary });
 
       const capabilities = await runner.capabilities();
 
-      expect(capabilities.streamingFidelity).toBe('none');
-      expect(capabilities.rateLimitSignal).toBe('none');
-      expect(capabilities.reportsCost).toBe(false);
-      expect(capabilities.stabilityTier).toBe('experimental');
+      expect(capabilities.streamingFidelity).toBe('full');
+      expect(capabilities.rateLimitSignal).toBe('structured');
+      expect(capabilities.reportsCost).toBe(true);
+    }, 30_000);
+
+    it('stays experimental while its ceilings are declared but not enforced', async () => {
+      // Budget and wall-clock enforcement is #65 and the third slice. A
+      // runner whose limits are advertised and not applied is not stable, and
+      // stabilityTier also gates the preview-runner rule in dispatch (#64).
+      const binary = await fakeClaude('tier', 'echo "2.1.240 (Claude Code)"; exit 0');
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      expect((await runner.capabilities()).stabilityTier).toBe('experimental');
+    }, 30_000);
+
+    it('keeps the JSON manifest and the typed capabilities in step', async () => {
+      // Two hand-maintained copies would drift, and the drift would be
+      // invisible: the typed one drives dispatch while the JSON one is what a
+      // human reads to decide whether to trust it.
+      const binary = await fakeClaude('mirror', 'echo "2.1.240 (Claude Code)"; exit 0');
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const { manifest, ...declared } = await runner.capabilities();
+      expect(manifest).toEqual(declared);
     }, 30_000);
 
     it('only ever claims to create factory branches', async () => {
@@ -544,6 +567,163 @@ describe('ClaudeCodeLocalRunner', () => {
       const runner = build({ 'runners.claudeCodeLocal.binary': binary });
 
       expect((await runner.capabilities()).branchPatterns).toEqual(['factory/*']);
+    }, 30_000);
+  });
+
+  describe('mapped output (#61 slice 2)', () => {
+    /**
+     * A fake agent that speaks real `stream-json`.
+     *
+     * The lines are the shapes captured from CLI 2.1.240 — a tool call, some
+     * thinking, a tool result, and a result line with a cost — so this
+     * exercises the same mapper against the same bytes the runner will see in
+     * production, through a real pipe rather than a function call.
+     */
+    const STREAM = [
+      '{"type":"system","subtype":"init","model":"claude-sonnet-5","uuid":"11111111-0000-4000-8000-000000000001"}',
+      '{"type":"assistant","timestamp":"2026-08-22T22:02:44.597Z","uuid":"11111111-0000-4000-8000-000000000002",' +
+        '"message":{"role":"assistant","content":[{"type":"thinking","thinking":"hmm","signature":"x"}]}}',
+      '{"type":"assistant","timestamp":"2026-08-22T22:02:45.080Z","uuid":"11111111-0000-4000-8000-000000000003",' +
+        '"message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Bash",' +
+        '"input":{"command":"npm test","description":"run tests"}}]}}',
+      '{"type":"user","timestamp":"2026-08-22T22:02:45.859Z","uuid":"11111111-0000-4000-8000-000000000004",' +
+        '"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","is_error":false}]}}',
+      '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.2030522,' +
+        '"usage":{"input_tokens":8,"output_tokens":362},"num_turns":4,"duration_ms":8855,' +
+        '"permission_denials":[{"tool_name":"Read"}],"result":"done","uuid":"11111111-0000-4000-8000-000000000005"}',
+    ];
+
+    const emit = (lines: string[]) =>
+      lines.map((line) => `printf '%s\\n' ${JSON.stringify(line)}`).join('\n');
+
+    it('turns a tool call into progress with a name and a digest', async () => {
+      // Through a real pipe, so line buffering and JSON parsing are both in
+      // the path — not just the mapper's own unit test.
+      const binary = await fakeClaude('streaming', `${emit(STREAM)}\nexit 0`);
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const handle = await runner.submit(workOrder());
+      const { events } = await drainUntilTerminal(runner, handle);
+
+      const tool = events.find((event) => event.tool?.name === 'Bash');
+      expect(tool?.type).toBe('run.progress');
+      expect(tool?.tool?.signature).toMatch(/^[0-9a-f]{32}$/);
+      // The command line never leaves the child.
+      expect(JSON.stringify(events)).not.toContain('npm test');
+    }, 30_000);
+
+    it('emits heartbeats for thinking and tool results', async () => {
+      const binary = await fakeClaude('heartbeats', `${emit(STREAM)}\nexit 0`);
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const handle = await runner.submit(workOrder());
+      const { events } = await drainUntilTerminal(runner, handle);
+
+      expect(events.filter((event) => event.type === 'run.heartbeat').length).toBe(2);
+    }, 30_000);
+
+    it('puts the cost from the result line on the terminal event', async () => {
+      const binary = await fakeClaude('costed', `${emit(STREAM)}\nexit 0`);
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const handle = await runner.submit(workOrder());
+      const { events } = await drainUntilTerminal(runner, handle);
+
+      const completed = events.find((event) => event.type === 'run.completed');
+      expect(completed?.cost?.usd).toBeCloseTo(0.2030522);
+      expect(completed?.cost?.tokensInput).toBe(8);
+      expect(completed?.cost?.tokensOutput).toBe(362);
+    }, 30_000);
+
+    it('still reports cost when the run FAILED', async () => {
+      // A run that failed still spent the money. A budget that only counted
+      // successful runs would be no budget at all.
+      const binary = await fakeClaude('costed-fail', `${emit(STREAM)}\nexit 4`);
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const handle = await runner.submit(workOrder());
+      const { events } = await drainUntilTerminal(runner, handle);
+
+      const failed = events.find((event) => event.type === 'run.failed');
+      expect(failed?.cost?.usd).toBeCloseTo(0.2030522);
+    }, 30_000);
+
+    it('does not let the result line end the run', async () => {
+      // The CLI says success; the process exits 4. VISION §8: the exit code
+      // is the fact, the output is a report.
+      const binary = await fakeClaude('liar-stream', `${emit(STREAM)}\nexit 4`);
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const handle = await runner.submit(workOrder());
+      const { status, events } = await drainUntilTerminal(runner, handle);
+
+      expect(status).toBe('failed');
+      expect(events.filter((event) => event.type === 'run.completed')).toHaveLength(0);
+      expect(events.filter((event) => event.type === 'run.failed')).toHaveLength(1);
+    }, 30_000);
+
+    it('surfaces permission denials in the completion summary', async () => {
+      // Under the default narrow permission mode this is a real possibility,
+      // and a run that finished having been refused half its tools is one
+      // whose output should be read differently.
+      const binary = await fakeClaude('denied', `${emit(STREAM)}\nexit 0`);
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const handle = await runner.submit(workOrder());
+      const { events } = await drainUntilTerminal(runner, handle);
+
+      const completed = events.find((event) => event.type === 'run.completed');
+      expect(completed?.summary).toContain('1 permission denial(s)');
+    }, 30_000);
+
+    it('survives non-JSON on stdout without failing the run', async () => {
+      // ADR 0006: "Never let a parse failure kill the run. A run producing
+      // output nobody can read is still a run."
+      const noise = [
+        'printf \'%s\\n\' "warning: this is not JSON at all"',
+        'printf \'%s\\n\' "{ broken json"',
+        emit(STREAM),
+      ].join('\n');
+      const binary = await fakeClaude('noisy', `${noise}\nexit 0`);
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const handle = await runner.submit(workOrder());
+      const { status, events } = await drainUntilTerminal(runner, handle);
+
+      expect(status).toBe('succeeded');
+      expect(events.some((event) => event.tool?.name === 'Bash')).toBe(true);
+      const completed = events.find((event) => event.type === 'run.completed');
+      expect(completed?.summary).toContain('2 unparseable line(s)');
+    }, 30_000);
+
+    it('leaves cost absent when the run died before its result line', async () => {
+      // Not zero. A run killed mid-flight spent money nobody can account for,
+      // and saying so beats reporting $0 — the schema keeps the two distinct.
+      const binary = await fakeClaude('no-result', 'sleep 30');
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const handle = await runner.submit(workOrder());
+      await runner.cancel(handle);
+      const { events } = await drainUntilTerminal(runner, handle);
+
+      const failed = events.find((event) => event.type === 'run.failed');
+      expect(failed?.cost).toBeUndefined();
+    }, 30_000);
+
+    it('tags every event with the runner key AND its observed version', async () => {
+      // The schema asks `runner` to be key@version, and #66's retry decisions
+      // read it as fact — a constant there would make a bisect meaningless.
+      const binary = await fakeClaude('tagged', `echo "2.1.240 (Claude Code)"\n${emit(STREAM)}\nexit 0`);
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      // Probe first, so the version is known before the run starts.
+      await runner.capabilities();
+
+      const handle = await runner.submit(workOrder());
+      const { events } = await drainUntilTerminal(runner, handle);
+
+      expect(events.length).toBeGreaterThan(0);
+      for (const event of events) expect(event.runner).toBe('claude-code-local@2.1.240');
     }, 30_000);
   });
 
