@@ -139,6 +139,19 @@ export default () => {
     maxConcurrent: process.env.DISPATCH_MAX_CONCURRENT
       ? parseInt(process.env.DISPATCH_MAX_CONCURRENT, 10)
       : null,
+
+    // Lets a preview-tier runner be load-bearing when no GA fallback exists.
+    // See docs/adr/0007-preview-runner-acknowledgement.md.
+    //
+    // VISION §11 wants every preview runner backed by a GA one; VISION §3.7
+    // forbids building a second runner before it is needed. With one runner
+    // the fallback cannot exist, so without this the only runner is
+    // permanently ineligible and every work order queues forever.
+    //
+    // DEFAULTS OFF and compared against 'true', like every other switch here:
+    // a safety rule whose bypass defaults on is not a safety rule. Turn it
+    // back off once a genuinely GA runner exists.
+    allowPreviewRunner: process.env.DISPATCH_ALLOW_PREVIEW_RUNNER === 'true',
   },
 
   // Runners (epic #18, #61)
