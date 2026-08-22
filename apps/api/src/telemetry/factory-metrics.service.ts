@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { type Histogram, metrics, SpanStatusCode, trace } from '@opentelemetry/api';
+import {
+  isSpanContextValid,
+  type Histogram,
+  metrics,
+  SpanStatusCode,
+  trace,
+} from '@opentelemetry/api';
 
 import { workOrderContext } from './work-order-trace';
 
@@ -155,6 +161,13 @@ export class FactoryMetrics {
    * span attributes"*. Point-in-time spans: an event reports when something
    * happened, not how long it took, and inventing a duration would put a
    * number on the dashboard that no source produced.
+   *
+   * Returns nulls when no span was actually emitted — `OTEL_ENABLED` off, a
+   * unit test, or a sampling decision that dropped it. The API hands back a
+   * non-recording span in all three cases, and it inherits the work order's
+   * parent context verbatim, so the ids LOOK real: storing them would leave
+   * the run detail linking to a trace with nothing in it. Null says the true
+   * thing.
    */
   recordRunEvent(event: {
     workOrderIdentity: string;
@@ -167,7 +180,7 @@ export class FactoryMetrics {
     costUsd?: number | null;
     tokensInput?: number | null;
     tokensOutput?: number | null;
-  }): { traceId: string; spanId: string } {
+  }): { traceId: string | null; spanId: string | null } {
     const span = this.tracer.startSpan(
       event.toolSignature ? `tool ${event.toolSignature}` : event.type,
       {
@@ -191,9 +204,12 @@ export class FactoryMetrics {
     );
 
     const spanContext = span.spanContext();
+    const emitted = span.isRecording() && isSpanContextValid(spanContext);
     span.end(event.occurredAt);
 
-    return { traceId: spanContext.traceId, spanId: spanContext.spanId };
+    return emitted
+      ? { traceId: spanContext.traceId, spanId: spanContext.spanId }
+      : { traceId: null, spanId: null };
   }
 
   private attributes(measurement: DetectionMeasurement): Record<string, string> {

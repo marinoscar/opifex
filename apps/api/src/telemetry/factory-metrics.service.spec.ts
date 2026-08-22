@@ -269,6 +269,41 @@ describe('FactoryMetrics', () => {
       expect(spans.getFinishedSpans()[0].name).toBe('progress');
     });
 
+    it('returns nulls when no OpenTelemetry SDK is running', () => {
+      // OTEL_ENABLED off, or a unit test: the API hands back a noop span with
+      // an all-zero context. Storing those zeros would leave the run detail
+      // linking to a trace that does not exist.
+      // The noop span inherits the work order's parent context verbatim, so
+      // its ids LOOK real. Storing them would link the run detail to a trace
+      // with nothing in it.
+      trace.disable();
+
+      expect(new FactoryMetrics().recordRunEvent(runEvent)).toEqual({
+        traceId: null,
+        spanId: null,
+      });
+    });
+
+    it('puts BOTH liveness sources in the one work order trace', () => {
+      // VISION §9 runs two independent sources, and #59 requires the metric
+      // work for both. They are produced by processes that share no call
+      // stack — a runner posting over HTTP, the git watcher on a reconciler
+      // tick — which is the whole reason the trace id is derived rather than
+      // propagated.
+      service.recordRunEvent({ ...runEvent, source: 'runner' });
+      service.recordRunEvent({
+        ...runEvent,
+        source: 'git',
+        type: 'progress',
+        toolSignature: null,
+      });
+      service.recordDetected(measurement({ detectionSource: 'git' }));
+
+      const traceIds = new Set(spans.getFinishedSpans().map((s) => s.spanContext().traceId));
+      expect(spans.getFinishedSpans()).toHaveLength(3);
+      expect(traceIds).toEqual(new Set([traceIdForWorkOrder(IDENTITY)]));
+    });
+
     it('is a point in time, not an invented duration', () => {
       // An event says when something happened, not how long it took. Giving
       // it a made-up duration would put a number on the dashboard that no

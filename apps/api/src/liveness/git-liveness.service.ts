@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { FactoryMetrics } from '../telemetry/factory-metrics.service';
 import {
   toPrismaEventSource,
   toPrismaEventType,
@@ -67,6 +68,7 @@ export class GitLivenessService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly github: GitHubReadService,
+    private readonly metrics: FactoryMetrics,
   ) {}
 
   async sweep(): Promise<LivenessSweepResult> {
@@ -85,7 +87,7 @@ export class GitLivenessService {
         const derived = deriveGitLiveness(observation);
 
         for (const event of derived.events) {
-          const isNew = await this.record(event);
+          const isNew = await this.record(event, run.watched.workOrderIdentity);
           if (isNew) {
             result.eventsRecorded += 1;
           } else {
@@ -170,7 +172,19 @@ export class GitLivenessService {
    * re-derives the same commit event on every tick, and a conflict is the
    * expected outcome rather than an error.
    */
-  private async record(event: RunEventPayload): Promise<boolean> {
+  private async record(event: RunEventPayload, workOrderIdentity: string): Promise<boolean> {
+    // The same span-per-event treatment runner-reported ingestion gets. Both
+    // liveness sources land in the ONE work order trace (VISION §9), which is
+    // the point of deriving the trace id from the identity: this runs on a
+    // reconciler tick and shares no call stack with the runner's HTTP post.
+    const emitted = this.metrics.recordRunEvent({
+      workOrderIdentity,
+      type: event.type,
+      source: event.source,
+      occurredAt: new Date(event.occurredAt),
+      summary: event.summary ?? null,
+    });
+
     const created = await this.prisma.runEvent.createMany({
       data: [
         {
@@ -180,6 +194,8 @@ export class GitLivenessService {
           source: toPrismaEventSource(event.source) as never,
           occurredAt: new Date(event.occurredAt),
           summary: event.summary ?? '',
+          traceId: emitted.traceId,
+          spanId: emitted.spanId,
           payload: JSON.parse(JSON.stringify(event)),
         },
       ],

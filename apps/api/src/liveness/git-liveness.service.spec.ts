@@ -1,5 +1,6 @@
 import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { FactoryMetrics } from '../telemetry/factory-metrics.service';
 import { GitLivenessService } from './git-liveness.service';
 
 const BASE = 'a3f91c2000000000000000000000000000000000';
@@ -50,6 +51,10 @@ describe('GitLivenessService', () => {
     service = new GitLivenessService(
       prisma as unknown as PrismaService,
       github as unknown as GitHubReadService,
+      // The real one: with no OpenTelemetry SDK registered the API hands back
+      // noop instruments, so this exercises the actual call and the span ids
+      // it returns rather than a stub's.
+      new FactoryMetrics(),
     );
   });
 
@@ -280,6 +285,19 @@ describe('GitLivenessService', () => {
 
       expect(result.failures).toEqual([{ run: 'wo_a', reason: 'GitHub is down' }]);
       expect(result.runsWatched).toBe(2);
+    });
+  });
+  describe('correlation with the work order trace (#59)', () => {
+    it('records the ids of the span it emitted, and nulls when it emitted none', async () => {
+      // No OpenTelemetry SDK is registered here, so no span is exported and
+      // the columns are null. Storing the noop span's inherited ids instead
+      // would link the run detail to a trace with nothing in it.
+      github.listCommits.mockResolvedValue([ghCommit('c1', '2026-08-21T10:05:00Z')]);
+
+      await service.sweep();
+
+      const [{ data }] = prisma.runEvent.createMany.mock.calls[0];
+      expect(data[0]).toMatchObject({ traceId: null, spanId: null });
     });
   });
 });
