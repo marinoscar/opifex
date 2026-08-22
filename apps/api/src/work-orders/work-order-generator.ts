@@ -1,3 +1,4 @@
+import type { RunnerNeed } from '../runners/runner.types';
 import { assessCriteria, describeProblems, type CriteriaProblem } from './acceptance-criteria';
 import {
   workOrderBranch,
@@ -28,6 +29,15 @@ export interface IssueProjection {
   decisionRefs: string[];
   /** The issue's own URL. Provenance, and required — see below. */
   issueUrl: string;
+  /**
+   * What this work requires OF a runner (#60), matched against advertised
+   * capabilities by routing (#64).
+   *
+   * Optional on the way in and always present on the way out: an issue that
+   * declares nothing needs anything enabled, and an empty array says that
+   * explicitly rather than leaving the field absent for a reader to interpret.
+   */
+  needs?: RunnerNeed[];
 }
 
 export interface GenerationInput {
@@ -56,6 +66,16 @@ export interface GeneratedWorkOrder {
   repositoryOwner: string;
   repositoryName: string;
   issueNumber: number;
+  /**
+   * Carried through rather than only validated.
+   *
+   * The generator already refuses an issue with no URL, but the work-order
+   * DOCUMENT needs it too: `work-order.schema.json` requires `issue.url`, and
+   * the authorization record is posted to the very issue it names. Validating
+   * a field and then dropping it was a gap #63 surfaced.
+   */
+  issueUrl: string;
+  issueTitle: string | null;
   baseCommit: string;
   attempt: number;
 
@@ -65,6 +85,7 @@ export interface GeneratedWorkOrder {
   decisionRefs: string[];
   budgetCeilingUsd: number | null;
   wallClockTimeoutMinutes: number | null;
+  needs: RunnerNeed[];
 }
 
 export type GenerationResult =
@@ -132,6 +153,10 @@ export function generateWorkOrder(input: GenerationInput): GenerationResult {
       issueNumber: issue.issueNumber,
       baseCommit,
       attempt,
+
+      issueUrl: issue.issueUrl.trim(),
+      issueTitle: issue.title?.trim() || null,
+      needs: issue.needs ?? [],
 
       taskSpec: issue.taskSpec.trim(),
       // Trimmed and de-blanked, so what is stored is what was assessed.

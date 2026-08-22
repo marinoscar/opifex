@@ -90,6 +90,16 @@ export enum WriteAction {
   PostComment = 'comment.general',
   /** Creating an issue. Gated further by the dedupe/template check (#108). */
   CreateIssue = 'issue.create',
+  /**
+   * Creating a `factory/*` branch with the execution record as its first
+   * commit (#63, ADR-0005).
+   *
+   * Performed by `GitBranchService`, NOT by `GitHubWriteService` — the write
+   * service still touches no git ref, and its spec still proves it. See the
+   * note at the head of `git-branch.service.ts` for why the capability lives
+   * behind its own narrowly-guarded surface rather than widening this one.
+   */
+  CreateFactoryBranch = 'branch.create-factory',
 }
 
 export interface WriteActionDescriptor {
@@ -108,6 +118,22 @@ export interface WriteActionDescriptor {
  * missing from it would be an action nobody ever decided about.
  */
 export const WRITE_ACTIONS: Record<WriteAction, WriteActionDescriptor> = {
+  [WriteAction.CreateFactoryBranch]: {
+    action: WriteAction.CreateFactoryBranch,
+    // Reversible: deleting a `factory/*` branch that only carries the
+    // execution record returns the repository to exactly where it was, and
+    // nobody is subscribed to a branch creation. Note that Opifex cannot
+    // perform that undo itself — "delete a branch" is on NEVER_TRUSTABLE —
+    // which is a separate constraint from whether the action is reversible.
+    reversibility: Reversibility.Reversible,
+    // Gated, NOT pre-authorized — and the reason is the invariant the spec
+    // already enforces: the carve-out exists for IRREVERSIBLE record-writing,
+    // because a reversible action auto-approves on timeout anyway and needs
+    // no exemption. Claiming the carve-out here would buy nothing and blur
+    // what it means, which is how a carve-out becomes a loophole.
+    approval: ApprovalRequirement.Gated,
+    summary: 'Create a factory branch carrying the execution record',
+  },
   [WriteAction.AddLabel]: {
     action: WriteAction.AddLabel,
     reversibility: Reversibility.Reversible,

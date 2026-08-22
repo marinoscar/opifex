@@ -107,6 +107,11 @@ describe('write action classification', () => {
     });
 
     it('touches no path that would reach a protected resource', () => {
+      // Still true, and deliberately narrow in scope: it is about THIS
+      // service. `GitBranchService` may create `factory/*` refs and nothing
+      // else, under its own guards (ADR-0005, git-branch.service.spec.ts).
+      // Read this as "the general write path cannot reach these", not as
+      // "nothing in Opifex can".
       for (const forbidden of ['/git/refs', '/branches', '/actions/', '/merge', '/secrets']) {
         expect(writeServiceSource).not.toContain(forbidden);
       }
