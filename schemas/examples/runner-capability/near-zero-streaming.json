@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0.0",
+  "key": "batch-agent-cloud",
+  "displayName": "Hypothetical batch agent (vendor-hosted)",
+  "version": "0.4.0",
+  "invocationModel": "hosted_job",
+  "executionLocus": "vendor_cloud",
+  "streamingFidelity": "none",
+  "rateLimitSignal": "none",
+  "stabilityTier": "experimental",
+  "reportsCost": false,
+  "resumable": true,
+  "maxConcurrency": 1,
+  "branchPatterns": ["factory/*"],
+  "notes": "Reports no cost and no rate-limit detail: budget ceilings cannot be enforced from this runner's own reporting, and a blocked run escalates rather than parking. Liveness is git-derived only, so the watchdog applies the most permissive silence threshold. Declares resumable, which Opifex may use as an optimisation and never depends on.",
+  "vendor": {
+    "region": "eu-west-1",
+    "queue": "batch-standard"
+  }
+}

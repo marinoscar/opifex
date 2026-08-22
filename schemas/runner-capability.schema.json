@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/marinoscar/opifex/schemas/runner-capability.schema.json",
+  "title": "Runner Capability Manifest",
+  "description": "A runner's HONEST declaration of itself (VISION.MD §6). Runners declare what they can do rather than pretending to be equivalent: equal observability across vendors is not achievable, but a common floor that some runners exceed is. Every field here is something the control plane will act on — thresholds, routing, gating — so an overstated manifest produces a control plane that trusts signal it is not actually receiving, and the failure surfaces as a healthy-looking run that nobody is really watching.",
+  "type": "object",
+  "unevaluatedProperties": false,
+  "required": [
+    "schemaVersion",
+    "key",
+    "displayName",
+    "version",
+    "invocationModel",
+    "executionLocus",
+    "streamingFidelity",
+    "rateLimitSignal",
+    "stabilityTier",
+    "reportsCost",
+    "resumable",
+    "maxConcurrency",
+    "branchPatterns"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "description": "Version of this schema the manifest claims to conform to.",
+      "type": "string",
+      "const": "1.0.0"
+    },
+
+    "key": {
+      "description": "Stable identifier, used as the foreign key on every run and written into the `Runner:` commit trailer. Lowercase and hyphenated so it is safe in a trailer, a branch name and a log line.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "minLength": 3,
+      "maxLength": 64
+    },
+
+    "displayName": { "type": "string", "minLength": 1, "maxLength": 128 },
+
+    "version": {
+      "description": "The runner's own version string, recorded on every run so a behaviour change can be correlated with an upgrade. Free-form: a vendor's versioning is not ours to constrain.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+
+    "invocationModel": {
+      "description": "How the control plane starts work. Determines what cancellation MEANS: a process can be signalled, an http_api call must be asked to stop, and a hosted_job may only be cancellable by its host. See ADR-0006 for why claude-code-local is `process`.",
+      "enum": ["process", "http_api", "hosted_job"]
+    },
+
+    "executionLocus": {
+      "description": "Whose hardware the work runs on. A routing constraint, not a preference: work that must not leave the operator's own infrastructure declares `own-infrastructure` as a need, and vendor_cloud runners are then not eligible (VISION §11).",
+      "enum": ["own_infrastructure", "vendor_cloud"]
+    },
+
+    "streamingFidelity": {
+      "description": "GRADED, not boolean, and the most consequential field here. It decides whether the control plane can run event-age watchdogs (#54) and tool-loop detection (#55), or must fall back to wall-clock timeouts and git-derived liveness (#52). `full` earns a 90-second silence threshold; `none` earns 90 minutes, because for a runner whose only signal is a commit, a false kill is far likelier than a missed stall.",
+      "oneOf": [
+        { "const": "full", "description": "Per-tool-call events, including tool name and an argument signature. Loop detection is possible." },
+        { "const": "partial", "description": "Coarse progress only — phase transitions, not individual tool calls. Loop detection reports UNAVAILABLE rather than passing." },
+        { "const": "none", "description": "No event stream at all. Liveness is git-derived only." }
+      ]
+    },
+
+    "rateLimitSignal": {
+      "description": "GRADED, like streaming fidelity. Decides whether a blocked run can be PARKED with a dated resume (#56) or must be escalated because nothing can compute when it would resume. `structured` means a machine-readable reset time; `heuristic` means it can be inferred from a message; `none` means a rate limit is indistinguishable from any other failure.",
+      "oneOf": [
+        { "const": "structured", "description": "A reset time arrives as data. Auto-resume is possible." },
+        { "const": "heuristic", "description": "A reset can be inferred from prose. Auto-resume is possible but approximate." },
+        { "const": "none", "description": "Rate limits are not distinguishable. A blocked run escalates." }
+      ]
+    },
+
+    "stabilityTier": {
+      "description": "How much the operator may depend on this runner. VISION §11 forbids a preview-tier runner from being LOAD-BEARING: routing will not select an `experimental` or `beta` runner unless some `stable` runner could take the identical work order (#64). The tier is the runner's own claim about itself, and is taken at its word.",
+      "oneOf": [
+        { "const": "experimental", "description": "Preview. May change or break without notice." },
+        { "const": "beta", "description": "Preview. Stabilising, not yet guaranteed." },
+        { "const": "stable", "description": "GA. May be depended on, and may act as the fallback a preview runner needs." }
+      ]
+    },
+
+    "reportsCost": {
+      "description": "Whether the runner reports spend. A capability rather than an assumption, because 'unknown' and 'zero' are genuinely different facts — a runner that cannot report cost must not look like one that spent nothing, or a budget ceiling becomes decorative.",
+      "type": "boolean"
+    },
+
+    "resumable": {
+      "description": "Whether the runner has vendor-specific session resumption. ALLOWED AS AN OPTIMISATION, NEVER LOAD-BEARING (VISION §3.4). Recovery is always abandon-and-re-run from the pinned base commit; a runner declaring true may shortcut that internally, and nothing in the control plane may require it. That is why this is a boolean here rather than a function on the seam.",
+      "type": "boolean"
+    },
+
+    "maxConcurrency": {
+      "description": "How many runs this runner will accept at once. VISION §11 notes automated runs compete with interactive use for one subscription quota, so this is the runner's own limit on how much of that quota it will take — not a performance hint. Routing enforces it (#64).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64
+    },
+
+    "branchPatterns": {
+      "description": "Globs the runner is permitted to create or push to. `factory/*` for every runner Opifex dispatches to. A restriction the runner declares about ITSELF, which is separate from — and does not replace — the control plane's own refusal to touch anything else (ADR-0005).",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1
+    },
+
+    "notes": {
+      "description": "Anything the operator should know that no field above captures. Prose, never parsed — a field the control plane branched on would be a capability in disguise.",
+      "type": "string",
+      "maxLength": 2000
+    },
+
+    "vendor": {
+      "description": "Free-form vendor metadata, kept verbatim for the record. Deliberately unconstrained AND deliberately never read by routing: anything routing needs is a field above. This is where a vendor's peculiarities go to be recorded rather than acted on.",
+      "type": "object"
+    }
+  },
+
+  "allOf": [
+    {
+      "description": "A runner that cannot report cost cannot be trusted with a budget ceiling, so it must say so plainly rather than leaving the operator to infer it from a missing number.",
+      "if": { "properties": { "reportsCost": { "const": false } }, "required": ["reportsCost"] },
+      "then": {
+        "required": ["notes"],
+        "properties": {
+          "notes": {
+            "description": "Required when the runner cannot report cost, and required to say something: an empty string would satisfy the letter of the rule and leave the operator exactly as uninformed.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ],
+
+  "examples": [
+    {
+      "schemaVersion": "1.0.0",
+      "key": "claude-code-local",
+      "displayName": "Claude Code (local)",
+      "version": "2.1.223",
+      "invocationModel": "process",
+      "executionLocus": "own_infrastructure",
+      "streamingFidelity": "full",
+      "rateLimitSignal": "structured",
+      "stabilityTier": "stable",
+      "reportsCost": true,
+      "resumable": false,
+      "maxConcurrency": 2,
+      "branchPatterns": ["factory/*"]
+    }
+  ]
+}

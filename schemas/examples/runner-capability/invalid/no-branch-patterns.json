@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0",
+  "key": "unbounded",
+  "displayName": "Declares no branch restriction at all",
+  "version": "1.0.0",
+  "invocationModel": "process",
+  "executionLocus": "own_infrastructure",
+  "streamingFidelity": "full",
+  "rateLimitSignal": "structured",
+  "stabilityTier": "stable",
+  "reportsCost": true,
+  "resumable": false,
+  "maxConcurrency": 1,
+  "branchPatterns": []
+}
