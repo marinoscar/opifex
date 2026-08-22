@@ -24,6 +24,10 @@ import {
   type PermissionMode,
 } from './claude-code-invocation';
 import { RunWorkspaceService } from './run-workspace.service';
+import {
+  mapStreamLine,
+  type StreamResult,
+} from './stream-json-mapper';
 
 /**
  * The v1 runner: Claude Code, as a child process, on our own hardware.
@@ -31,22 +35,30 @@ import { RunWorkspaceService } from './run-workspace.service';
  * ## What this slice does and does not do
  *
  * #61 asks to be delivered as more than one PR — *"seam wiring, then event
- * mapping, then cancellation and limits"* — and this is the first of those.
- * It spawns the CLI, supervises it, and turns its LIFECYCLE into normalized
- * events: `run.started` on spawn, `run.completed` or `run.failed` on exit.
+ * mapping, then cancellation and limits"*.
  *
- * It does **not** yet parse the `stream-json` output. Lines are counted and
- * timed but not mapped, so no `run.progress`, `run.heartbeat` or `run.blocked`
- * is emitted here. That means the runner is honest but currently BLIND, and
- * the manifest says so: {@link capabilities} reports
- * `streamingFidelity: 'none'` until the mapper exists.
+ * Slice 1 spawned the CLI, supervised it, and turned its LIFECYCLE into
+ * normalized events: `run.started` on spawn, `run.completed` or `run.failed`
+ * on exit, decided by the exit code and nothing else.
  *
- * That is the whole reason the manifest is graded rather than boolean.
- * Declaring `full` now — because the CLI is capable of it, because the next PR
- * will deliver it — is exactly what #61 warns against: *"overstating it
- * produces a control plane that trusts signal it is not actually receiving."*
- * A `none` declaration makes loop detection (#55) report UNAVAILABLE, which is
- * true, instead of passing on an empty event stream, which is not.
+ * Slice 2 added the `stream-json` mapper, so the runner is no longer blind:
+ * tool calls, prose, thinking, tool results, rate limits and permission
+ * refusals all become normalized events, and {@link capabilities} now declares
+ * `streamingFidelity: 'full'`, `rateLimitSignal: 'structured'` and
+ * `reportsCost: true` — each one earned by a mapping that exists, not by what
+ * the CLI is capable of.
+ *
+ * That order is the point, and it is why #32's manifest is graded rather than
+ * boolean. Slice 1 shipped declaring `none`, which was true and made loop
+ * detection (#55) report UNAVAILABLE rather than pass on an empty stream.
+ * Declaring `full` a PR early would have been what #61 warns against —
+ * *"overstating it produces a control plane that trusts signal it is not
+ * actually receiving"* — and a boolean would have forced the choice between
+ * lying for one release and shipping nothing.
+ *
+ * Still NOT here: budget and wall-clock enforcement. The manifest says
+ * `stabilityTier: 'experimental'` for that reason, and #61's third slice is
+ * where it changes.
  *
  * ## Why the process is the source of truth
  *
@@ -132,6 +144,8 @@ export class ClaudeCodeLocalRunner implements Runner {
       linesObserved: 0,
       lastOutputAt: null,
       settled: false,
+      loggedDrops: new Set(),
+      parseFailures: 0,
     };
 
     run.process = this.supervisor.start({
@@ -144,12 +158,10 @@ export class ClaudeCodeLocalRunner implements Runner {
       env: buildInvocationEnv(workOrder),
       stdin: buildPrompt(workOrder),
       killGraceMs: this.config.get<number>('runners.claudeCodeLocal.killGraceMs'),
-      // Counted, not mapped. The mapper is the next slice of #61; until then
-      // this is the only thing standing between a completely opaque run and
-      // an operator asking whether it produced any output at all.
-      onLine: () => {
+      onLine: (line) => {
         run.linesObserved += 1;
         run.lastOutputAt = new Date();
+        this.consumeLine(run, line);
       },
       onError: (error) => this.logger.warn(`${workOrder.identity}: ${error.message}`),
     });
@@ -247,53 +259,135 @@ export class ClaudeCodeLocalRunner implements Runner {
    */
   async capabilities(): Promise<RunnerCapabilities> {
     const version = await this.probeVersion();
-    const available = version !== null;
 
-    const manifest: Record<string, unknown> = {
-      schemaVersion: '1.0.0',
+    const capabilities: RunnerCapabilities = {
       key: this.key,
       displayName: 'Claude Code (local)',
       version: version ?? 'unavailable',
+      schemaVersion: '1.0.0',
       invocationModel: 'process',
       executionLocus: 'own_infrastructure',
-      // See the class comment: `none` until the event mapper lands. Declaring
-      // `full` for a capability the next PR will deliver is the precise thing
-      // #61 warns produces a control plane trusting signal it is not receiving.
-      streamingFidelity: 'none',
-      rateLimitSignal: 'none',
+
+      // Earned by `stream-json-mapper.ts`, and only now. Every `tool_use` line
+      // becomes a `run.progress` carrying a tool name and an argument digest,
+      // which is exactly what loop detection (#55) compares — so `full` is a
+      // statement about a mapping that exists rather than about what the CLI
+      // is capable of.
+      streamingFidelity: 'full',
+
+      // The CLI emits `rate_limit_event` with a `resetsAt` in unix seconds.
+      // That timestamp is the whole difference between #56 parking a run with
+      // a dated resume and #57 escalating it, so it is `structured` rather
+      // than `heuristic`.
+      rateLimitSignal: 'structured',
+
+      // Still experimental: budget and timeout enforcement is #65 and the
+      // third slice of #61, and a runner whose ceilings are declared but not
+      // enforced is not one to mark stable. `stabilityTier` also gates the
+      // preview-runner rule in dispatch (#64), which is the behaviour we want
+      // until this has actually run unattended.
       stabilityTier: 'experimental',
-      reportsCost: false,
-      // Required by the schema whenever `reportsCost` is false, and the reason
-      // is the point: a budget ceiling nobody can enforce is worse than an
-      // absent one, because it looks like a control.
-      notes:
-        'Lifecycle events only in this slice — the stream-json output is not yet parsed, ' +
-        'so cost, tool calls and rate-limit signals are unavailable and the streaming ' +
-        'fidelity is declared as none rather than as what the CLI is capable of.',
+
+      // `result` carries `total_cost_usd` and a token breakdown. Note the
+      // manifest makes no claim about ENFORCING a budget — only about being
+      // able to report one, which is the distinction #65 needs.
+      reportsCost: true,
+
+      // VISION §3.4 permits session resumption only as an optimization and
+      // forbids it being load-bearing. The CLI has `--resume`; nothing here
+      // uses it, and recovery stays abandon-and-re-run from the pinned base.
       resumable: false,
-      maxConcurrency: available ? this.maxConcurrency : 0,
+
+      // A binary that could not be probed advertises no capacity. Zero
+      // headroom is already how the dispatch policy (#64) says "route nothing
+      // here", so a missing CLI degrades into a queue with a reason rather
+      // than a run that fails after being authorized.
+      maxConcurrency: version === null ? 0 : this.maxConcurrency,
       branchPatterns: ['factory/*'],
+
+      manifest: {},
     };
 
-    return {
-      key: this.key,
-      displayName: manifest.displayName as string,
-      version: manifest.version as string,
-      schemaVersion: manifest.schemaVersion as string,
-      invocationModel: 'process',
-      executionLocus: 'own_infrastructure',
-      streamingFidelity: 'none',
-      rateLimitSignal: 'none',
-      stabilityTier: 'experimental',
-      reportsCost: false,
-      resumable: false,
-      maxConcurrency: manifest.maxConcurrency as number,
-      branchPatterns: ['factory/*'],
-      manifest,
-    };
+    // The manifest is the same facts as JSON, built from the object above
+    // rather than typed out beside it. Two hand-maintained copies would drift,
+    // and the drift would be invisible: the typed one drives dispatch while
+    // the JSON one is what a human reads to decide whether to trust it.
+    const { manifest: _ignored, ...declared } = capabilities;
+    capabilities.manifest = { ...declared };
+
+    return capabilities;
   }
 
   // -------------------------------------------------------------------------
+
+  /**
+   * One line of `stream-json`, parsed and mapped.
+   *
+   * ## Nothing here may end the run
+   *
+   * ADR 0006: *"Never let a parse failure kill the run. A run producing output
+   * nobody can read is still a run, and git-derived liveness (#52) still sees
+   * its commits."* So every failure mode below degrades to a count and a log
+   * line, and the process keeps going.
+   *
+   * Unmappable line kinds are logged ONCE per run. A new CLI event type is a
+   * version skew, and a version skew that filled the log on every heartbeat
+   * would bury the run that actually needed attention.
+   */
+  private consumeLine(run: LocalRun, line: string): void {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      run.parseFailures += 1;
+      if (run.parseFailures === 1) {
+        // Once. A CLI that starts writing non-JSON to stdout would otherwise
+        // produce a log line per line of output.
+        this.logger.warn(
+          `${run.workOrder.identity}: stdout line was not JSON; further parse failures ` +
+            'will be counted but not logged',
+        );
+      }
+      return;
+    }
+
+    const mapping = mapStreamLine(parsed, {
+      runId: run.workOrder.runId,
+      workOrderId: run.workOrder.identity,
+      runnerKey: this.runnerTag(),
+      receivedAt: new Date(),
+    });
+
+    switch (mapping.kind) {
+      case 'event':
+        run.pending.push(mapping.event);
+        return;
+
+      case 'result':
+        // Recorded, not emitted. The exit code decides how the run ended; this
+        // supplies the cost and the final text that ending carries.
+        run.cliResult = mapping.result;
+        return;
+
+      case 'drop':
+        if (!run.loggedDrops.has(mapping.reason)) {
+          run.loggedDrops.add(mapping.reason);
+          this.logger.debug(`${run.workOrder.identity}: dropped a line — ${mapping.reason}`);
+        }
+        return;
+    }
+  }
+
+  /**
+   * `key@version`, which is what the event schema asks `runner` to be.
+   *
+   * Falls back to the bare key before the version has been observed. A wrong
+   * version on an event is worse than a missing one: #66's retry decisions and
+   * any later bisect read it as fact.
+   */
+  private runnerTag(): string {
+    return this.observedVersion ? `${this.key}@${this.observedVersion}` : this.key;
+  }
 
   private statusOf(run: LocalRun): RunnerRunStatus {
     const outcome = run.process.result();
@@ -314,12 +408,17 @@ export class ClaudeCodeLocalRunner implements Runner {
     run.settled = true;
 
     const observed = `${run.linesObserved} output line(s)`;
+    // Cost from the CLI's own result line, attached to whichever ending the
+    // exit code produces. A run that failed still spent the money, and a
+    // budget that only counted successful runs would be no budget at all.
+    const cost = this.costOf(run);
 
     if (outcome.kind === 'exited' && outcome.exitCode === 0) {
       run.pending.push(
         this.event(run, 'run.completed', {
-          summary: `${run.workOrder.identity} exited cleanly after ${observed}`,
+          summary: this.completionSummary(run, observed),
           result: { branch: run.workOrder.branch },
+          ...cost,
         }),
       );
       return;
@@ -328,6 +427,7 @@ export class ClaudeCodeLocalRunner implements Runner {
     run.pending.push(
       this.event(run, 'run.failed', {
         summary: `${run.workOrder.identity} ended after ${observed}`,
+        ...cost,
         failure: {
           reason: this.failureReason(run, outcome),
           // Advisory only — VISION §3.6 leaves the decision to deterministic
@@ -337,6 +437,45 @@ export class ClaudeCodeLocalRunner implements Runner {
         },
       }),
     );
+  }
+
+  /**
+   * What the run cost, when the CLI said.
+   *
+   * Absent means NOT REPORTED, which the schema keeps distinct from zero —
+   * a runner that could not report cost must not look like one that spent
+   * nothing. Here that gap is real: a run killed before its `result` line
+   * spent money nobody can account for, and saying so beats reporting $0.
+   */
+  private costOf(run: LocalRun): { cost?: { usd?: number; tokensInput?: number; tokensOutput?: number } } {
+    const result = run.cliResult;
+    if (!result) return {};
+
+    const cost = {
+      usd: result.costUsd,
+      tokensInput: result.tokensInput,
+      tokensOutput: result.tokensOutput,
+    };
+
+    return Object.values(cost).every((value) => value === undefined) ? {} : { cost };
+  }
+
+  /**
+   * A completion line worth reading in a timeline.
+   *
+   * Surfaces permission denials, because a run that finished having been
+   * refused half its tools is a run whose output should be read differently —
+   * and under the default narrow permission mode that is a real possibility
+   * rather than a hypothetical one.
+   */
+  private completionSummary(run: LocalRun, observed: string): string {
+    const parts = [`${run.workOrder.identity} exited cleanly after ${observed}`];
+
+    const denials = run.cliResult?.permissionDenials ?? 0;
+    if (denials > 0) parts.push(`${denials} permission denial(s)`);
+    if (run.parseFailures > 0) parts.push(`${run.parseFailures} unparseable line(s)`);
+
+    return parts.join(', ');
   }
 
   private failureReason(
@@ -376,7 +515,10 @@ export class ClaudeCodeLocalRunner implements Runner {
       // something the runner itself observed.
       source: 'runner-reported',
       occurredAt: new Date().toISOString(),
-      runner: this.key,
+      // `key@version`, as the event schema asks for — and the version is the
+      // one probed off the binary, so a bisect across CLI releases has real
+      // data to work with rather than a constant.
+      runner: this.runnerTag(),
       ...rest,
     };
   }
@@ -467,4 +609,9 @@ interface LocalRun {
   lastOutputAt: Date | null;
   settled: boolean;
   cancelRequested?: boolean;
+  /** The CLI's own `result` line, folded into the terminal event on exit. */
+  cliResult?: StreamResult;
+  /** Line kinds already logged as unmappable — see `consumeLine`. */
+  loggedDrops: Set<string>;
+  parseFailures: number;
 }
