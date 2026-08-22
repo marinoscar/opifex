@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0.0",
+  "identity": "wo_private-service_44_deadbee_a1",
+  "branch": "factory/44-deadbee-a1",
+  "repository": { "owner": "marinoscar", "name": "private-service" },
+  "baseCommit": "deadbeef00000000000000000000000000000000",
+  "attempt": 1,
+  "issue": {
+    "number": 44,
+    "url": "https://github.com/marinoscar/private-service/issues/44"
+  },
+  "taskSpec": "Rotate the signing key and update the verification path.",
+  "acceptanceCriteria": [
+    "The old key verifies existing tokens until it expires",
+    "New tokens are signed with the new key"
+  ],
+  "pathConstraints": ["src/auth/**"],
+  "budgetCeilingUsd": 10,
+  "wallClockTimeoutMinutes": 60,
+  "needs": ["own-infrastructure", "structured-rate-limits"]
+}
