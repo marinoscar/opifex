@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "clr-018f2c31-0006",
+  "runId": "018f2c31-7a4e-7c3b-9f21-4d5e6a7b8c9d",
+  "workOrderId": "wo_opifex_312_a3f91c2_a1",
+  "type": "run.heartbeat",
+  "source": "runner-reported",
+  "occurredAt": "2026-08-21T10:03:00.000Z",
+  "runner": "claude-code-local@2.1.223"
+}

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "clr-018f2c31-0044",
+  "runId": "018f2c31-7a4e-7c3b-9f21-4d5e6a7b8c9d",
+  "workOrderId": "wo_opifex_312_a3f91c2_a1",
+  "type": "run.failed",
+  "source": "runner-reported",
+  "occurredAt": "2026-08-21T18:40:02.000Z",
+  "summary": "Acceptance criteria not met after three attempts at the failing test",
+  "runner": "claude-code-local@2.1.223",
+  "failure": {
+    "reason": "Test suite still failing: 2 of 1484 tests red after 3 fix attempts",
+    "retryable": false
+  }
+}

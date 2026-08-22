@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "clr-018f2c31-0042",
+  "runId": "018f2c31-7a4e-7c3b-9f21-4d5e6a7b8c9d",
+  "workOrderId": "wo_opifex_312_a3f91c2_a1",
+  "type": "run.completed",
+  "source": "runner-reported",
+  "occurredAt": "2026-08-21T18:31:44.000Z",
+  "summary": "Opened a pull request",
+  "runner": "claude-code-local@2.1.223",
+  "result": {
+    "branch": "factory/312-a3f91c2-a1",
+    "headCommit": "7d4e1f09c2b8a3456789012345678901234abcde",
+    "pullRequestUrl": "https://github.com/marinoscar/opifex/pull/312"
+  },
+  "cost": { "usd": 1.8734, "tokensInput": 412880, "tokensOutput": 38210 }
+}

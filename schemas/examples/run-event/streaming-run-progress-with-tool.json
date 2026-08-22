@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "clr-018f2c31-0007",
+  "runId": "018f2c31-7a4e-7c3b-9f21-4d5e6a7b8c9d",
+  "workOrderId": "wo_opifex_312_a3f91c2_a1",
+  "type": "run.progress",
+  "source": "runner-reported",
+  "occurredAt": "2026-08-21T10:04:12.000Z",
+  "summary": "Ran the api test suite",
+  "runner": "claude-code-local@2.1.223",
+  "trace": { "traceId": "4bf92f3577b34da6a3ce929d0e0e4736", "spanId": "b7ad6b7169203331" },
+  "tool": {
+    "name": "Bash",
+    "signature": "sha256:9f2c4a1b8e7d6c5f",
+    "phase": "running tests"
+  },
+  "cost": { "usd": 0.0412, "tokensInput": 18422, "tokensOutput": 1130 }
+}

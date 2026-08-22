@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/marinoscar/opifex/schemas/run-event.schema.json",
+  "title": "Run Event",
+  "description": "The normalized event floor every runner maps into (VISION.MD §9). Exactly six types. A seventh requires a schema version bump, which is the point: the floor is what makes runners comparable, and a floor that grows on demand is not a floor.",
+  "type": "object",
+  "unevaluatedProperties": false,
+  "required": ["schemaVersion", "eventId", "runId", "workOrderId", "type", "source", "occurredAt"],
+  "properties": {
+    "schemaVersion": {
+      "description": "Version of this schema the event claims to conform to. Stored with the event so an old payload stays readable after the schema moves on.",
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "eventId": {
+      "description": "Stable identifier chosen by the SENDER, not by Opifex. This is what makes ingestion idempotent: a runner retrying a delivery reuses the id, and the second delivery is recognised rather than stored twice (#53).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "runId": { "type": "string", "format": "uuid" },
+    "workOrderId": {
+      "description": "The deterministic work-order identity, wo_{repo}_{issue}_{commit7}_a{attempt}. Carried on every event so a trace can be assembled without joining through the run.",
+      "type": "string",
+      "minLength": 1
+    },
+    "type": {
+      "description": "The six normalized types. Closed on purpose.",
+      "enum": [
+        "run.started",
+        "run.heartbeat",
+        "run.progress",
+        "run.blocked",
+        "run.completed",
+        "run.failed"
+      ]
+    },
+    "source": {
+      "description": "Where this event came from. REQUIRED, and deliberately given no default. VISION §9: 'a synthesized event must never masquerade as a report.' A watchdog that cannot tell 'the runner told me it was blocked' from 'I decided it looked blocked' will eventually make an unrecoverable decision on its own guess — so a sender that omits this gets an error, not a plausible assumption.",
+      "enum": ["runner-reported", "git-derived", "control-plane-synthesized"]
+    },
+    "occurredAt": {
+      "description": "When the event actually happened, per its source — NOT when Opifex stored it. The gap between the two is detection latency, success metric 1.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "summary": {
+      "description": "One line, for a human reading a timeline.",
+      "type": "string",
+      "maxLength": 500
+    },
+    "runner": {
+      "description": "Which runner produced this, as key@version. Absent for git-derived and control-plane-synthesized events, which no runner produced.",
+      "type": "string"
+    },
+    "trace": {
+      "description": "OpenTelemetry correlation. VISION §9 maps one trace per work order and one span per turn or tool call.",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "traceId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "spanId": { "type": "string", "pattern": "^[0-9a-f]{16}$" }
+      },
+      "required": ["traceId"]
+    },
+    "cost": {
+      "description": "Incremental cost and tokens attributed to this event. Absent means NOT REPORTED, which is different from zero — VISION §6 makes cost reporting a declared capability, so a runner that cannot report cost must not look like one that spent nothing.",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "usd": { "type": "number", "minimum": 0 },
+        "tokensInput": { "type": "integer", "minimum": 0 },
+        "tokensOutput": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "run.progress" } }, "required": ["type"] },
+      "then": {
+        "properties": {
+          "tool": {
+            "description": "Tool name plus a normalized argument signature. OPTIONAL, because a non-streaming runner cannot supply it — the capability manifest declares which can. Loop detection (#55) is built entirely on this field, and defining it now rather than later is what avoids a version bump the moment Phase 3 arrives.",
+            "type": "object",
+            "unevaluatedProperties": false,
+            "required": ["name", "signature"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "signature": {
+                "description": "A stable digest of the arguments, computed by the sender. A digest rather than the raw arguments because arguments can be enormous and can contain secrets, and loop detection only ever compares them for equality.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "phase": {
+                "description": "Optional free-text phase label, e.g. 'running tests'.",
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "run.blocked" } }, "required": ["type"] },
+      "then": {
+        "required": ["blocked"],
+        "properties": {
+          "blocked": {
+            "description": "REQUIRED on a blocked event. This is what separates 'park and auto-resume' from 'kill and re-run' — VISION §9's three failure modes collapse into two without it, and the collapse is the most common supervision bug.",
+            "type": "object",
+            "unevaluatedProperties": false,
+            "required": ["reason"],
+            "properties": {
+              "reason": {
+                "description": "Machine-readable. `unknown` is permitted and is NOT a synonym for the others: a run blocked for a reason the runner cannot name still parks, but #56 escalates it rather than parking forever, because nothing can compute when it would resume.",
+                "enum": [
+                  "rate-limit",
+                  "quota-exhausted",
+                  "awaiting-approval",
+                  "upstream-unavailable",
+                  "unknown"
+                ]
+              },
+              "resetAt": {
+                "description": "When the block is expected to clear. Absent when the runner cannot say — see `reason: unknown`.",
+                "type": "string",
+                "format": "date-time"
+              },
+              "detail": { "type": "string", "maxLength": 500 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "run.completed" } }, "required": ["type"] },
+      "then": {
+        "properties": {
+          "result": {
+            "type": "object",
+            "unevaluatedProperties": false,
+            "properties": {
+              "branch": { "type": "string" },
+              "headCommit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+              "pullRequestUrl": { "type": "string", "format": "uri" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "run.failed" } }, "required": ["type"] },
+      "then": {
+        "required": ["failure"],
+        "properties": {
+          "failure": {
+            "type": "object",
+            "unevaluatedProperties": false,
+            "required": ["reason"],
+            "properties": {
+              "reason": { "type": "string", "minLength": 1, "maxLength": 500 },
+              "retryable": {
+                "description": "The runner's own view of whether a retry could succeed. Advisory: policy decides, per VISION §3.6 — no model output takes effect without passing through deterministic policy.",
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
