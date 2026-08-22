@@ -1514,6 +1514,134 @@ this one once.
 
 ---
 
+### Notifications
+
+Where an escalation actually reaches a person. VISION §1's original complaint
+is a run that stalls at 10am and is discovered at 2pm; everything upstream can
+work perfectly and detection latency is still measured in hours if nobody is
+told.
+
+**Web Push (RFC 8030) with VAPID**, chosen over ntfy and Pushover in
+[ADR 0004](adr/0004-notification-transport.md) — no third-party account, no
+per-vendor credential, and the payload is encrypted end to end so the push
+service relays bytes it cannot read. That last point is what makes it
+acceptable to put the escalation's real reason in the notification body rather
+than a "something happened, open the app" stub.
+
+Everything except the receipt endpoint requires only that you are signed in.
+Managing your own phone is the same class of thing as managing your own
+settings.
+
+#### A push service accepting a message is not a phone ringing
+
+This is why the escalation lifecycle has three statuses and not two:
+
+| Status | Means |
+|---|---|
+| `dispatched` | A push service returned 201. It has taken custody. Nothing more is known. |
+| `delivered` | A device posted a receipt back. Somebody's phone rang. |
+| `failed` | No transport would take it, **or** the receipt never arrived within `NOTIFY_RECEIPT_TIMEOUT_MS`. |
+
+Collapsing the first two would put a green tick next to a notification nobody
+saw — the exact failure #58 describes.
+
+#### GET /notifications/config
+What the browser needs in order to subscribe.
+
+**Response:**
+```json
+{
+  "vapidPublicKey": "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkFZwuiKmpBpMWvcxYVbGGmkTBBUuRQGSlxAOKmR1IQ",
+  "pushConfigured": true,
+  "fallbackConfigured": false
+}
+```
+
+`pushConfigured` is false when the server has no VAPID keys. The UI uses it to
+say *"notifications are not set up on this server"* rather than offering a
+button that silently does nothing — which would be the same failure as no
+notification at all, dressed as a feature.
+
+#### GET /notifications/subscriptions
+The current user's registered devices. **Never returns `p256dh` or `auth`** —
+they are the device's payload-encryption secrets, the browser already has
+them, and handing them back would turn a listing into a way to push arbitrary
+content to somebody's phone.
+
+#### POST /notifications/subscriptions
+Register a device.
+
+**Request:**
+```json
+{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/...",
+  "p256dh": "BN...",
+  "auth": "k9...",
+  "userAgent": "Mozilla/5.0 (iPhone...)"
+}
+```
+
+**Idempotent on `endpoint`**, which *is* the device's identity in the Web Push
+protocol: a browser re-subscribing with the same key material gets the same
+endpoint back, and a second row for it would push twice to one phone. The
+upsert also clears the failure count — a browser that just handed over a fresh
+subscription is, by construction, working again.
+
+#### DELETE /notifications/subscriptions/{id}
+Stop notifying a device. Returns `204`. Scoped to the caller, so one user
+cannot remove another's device even by guessing an id.
+
+#### POST /notifications/receipts
+**Public.** The device confirming it actually displayed a notification.
+
+```json
+{ "receiptId": "9f2c...64 hex characters" }
+```
+
+The receipt token is the only credential, and that is deliberate: a service
+worker has no session, and the alternatives were no receipts at all or storing
+a bearer token somewhere a service worker can read it. A 32-byte random id that
+arrives inside an end-to-end encrypted payload and grants exactly one thing —
+marking one escalation delivered — is a strictly better credential than either.
+
+An unknown token and an already-used one both return `404`, so the endpoint
+cannot be used as an oracle for guessing tokens. It is never sent to the
+fallback webhook: a third-party receiver is not the device and has no business
+confirming a notification it cannot display.
+
+This is what closes the stop-to-notified measurement in
+`GET /escalations/latency`.
+
+#### What arrives on the phone
+
+VISION §8: *"one tap from a phone, with enough context to decide — what, why,
+blast radius, and what happens if ignored."* Those are four separate fields in
+the payload, not prose, because prose is what gets trimmed when somebody writes
+a notification in a hurry and the part that survives is the part that says
+least.
+
+Consequences are written per escalation kind. A stalled run is burning nothing
+and simply not finishing; a looping one is spending money right now. One
+generic sentence would have to be vague enough to cover both, and a
+notification that cannot distinguish *"this can wait until morning"* from
+*"this is costing money"* fails the only test that matters at 2am.
+
+#### When delivery fails
+
+A Web Push failure re-routes to `NOTIFY_FALLBACK_WEBHOOK_URL` if one is set — a
+**different path, not a retry**, since if the push service is down or no device
+is subscribed then sending again produces the same silence. The fallback is off
+unless configured: it sends escalation text to a third party, which is the
+operator's decision and not a default.
+
+With no fallback configured, a failure ends at a `failed` escalation, an
+`error`-level log line marked `NOTIFICATION FAILED`, and the cockpit's failed
+list. The failure reason names which of three problems occurred — no VAPID
+keys, no devices subscribed, or every device rejecting — because they have
+three different fixes.
+
+---
+
 ### Health
 
 **Public endpoints** - Used for Kubernetes liveness/readiness probes.
