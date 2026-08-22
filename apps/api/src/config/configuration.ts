@@ -129,6 +129,18 @@ export default () => {
     logRetentionDays: parseInt(process.env.RECONCILER_LOG_RETENTION_DAYS || '14', 10),
   },
 
+  // Dispatch (epic #18, #64)
+  dispatch: {
+    // A ceiling across the whole fleet, on top of each runner's own
+    // maxConcurrency. VISION §11 designs for a single operator sharing one
+    // GitHub budget and one machine with automated runs — a fleet limit is
+    // how that operator caps total spend and load without editing every
+    // runner's manifest. Null means no global ceiling.
+    maxConcurrent: process.env.DISPATCH_MAX_CONCURRENT
+      ? parseInt(process.env.DISPATCH_MAX_CONCURRENT, 10)
+      : null,
+  },
+
   // Notifications (epic #17, #58)
   //
   // The last link in the chain VISION §1 complains about: everything upstream
