@@ -38,6 +38,7 @@ model User {
   storageObjects          StorageObject[]       @relation("UserStorageObjects")
   personalAccessTokens    PersonalAccessToken[] @relation("UserPersonalAccessTokens")
   escalationsAcknowledged Escalation[]          @relation("EscalationAcknowledgedBy")
+  pushSubscriptions       PushSubscription[]
 
   @@map("users")
 }
@@ -915,6 +916,21 @@ model RunEvent {
   id    String @id @default(uuid()) @db.Uuid
   runId String @map("run_id") @db.Uuid
 
+  /// The id the SENDER chose, from `run-event.schema.json`.
+  ///
+  /// This is what makes ingestion idempotent, and both event sources need it
+  /// for different reasons: a runner retrying a delivery reuses its id (#53),
+  /// and the git watcher re-observes the same commit on every tick and derives
+  /// the same id from it (#52). Without a unique constraint here, a stalled
+  /// run whose branch is re-read each minute would accumulate a fresh
+  /// "progress" event every tick and look permanently alive — the exact
+  /// failure #54 exists to catch, introduced by the liveness source itself.
+  ///
+  /// Unique per RUN rather than globally: senders choose these, and two
+  /// runners have no way to coordinate. Nullable so a control-plane event that
+  /// has no natural sender id can be written without inventing one.
+  externalId String? @map("external_id")
+
   type   RunEventType
   /// NO DEFAULT, NOT NULL. See `RunEventSource` - this discriminator is
   /// load-bearing, not metadata.
@@ -956,6 +972,8 @@ model RunEvent {
   // Relations
   run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
 
+  // Idempotency, and the lookup that enforces it.
+  @@unique([runId, externalId])
   // The run detail timeline.
   @@index([runId, occurredAt])
   // The watchdog's access pattern is BY EVENT AGE, which #39 calls out as
@@ -1011,6 +1029,50 @@ enum EscalationStatus {
 }
 
 /// One attempt to get a human's attention.
+/// A browser push subscription: one device an operator can be reached on.
+///
+/// VISION §8 sets the bar at *"one tap from a phone"*, and #58 is explicit
+/// that everything upstream can work perfectly while detection latency is
+/// still measured in hours if nobody is actually told.
+model PushSubscription {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  /// The push service URL the browser issued.
+  ///
+  /// Unique because it IS the device's identity in the Web Push protocol: a
+  /// browser re-subscribing with the same key material gets the same
+  /// endpoint back, and inserting a second row for it would push twice to
+  /// one phone.
+  endpoint String @unique
+  /// The subscription's public key and auth secret, for payload encryption.
+  /// The payload is encrypted end to end - the push service relays bytes it
+  /// cannot read, which is why escalation detail can travel through it.
+  p256dh   String
+  auth     String
+
+  /// What subscribed, so an operator revoking a device can tell which it is.
+  userAgent String? @map("user_agent")
+
+  /// Consecutive delivery failures, and when each side last happened.
+  ///
+  /// A push service answering 404 or 410 means the subscription is
+  /// permanently gone; anything else may be transient. Kept per subscription
+  /// rather than inferred from escalations so a dead phone can be pruned
+  /// without reading the escalation history.
+  failureCount  Int       @default(0) @map("failure_count")
+  lastSuccessAt DateTime? @map("last_success_at") @db.Timestamptz
+  lastFailureAt DateTime? @map("last_failure_at") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
 model Escalation {
   id    String  @id @default(uuid()) @db.Uuid
   /// The run this is about. Null for a `system` escalation, which has no run.
@@ -1023,6 +1085,36 @@ model Escalation {
   summary String
   /// Detail for the notification body.
   detail  String?
+
+  /// When the run actually stopped making progress: the `occurredAt` of the
+  /// last event of ANY source before the silence.
+  ///
+  /// The STOP side of success metric 1. VISION §10 defines detection latency
+  /// as "the elapsed time between a run ceasing to make progress and a human
+  /// being informed", so without this column the system can only measure from
+  /// when it noticed - which would report success while the operator still
+  /// finds out four hours later. Null for a `system` escalation, which is
+  /// about the control plane and has no run that stopped.
+  progressStoppedAt DateTime? @map("progress_stopped_at") @db.Timestamptz
+
+  /// Which liveness source the stall was measured through.
+  ///
+  /// VISION §9 runs two INDEPENDENT liveness sources, and #59 requires the
+  /// metric say which one was carrying a run when it went quiet. A
+  /// git-derived detection is expected to be slower than a runner-reported
+  /// one; an aggregate that blends them hides which half needs work.
+  detectionSource RunEventSource? @map("detection_source")
+
+  /// Milliseconds from `progressStoppedAt` to `raisedAt`, and to
+  /// `deliveredAt`.
+  ///
+  /// Derived, and stored anyway. The cockpit (#20) needs percentiles over
+  /// thousands of rows; as timestamp arithmetic over nullable columns that is
+  /// a scan, and as an indexed integer it is not. Both are kept because
+  /// stop-to-raised and stop-to-notified answer different questions, and only
+  /// the second is the success metric.
+  detectLatencyMs Int? @map("detect_latency_ms")
+  notifyLatencyMs Int? @map("notify_latency_ms")
 
   /// Which transport was used - `push`, `email`. Null until dispatched.
   transport        String?
@@ -1052,6 +1144,9 @@ model Escalation {
   @@index([status, raisedAt])
   // The redelivery sweeper: raised or dispatched, never delivered.
   @@index([status, deliveryAttempts])
+  // Success metric 1, aggregated for the cockpit: detection latency over a
+  // window, split by which liveness source detected the stop.
+  @@index([detectionSource, raisedAt])
   @@map("escalations")
 }
 

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "clr-018f2c31-0019",
+  "runId": "018f2c31-7a4e-7c3b-9f21-4d5e6a7b8c9d",
+  "workOrderId": "wo_opifex_312_a3f91c2_a1",
+  "type": "run.blocked",
+  "source": "runner-reported",
+  "occurredAt": "2026-08-21T14:02:00.000Z",
+  "summary": "Hit the 5-hour usage limit",
+  "runner": "claude-code-local@2.1.223",
+  "blocked": {
+    "reason": "rate-limit",
+    "resetAt": "2026-08-21T18:00:00.000Z",
+    "detail": "Usage limit reached; resets at 18:00 UTC"
+  }
+}

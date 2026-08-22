@@ -16,6 +16,27 @@ export type ReconcileActionType =
   | 'remove-mirror-label'
   /** Tell a human. VISION §9: escalation is an action, not telemetry. */
   | 'escalate'
+  /**
+   * Kill a silent run and re-run it from the pinned base commit (#54).
+   *
+   * VISION §3.4's recovery model: abandon and re-run, not session resumption.
+   * That is what keeps the system vendor-neutral — cross-agent session state
+   * never has to exist.
+   */
+  | 'kill-and-re-run'
+  /**
+   * Kill a looping run and re-PLAN it (#55).
+   *
+   * Deliberately distinct from `kill-and-re-run`: re-running the identical
+   * work order from base would simply loop again. Re-planning implies
+   * decomposition, which VISION §7 puts in the advisory agent's hands, so
+   * until the supervisor exists this escalates to a human.
+   */
+  | 'kill-and-re-plan'
+  /** Park a blocked run until its reset time, plus jitter (#56). */
+  | 'park'
+  /** Resume a parked run whose reset time has passed (#56). */
+  | 'resume'
   /** Stop acting and require a human (VISION §8). */
   | 'quarantine'
   /** Release a quarantine a human has cleared. */
@@ -63,6 +84,58 @@ export interface ReconcileAction {
 
   /** The mirror label, for the two label action types. */
   label?: string;
+
+  /**
+   * The run this concerns, for the watchdog's action types.
+   *
+   * Absent for the reconciler's own actions, which are about an issue rather
+   * than a specific execution of it.
+   */
+  runId?: string;
+
+  /**
+   * Which kind of escalation this is, for `escalate` actions.
+   *
+   * Carried on the action rather than inferred downstream, because the
+   * component that decided to escalate is the one that knows why — and
+   * deduplication is per (run, kind), so guessing it wrong would either
+   * suppress a real second problem or page twice about one.
+   */
+  escalationKind?:
+    | 'run_stalled'
+    | 'run_looping'
+    | 'run_failed'
+    | 'quarantined'
+    | 'budget_exceeded'
+    | 'system';
+
+  /**
+   * When the run stopped making progress, ISO-8601, for `escalate` actions.
+   *
+   * The STOP side of success metric 1 (#59). Carried on the action for the
+   * same reason `escalationKind` is: only the detector knows what it measured
+   * from — the last event, the start of a run that never reported, or the
+   * moment a tool signature began repeating.
+   */
+  progressStoppedAt?: string;
+
+  /**
+   * Which liveness source last saw the run alive, for `escalate` actions.
+   *
+   * VISION §9 runs two INDEPENDENT sources. Git-derived detection is
+   * structurally slower than runner-reported, so an aggregate that does not
+   * separate them describes neither.
+   */
+  detectionSource?: 'runner' | 'git' | 'control_plane';
+
+  /**
+   * When a parked run should be woken (#56).
+   *
+   * Carries the jitter already applied, not the raw reset time — the whole
+   * point is that two runs parked by the same quota window get different
+   * values here.
+   */
+  resumeAt?: string;
 }
 
 export interface ActionEvidence {

@@ -67,6 +67,16 @@ export const PERMISSIONS = {
   // while registering one is configuration.
   RUNS_READ: 'runs:read',
   RUNS_CANCEL: 'runs:cancel',
+  /**
+   * Report run events.
+   *
+   * Held by RUNNERS, not by people — a runner authenticates with a PAT minted
+   * by the operator and posts its own progress. Separate from `runs:cancel`
+   * because reporting what happened and deciding to stop a run are different
+   * authorities: a compromised runner credential should not be able to kill
+   * the other runs in the queue.
+   */
+  RUNS_WRITE: 'runs:write',
 
   // Work orders. `workorders:write` covers the queue controls - hold, release,
   // clear quarantine.

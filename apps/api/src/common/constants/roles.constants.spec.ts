@@ -121,6 +121,7 @@ describe('roles.constants', () => {
       const domainWrites = [
         PERMISSIONS.PROJECTS_WRITE,
         PERMISSIONS.RUNS_CANCEL,
+        PERMISSIONS.RUNS_WRITE,
         PERMISSIONS.WORKORDERS_WRITE,
         PERMISSIONS.RUNNERS_MANAGE,
         // Acknowledging is a claim that someone will act on the escalation,

@@ -65,6 +65,7 @@
     "pino": "^10.3.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "web-push": "^3.6.7",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -76,6 +77,9 @@
     "@types/passport-google-oauth20": "^2.0.17",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^7.2.0",
+    "@types/web-push": "^3.6.4",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^2.1.1",
     "dotenv": "^17.4.2",
     "jest": "^30.4.2",
     "jest-junit": "^17.0.0",

@@ -27,6 +27,7 @@ import { UserProfileCard } from '../components/user/UserProfileCard';
 import { ThemeSettings } from '../components/settings/ThemeSettings';
 import { ProfileSettings } from '../components/settings/ProfileSettings';
 import { PersonalAccessTokens } from '../components/settings/PersonalAccessTokens';
+import { NotificationSettings } from '../components/settings/NotificationSettings';
 import { useUserSettings } from '../hooks/useUserSettings';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useHashScroll } from '../hooks/useHashScroll';
@@ -112,6 +113,12 @@ export default function UserSettingsPage() {
               onSave={handleProfileSave}
               disabled={isSaving}
             />
+
+            {/* Phone notifications (#58) — where escalations reach the
+                operator. Placed ABOVE tokens deliberately: this is the one
+                setting on the page whose absence makes the rest of the system
+                quietly useless. */}
+            <NotificationSettings />
 
             {/* Personal Access Tokens */}
             <PersonalAccessTokens />

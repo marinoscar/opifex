@@ -1394,6 +1394,254 @@ chain survives. Set `observeEnabled` and `dispatchEnabled` to `false` instead.
 
 ---
 
+### Escalations
+
+What needs a human. VISION §9 is explicit that **escalation is an action, not
+telemetry** — a stalled run nobody is told about is the exact failure this
+system exists to eliminate — so escalations get records, a lifecycle and their
+own endpoints rather than a log line somebody might grep for.
+
+Requires `escalations:read` to read and `escalations:acknowledge` to
+acknowledge.
+
+**Escalations are deduplicated per (run, kind).** The watchdog is a
+reconciler: it re-derives the same verdict on every tick by design. Without
+deduplication a one-minute tick would page sixty times an hour about one
+stall, and an operator paged twelve times about the same thing stops reading
+escalations — which reproduces the original problem by a different route.
+Deduped per kind rather than per run, so a run that is both looping and over
+budget still shows both.
+
+`delivered` and `failed` count as **unresolved**: the operator was told and
+has not acted. `acknowledged` and `resolved` do not, so a condition that
+recurs after a human dealt with it raises again.
+
+#### GET /escalations
+List escalations, newest first. Paginated.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `page` | number | `1` | 1-based page number |
+| `pageSize` | number | `25` | Max 100 |
+| `status` | string | — | `raised`, `dispatched`, `delivered`, `failed`, `acknowledged`, `resolved` |
+| `unresolvedOnly` | boolean | — | The triage view |
+| `runId` | uuid | — | One run's escalations |
+
+Each escalation carries its own latency measurement: `progressStoppedAt`,
+`detectionSource`, `detectLatencyMs` and `notifyLatencyMs`.
+
+#### GET /escalations/latency
+Detection latency, aggregated. **VISION §10's success metric 1**, whose target
+is *seconds*.
+
+Measured **stop-to-notified**: from a run ceasing to make progress to a human
+being informed. Measuring stop-to-*detected* instead would report success
+while the operator still finds out four hours later, so the two are separate
+figures and only one of them is the metric.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `since` | date-time | — | Inclusive lower bound on `raisedAt` |
+| `until` | date-time | — | Inclusive upper bound on `raisedAt` |
+| `repository` | string | — | `owner/name` |
+
+**Response:**
+```json
+{
+  "since": "2026-08-15T00:00:00.000Z",
+  "until": null,
+  "truncated": false,
+  "sampleSize": 42,
+  "notified":  { "count": 38, "p50Ms": 6200, "p90Ms": 11400, "p99Ms": 19800, "maxMs": 19800 },
+  "detected":  { "count": 42, "p50Ms": 2100, "p90Ms":  4300, "p99Ms":  9100, "maxMs":  9100 },
+  "awaitingNotification": 4,
+  "unmeasurable": 0,
+  "bySource": {
+    "runner":        { "notified": { "count": 30, "p50Ms": 4100, "p90Ms": 8200, "p99Ms": 9100, "maxMs": 9100 }, "detected": { "count": 32, "p50Ms": 1800, "p90Ms": 3200, "p99Ms": 4000, "maxMs": 4000 }, "awaitingNotification": 2, "unmeasurable": 0 },
+    "git":           { "notified": { "count":  8, "p50Ms": 14500, "p90Ms": 19800, "p99Ms": 19800, "maxMs": 19800 }, "detected": { "count": 10, "p50Ms": 7400, "p90Ms": 9100, "p99Ms": 9100, "maxMs": 9100 }, "awaitingNotification": 2, "unmeasurable": 0 },
+    "control_plane": { "notified": { "count": 0, "p50Ms": null, "p90Ms": null, "p99Ms": null, "maxMs": null }, "detected": { "count": 0, "p50Ms": null, "p90Ms": null, "p99Ms": null, "maxMs": null }, "awaitingNotification": 0, "unmeasurable": 0 }
+  }
+}
+```
+
+Four figures, because three of them can hide the fourth:
+
+| Field | Meaning |
+|---|---|
+| `notified` | Stop to a human being informed. **The metric.** |
+| `detected` | Stop to Opifex noticing. Reported alongside so the gap shows — a fast detector behind a broken transport looks perfect on this one alone. |
+| `awaitingNotification` | Measurable, raised, never delivered. Their real latency is unbounded; omitting them silently would make a totally broken transport render as excellent latency over a tiny sample. |
+| `unmeasurable` | No stop time at all, such as a `system` escalation. Counted rather than measured from `raisedAt`, which would add a zero-latency entry per unmeasurable event. |
+
+Percentiles are **nearest-rank**, so every figure reported is one that
+actually happened and the operator can go and find the run behind it. An empty
+sample reports `null`, not `0` — zero milliseconds is an excellent latency,
+and "we measured nothing" is not a latency at all.
+
+`bySource` splits everything by liveness source. VISION §9 runs two
+**independent** sources, and git-derived detection is structurally slower than
+runner-reported; a blended number describes neither and hides which half needs
+work.
+
+`truncated` is `true` when the window held more escalations than one summary
+reads. A truncation nobody reports reads as "this is what happened".
+
+The same measurement is also exported over OpenTelemetry as
+`opifex.detection.latency` and `opifex.detection.detect_latency`, with
+`opifex.escalations.raised` and `opifex.escalations.notified` counters whose
+gap is how many stalls nobody was told about. This endpoint does **not**
+depend on the OTEL stack running — see
+[ADR 0003](adr/0003-observability-backend.md).
+
+#### POST /escalations/{id}/acknowledge
+Record that a human has seen it — the one fact the lifecycle exists to
+capture. Acknowledging twice is not an error; two people reaching for the same
+page at once is normal and the first acknowledgement stands.
+
+Acknowledging also re-arms the detector: the next occurrence raises a new
+escalation, rather than being suppressed forever because somebody looked at
+this one once.
+
+**Errors:**
+
+| Status | Cause |
+|---|---|
+| `404` | No such escalation |
+
+---
+
+### Notifications
+
+Where an escalation actually reaches a person. VISION §1's original complaint
+is a run that stalls at 10am and is discovered at 2pm; everything upstream can
+work perfectly and detection latency is still measured in hours if nobody is
+told.
+
+**Web Push (RFC 8030) with VAPID**, chosen over ntfy and Pushover in
+[ADR 0004](adr/0004-notification-transport.md) — no third-party account, no
+per-vendor credential, and the payload is encrypted end to end so the push
+service relays bytes it cannot read. That last point is what makes it
+acceptable to put the escalation's real reason in the notification body rather
+than a "something happened, open the app" stub.
+
+Everything except the receipt endpoint requires only that you are signed in.
+Managing your own phone is the same class of thing as managing your own
+settings.
+
+#### A push service accepting a message is not a phone ringing
+
+This is why the escalation lifecycle has three statuses and not two:
+
+| Status | Means |
+|---|---|
+| `dispatched` | A push service returned 201. It has taken custody. Nothing more is known. |
+| `delivered` | A device posted a receipt back. Somebody's phone rang. |
+| `failed` | No transport would take it, **or** the receipt never arrived within `NOTIFY_RECEIPT_TIMEOUT_MS`. |
+
+Collapsing the first two would put a green tick next to a notification nobody
+saw — the exact failure #58 describes.
+
+#### GET /notifications/config
+What the browser needs in order to subscribe.
+
+**Response:**
+```json
+{
+  "vapidPublicKey": "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkFZwuiKmpBpMWvcxYVbGGmkTBBUuRQGSlxAOKmR1IQ",
+  "pushConfigured": true,
+  "fallbackConfigured": false
+}
+```
+
+`pushConfigured` is false when the server has no VAPID keys. The UI uses it to
+say *"notifications are not set up on this server"* rather than offering a
+button that silently does nothing — which would be the same failure as no
+notification at all, dressed as a feature.
+
+#### GET /notifications/subscriptions
+The current user's registered devices. **Never returns `p256dh` or `auth`** —
+they are the device's payload-encryption secrets, the browser already has
+them, and handing them back would turn a listing into a way to push arbitrary
+content to somebody's phone.
+
+#### POST /notifications/subscriptions
+Register a device.
+
+**Request:**
+```json
+{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/...",
+  "p256dh": "BN...",
+  "auth": "k9...",
+  "userAgent": "Mozilla/5.0 (iPhone...)"
+}
+```
+
+**Idempotent on `endpoint`**, which *is* the device's identity in the Web Push
+protocol: a browser re-subscribing with the same key material gets the same
+endpoint back, and a second row for it would push twice to one phone. The
+upsert also clears the failure count — a browser that just handed over a fresh
+subscription is, by construction, working again.
+
+#### DELETE /notifications/subscriptions/{id}
+Stop notifying a device. Returns `204`. Scoped to the caller, so one user
+cannot remove another's device even by guessing an id.
+
+#### POST /notifications/receipts
+**Public.** The device confirming it actually displayed a notification.
+
+```json
+{ "receiptId": "9f2c...64 hex characters" }
+```
+
+The receipt token is the only credential, and that is deliberate: a service
+worker has no session, and the alternatives were no receipts at all or storing
+a bearer token somewhere a service worker can read it. A 32-byte random id that
+arrives inside an end-to-end encrypted payload and grants exactly one thing —
+marking one escalation delivered — is a strictly better credential than either.
+
+An unknown token and an already-used one both return `404`, so the endpoint
+cannot be used as an oracle for guessing tokens. It is never sent to the
+fallback webhook: a third-party receiver is not the device and has no business
+confirming a notification it cannot display.
+
+This is what closes the stop-to-notified measurement in
+`GET /escalations/latency`.
+
+#### What arrives on the phone
+
+VISION §8: *"one tap from a phone, with enough context to decide — what, why,
+blast radius, and what happens if ignored."* Those are four separate fields in
+the payload, not prose, because prose is what gets trimmed when somebody writes
+a notification in a hurry and the part that survives is the part that says
+least.
+
+Consequences are written per escalation kind. A stalled run is burning nothing
+and simply not finishing; a looping one is spending money right now. One
+generic sentence would have to be vague enough to cover both, and a
+notification that cannot distinguish *"this can wait until morning"* from
+*"this is costing money"* fails the only test that matters at 2am.
+
+#### When delivery fails
+
+A Web Push failure re-routes to `NOTIFY_FALLBACK_WEBHOOK_URL` if one is set — a
+**different path, not a retry**, since if the push service is down or no device
+is subscribed then sending again produces the same silence. The fallback is off
+unless configured: it sends escalation text to a third party, which is the
+operator's decision and not a default.
+
+With no fallback configured, a failure ends at a `failed` escalation, an
+`error`-level log line marked `NOTIFICATION FAILED`, and the cockpit's failed
+list. The failure reason names which of three problems occurred — no VAPID
+keys, no devices subscribed, or every device rejecting — because they have
+three different fixes.
+
+---
+
 ### Health
 
 **Public endpoints** - Used for Kubernetes liveness/readiness probes.

@@ -123,6 +123,28 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
           'the record used to validate the control loop before it is allowed to act.',
       },
       {
+        name: 'Escalations',
+        description:
+          'What needs a human, with the lifecycle that distinguishes raised from delivered from ' +
+          'acknowledged. VISION §9 makes escalation an action rather than telemetry: a stalled ' +
+          'run nobody is told about is the exact failure this system exists to eliminate.',
+      },
+      {
+        name: 'Notifications',
+        description:
+          'The devices an escalation can reach, and the receipts they send back. Web Push gives ' +
+          'no delivery guarantee — a push service accepting a message is not a phone showing it ' +
+          '— so a device confirms receipt and an unconfirmed notification is recorded as a ' +
+          'failure rather than left looking handled.',
+      },
+      {
+        name: 'Run Events',
+        description:
+          'Where runners report what they are doing, validated against the six normalized event ' +
+          'types in schemas/run-event.schema.json. Idempotent on the sender-chosen event id, so a ' +
+          'retried delivery is recognised rather than duplicated.',
+      },
+      {
         name: 'Repositories',
         description:
           'Which repositories Opifex watches, and the policy for each: whether the reconciler ' +

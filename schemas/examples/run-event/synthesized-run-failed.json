@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "cp:018f2d02:watchdog-silent-kill",
+  "runId": "018f2d02-1b3c-7a9e-8f10-2c3d4e5f6a7b",
+  "workOrderId": "wo_opifex_318_c1d2e3f_a1",
+  "type": "run.failed",
+  "source": "control-plane-synthesized",
+  "occurredAt": "2026-08-21T13:30:00.000Z",
+  "summary": "Watchdog: no event of any source for 98 minutes; threshold for claude-code-cloud is 90",
+  "failure": {
+    "reason": "Silent run: last event 2026-08-21T11:52:07Z, 98 minutes ago, exceeding the 90-minute git-derived threshold for this runner's declared streaming fidelity",
+    "retryable": true
+  }
+}
