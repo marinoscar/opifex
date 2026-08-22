@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   ChildProcessSupervisor,
   DEFAULT_KILL_GRACE_MS,
+  KILL_VERIFY_DELAY_MS,
   STDERR_TAIL_BYTES,
   type SupervisedProcess,
 } from './child-process-supervisor';
@@ -358,6 +359,45 @@ describe('ChildProcessSupervisor', () => {
         kind: 'signalled',
         signal: 'SIGTERM',
       });
+    });
+  });
+
+  describe('post-kill verification', () => {
+    it('stays quiet when SIGKILL worked, which is the normal case', async () => {
+      // #61's criterion is that cancellation "actually terminates work". The
+      // check exists to catch the rare case it does not — a process wedged in
+      // uninterruptible sleep, or a pid we no longer own — so it must not
+      // report anything when the ordinary path works, or the signal is noise.
+      const errors: Error[] = [];
+      const ready: string[] = [];
+      const proc = start({
+        command: NODE,
+        // Ignores SIGTERM, so the SIGKILL escalation — and therefore the
+        // verification — is definitely reached.
+        args: [
+          '-e',
+          'process.on("SIGTERM",()=>{});setInterval(()=>{},1000);process.stdout.write("armed\\n")',
+        ],
+        cwd,
+        killGraceMs: 100,
+        onError: (error) => errors.push(error),
+        onLine: (line) => ready.push(line),
+      });
+
+      await waitUntil(() => ready.includes('armed'));
+      proc.kill();
+      await expect(proc.waitForExit()).resolves.toMatchObject({ signal: 'SIGKILL' });
+
+      // Past the verification delay, so a false report would have landed.
+      await new Promise((resolve) => setTimeout(resolve, KILL_VERIFY_DELAY_MS + 500));
+
+      expect(errors.filter((error) => error.message.includes('survived SIGKILL'))).toHaveLength(0);
+    }, 30_000);
+
+    it('waits before checking, since the kernel reaps asynchronously', () => {
+      // Checking in the same tick would report a process already on its way
+      // out, which is the fastest way to make a real warning ignorable.
+      expect(KILL_VERIFY_DELAY_MS).toBeGreaterThan(0);
     });
   });
 

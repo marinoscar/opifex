@@ -41,6 +41,14 @@ export const STDERR_TAIL_BYTES = 8 * 1024;
  */
 export const DEFAULT_KILL_GRACE_MS = 10_000;
 
+/**
+ * How long after `SIGKILL` before checking the group is really gone.
+ *
+ * The kernel reaps asynchronously, so checking in the same tick would report a
+ * process that is already on its way out.
+ */
+export const KILL_VERIFY_DELAY_MS = 500;
+
 export interface SpawnRequest {
   command: string;
   args: readonly string[];
@@ -179,12 +187,52 @@ export class SupervisedProcess {
 
     const grace = this.request.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
     this.killTimer = setTimeout(() => {
-      if (this.isAlive()) this.signalGroup('SIGKILL');
+      if (this.isAlive()) {
+        this.signalGroup('SIGKILL');
+        this.verifyGroupIsGone();
+      }
     }, grace);
     // The escalation must not be a reason for the process to stay up. Without
     // this, a graceful shutdown waits out the grace period of every run it is
     // already killing.
     this.killTimer.unref();
+  }
+
+  /**
+   * Did `SIGKILL` actually work?
+   *
+   * #61's criterion is that cancellation *"actually terminates work, and does
+   * not leave orphaned processes"* — which is a claim that has to be checked,
+   * not assumed. `SIGKILL` is uncatchable, so the only realistic way the group
+   * survives is a process wedged in uninterruptible sleep (a hung NFS mount,
+   * a stuck device) or a pid we no longer own.
+   *
+   * Rare, and worth surfacing precisely because it is rare: an operator
+   * looking at a run the control plane believes is dead, while the process is
+   * still holding a workspace and spending quota, has nothing else to go on.
+   * Reported rather than retried — a second `SIGKILL` does nothing that the
+   * first did not.
+   */
+  private verifyGroupIsGone(): void {
+    if (this.pid === undefined) return;
+
+    // A short delay: the kernel reaps asynchronously, and checking in the same
+    // tick reports a process that is already on its way out.
+    const check = setTimeout(() => {
+      try {
+        // Signal 0 tests existence without delivering anything.
+        process.kill(-this.pid!, 0);
+      } catch {
+        return; // ESRCH — gone, which is what we wanted.
+      }
+      this.report(
+        new Error(
+          `Process group ${this.pid} survived SIGKILL — it may still be holding its ` +
+            'workspace and spending quota',
+        ),
+      );
+    }, KILL_VERIFY_DELAY_MS);
+    check.unref();
   }
 
   private signalGroup(signal: NodeJS.Signals): void {
