@@ -20,6 +20,7 @@ import { RepositoriesModule } from './repositories/repositories.module';
 import { ReconcilerModule } from './reconciler/reconciler.module';
 import { RunEventsModule } from './run-events/run-events.module';
 import { EscalationsModule } from './escalations/escalations.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { TelemetryModule } from './telemetry/telemetry.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { TestAuthModule } from './test-auth/test-auth.module';
@@ -72,6 +73,7 @@ import configuration from './config/configuration';
     TelemetryModule,
     RunEventsModule,
     EscalationsModule,
+    NotificationsModule,
 
     // Test modules (non-production only)
     // TestAuthModule bypasses both OAuth and the email allowlist, so NODE_ENV

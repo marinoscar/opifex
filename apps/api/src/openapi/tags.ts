@@ -130,6 +130,14 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
           'run nobody is told about is the exact failure this system exists to eliminate.',
       },
       {
+        name: 'Notifications',
+        description:
+          'The devices an escalation can reach, and the receipts they send back. Web Push gives ' +
+          'no delivery guarantee — a push service accepting a message is not a phone showing it ' +
+          '— so a device confirms receipt and an unconfirmed notification is recorded as a ' +
+          'failure rather than left looking handled.',
+      },
+      {
         name: 'Run Events',
         description:
           'Where runners report what they are doing, validated against the six normalized event ' +

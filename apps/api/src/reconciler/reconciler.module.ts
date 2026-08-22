@@ -4,6 +4,7 @@ import { EscalationsModule } from '../escalations/escalations.module';
 import { GitHubReadModule } from '../github/read/github-read.module';
 import { GitHubWriteModule } from '../github/write/github-write.module';
 import { LivenessModule } from '../liveness/liveness.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { WatchdogModule } from '../watchdog/watchdog.module';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
 import { RepositoriesModule } from '../repositories/repositories.module';
@@ -50,6 +51,10 @@ import { TickLeaseService } from './tick-lease.service';
     // `ReconcilerService` still cannot reach them, which keeps "decides" and
     // "acts" on opposite sides of the same line the executor is on.
     EscalationsModule,
+    // Sending them. Also driven from the task, for the same reason: raising
+    // an escalation and telling somebody are both ACTIONS, and the component
+    // that decides to escalate can do neither.
+    NotificationsModule,
   ],
   controllers: [ReconcilerController],
   providers: [

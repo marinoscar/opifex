@@ -4,6 +4,7 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 
 import { EscalationsService } from '../escalations/escalations.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
+import { EscalationDispatcher } from '../notifications/escalation-dispatcher.service';
 import { WatchdogService, type WatchdogSweepResult } from '../watchdog/watchdog.service';
 import type { ReconcileAction } from './diff/actions.types';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
@@ -40,6 +41,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     private readonly liveness: GitLivenessService,
     private readonly watchdog: WatchdogService,
     private readonly escalations: EscalationsService,
+    private readonly dispatcher: EscalationDispatcher,
   ) {}
 
   onModuleInit(): void {
@@ -201,6 +203,44 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Actually tell somebody.
+   *
+   * Separate from raising, and independently caught, because they fail
+   * independently: a push service outage must not stop escalations being
+   * RECORDED, and a database problem must not stop the ones already recorded
+   * being SENT.
+   *
+   * Runs unconditionally rather than only when this tick raised something.
+   * The queue is what is `raised`, not what this pass produced — an
+   * escalation raised while the push service was down has to be picked up by
+   * a later tick, and a dispatch conditional on new work never would.
+   */
+  private async dispatchEscalations(): Promise<void> {
+    try {
+      const result = await this.dispatcher.dispatchPending();
+
+      if (result.dispatched > 0 || result.rerouted > 0) {
+        this.logger.log(
+          `Notifications: ${result.dispatched} dispatched` +
+            (result.rerouted > 0 ? `, ${result.rerouted} via the fallback path` : ''),
+        );
+      }
+      if (result.failed > 0 || result.timedOut > 0) {
+        this.logger.error(
+          `Notifications: ${result.failed} could not be sent at all, ` +
+            `${result.timedOut} were sent and never confirmed by a device`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Dispatching escalations failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   private async runOnce(): Promise<void> {
     try {
       // Liveness FIRST, so the tick's projection sees the freshest run state.
@@ -232,6 +272,12 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // observation week — the whole point of that week is being told what
       // the system would have done.
       await this.raiseEscalations(actions, watchdog.judgedRunIds);
+
+      // Unconditional, and before the early return below: the notification
+      // queue is everything still `raised`, not what this pass produced. An
+      // escalation raised while the push service was down is picked up here
+      // on a later tick, which a dispatch gated on new work never would.
+      await this.dispatchEscalations();
 
       if (actions.length === 0) return;
 
