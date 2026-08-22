@@ -173,6 +173,12 @@ export default () => {
       maxConcurrency: parseInt(process.env.CLAUDE_CODE_MAX_CONCURRENCY || '2', 10),
       // How long a SIGTERMed run has to flush before SIGKILL.
       killGraceMs: parseInt(process.env.RUNNER_KILL_GRACE_MS || '10000', 10),
+      // Defaults to the narrow end. A mode broad enough never to ask is
+      // coupled to a sandbox that makes never asking safe, and sandboxing is
+      // #113 — so until then a run that needs a permission it does not have
+      // goes silent and is caught by the watchdog (#54), which is the failure
+      // this system exists to notice. Widening it is a deliberate act.
+      permissionMode: process.env.CLAUDE_CODE_PERMISSION_MODE || 'acceptEdits',
     },
   },
 
