@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../prisma/prisma.module';
+import { RunEventsModule } from '../run-events/run-events.module';
 import { ClaudeCodeLocalRunner } from './claude-code-local/claude-code-local.runner';
 import { RunWorkspaceService } from './claude-code-local/run-workspace.service';
 import { RunnerRegistrationService } from './runner-registration.service';
+import { RunPollerService } from './run-poller.service';
+import { RunPollerTask } from './run-poller.task';
 
 /**
  * The runners the control plane can dispatch to.
@@ -20,8 +23,19 @@ import { RunnerRegistrationService } from './runner-registration.service';
  * this file is where that stays true or quietly stops being true.
  */
 @Module({
-  imports: [PrismaModule],
-  providers: [RunWorkspaceService, ClaudeCodeLocalRunner, RunnerRegistrationService],
-  exports: [RunWorkspaceService, ClaudeCodeLocalRunner, RunnerRegistrationService],
+  imports: [PrismaModule, RunEventsModule],
+  providers: [
+    RunWorkspaceService,
+    ClaudeCodeLocalRunner,
+    RunnerRegistrationService,
+    RunPollerService,
+    RunPollerTask,
+  ],
+  exports: [
+    RunWorkspaceService,
+    ClaudeCodeLocalRunner,
+    RunnerRegistrationService,
+    RunPollerService,
+  ],
 })
 export class RunnersModule {}
