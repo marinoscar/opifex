@@ -535,6 +535,128 @@ describe('EscalationsService', () => {
     });
   });
 
+  describe('the cockpit summary', () => {
+    /** A row as the summary reads it, bypassing raise so times are exact. */
+    function row(overrides: Record<string, unknown> = {}) {
+      prisma.rows.push({
+        id: `escalation-${prisma.rows.length + 1}`,
+        status: 'raised',
+        kind: 'run_stalled',
+        detectionSource: 'runner',
+        progressStoppedAt: STOPPED_AT,
+        detectLatencyMs: 4_000,
+        notifyLatencyMs: null,
+        raisedAt: STOPPED_AT,
+        ...overrides,
+      });
+    }
+
+    it('reports nulls, not zeros, when nothing has been measured', async () => {
+      // A fresh install has detected nothing. Rendering that as 0ms would put
+      // a perfect number on the cockpit for a system that has never worked.
+      const summary = await service.latencySummary();
+
+      expect(summary.notified).toMatchObject({ count: 0, p50Ms: null, maxMs: null });
+      expect(summary.detected).toMatchObject({ count: 0, p50Ms: null });
+    });
+
+    it('reports stop-to-notified as the headline figure', async () => {
+      row({ notifyLatencyMs: 7_000 });
+      row({ notifyLatencyMs: 9_000 });
+
+      const summary = await service.latencySummary();
+
+      expect(summary.notified).toMatchObject({ count: 2, p50Ms: 7_000, maxMs: 9_000 });
+    });
+
+    it('keeps stop-to-noticed as a SEPARATE figure', async () => {
+      // A fast detector behind a broken transport looks perfect on `detected`
+      // alone. Both are reported so the gap is visible.
+      row({ detectLatencyMs: 4_000, notifyLatencyMs: 4 * 60 * 60_000 });
+
+      const summary = await service.latencySummary();
+
+      expect(summary.detected.p50Ms).toBe(4_000);
+      expect(summary.notified.p50Ms).toBe(4 * 60 * 60_000);
+    });
+
+    it('counts what was never delivered rather than dropping it', async () => {
+      // Their real stop-to-notified latency is unbounded. Omitting them
+      // silently would make a completely broken transport render as excellent
+      // latency over a sample of one.
+      row({ notifyLatencyMs: 2_000 });
+      row();
+      row();
+
+      const summary = await service.latencySummary();
+
+      expect(summary.notified.count).toBe(1);
+      expect(summary.awaitingNotification).toBe(2);
+    });
+
+    it('counts what could not be measured at all', async () => {
+      // A `system` escalation is about the control plane and has no run that
+      // stopped. Measuring it from `raisedAt` would add a zero-latency entry
+      // per unmeasurable event.
+      row({ kind: 'system', progressStoppedAt: null, detectLatencyMs: null });
+
+      const summary = await service.latencySummary();
+
+      expect(summary.unmeasurable).toBe(1);
+      expect(summary.detected.count).toBe(0);
+    });
+
+    it('splits the figures by liveness source', async () => {
+      // Git-derived detection is structurally slower than runner-reported. A
+      // blended number describes neither and hides which half needs work.
+      row({ detectionSource: 'runner', notifyLatencyMs: 3_000 });
+      row({ detectionSource: 'git', notifyLatencyMs: 90 * 60_000 });
+
+      const summary = await service.latencySummary();
+
+      expect(summary.bySource.runner.notified.p50Ms).toBe(3_000);
+      expect(summary.bySource.git.notified.p50Ms).toBe(90 * 60_000);
+      expect(summary.bySource.control_plane.notified.count).toBe(0);
+    });
+
+    it('says when it read only part of the window', async () => {
+      // A truncation nobody reports reads as "this is what happened", which
+      // is the same class of lie as measuring stop-to-detected.
+      const summary = await service.latencySummary();
+
+      expect(summary.truncated).toBe(false);
+      expect(summary).toHaveProperty('sampleSize', 0);
+    });
+
+    it('echoes the window it was asked for', async () => {
+      const since = new Date('2026-08-01T00:00:00Z');
+
+      const summary = await service.latencySummary({ since });
+
+      expect(summary.since).toBe(since.toISOString());
+    });
+  });
+
+  describe('per-run queryability', () => {
+    it('filters escalations to one run', async () => {
+      // The aggregate says the fleet is slow; this says which run it was.
+      await service.raiseFrom([escalateAction(), escalateAction({ runId: RUN_B })]);
+
+      const result = await service.list({ page: 1, pageSize: 10, runId: RUN_B });
+
+      expect(result.items.map((item) => item.runId)).toEqual([RUN_B]);
+    });
+
+    it('exposes the measured latency on each escalation', async () => {
+      await service.raiseFrom([escalateAction()]);
+
+      const [item] = (await service.list({ page: 1, pageSize: 10 })).items;
+      expect(item.progressStoppedAt).toBe(STOPPED_AT.toISOString());
+      expect(item.detectionSource).toBe('runner');
+      expect(typeof item.detectLatencyMs).toBe('number');
+    });
+  });
+
   describe('listing', () => {
     beforeEach(async () => {
       await service.raiseFrom([

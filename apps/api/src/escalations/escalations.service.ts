@@ -4,6 +4,7 @@ import type { EscalationKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ReconcileAction } from '../reconciler/diff/actions.types';
 import { FactoryMetrics } from '../telemetry/factory-metrics.service';
+import { MAX_SAMPLES, stats, type LatencyStats } from './detection-latency';
 
 export interface RaiseResult {
   raised: number;
@@ -133,10 +134,14 @@ export class EscalationsService {
     pageSize: number;
     status?: string;
     unresolvedOnly?: boolean;
+    runId?: string;
   }) {
     const where: Prisma.EscalationWhereInput = {
       ...(query.status ? { status: query.status as never } : {}),
       ...(query.unresolvedOnly ? { status: { in: UNRESOLVED as never } } : {}),
+      // Per-run queryability, the other half of #59's requirement: the
+      // aggregate says the fleet is slow, this says which run it was.
+      ...(query.runId ? { runId: query.runId } : {}),
     };
 
     const [items, total] = await Promise.all([
@@ -181,6 +186,80 @@ export class EscalationsService {
         },
       }),
     );
+  }
+
+  /**
+   * Success metric 1, aggregated for the cockpit.
+   *
+   * ## Four numbers, because three of them can hide the fourth
+   *
+   * `notified` is THE metric: stop to a human being informed. It can only
+   * include escalations a transport actually delivered.
+   *
+   * `detected` is stop to noticed. Reported alongside so the gap between them
+   * is visible — a fast detector behind a broken transport looks perfect on
+   * `detected` alone.
+   *
+   * `awaitingNotification` counts escalations that were measurable and were
+   * never delivered. Their true stop-to-notified latency is unbounded.
+   * Leaving them out of `notified` without saying so would make a completely
+   * broken notification path render as excellent latency over a tiny sample,
+   * so the count is reported next to the percentiles it is missing from.
+   *
+   * `unmeasurable` counts escalations with no stop time at all — a `system`
+   * escalation has no run that stopped. Counted rather than measured from
+   * `raisedAt`, which would be a zero-latency entry per unmeasurable event.
+   */
+  async latencySummary(query: { since?: Date; until?: Date; repository?: string } = {}) {
+    const where: Prisma.EscalationWhereInput = {
+      ...(query.since || query.until
+        ? { raisedAt: { ...(query.since ? { gte: query.since } : {}), ...(query.until ? { lte: query.until } : {}) } }
+        : {}),
+      ...(query.repository
+        ? {
+            run: {
+              workOrder: {
+                repository: {
+                  owner: query.repository.split('/')[0],
+                  name: query.repository.split('/').slice(1).join('/'),
+                },
+              },
+            },
+          }
+        : {}),
+    };
+
+    const rows = await this.prisma.escalation.findMany({
+      where,
+      select: {
+        detectionSource: true,
+        progressStoppedAt: true,
+        detectLatencyMs: true,
+        notifyLatencyMs: true,
+      },
+      orderBy: { raisedAt: 'desc' },
+      // One more than the cap, so exceeding it is DETECTED rather than
+      // silently described as the whole window.
+      take: MAX_SAMPLES + 1,
+    });
+
+    const truncated = rows.length > MAX_SAMPLES;
+    const sample = truncated ? rows.slice(0, MAX_SAMPLES) : rows;
+
+    return {
+      since: query.since?.toISOString() ?? null,
+      until: query.until?.toISOString() ?? null,
+      /** True when the window held more escalations than one summary reads. */
+      truncated,
+      sampleSize: sample.length,
+      ...summarizeLatency(sample),
+      bySource: Object.fromEntries(
+        ['runner', 'git', 'control_plane'].map((source) => [
+          source,
+          summarizeLatency(sample.filter((row) => row.detectionSource === source)),
+        ]),
+      ),
+    };
   }
 
   /**
@@ -344,4 +423,44 @@ function elapsed(from: Date, to: Date): number {
 
 function repositoryName(repository: { owner: string; name: string } | undefined): string {
   return repository ? `${repository.owner}/${repository.name}` : 'unknown';
+}
+
+export interface LatencySample {
+  progressStoppedAt: Date | null;
+  detectLatencyMs: number | null;
+  notifyLatencyMs: number | null;
+}
+
+export interface LatencySummary {
+  /** Stop to a human being informed. VISION §10's success metric 1. */
+  notified: LatencyStats;
+  /** Stop to Opifex noticing. The easy number, reported so the gap shows. */
+  detected: LatencyStats;
+  /**
+   * Measurable, raised, never delivered. Their real stop-to-notified latency
+   * is unbounded, so they are counted here rather than dropped from
+   * `notified` without trace.
+   */
+  awaitingNotification: number;
+  /** Raised with no stop time at all, such as a `system` escalation. */
+  unmeasurable: number;
+}
+
+function summarizeLatency(rows: LatencySample[]): LatencySummary {
+  const measurable = rows.filter((row) => row.progressStoppedAt !== null);
+
+  return {
+    notified: stats(
+      measurable
+        .map((row) => row.notifyLatencyMs)
+        .filter((value): value is number => value !== null),
+    ),
+    detected: stats(
+      measurable
+        .map((row) => row.detectLatencyMs)
+        .filter((value): value is number => value !== null),
+    ),
+    awaitingNotification: measurable.filter((row) => row.notifyLatencyMs === null).length,
+    unmeasurable: rows.length - measurable.length,
+  };
 }
