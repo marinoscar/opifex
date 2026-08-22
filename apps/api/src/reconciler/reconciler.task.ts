@@ -116,9 +116,13 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
   private async sweepWatchdog(): Promise<ReconcileAction[]> {
     try {
       const result = await this.watchdog.sweep();
-      if (result.silentRuns > 0) {
+      if (result.silentRuns > 0 || result.loopingRuns > 0) {
         this.logger.warn(
-          `Watchdog: ${result.silentRuns} of ${result.runsJudged} run(s) silent past threshold`,
+          `Watchdog: ${result.runsJudged} run(s) judged — ${result.silentRuns} silent, ` +
+            `${result.loopingRuns} looping` +
+            (result.loopCheckUnavailable > 0
+              ? `, ${result.loopCheckUnavailable} unmeasurable for loops`
+              : ''),
         );
       }
       return result.actions;

@@ -1,4 +1,5 @@
 import type { ReconcileAction } from '../reconciler/diff/actions.types';
+import type { LoopVerdict } from './loop-detection';
 import type { SilenceVerdict } from './watchdog.types';
 
 /**
@@ -58,6 +59,64 @@ export function actionsForSilence(verdict: SilenceVerdict): ReconcileAction[] {
         `${verdict.workOrderIdentity} (${verdict.repository}#${verdict.issueNumber}) has stalled — ` +
         `${verdict.reason}. Opifex would kill it and re-run from the pinned base commit; ` +
         `no executor exists yet, so it is waiting for you.`,
+    },
+  ];
+}
+
+/**
+ * Turn a loop verdict into the action it implies.
+ *
+ * ## Why the response differs from silence
+ *
+ * `kill-and-re-plan`, not `kill-and-re-run`. #55 is explicit: re-running the
+ * identical work order from base would simply loop again. The work order
+ * itself is the problem — it asked for something the runner cannot get to
+ * from here — so it needs decomposing rather than retrying.
+ *
+ * Re-planning implies decomposition, which VISION §7 puts in the advisory
+ * agent's hands. The supervisor does not exist (#21), so this escalates to a
+ * human, and the escalation says what a human would need to decide.
+ *
+ * Collapsing this into silence's response is the mistake VISION §9 warns about
+ * directly: three failure modes, three responses, and conflating them is the
+ * most common supervision bug.
+ */
+export function actionsForLoop(
+  verdict: LoopVerdict,
+  run: {
+    runId: string;
+    workOrderIdentity: string;
+    repository: string;
+    issueNumber: number;
+  },
+): ReconcileAction[] {
+  const base = {
+    repository: run.repository,
+    issueNumber: run.issueNumber,
+    runId: run.runId,
+    evidence: {
+      intent: 'running' as const,
+      inputLabels: [],
+      workOrderIdentity: run.workOrderIdentity,
+      runStatus: 'running',
+      currentMirrorLabels: [],
+      desiredMirrorLabels: [],
+    },
+  };
+
+  return [
+    {
+      ...base,
+      type: 'kill-and-re-plan',
+      reason: `kill and re-plan ${run.workOrderIdentity}: ${verdict.reason}`,
+    },
+    {
+      ...base,
+      type: 'escalate',
+      reason:
+        `${run.workOrderIdentity} (${run.repository}#${run.issueNumber}) is looping — ` +
+        `${verdict.reason}. Re-running it unchanged would loop again, so the work order needs ` +
+        `decomposing; no supervisor exists yet, so it is waiting for you.`,
     },
   ];
 }

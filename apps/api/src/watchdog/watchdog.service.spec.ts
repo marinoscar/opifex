@@ -21,11 +21,17 @@ function runRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe('WatchdogService', () => {
-  let prisma: { run: { findMany: jest.Mock } };
+  let prisma: {
+    run: { findMany: jest.Mock };
+    runEvent: { findMany: jest.Mock };
+  };
   let service: WatchdogService;
 
   beforeEach(() => {
-    prisma = { run: { findMany: jest.fn().mockResolvedValue([runRow()]) } };
+    prisma = {
+      run: { findMany: jest.fn().mockResolvedValue([runRow()]) },
+      runEvent: { findMany: jest.fn().mockResolvedValue([]) },
+    };
     service = new WatchdogService(prisma as unknown as PrismaService);
   });
 
@@ -142,6 +148,97 @@ describe('WatchdogService', () => {
       const kill = result.actions.find((a) => a.type === 'kill-and-re-run')!;
 
       expect(kill.reason).toContain('declares full streaming fidelity');
+    });
+  });
+
+  describe('loop detection', () => {
+    /** N identical tool signatures, newest first as the query returns them. */
+    function toolEvents(signature: string, times: number) {
+      return Array.from({ length: times }, (_, i) => ({
+        toolSignature: signature,
+        occurredAt: new Date(NOW.getTime() - i * 1000),
+      }));
+    }
+
+    beforeEach(() => {
+      // Healthy on the silence axis, so only the loop check can fire.
+      prisma.run.findMany.mockResolvedValue([
+        runRow({ lastEventAt: new Date(NOW.getTime() - 5_000) }),
+      ]);
+    });
+
+    it('produces kill-and-re-PLAN, not kill-and-re-run', async () => {
+      // #55: re-running the identical work order from base would simply loop
+      // again. Collapsing the two responses is the mistake VISION §9 warns
+      // about directly.
+      prisma.runEvent.findMany.mockResolvedValue(toolEvents('Bash:sha256:abc', 10));
+
+      const result = await service.sweep(NOW);
+
+      expect(result.actions.map((a) => a.type)).toEqual(['kill-and-re-plan', 'escalate']);
+      expect(result.loopingRuns).toBe(1);
+    });
+
+    it('says the work order needs DECOMPOSING, not retrying', async () => {
+      prisma.runEvent.findMany.mockResolvedValue(toolEvents('Bash:sha256:abc', 10));
+
+      const result = await service.sweep(NOW);
+      const escalation = result.actions.find((a) => a.type === 'escalate')!;
+
+      expect(escalation.reason).toContain('would loop again');
+      expect(escalation.reason).toContain('decomposing');
+    });
+
+    it('counts an unmeasurable run separately from a clean one', async () => {
+      // A count of zero looping runs that quietly included unmeasurable ones
+      // would be a false reassurance.
+      prisma.run.findMany.mockResolvedValue([
+        runRow({
+          lastEventAt: new Date(NOW.getTime() - 5_000),
+          runner: { capability: { streamingFidelity: 'none' } },
+        }),
+      ]);
+
+      const result = await service.sweep(NOW);
+
+      expect(result).toMatchObject({ loopingRuns: 0, loopCheckUnavailable: 1 });
+      expect(result.actions).toEqual([]);
+    });
+
+    it('does not check a run already judged SILENT', async () => {
+      // A run cannot be both: silence means no events at all, a loop is
+      // defined by events flowing. Computing two different kill responses for
+      // one run would put contradictory instructions in front of the operator.
+      prisma.run.findMany.mockResolvedValue([
+        runRow({ lastEventAt: new Date(NOW.getTime() - 10 * 60_000) }),
+      ]);
+
+      const result = await service.sweep(NOW);
+
+      expect(prisma.runEvent.findMany).not.toHaveBeenCalled();
+      expect(result.actions.map((a) => a.type)).toEqual(['kill-and-re-run', 'escalate']);
+    });
+
+    it('reads only events that carry a tool signature, bounded', async () => {
+      await service.sweep(NOW);
+
+      const [query] = prisma.runEvent.findMany.mock.calls[0];
+      expect(query.where.toolSignature).toEqual({ not: null });
+      expect(query.take).toBeLessThanOrEqual(40);
+    });
+
+    it('spares a test-fix-retest cycle end to end', async () => {
+      prisma.runEvent.findMany.mockResolvedValue(
+        Array.from({ length: 30 }, (_, i) => ({
+          toolSignature: i % 2 === 0 ? 'Bash:test' : 'Edit:src/thing.ts',
+          occurredAt: new Date(NOW.getTime() - i * 1000),
+        })),
+      );
+
+      const result = await service.sweep(NOW);
+
+      expect(result.loopingRuns).toBe(0);
+      expect(result.actions).toEqual([]);
     });
   });
 

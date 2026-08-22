@@ -2,8 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 import type { ReconcileAction } from '../reconciler/diff/actions.types';
+import { detectLoop, type ToolObservation } from './loop-detection';
 import { detectSilentRuns } from './silent-detection';
-import { actionsForSilence } from './watchdog.actions';
+import { actionsForLoop, actionsForSilence } from './watchdog.actions';
 import type { StreamingFidelity, WatchedRunState } from './watchdog.types';
 
 export interface WatchdogSweepResult {
@@ -11,6 +12,16 @@ export interface WatchdogSweepResult {
   /** Actions computed. During Phase 3 none of the kills execute. */
   actions: ReconcileAction[];
   silentRuns: number;
+  loopingRuns: number;
+  /**
+   * Runs where loop detection could not run at all, because the runner does
+   * not report tool detail.
+   *
+   * Reported rather than folded into "no loop found": #55 requires the
+   * unavailability be visible, and a count of zero looping runs that quietly
+   * included unmeasurable ones would be a false reassurance.
+   */
+  loopCheckUnavailable: number;
 }
 
 /**
@@ -52,7 +63,66 @@ export class WatchdogService {
       );
     }
 
-    return { runsJudged: runs.length, silentRuns: verdicts.length, actions };
+    // Loop detection is checked only on runs that are NOT already silent. A
+    // run cannot be both — silence means no events at all, and a loop is
+    // defined by events flowing — and computing two different kill responses
+    // for one run would put contradictory instructions in front of the
+    // operator.
+    const silentIds = new Set(verdicts.map((v) => v.runId));
+    let loopingRuns = 0;
+    let loopCheckUnavailable = 0;
+
+    for (const run of runs) {
+      if (silentIds.has(run.runId)) continue;
+
+      const observations = await this.loadToolObservations(run.runId);
+      const loop = detectLoop(run.fidelity, observations);
+
+      if (!loop.available) {
+        loopCheckUnavailable += 1;
+        continue;
+      }
+      if (!loop.looping) continue;
+
+      loopingRuns += 1;
+      this.logger.warn(
+        `Looping run ${run.workOrderIdentity}: ${loop.reason} — computed kill-and-re-plan ` +
+          `(not executed; re-planning needs the supervisor from epic #21)`,
+      );
+      actions.push(...actionsForLoop(loop, run));
+    }
+
+    return {
+      runsJudged: runs.length,
+      silentRuns: verdicts.length,
+      loopingRuns,
+      loopCheckUnavailable,
+      actions,
+    };
+  }
+
+  /**
+   * Recent tool signatures for one run, oldest first.
+   *
+   * Only `run.progress` events carry one, and only from a runner whose
+   * fidelity supplies it — so this returns empty for most runners, and
+   * `detectLoop` reports that as UNAVAILABLE rather than as "no loop".
+   *
+   * Bounded, and ordered newest-first in the query then reversed: fetching the
+   * whole stream of a long-running job to look at its tail would grow with the
+   * run.
+   */
+  private async loadToolObservations(runId: string): Promise<ToolObservation[]> {
+    const events = await this.prisma.runEvent.findMany({
+      where: { runId, toolSignature: { not: null } },
+      orderBy: { occurredAt: 'desc' },
+      take: 40,
+      select: { toolSignature: true, occurredAt: true },
+    });
+
+    return events
+      .reverse()
+      .map((event) => ({ signature: event.toolSignature as string, occurredAt: event.occurredAt }));
   }
 
   /**
