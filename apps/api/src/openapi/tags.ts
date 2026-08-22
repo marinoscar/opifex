@@ -123,6 +123,13 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
           'the record used to validate the control loop before it is allowed to act.',
       },
       {
+        name: 'Run Events',
+        description:
+          'Where runners report what they are doing, validated against the six normalized event ' +
+          'types in schemas/run-event.schema.json. Idempotent on the sender-chosen event id, so a ' +
+          'retried delivery is recognised rather than duplicated.',
+      },
+      {
         name: 'Repositories',
         description:
           'Which repositories Opifex watches, and the policy for each: whether the reconciler ' +
