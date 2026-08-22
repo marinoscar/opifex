@@ -110,6 +110,25 @@ export interface ReconcileAction {
     | 'system';
 
   /**
+   * When the run stopped making progress, ISO-8601, for `escalate` actions.
+   *
+   * The STOP side of success metric 1 (#59). Carried on the action for the
+   * same reason `escalationKind` is: only the detector knows what it measured
+   * from — the last event, the start of a run that never reported, or the
+   * moment a tool signature began repeating.
+   */
+  progressStoppedAt?: string;
+
+  /**
+   * Which liveness source last saw the run alive, for `escalate` actions.
+   *
+   * VISION §9 runs two INDEPENDENT sources. Git-derived detection is
+   * structurally slower than runner-reported, so an aggregate that does not
+   * separate them describes neither.
+   */
+  detectionSource?: 'runner' | 'git' | 'control_plane';
+
+  /**
    * When a parked run should be woken (#56).
    *
    * Carries the jitter already applied, not the raw reset time — the whole

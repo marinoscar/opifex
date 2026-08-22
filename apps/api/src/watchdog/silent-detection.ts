@@ -80,6 +80,10 @@ export function detectSilentRuns(runs: WatchedRunState[], now: Date): SilenceVer
       silentForMs,
       thresholdMs,
       fidelity: run.fidelity,
+      progressStoppedAt: since,
+      // Null when the run never reported: nothing has ever seen it alive, so
+      // naming a source would claim an observation that did not happen.
+      detectionSource: run.lastEventAt ? run.lastEventSource : null,
       reason: describe(run, silentForMs, thresholdMs),
     });
   }

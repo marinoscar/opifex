@@ -10,7 +10,7 @@ import {
 import { detectLoop, type ToolObservation } from './loop-detection';
 import { detectSilentRuns } from './silent-detection';
 import { actionsForLoop, actionsForSilence } from './watchdog.actions';
-import type { StreamingFidelity, WatchedRunState } from './watchdog.types';
+import type { LivenessSource, StreamingFidelity, WatchedRunState } from './watchdog.types';
 
 export interface WatchdogSweepResult {
   runsJudged: number;
@@ -265,6 +265,15 @@ export class WatchdogService {
         startedAt: true,
         lastEventAt: true,
         runnerKey: true,
+        // The newest event's SOURCE, for #59's per-source latency split. One
+        // nested read rather than a second query per run: the watchdog runs
+        // every tick over every live run, and a query per run is how a sweep
+        // that is supposed to be arithmetic becomes an N+1.
+        events: {
+          take: 1,
+          orderBy: { occurredAt: 'desc' as const },
+          select: { source: true },
+        },
         runner: { select: { capability: { select: { streamingFidelity: true } } } },
         workOrder: {
           select: {
@@ -284,6 +293,7 @@ export class WatchdogService {
       status: run.status,
       startedAt: run.startedAt,
       lastEventAt: run.lastEventAt,
+      lastEventSource: (run.events[0]?.source as LivenessSource) ?? null,
       runnerKey: run.runnerKey,
       fidelity: (run.runner?.capability?.streamingFidelity as StreamingFidelity) ?? null,
     }));

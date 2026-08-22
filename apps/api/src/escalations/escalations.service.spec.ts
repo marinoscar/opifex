@@ -2,10 +2,12 @@ import { NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 import type { ReconcileAction } from '../reconciler/diff/actions.types';
+import type { FactoryMetrics } from '../telemetry/factory-metrics.service';
 import { EscalationsService } from './escalations.service';
 
 const RUN_A = '018f2c31-7a4e-7c3b-9f21-4d5e6a7b8c9d';
 const RUN_B = '018f2c31-7a4e-7c3b-9f21-4d5e6a7b8cff';
+const STOPPED_AT = new Date('2026-08-22T10:00:00Z');
 
 function escalateAction(overrides: Partial<ReconcileAction> = {}): ReconcileAction {
   return {
@@ -14,6 +16,8 @@ function escalateAction(overrides: Partial<ReconcileAction> = {}): ReconcileActi
     issueNumber: 312,
     runId: RUN_A,
     escalationKind: 'run_stalled',
+    progressStoppedAt: STOPPED_AT.toISOString(),
+    detectionSource: 'runner',
     reason:
       'Run has been silent for 12m, exceeding the 5m threshold for a runner declaring full streaming fidelity.',
     evidence: {
@@ -81,7 +85,17 @@ function fakePrisma() {
           failureReason: null,
           deliveryAttempts: 0,
           detail: null,
+          progressStoppedAt: null,
+          detectionSource: null,
+          detectLatencyMs: null,
+          notifyLatencyMs: null,
           raisedAt: new Date('2026-08-21T12:00:00Z'),
+          run: {
+            workOrder: {
+              identity: 'wo_opifex_312_a3f91c2_a1',
+              repository: { owner: 'marinoscar', name: 'opifex' },
+            },
+          },
           dispatchedAt: null,
           deliveredAt: null,
           acknowledgedAt: null,
@@ -92,8 +106,14 @@ function fakePrisma() {
         return row;
       },
       update: async ({ where, data }: any) => {
-        const row = rows.find((candidate) => candidate.id === where.id);
-        Object.assign(row as object, data);
+        const row = rows.find((candidate) => candidate.id === where.id) as any;
+        for (const [key, value] of Object.entries(data)) {
+          // Prisma's atomic-number shorthand, which markDelivered uses.
+          row[key] =
+            value && typeof value === 'object' && 'increment' in (value as object)
+              ? (row[key] ?? 0) + (value as { increment: number }).increment
+              : value;
+        }
         return row;
       },
       updateMany: async ({ where, data }: any) => {
@@ -107,11 +127,16 @@ function fakePrisma() {
 
 describe('EscalationsService', () => {
   let prisma: ReturnType<typeof fakePrisma>;
+  let metrics: { recordDetected: jest.Mock; recordNotified: jest.Mock };
   let service: EscalationsService;
 
   beforeEach(() => {
     prisma = fakePrisma();
-    service = new EscalationsService(prisma as unknown as PrismaService);
+    metrics = { recordDetected: jest.fn(), recordNotified: jest.fn() };
+    service = new EscalationsService(
+      prisma as unknown as PrismaService,
+      metrics as unknown as FactoryMetrics,
+    );
     // The service logs every raise at `warn`; silence it so a suite that
     // deliberately raises a dozen escalations stays readable.
     jest.spyOn(service['logger'], 'warn').mockImplementation(() => undefined);
@@ -366,6 +391,147 @@ describe('EscalationsService', () => {
 
       expect(await service.resolveStale([])).toBe(0);
       expect(updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('detection latency', () => {
+    it('records the stop time the detector measured from', async () => {
+      // Not "when we noticed". VISION §10 measures from when the run ceased
+      // to make progress, and only the detector knows whether that was the
+      // last event, the start of a run that never reported, or the moment a
+      // tool signature began repeating.
+      await service.raiseFrom([escalateAction()]);
+
+      expect(prisma.rows[0].progressStoppedAt).toEqual(STOPPED_AT);
+    });
+
+    it('records which liveness source was carrying the run', async () => {
+      await service.raiseFrom([escalateAction({ detectionSource: 'git' })]);
+
+      expect(prisma.rows[0].detectionSource).toBe('git');
+    });
+
+    it('stores stop-to-raised so the cockpit can aggregate it', async () => {
+      const raisedAt = new Date(STOPPED_AT.getTime() + 4_000);
+      jest.useFakeTimers().setSystemTime(raisedAt);
+
+      await service.raiseFrom([escalateAction()]);
+      jest.useRealTimers();
+
+      expect(prisma.rows[0].detectLatencyMs).toBe(4_000);
+    });
+
+    it('never stores a negative latency from a skewed runner clock', async () => {
+      // A negative value in the histogram is not a small error: it drags the
+      // aggregate below the truth and can make the target look met.
+      jest.useFakeTimers().setSystemTime(new Date(STOPPED_AT.getTime() - 30_000));
+
+      await service.raiseFrom([escalateAction()]);
+      jest.useRealTimers();
+
+      expect(prisma.rows[0].detectLatencyMs).toBe(0);
+    });
+
+    it('does NOT record a measurement it cannot make', async () => {
+      // Falling back to `raisedAt` would put a near-zero latency in the
+      // histogram for every unmeasurable escalation — the one way to make
+      // success metric 1 lie in the flattering direction.
+      await service.raiseFrom([escalateAction({ progressStoppedAt: undefined })]);
+
+      expect(prisma.rows[0].detectLatencyMs).toBeNull();
+      expect(metrics.recordDetected).not.toHaveBeenCalled();
+    });
+
+    it('feeds the metric with the same numbers it stored', async () => {
+      await service.raiseFrom([escalateAction()]);
+
+      expect(metrics.recordDetected).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workOrderIdentity: 'wo_opifex_312_a3f91c2_a1',
+          repository: 'marinoscar/opifex',
+          kind: 'run_stalled',
+          detectionSource: 'runner',
+          progressStoppedAt: STOPPED_AT,
+          raisedAt: prisma.rows[0].raisedAt,
+        }),
+      );
+    });
+
+    it('does not measure a suppressed duplicate', async () => {
+      // Twelve ticks about one stall must contribute ONE measurement, or the
+      // histogram reports the dedupe rate rather than the latency.
+      await service.raiseFrom([escalateAction()]);
+      await service.raiseFrom([escalateAction()]);
+
+      expect(metrics.recordDetected).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('being told', () => {
+    const DELIVERED_AT = new Date(STOPPED_AT.getTime() + 7_000);
+
+    beforeEach(async () => {
+      await service.raiseFrom([escalateAction()]);
+    });
+
+    it('measures stop-to-notified, not stop-to-detected', async () => {
+      // The definition VISION §10 actually gives: "the elapsed time between a
+      // run ceasing to make progress and a human being informed."
+      await service.markDelivered('escalation-1', 'push', { deliveredAt: DELIVERED_AT });
+
+      expect(prisma.rows[0].notifyLatencyMs).toBe(7_000);
+    });
+
+    it('is not recorded by raising alone', async () => {
+      // The trap: a system that reports stop-to-detected under the other name
+      // shows success while the operator still finds out four hours later.
+      expect(prisma.rows[0].notifyLatencyMs).toBeNull();
+      expect(metrics.recordNotified).not.toHaveBeenCalled();
+    });
+
+    it('records the transport and its receipt', async () => {
+      await service.markDelivered('escalation-1', 'push', { receiptId: 'rcpt_1' });
+
+      expect(prisma.rows[0]).toMatchObject({
+        status: 'delivered',
+        transport: 'push',
+        receiptId: 'rcpt_1',
+        deliveryAttempts: 1,
+      });
+    });
+
+    it('does not restart the clock on a redelivery', async () => {
+      // The FIRST delivery is the one that informed the operator. A transport
+      // that redelivers must not improve the metric by doing so.
+      await service.markDelivered('escalation-1', 'push', { deliveredAt: DELIVERED_AT });
+
+      await service.markDelivered('escalation-1', 'email', {
+        deliveredAt: new Date(STOPPED_AT.getTime() + 4 * 60 * 60_000),
+      });
+
+      expect(prisma.rows[0].notifyLatencyMs).toBe(7_000);
+      expect(prisma.rows[0].transport).toBe('push');
+      expect(metrics.recordNotified).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the trace with the same work order it opened', async () => {
+      await service.markDelivered('escalation-1', 'push', { deliveredAt: DELIVERED_AT });
+
+      expect(metrics.recordNotified).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workOrderIdentity: 'wo_opifex_312_a3f91c2_a1',
+          repository: 'marinoscar/opifex',
+          detectionSource: 'runner',
+          progressStoppedAt: STOPPED_AT,
+          deliveredAt: DELIVERED_AT,
+        }),
+      );
+    });
+
+    it('404s on an escalation that does not exist', async () => {
+      await expect(service.markDelivered('escalation-404', 'push')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 

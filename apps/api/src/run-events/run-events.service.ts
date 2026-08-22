@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { FactoryMetrics } from '../telemetry/factory-metrics.service';
 import { RunEventValidator, type ValidationFailure } from './run-event-validator';
 import {
   toPrismaEventSource,
@@ -37,6 +38,7 @@ export class RunEventsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly validator: RunEventValidator,
+    private readonly metrics: FactoryMetrics,
   ) {}
 
   /**
@@ -122,7 +124,7 @@ export class RunEventsService {
       });
     }
 
-    return this.persist(runId, events);
+    return this.persist(runId, events, run.workOrder.identity);
   }
 
   /**
@@ -132,34 +134,69 @@ export class RunEventsService {
    * retried delivery idempotent — the requirement in #53 — and it puts the
    * check where two concurrent deliveries cannot interleave past it.
    */
-  private async persist(runId: string, events: RunEventPayload[]): Promise<IngestResult> {
+  private async persist(
+    runId: string,
+    events: RunEventPayload[],
+    workOrderIdentity: string,
+  ): Promise<IngestResult> {
     const created = await this.prisma.runEvent.createMany({
-      data: events.map((event) => ({
-        runId,
-        externalId: event.eventId,
-        type: toPrismaEventType(event.type) as never,
-        source: toPrismaEventSource(event.source) as never,
-        occurredAt: new Date(event.occurredAt),
-        summary: event.summary ?? '',
-        toolSignature: event.tool ? `${event.tool.name}:${event.tool.signature}` : null,
-        // Kept through normalization deliberately. #53: losing the reason and
-        // reset time collapses park-and-auto-resume into kill-and-re-run,
-        // which VISION §9 calls the most common supervision bug.
-        blockedReason: event.blocked?.reason ?? null,
-        blockedUntil: event.blocked?.resetAt ? new Date(event.blocked.resetAt) : null,
-        costUsd: event.cost?.usd ?? null,
-        tokensInput: event.cost?.tokensInput ?? null,
-        tokensOutput: event.cost?.tokensOutput ?? null,
-        traceId: event.trace?.traceId ?? null,
-        spanId: event.trace?.spanId ?? null,
-        payload: JSON.parse(JSON.stringify(event)),
-      })),
+      data: events.map((event) => this.toRow(runId, event, workOrderIdentity)),
       skipDuplicates: true,
     });
 
     await this.advanceRun(runId, events);
 
     return { accepted: created.count, duplicates: events.length - created.count };
+  }
+
+  /**
+   * One row, and the span that goes with it.
+   *
+   * VISION §9 maps run events onto *"one trace per work order, one span per
+   * turn or tool call, cost and tokens as span attributes"*. The span is
+   * emitted here so the `traceId`/`spanId` columns hold the ids of a span
+   * that actually exists — storing correlation ids for a span nobody emitted
+   * would make the run detail link to nothing.
+   *
+   * A sender's own trace ids are preferred when it supplies them: a runner
+   * that is already instrumented has the real parent context, and overwriting
+   * it would sever its spans from ours.
+   */
+  private toRow(runId: string, event: RunEventPayload, workOrderIdentity: string) {
+    const toolSignature = event.tool ? `${event.tool.name}:${event.tool.signature}` : null;
+
+    const emitted = this.metrics.recordRunEvent({
+      workOrderIdentity,
+      type: event.type,
+      source: event.source,
+      occurredAt: new Date(event.occurredAt),
+      summary: event.summary ?? null,
+      toolSignature,
+      costUsd: event.cost?.usd ?? null,
+      tokensInput: event.cost?.tokensInput ?? null,
+      tokensOutput: event.cost?.tokensOutput ?? null,
+    });
+
+    return {
+      runId,
+      externalId: event.eventId,
+      type: toPrismaEventType(event.type) as never,
+      source: toPrismaEventSource(event.source) as never,
+      occurredAt: new Date(event.occurredAt),
+      summary: event.summary ?? '',
+      toolSignature,
+      // Kept through normalization deliberately. #53: losing the reason and
+      // reset time collapses park-and-auto-resume into kill-and-re-run,
+      // which VISION §9 calls the most common supervision bug.
+      blockedReason: event.blocked?.reason ?? null,
+      blockedUntil: event.blocked?.resetAt ? new Date(event.blocked.resetAt) : null,
+      costUsd: event.cost?.usd ?? null,
+      tokensInput: event.cost?.tokensInput ?? null,
+      tokensOutput: event.cost?.tokensOutput ?? null,
+      traceId: event.trace?.traceId ?? emitted.traceId,
+      spanId: event.trace?.spanId ?? emitted.spanId,
+      payload: JSON.parse(JSON.stringify(event)),
+    };
   }
 
   /**

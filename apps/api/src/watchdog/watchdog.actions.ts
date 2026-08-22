@@ -54,6 +54,8 @@ export function actionsForSilence(verdict: SilenceVerdict): ReconcileAction[] {
       ...base,
       type: 'escalate',
       escalationKind: 'run_stalled',
+      progressStoppedAt: verdict.progressStoppedAt.toISOString(),
+      ...(verdict.detectionSource ? { detectionSource: verdict.detectionSource } : {}),
       // Written to be decidable from a phone (#57): what stopped, where, how
       // long ago, and what Opifex intends to do about it.
       reason:
@@ -115,6 +117,16 @@ export function actionsForLoop(
       ...base,
       type: 'escalate',
       escalationKind: 'run_looping',
+      // When the signature STARTED repeating, not the last event. A looping
+      // run is not silent, so measuring from its newest event would report a
+      // few seconds of latency for a run that has been going nowhere for an
+      // hour (#59).
+      ...(verdict.startedRepeatingAt
+        ? { progressStoppedAt: verdict.startedRepeatingAt.toISOString() }
+        : {}),
+      // Loop detection needs tool detail, which only the runner's own stream
+      // carries. There is no git-derived path to this verdict.
+      detectionSource: 'runner',
       reason:
         `${run.workOrderIdentity} (${run.repository}#${run.issueNumber}) is looping — ` +
         `${verdict.reason}. Re-running it unchanged would loop again, so the work order needs ` +

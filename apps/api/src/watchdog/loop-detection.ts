@@ -28,6 +28,15 @@ export interface LoopVerdict {
   signature: string | null;
   /** How many times in a row. */
   repeats: number;
+  /**
+   * When the repeating signature FIRST appeared in the current streak.
+   *
+   * The moment the run stopped making real progress, which is the stop side
+   * of detection latency (#59). A looping run is not silent — events keep
+   * arriving — so measuring its latency from the last event would report a
+   * few seconds for a run that has been going nowhere for an hour.
+   */
+  startedRepeatingAt: Date | null;
   /** Why, naming the signature and the count. */
   reason: string;
 }
@@ -85,6 +94,7 @@ export function detectLoop(
       looping: false,
       signature: null,
       repeats: 0,
+      startedRepeatingAt: null,
       reason:
         `loop detection unavailable: it needs per-tool progress events, which a runner with ` +
         `${fidelity ?? 'undeclared'} streaming fidelity does not report`,
@@ -101,6 +111,7 @@ export function detectLoop(
       looping: false,
       signature: null,
       repeats: recent.length,
+      startedRepeatingAt: null,
       reason: `no loop: only ${recent.length} tool event(s), fewer than the ${threshold} needed to conclude one`,
     };
   }
@@ -110,9 +121,11 @@ export function detectLoop(
   // already escaped would destroy work for nothing.
   const newest = recent[recent.length - 1].signature;
   let run = 0;
+  let startedRepeatingAt: Date | null = null;
   for (let i = recent.length - 1; i >= 0; i -= 1) {
     if (recent[i].signature !== newest) break;
     run += 1;
+    startedRepeatingAt = recent[i].occurredAt;
   }
 
   if (run < threshold) {
@@ -121,6 +134,7 @@ export function detectLoop(
       looping: false,
       signature: null,
       repeats: run,
+      startedRepeatingAt: null,
       reason:
         `no loop: the most recent signature repeats ${run} time(s) consecutively, ` +
         `below the threshold of ${threshold}`,
@@ -132,6 +146,7 @@ export function detectLoop(
     looping: true,
     signature: newest,
     repeats: run,
+    startedRepeatingAt,
     reason:
       `looping: ${newest} repeated ${run} times consecutively with no other tool call between ` +
       `them, at or past the threshold of ${threshold}`,

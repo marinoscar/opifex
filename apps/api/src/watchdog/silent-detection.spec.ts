@@ -25,6 +25,7 @@ function run(overrides: Partial<WatchedRunState> = {}): WatchedRunState {
     status: 'running',
     startedAt: minutesAgo(120),
     lastEventAt: secondsAgo(10),
+    lastEventSource: 'runner' as const,
     runnerKey: 'claude-code-local',
     fidelity: 'full',
     ...overrides,
@@ -252,6 +253,55 @@ describe('detectSilentRuns', () => {
 
       expect(verdicts.map((v) => v.runId)).toEqual(['b']);
     });
+  });
+});
+
+describe('the stop side of detection latency (#59)', () => {
+  it('reports the last event as the moment progress stopped', () => {
+    // VISION §10 measures from when the run ceased to make progress, not from
+    // the tick that noticed. Only the detector knows which timestamp that was.
+    const [verdict] = detectSilentRuns([run({ lastEventAt: minutesAgo(30) })], NOW);
+
+    expect(verdict.progressStoppedAt).toEqual(minutesAgo(30));
+  });
+
+  it('falls back to the start of a run that never reported', () => {
+    const [verdict] = detectSilentRuns(
+      [run({ lastEventAt: null, startedAt: minutesAgo(200), fidelity: null })],
+      NOW,
+    );
+
+    expect(verdict.progressStoppedAt).toEqual(minutesAgo(200));
+  });
+
+  it('names the liveness source that last saw the run alive', () => {
+    // Git-derived detection is structurally slower than runner-reported. An
+    // aggregate that blends them describes neither.
+    const [verdict] = detectSilentRuns(
+      [run({ lastEventAt: minutesAgo(30), lastEventSource: 'git' })],
+      NOW,
+    );
+
+    expect(verdict.detectionSource).toBe('git');
+  });
+
+  it('claims no source for a run nothing has ever observed', () => {
+    // Naming one would assert an observation that did not happen.
+    const [verdict] = detectSilentRuns(
+      [run({ lastEventAt: null, startedAt: minutesAgo(200), fidelity: null })],
+      NOW,
+    );
+
+    expect(verdict.detectionSource).toBeNull();
+  });
+
+  it('measures the same gap the reason describes', () => {
+    // The stored latency and the sentence a human reads must not disagree —
+    // a verdict that contradicts its own number is one an operator stops
+    // trusting.
+    const [verdict] = detectSilentRuns([run({ lastEventAt: minutesAgo(30) })], NOW);
+
+    expect(NOW.getTime() - verdict.progressStoppedAt.getTime()).toBe(verdict.silentForMs);
   });
 });
 

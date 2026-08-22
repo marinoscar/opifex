@@ -10,6 +10,14 @@ import type { RunStatusLike } from '../reconciler/projection/desired-state.types
  */
 export type StreamingFidelity = 'full' | 'partial' | 'none';
 
+/**
+ * Which of the two independent liveness sources an observation came from.
+ *
+ * Mirrors `RunEventSource` in schema.prisma, restated for the same reason the
+ * fidelities are: detection must stay a pure function over plain data.
+ */
+export type LivenessSource = 'runner' | 'git' | 'control_plane';
+
 /** One live run, as the watchdog needs to judge it. */
 export interface WatchedRunState {
   runId: string;
@@ -26,6 +34,16 @@ export interface WatchedRunState {
    * starve it of signal and kill it — which #54 explicitly forbids.
    */
   lastEventAt: Date | null;
+  /**
+   * Which source produced that newest event, or null when none has.
+   *
+   * VISION §9 runs two INDEPENDENT liveness sources, and #59 requires the
+   * detection latency metric say which one was carrying a run when it went
+   * quiet. Git-derived detection is structurally slower than runner-reported,
+   * and an aggregate that blends them describes neither.
+   */
+  lastEventSource: LivenessSource | null;
+
   /** The runner's key, for the record. */
   runnerKey: string;
   /**
@@ -53,6 +71,17 @@ export interface SilenceVerdict {
   thresholdMs: number;
   /** Which fidelity produced that threshold, for the record. */
   fidelity: StreamingFidelity | null;
+  /**
+   * When the run actually stopped making progress.
+   *
+   * The STOP side of success metric 1. Carried on the verdict rather than
+   * recomputed downstream, because the detector is the only component that
+   * knows whether it measured from the last event or from the start of a run
+   * that never reported at all.
+   */
+  progressStoppedAt: Date;
+  /** Which liveness source last saw the run alive. Null if none ever did. */
+  detectionSource: LivenessSource | null;
   /**
    * Why, naming the numbers.
    *

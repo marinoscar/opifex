@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { FactoryMetrics } from '../telemetry/factory-metrics.service';
 import { RunEventValidator } from './run-event-validator';
 import { RunEventsService } from './run-events.service';
 import { RUN_EVENT_SCHEMA_VERSION } from './run-event.types';
@@ -61,7 +62,15 @@ describe('RunEventsService', () => {
     };
     // The REAL validator, against the real schema file. Mocking it would make
     // every validation test below assert nothing.
-    service = new RunEventsService(prisma as unknown as PrismaService, new RunEventValidator());
+    //
+    // The REAL FactoryMetrics too: with no SDK registered the OpenTelemetry
+    // API hands back noop instruments, so this exercises the actual call and
+    // the actual span ids it returns rather than a stub's.
+    service = new RunEventsService(
+      prisma as unknown as PrismaService,
+      new RunEventValidator(),
+      new FactoryMetrics(),
+    );
   });
 
   describe('validation against the contract', () => {

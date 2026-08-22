@@ -177,5 +177,27 @@ describe('detectLoop', () => {
         expect(verdict.reason.length).toBeGreaterThan(0);
       }
     });
+    describe('when the run stopped making real progress (#59)', () => {
+    it('reports the FIRST repeat of the streak, not the newest event', () => {
+      // A looping run is not silent — events keep arriving — so measuring
+      // detection latency from its last event would report a few seconds for
+      // a run that has been going nowhere for an hour.
+      // Distinct timestamps throughout, so returning the event BEFORE the
+      // streak would fail rather than coincide.
+      const observations = signatures('Bash:setup', ...Array(8).fill('Bash:x'));
+
+      const verdict = detectLoop('full', observations);
+
+      expect(verdict.startedRepeatingAt).toEqual(observations[1].occurredAt);
+      expect(verdict.startedRepeatingAt).not.toEqual(observations[0].occurredAt);
+    });
+
+    it('reports nothing when there is no loop to date', () => {
+      // Including when the check could not run at all: a time for a streak
+      // that was never established would be an invented measurement.
+      expect(detectLoop('full', repeated('Bash:x', 2)).startedRepeatingAt).toBeNull();
+      expect(detectLoop('none', repeated('Bash:x', 50)).startedRepeatingAt).toBeNull();
+    });
   });
+});
 });

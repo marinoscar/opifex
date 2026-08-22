@@ -3,6 +3,7 @@ import type { EscalationKind, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import type { ReconcileAction } from '../reconciler/diff/actions.types';
+import { FactoryMetrics } from '../telemetry/factory-metrics.service';
 
 export interface RaiseResult {
   raised: number;
@@ -35,7 +36,10 @@ const UNRESOLVED: readonly string[] = ['raised', 'dispatched', 'delivered', 'fai
 export class EscalationsService {
   private readonly logger = new Logger(EscalationsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly metrics: FactoryMetrics,
+  ) {}
 
   /**
    * Raise escalations for the `escalate` actions in a list.
@@ -75,7 +79,16 @@ export class EscalationsService {
         continue;
       }
 
-      await this.prisma.escalation.create({
+      // The STOP side of success metric 1, from the detector that knows what
+      // it measured from. `raisedAt` is stamped here rather than left to the
+      // column default so the row and the metric agree to the millisecond.
+      const raisedAt = new Date();
+      const progressStoppedAt = action.progressStoppedAt
+        ? new Date(action.progressStoppedAt)
+        : null;
+      const detectionSource = action.detectionSource ?? null;
+
+      const created = await this.prisma.escalation.create({
         data: {
           runId: action.runId ?? null,
           kind,
@@ -84,9 +97,30 @@ export class EscalationsService {
           summary: summarize(action),
           // The full reason, which already names the numbers that produced it.
           detail: action.reason,
+          raisedAt,
+          progressStoppedAt,
+          detectionSource: detectionSource as never,
+          detectLatencyMs: progressStoppedAt
+            ? elapsed(progressStoppedAt, raisedAt)
+            : null,
         },
       });
       raised += 1;
+
+      // Only when the detector said when progress stopped. Recording a
+      // measurement against `raisedAt` alone would put a near-zero latency in
+      // the histogram for every escalation that cannot be measured, which is
+      // the one way to make success metric 1 lie in the flattering direction.
+      if (progressStoppedAt) {
+        this.metrics.recordDetected({
+          workOrderIdentity: action.evidence.workOrderIdentity,
+          repository: action.repository,
+          kind,
+          detectionSource,
+          progressStoppedAt,
+          raisedAt: created.raisedAt,
+        });
+      }
 
       this.logger.warn(`Escalation raised (${kind}): ${summarize(action)}`);
     }
@@ -150,6 +184,84 @@ export class EscalationsService {
   }
 
   /**
+   * Record that a transport confirmed delivery.
+   *
+   * The NOTIFIED side of success metric 1, and it deliberately does not live
+   * in the detector. VISION §10 measures to "a human being informed", and only
+   * the transport knows when that happened; a detector allowed to guess would
+   * be reporting stop-to-detected under the other name.
+   *
+   * #58 supplies the transport that calls this. Until then the gap between
+   * `opifex.escalations.raised` and `opifex.escalations.notified` is the
+   * honest reading: stalls nobody was told about.
+   */
+  async markDelivered(
+    id: string,
+    transport: string,
+    options: { receiptId?: string; deliveredAt?: Date } = {},
+  ) {
+    const escalation = await this.prisma.escalation.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        kind: true,
+        raisedAt: true,
+        deliveredAt: true,
+        progressStoppedAt: true,
+        detectionSource: true,
+        run: { select: { workOrder: { select: { identity: true, repository: true } } } },
+      },
+    });
+    if (!escalation) {
+      throw new NotFoundException(`Escalation ${id} not found`);
+    }
+
+    // The FIRST delivery is the one that informed the operator. A transport
+    // that redelivers must not restart the clock and improve the metric.
+    if (escalation.deliveredAt) {
+      return this.get(id);
+    }
+
+    const deliveredAt = options.deliveredAt ?? new Date();
+
+    const updated = await this.prisma.escalation.update({
+      where: { id },
+      data: {
+        status: 'delivered',
+        transport,
+        receiptId: options.receiptId ?? null,
+        deliveredAt,
+        notifyLatencyMs: escalation.progressStoppedAt
+          ? elapsed(escalation.progressStoppedAt, deliveredAt)
+          : null,
+        deliveryAttempts: { increment: 1 },
+      },
+    });
+
+    if (escalation.progressStoppedAt) {
+      this.metrics.recordNotified({
+        workOrderIdentity: escalation.run?.workOrder.identity ?? null,
+        repository: repositoryName(escalation.run?.workOrder.repository),
+        kind: escalation.kind,
+        detectionSource: escalation.detectionSource,
+        progressStoppedAt: escalation.progressStoppedAt,
+        raisedAt: escalation.raisedAt,
+        deliveredAt,
+      });
+    }
+
+    return toResponse(updated);
+  }
+
+  async get(id: string) {
+    const escalation = await this.prisma.escalation.findUnique({ where: { id } });
+    if (!escalation) {
+      throw new NotFoundException(`Escalation ${id} not found`);
+    }
+    return toResponse(escalation);
+  }
+
+  /**
    * Mark an escalation resolved because the condition cleared on its own.
    *
    * Distinct from `acknowledged`: nobody saw this one. Recording it as
@@ -181,6 +293,10 @@ function toResponse(escalation: EscalationRow) {
     transport: escalation.transport,
     deliveryAttempts: escalation.deliveryAttempts,
     failureReason: escalation.failureReason,
+    progressStoppedAt: escalation.progressStoppedAt?.toISOString() ?? null,
+    detectionSource: escalation.detectionSource,
+    detectLatencyMs: escalation.detectLatencyMs,
+    notifyLatencyMs: escalation.notifyLatencyMs,
     raisedAt: escalation.raisedAt.toISOString(),
     dispatchedAt: escalation.dispatchedAt?.toISOString() ?? null,
     deliveredAt: escalation.deliveredAt?.toISOString() ?? null,
@@ -213,4 +329,19 @@ function summarize(action: ReconcileAction): string {
     default:
       return `${what} needs attention (${where})`;
   }
+}
+
+/**
+ * Never negative.
+ *
+ * A runner's `occurredAt` comes from the runner's clock, and skew against the
+ * control plane's is ordinary. A negative latency is not a small error: it
+ * drags the aggregate below the truth and can make the target look met.
+ */
+function elapsed(from: Date, to: Date): number {
+  return Math.max(0, to.getTime() - from.getTime());
+}
+
+function repositoryName(repository: { owner: string; name: string } | undefined): string {
+  return repository ? `${repository.owner}/${repository.name}` : 'unknown';
 }

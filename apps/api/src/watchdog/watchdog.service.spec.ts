@@ -10,6 +10,8 @@ function runRow(overrides: Record<string, unknown> = {}) {
     startedAt: new Date(NOW.getTime() - 120 * 60_000),
     lastEventAt: new Date(NOW.getTime() - 10 * 60_000),
     runnerKey: 'claude-code-local',
+    // The newest event's source, for #59's per-source latency split.
+    events: [{ source: 'runner' }],
     runner: { capability: { streamingFidelity: 'full' } },
     workOrder: {
       identity: 'wo_opifex_312_a3f91c2_a1',
@@ -366,6 +368,70 @@ describe('WatchdogService', () => {
       )![0];
       expect(blockedQuery.select.events.where).toEqual({ type: 'run_blocked' });
       expect(blockedQuery.select.events.take).toBe(1);
+    });
+  });
+
+  describe('detection latency, carried on the escalation (#59)', () => {
+    const escalation = (actions: { type: string }[]) =>
+      actions.find((action) => action.type === 'escalate') as Record<string, unknown>;
+
+    it('carries when the run stopped, not when the tick noticed', async () => {
+      const { actions } = await service.sweep(NOW);
+
+      expect(escalation(actions).progressStoppedAt).toBe(
+        new Date(NOW.getTime() - 10 * 60_000).toISOString(),
+      );
+    });
+
+    it('carries which liveness source last saw it alive', async () => {
+      mockLiveRuns([runRow({ events: [{ source: 'git' }] })]);
+
+      const { actions } = await service.sweep(NOW);
+
+      expect(escalation(actions).detectionSource).toBe('git');
+    });
+
+    it('omits the source for a run nothing has ever observed', async () => {
+      // Rather than defaulting to `runner`, which would attribute a
+      // git-carried run's latency to the wrong source.
+      mockLiveRuns([
+        runRow({
+          lastEventAt: null,
+          events: [],
+          startedAt: new Date(NOW.getTime() - 200 * 60_000),
+          runner: { capability: { streamingFidelity: 'none' } },
+        }),
+      ]);
+
+      const { actions } = await service.sweep(NOW);
+
+      expect(escalation(actions).detectionSource).toBeUndefined();
+      expect(escalation(actions).progressStoppedAt).toBe(
+        new Date(NOW.getTime() - 200 * 60_000).toISOString(),
+      );
+    });
+
+    it('measures a LOOPING run from when the signature started repeating', async () => {
+      // Not from its newest event. A looping run is not silent, so the last
+      // event is seconds old while the run has been going nowhere for an hour.
+      const startedRepeating = new Date(NOW.getTime() - 60 * 60_000);
+      mockLiveRuns([runRow({ lastEventAt: new Date(NOW.getTime() - 5_000) })]);
+      // Newest first, as the real query orders them.
+      prisma.runEvent.findMany.mockResolvedValue(
+        Array.from({ length: 8 }, (_, i) => ({
+          toolSignature: 'Bash:x',
+          occurredAt: new Date(startedRepeating.getTime() + (7 - i) * 60_000),
+        })),
+      );
+
+      const { actions } = await service.sweep(NOW);
+
+      const looping = actions.find(
+        (action) => action.type === 'escalate' && action.escalationKind === 'run_looping',
+      );
+      expect(looping!.progressStoppedAt).toBe(startedRepeating.toISOString());
+      // Loop detection needs tool detail, which only the runner stream carries.
+      expect(looping!.detectionSource).toBe('runner');
     });
   });
 
