@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0",
+  "key": "claude-code-local",
+  "displayName": "Claude Code (local)",
+  "version": "2.1.223",
+  "invocationModel": "process",
+  "executionLocus": "own_infrastructure",
+  "streamingFidelity": true,
+  "rateLimitSignal": "structured",
+  "stabilityTier": "stable",
+  "reportsCost": true,
+  "resumable": false,
+  "maxConcurrency": 2,
+  "branchPatterns": ["factory/*"]
+}

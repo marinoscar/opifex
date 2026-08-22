@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0",
+  "key": "quiet-runner",
+  "displayName": "Reports no cost and does not admit it",
+  "version": "1.0.0",
+  "invocationModel": "process",
+  "executionLocus": "own_infrastructure",
+  "streamingFidelity": "partial",
+  "rateLimitSignal": "heuristic",
+  "stabilityTier": "beta",
+  "reportsCost": false,
+  "resumable": false,
+  "maxConcurrency": 1,
+  "branchPatterns": ["factory/*"]
+}
