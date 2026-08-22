@@ -171,3 +171,20 @@ export interface NormalizedLabelEvent {
   actorIsBot: boolean;
   occurredAt: Date;
 }
+
+/**
+ * One comment on an issue or pull request.
+ *
+ * Carries the raw `body` rather than anything parsed, because the two things
+ * that read comments want opposite treatments: #63 looks for an HTML marker,
+ * and a future reader of the authorization record wants the fenced JSON
+ * inside. Normalizing here would serve neither.
+ */
+export interface NormalizedComment {
+  id: number;
+  body: string;
+  url: string;
+  /** Null when GitHub does not report an author, e.g. a deleted account. */
+  author: string | null;
+  createdAt: string;
+}

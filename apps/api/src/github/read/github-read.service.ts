@@ -9,6 +9,7 @@ import {
 } from '../labels/factory-labels';
 import type {
   NormalizedCheck,
+  NormalizedComment,
   NormalizedCommit,
   NormalizedIssue,
   NormalizedLabel,
@@ -125,6 +126,36 @@ export class GitHubReadService {
       `/repos/${repo.owner}/${repo.name}/issues/${issueNumber}`,
     );
     return toNormalizedIssue(data);
+  }
+
+  /**
+   * Every comment on an issue.
+   *
+   * Added for #63's idempotency: the authorization record must not be posted
+   * twice, and the only way to know whether it already exists is to look. The
+   * marker comment `<!-- opifex:authorization-record -->` is what identifies
+   * it — searching for the JSON body instead would break the moment a field
+   * is reordered.
+   *
+   * VISION §5 warns that issue-comment volume is how agent-driven
+   * traceability inverts into noise, which is why this read exists at all: a
+   * second authorization comment on every tick would be exactly that.
+   */
+  async listIssueComments(
+    repo: RepositoryRef,
+    issueNumber: number,
+  ): Promise<NormalizedComment[]> {
+    const { items } = await this.http.paginate<RawComment>(
+      `/repos/${repo.owner}/${repo.name}/issues/${issueNumber}/comments`,
+    );
+
+    return items.map((comment) => ({
+      id: comment.id,
+      body: comment.body ?? '',
+      url: comment.html_url,
+      author: comment.user?.login ?? null,
+      createdAt: comment.created_at,
+    }));
   }
 
   /** Every label defined on the repository, mirror labels included. */
@@ -496,5 +527,13 @@ interface RawTimelineEvent {
 interface RawLabelEvent extends RawTimelineEvent {
   event: 'labeled' | 'unlabeled';
   label: { name: string };
+  created_at: string;
+}
+
+interface RawComment {
+  id: number;
+  body?: string | null;
+  html_url: string;
+  user?: RawUser | null;
   created_at: string;
 }

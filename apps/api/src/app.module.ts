@@ -21,6 +21,7 @@ import { ReconcilerModule } from './reconciler/reconciler.module';
 import { RunEventsModule } from './run-events/run-events.module';
 import { EscalationsModule } from './escalations/escalations.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { WorkOrdersModule } from './work-orders/work-orders.module';
 import { TelemetryModule } from './telemetry/telemetry.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { TestAuthModule } from './test-auth/test-auth.module';
@@ -74,6 +75,10 @@ import configuration from './config/configuration';
     RunEventsModule,
     EscalationsModule,
     NotificationsModule,
+    // Nothing dispatches yet (#64). Registered so the records service is
+    // wired and bootable, and so the one module that can create branches is
+    // visible in the application's import list rather than only in a test.
+    WorkOrdersModule,
 
     // Test modules (non-production only)
     // TestAuthModule bypasses both OAuth and the email allowlist, so NODE_ENV

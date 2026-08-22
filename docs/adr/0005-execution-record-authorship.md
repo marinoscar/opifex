@@ -107,9 +107,24 @@ the base commit itself. Marginally more work in the adapter, and it means an
 adapter cannot operate fully offline from a stale clone. Acceptable: a runner
 that cannot reach GitHub cannot push its results either.
 
-**Dispatch costs four extra API calls per work order** — blob, tree, commit,
-ref — once, at dispatch. Against a 5000/hour budget shared with a human
-(VISION §11), that is not the constraint.
+**Dispatch costs five extra API calls per work order** — read the base
+commit's tree, then blob, tree, commit, ref — once, at dispatch. (Four when
+the branch already exists: the ref lookup alone.) Against a 5000/hour budget
+shared with a human (VISION §11), that is not the constraint.
+
+**The capability lives on its own surface, not on `GitHubWriteService`.**
+`reversibility.spec.ts` asserts that service's source contains no `/git/refs`,
+and that guard is broader than its own intent — it bans creating a new
+`factory/*` branch, which is reversible, along with force-updating `main`,
+which is not. Rather than loosen a deliberate guard in place, ref creation
+lives in `GitBranchService` with its own guards: create-only, `factory/*`
+only, never `PATCH`, never `force`, `refs/heads/` spelled by the service
+rather than accepted from a caller. The write service's guarantee stays
+literally true and its spec keeps passing unchanged, and "which component can
+create a branch?" has a one-file answer. It still routes through
+`guardedWrite`, so `GITHUB_WRITES_ENABLED` and the reversibility
+classification are shared — a second write path that bypassed the kill switch
+would be far worse than sharing this one.
 
 ## Alternatives considered
 
