@@ -1041,6 +1041,36 @@ model Escalation {
   /// Detail for the notification body.
   detail  String?
 
+  /// When the run actually stopped making progress: the `occurredAt` of the
+  /// last event of ANY source before the silence.
+  ///
+  /// The STOP side of success metric 1. VISION §10 defines detection latency
+  /// as "the elapsed time between a run ceasing to make progress and a human
+  /// being informed", so without this column the system can only measure from
+  /// when it noticed - which would report success while the operator still
+  /// finds out four hours later. Null for a `system` escalation, which is
+  /// about the control plane and has no run that stopped.
+  progressStoppedAt DateTime? @map("progress_stopped_at") @db.Timestamptz
+
+  /// Which liveness source the stall was measured through.
+  ///
+  /// VISION §9 runs two INDEPENDENT liveness sources, and #59 requires the
+  /// metric say which one was carrying a run when it went quiet. A
+  /// git-derived detection is expected to be slower than a runner-reported
+  /// one; an aggregate that blends them hides which half needs work.
+  detectionSource RunEventSource? @map("detection_source")
+
+  /// Milliseconds from `progressStoppedAt` to `raisedAt`, and to
+  /// `deliveredAt`.
+  ///
+  /// Derived, and stored anyway. The cockpit (#20) needs percentiles over
+  /// thousands of rows; as timestamp arithmetic over nullable columns that is
+  /// a scan, and as an indexed integer it is not. Both are kept because
+  /// stop-to-raised and stop-to-notified answer different questions, and only
+  /// the second is the success metric.
+  detectLatencyMs Int? @map("detect_latency_ms")
+  notifyLatencyMs Int? @map("notify_latency_ms")
+
   /// Which transport was used - `push`, `email`. Null until dispatched.
   transport        String?
   /// The transport's own receipt id, for reconciling a delivery webhook.
@@ -1069,6 +1099,9 @@ model Escalation {
   @@index([status, raisedAt])
   // The redelivery sweeper: raised or dispatched, never delivered.
   @@index([status, deliveryAttempts])
+  // Success metric 1, aggregated for the cockpit: detection latency over a
+  // window, split by which liveness source detected the stop.
+  @@index([detectionSource, raisedAt])
   @@map("escalations")
 }
 
