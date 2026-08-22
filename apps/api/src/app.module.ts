@@ -22,6 +22,7 @@ import { RunEventsModule } from './run-events/run-events.module';
 import { EscalationsModule } from './escalations/escalations.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DispatchModule } from './dispatch/dispatch.module';
+import { RunnersModule } from './runners/runners.module';
 import { WorkOrdersModule } from './work-orders/work-orders.module';
 import { TelemetryModule } from './telemetry/telemetry.module';
 import { LoggerModule } from './common/logger/logger.module';
@@ -83,6 +84,7 @@ import configuration from './config/configuration';
     // Decides WHICH runner, and hands over to nobody — there is no executor
     // until #61. Registered so the decision path is bootable and exercised.
     DispatchModule,
+    RunnersModule,
 
     // Test modules (non-production only)
     // TestAuthModule bypasses both OAuth and the email allowlist, so NODE_ENV

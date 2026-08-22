@@ -1,9 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
-import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020';
-import addFormats from 'ajv-formats';
-
+import {
+  CONTRACTS,
+  EVENT_TYPES,
+  SCHEMA_DIR,
+  validatorFor,
+  type Contract,
+} from './contract-validators';
 import {
   parseWorkOrderIdentity,
   workOrderBranch,
@@ -29,36 +33,14 @@ import {
  * ## Structured so a runner can be pointed at it
  *
  * #36 asks for this to become the basis of the cross-runner conformance work
- * in #23. `validatorFor` and `EVENT_TYPES` are exported for exactly that: a
- * runner implementation can be driven to emit events and have them checked
- * here, without restructuring anything.
+ * in #23, and #61 requires `claude-code-local` to pass it. The validators
+ * themselves live in `contract-validators.ts` rather than here: importing them
+ * from a spec file would re-run every test below inside whatever imported it,
+ * which is the opposite of reusable.
  */
 
-const SCHEMA_DIR = join(__dirname, '..', '..', '..', '..', 'schemas');
-
-/** The six normalized types. A seventh is a schema version bump, not a fix. */
-export const EVENT_TYPES = [
-  'run.started',
-  'run.heartbeat',
-  'run.progress',
-  'run.blocked',
-  'run.completed',
-  'run.failed',
-] as const;
-
-const CONTRACTS = ['run-event', 'work-order', 'runner-capability'] as const;
-type Contract = (typeof CONTRACTS)[number];
-
-export function validatorFor(contract: Contract): ValidateFunction {
-  // Draft 2020-12 needs ajv's 2020 entry point; the default export only knows
-  // draft-07 and would silently ignore `unevaluatedProperties` — the keyword
-  // doing most of the work in all three schemas.
-  const ajv = new Ajv2020({ allErrors: true, strict: true });
-  addFormats(ajv);
-  return ajv.compile(
-    JSON.parse(readFileSync(join(SCHEMA_DIR, `${contract}.schema.json`), 'utf8')),
-  );
-}
+// Re-exported so the module path that #36 documented still resolves.
+export { EVENT_TYPES, validatorFor };
 
 function examplesIn(contract: Contract, subdirectory = ''): string[] {
   const dir = join(SCHEMA_DIR, 'examples', contract, subdirectory);

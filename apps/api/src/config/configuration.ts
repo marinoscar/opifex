@@ -141,6 +141,47 @@ export default () => {
       : null,
   },
 
+  // Runners (epic #18, #61)
+  runners: {
+    // The v1 runner: Claude Code, invoked as a child process on our own
+    // hardware. See docs/adr/0006-claude-code-local-invocation.md for why a
+    // subprocess rather than the Agent SDK.
+    claudeCodeLocal: {
+      // DEFAULTS OFF, like every other outward-acting subsystem here. This one
+      // spends money and writes branches, so an install that has not been
+      // deliberately pointed at a machine with the CLI on it must not start
+      // spawning agents. Compared against 'true' so unset, misspelled and
+      // empty all mean off.
+      enabled: process.env.CLAUDE_CODE_LOCAL_ENABLED === 'true',
+      // Resolved on PATH by default. Named explicitly so a deployment can pin
+      // a version rather than inheriting whatever the shell finds.
+      binary: process.env.CLAUDE_CODE_BINARY || 'claude',
+      gitBinary: process.env.GIT_BINARY || 'git',
+      // One directory per work-order identity lives under here.
+      workspaceRoot: process.env.RUNNER_WORKSPACE_ROOT || '/var/tmp/opifex/workspaces',
+      // Where the workspace clones from. Overridable for GitHub Enterprise
+      // and, more usefully, for tests that point it at a local fixture.
+      gitRemoteBaseUrl: process.env.GIT_REMOTE_BASE_URL || 'https://github.com',
+      // The factory's own commit identity. Attribution proper lives in the
+      // trailers (#26), which are structured and cannot be mistaken for a
+      // person having written the code.
+      committerName: process.env.RUNNER_COMMITTER_NAME || 'Opifex Factory',
+      committerEmail: process.env.RUNNER_COMMITTER_EMAIL || 'factory@opifex.local',
+      // VISION §11: automated runs compete with interactive use for one
+      // subscription quota. Two is a ceiling that leaves a human room to work
+      // on the same machine; raising it is a deliberate act.
+      maxConcurrency: parseInt(process.env.CLAUDE_CODE_MAX_CONCURRENCY || '2', 10),
+      // How long a SIGTERMed run has to flush before SIGKILL.
+      killGraceMs: parseInt(process.env.RUNNER_KILL_GRACE_MS || '10000', 10),
+      // Defaults to the narrow end. A mode broad enough never to ask is
+      // coupled to a sandbox that makes never asking safe, and sandboxing is
+      // #113 — so until then a run that needs a permission it does not have
+      // goes silent and is caught by the watchdog (#54), which is the failure
+      // this system exists to notice. Widening it is a deliberate act.
+      permissionMode: process.env.CLAUDE_CODE_PERMISSION_MODE || 'acceptEdits',
+    },
+  },
+
   // Notifications (epic #17, #58)
   //
   // The last link in the chain VISION §1 complains about: everything upstream
