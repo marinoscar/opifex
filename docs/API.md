@@ -1394,6 +1394,126 @@ chain survives. Set `observeEnabled` and `dispatchEnabled` to `false` instead.
 
 ---
 
+### Escalations
+
+What needs a human. VISION §9 is explicit that **escalation is an action, not
+telemetry** — a stalled run nobody is told about is the exact failure this
+system exists to eliminate — so escalations get records, a lifecycle and their
+own endpoints rather than a log line somebody might grep for.
+
+Requires `escalations:read` to read and `escalations:acknowledge` to
+acknowledge.
+
+**Escalations are deduplicated per (run, kind).** The watchdog is a
+reconciler: it re-derives the same verdict on every tick by design. Without
+deduplication a one-minute tick would page sixty times an hour about one
+stall, and an operator paged twelve times about the same thing stops reading
+escalations — which reproduces the original problem by a different route.
+Deduped per kind rather than per run, so a run that is both looping and over
+budget still shows both.
+
+`delivered` and `failed` count as **unresolved**: the operator was told and
+has not acted. `acknowledged` and `resolved` do not, so a condition that
+recurs after a human dealt with it raises again.
+
+#### GET /escalations
+List escalations, newest first. Paginated.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `page` | number | `1` | 1-based page number |
+| `pageSize` | number | `25` | Max 100 |
+| `status` | string | — | `raised`, `dispatched`, `delivered`, `failed`, `acknowledged`, `resolved` |
+| `unresolvedOnly` | boolean | — | The triage view |
+| `runId` | uuid | — | One run's escalations |
+
+Each escalation carries its own latency measurement: `progressStoppedAt`,
+`detectionSource`, `detectLatencyMs` and `notifyLatencyMs`.
+
+#### GET /escalations/latency
+Detection latency, aggregated. **VISION §10's success metric 1**, whose target
+is *seconds*.
+
+Measured **stop-to-notified**: from a run ceasing to make progress to a human
+being informed. Measuring stop-to-*detected* instead would report success
+while the operator still finds out four hours later, so the two are separate
+figures and only one of them is the metric.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `since` | date-time | — | Inclusive lower bound on `raisedAt` |
+| `until` | date-time | — | Inclusive upper bound on `raisedAt` |
+| `repository` | string | — | `owner/name` |
+
+**Response:**
+```json
+{
+  "since": "2026-08-15T00:00:00.000Z",
+  "until": null,
+  "truncated": false,
+  "sampleSize": 42,
+  "notified":  { "count": 38, "p50Ms": 6200, "p90Ms": 11400, "p99Ms": 19800, "maxMs": 19800 },
+  "detected":  { "count": 42, "p50Ms": 2100, "p90Ms":  4300, "p99Ms":  9100, "maxMs":  9100 },
+  "awaitingNotification": 4,
+  "unmeasurable": 0,
+  "bySource": {
+    "runner":        { "notified": { "count": 30, "p50Ms": 4100, "p90Ms": 8200, "p99Ms": 9100, "maxMs": 9100 }, "detected": { "count": 32, "p50Ms": 1800, "p90Ms": 3200, "p99Ms": 4000, "maxMs": 4000 }, "awaitingNotification": 2, "unmeasurable": 0 },
+    "git":           { "notified": { "count":  8, "p50Ms": 14500, "p90Ms": 19800, "p99Ms": 19800, "maxMs": 19800 }, "detected": { "count": 10, "p50Ms": 7400, "p90Ms": 9100, "p99Ms": 9100, "maxMs": 9100 }, "awaitingNotification": 2, "unmeasurable": 0 },
+    "control_plane": { "notified": { "count": 0, "p50Ms": null, "p90Ms": null, "p99Ms": null, "maxMs": null }, "detected": { "count": 0, "p50Ms": null, "p90Ms": null, "p99Ms": null, "maxMs": null }, "awaitingNotification": 0, "unmeasurable": 0 }
+  }
+}
+```
+
+Four figures, because three of them can hide the fourth:
+
+| Field | Meaning |
+|---|---|
+| `notified` | Stop to a human being informed. **The metric.** |
+| `detected` | Stop to Opifex noticing. Reported alongside so the gap shows — a fast detector behind a broken transport looks perfect on this one alone. |
+| `awaitingNotification` | Measurable, raised, never delivered. Their real latency is unbounded; omitting them silently would make a totally broken transport render as excellent latency over a tiny sample. |
+| `unmeasurable` | No stop time at all, such as a `system` escalation. Counted rather than measured from `raisedAt`, which would add a zero-latency entry per unmeasurable event. |
+
+Percentiles are **nearest-rank**, so every figure reported is one that
+actually happened and the operator can go and find the run behind it. An empty
+sample reports `null`, not `0` — zero milliseconds is an excellent latency,
+and "we measured nothing" is not a latency at all.
+
+`bySource` splits everything by liveness source. VISION §9 runs two
+**independent** sources, and git-derived detection is structurally slower than
+runner-reported; a blended number describes neither and hides which half needs
+work.
+
+`truncated` is `true` when the window held more escalations than one summary
+reads. A truncation nobody reports reads as "this is what happened".
+
+The same measurement is also exported over OpenTelemetry as
+`opifex.detection.latency` and `opifex.detection.detect_latency`, with
+`opifex.escalations.raised` and `opifex.escalations.notified` counters whose
+gap is how many stalls nobody was told about. This endpoint does **not**
+depend on the OTEL stack running — see
+[ADR 0003](adr/0003-observability-backend.md).
+
+#### POST /escalations/{id}/acknowledge
+Record that a human has seen it — the one fact the lifecycle exists to
+capture. Acknowledging twice is not an error; two people reaching for the same
+page at once is normal and the first acknowledgement stands.
+
+Acknowledging also re-arms the detector: the next occurrence raises a new
+escalation, rather than being suppressed forever because somebody looked at
+this one once.
+
+**Errors:**
+
+| Status | Cause |
+|---|---|
+| `404` | No such escalation |
+
+---
+
 ### Health
 
 **Public endpoints** - Used for Kubernetes liveness/readiness probes.
