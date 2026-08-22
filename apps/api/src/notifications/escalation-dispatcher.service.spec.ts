@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import type { EscalationsService } from '../escalations/escalations.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { EscalationDispatcher } from './escalation-dispatcher.service';
+import { EscalationDispatcher, MAX_DELIVERY_ATTEMPTS } from './escalation-dispatcher.service';
 import type { FallbackWebhookTransport } from './fallback-webhook.transport';
 import type { PushSubscriptionsService } from './push-subscriptions.service';
 import type { WebPushTransport } from './web-push.transport';
@@ -49,7 +49,17 @@ function fakePrisma(rows: Record<string, unknown>[]) {
     escalation: {
       findMany: async ({ where }: any) =>
         rows.filter((row) => {
-          if (where.status && row.status !== where.status) return false;
+          if (where.status) {
+            const wanted = where.status;
+            if (typeof wanted === 'object' && 'in' in wanted) {
+              if (!wanted.in.includes(row.status)) return false;
+            } else if (row.status !== wanted) {
+              return false;
+            }
+          }
+          if (where.deliveryAttempts?.lt !== undefined) {
+            if ((row.deliveryAttempts as number) >= where.deliveryAttempts.lt) return false;
+          }
           if (where.deliveredAt === null && row.deliveredAt !== null) return false;
           if (where.dispatchedAt?.lt) {
             const at = row.dispatchedAt as Date | null;
@@ -424,15 +434,115 @@ describe('EscalationDispatcher', () => {
       expect(findMany.mock.calls[0][0].take).toBe(25);
     });
 
-    it('only picks up what is RAISED', async () => {
-      // An acknowledged escalation must not be re-sent; a human already
-      // dealt with it.
-      build([escalationRow({ status: 'acknowledged' })]);
+    it.each(['acknowledged', 'resolved', 'delivered'])(
+      'does not re-send a %s escalation',
+      async (status) => {
+        // A human already dealt with it, or a device already showed it.
+        build([escalationRow({ status })]);
+
+        const result = await dispatcher.dispatchPending(NOW);
+
+        expect(result.dispatched).toBe(0);
+        expect(push.send).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not re-send one a transport already has custody of', async () => {
+      // `dispatched` means a push service took it. Sending again would put
+      // two notifications on the phone for one stall; sweepOverdue is what
+      // deals with a dispatch that never arrived.
+      build([escalationRow({ status: 'dispatched', dispatchedAt: NOW, receiptId: 'r1' })]);
+
+      await dispatcher.dispatchPending(NOW);
+
+      expect(push.send).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('retrying what failed (#136)', () => {
+    beforeEach(() => {
+      push.send.mockResolvedValue({
+        targetId: DEVICE.id,
+        accepted: false,
+        gone: false,
+        statusCode: 500,
+        error: 'Internal Server Error',
+      });
+    });
+
+    it('tries a previously-failed escalation again', async () => {
+      // The bug this fixes: an escalation went raised -> failed on the FIRST
+      // failure and was never picked up again, so a push service that
+      // returned a 500 for thirty seconds lost it permanently — the exact
+      // failure #58 exists to eliminate, by a different route.
+      build([escalationRow({ status: 'failed', deliveryAttempts: 1 })]);
 
       const result = await dispatcher.dispatchPending(NOW);
 
-      expect(result.dispatched).toBe(0);
+      expect(push.send).toHaveBeenCalled();
+      expect(result.retried).toBe(1);
+      expect(prisma.rows[0].deliveryAttempts).toBe(2);
+    });
+
+    it('delivers on a retry once the transport recovers', async () => {
+      build([escalationRow({ status: 'failed', deliveryAttempts: 2 })]);
+      push.send.mockResolvedValue({ targetId: DEVICE.id, accepted: true, gone: false });
+
+      await dispatcher.dispatchPending(NOW);
+
+      expect(prisma.rows[0]).toMatchObject({ status: 'dispatched', transport: 'push' });
+    });
+
+    it('counts a first attempt as a first attempt, not a retry', async () => {
+      const result = await dispatcher.dispatchPending(NOW);
+
+      expect(result.retried).toBe(0);
+    });
+
+    it('gives up at the cap rather than retrying forever', async () => {
+      build([escalationRow({ status: 'failed', deliveryAttempts: MAX_DELIVERY_ATTEMPTS })]);
+
+      const result = await dispatcher.dispatchPending(NOW);
+
       expect(push.send).not.toHaveBeenCalled();
+      expect(result.retried).toBe(0);
+    });
+
+    it('reports the attempt that hits the cap as abandoned', async () => {
+      // Two different situations and two different log lines: one will be
+      // tried again shortly, one never will.
+      build([escalationRow({ status: 'failed', deliveryAttempts: MAX_DELIVERY_ATTEMPTS - 1 })]);
+
+      const result = await dispatcher.dispatchPending(NOW);
+
+      expect(result.abandoned).toBe(1);
+    });
+
+    it('does not report a mid-sequence failure as abandoned', async () => {
+      build([escalationRow({ status: 'failed', deliveryAttempts: 1 })]);
+
+      const result = await dispatcher.dispatchPending(NOW);
+
+      expect(result.abandoned).toBe(0);
+      expect(result.failed).toBe(1);
+    });
+
+    it('leaves the row failed after the cap, which is the honest end state', async () => {
+      // Nobody was told. GET /escalations/latency counts it under
+      // awaitingNotification and the cockpit shows it.
+      build([escalationRow({ status: 'failed', deliveryAttempts: MAX_DELIVERY_ATTEMPTS - 1 })]);
+
+      await dispatcher.dispatchPending(NOW);
+
+      expect(prisma.rows[0].status).toBe('failed');
+    });
+
+    it('is bounded within the order of minutes at a normal tick interval', async () => {
+      // The tick IS the backoff. At the default 60s interval the cap is
+      // roughly five minutes of trying, which is the right order of magnitude
+      // for a notification whose whole value is its latency.
+      expect(MAX_DELIVERY_ATTEMPTS).toBeGreaterThanOrEqual(3);
+      expect(MAX_DELIVERY_ATTEMPTS).toBeLessThanOrEqual(10);
     });
   });
 

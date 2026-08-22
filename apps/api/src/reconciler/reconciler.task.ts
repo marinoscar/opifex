@@ -223,13 +223,20 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       if (result.dispatched > 0 || result.rerouted > 0) {
         this.logger.log(
           `Notifications: ${result.dispatched} dispatched` +
-            (result.rerouted > 0 ? `, ${result.rerouted} via the fallback path` : ''),
+            (result.rerouted > 0 ? `, ${result.rerouted} via the fallback path` : '') +
+            // Reported even on success: escalations that only went out on a
+            // retry mean the transport is limping, and a line that said only
+            // "dispatched" would make that look healthy.
+            (result.retried > 0 ? `, ${result.retried} on a retry` : ''),
         );
       }
-      if (result.failed > 0 || result.timedOut > 0) {
+      if (result.failed > 0 || result.timedOut > 0 || result.abandoned > 0) {
         this.logger.error(
-          `Notifications: ${result.failed} could not be sent at all, ` +
-            `${result.timedOut} were sent and never confirmed by a device`,
+          `Notifications: ${result.failed} could not be sent, ` +
+            `${result.timedOut} were sent and never confirmed by a device` +
+            (result.abandoned > 0
+              ? `, ${result.abandoned} hit the attempt cap and will NOT be retried`
+              : ''),
         );
       }
     } catch (error) {
