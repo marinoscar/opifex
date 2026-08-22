@@ -202,6 +202,8 @@ import type {
   PersonalAccessToken,
   PatCreatedResponse,
   PatDurationUnit,
+  NotificationConfig,
+  PushSubscriptionRecord,
 } from '../types';
 import type {
   MetricsSummary,
@@ -407,4 +409,34 @@ export async function getActivityFeed(
   const searchParams = new URLSearchParams({ limit: String(params?.limit ?? 20) });
 
   return api.get<RunEvent[]>(`/events?${searchParams}`, { signal });
+}
+
+// ---------------------------------------------------------------------------
+// Notifications (epic #17, issue #58)
+// ---------------------------------------------------------------------------
+
+export async function getNotificationConfig(): Promise<NotificationConfig> {
+  return api.get<NotificationConfig>('/notifications/config');
+}
+
+export async function getPushSubscriptions(): Promise<{
+  items: PushSubscriptionRecord[];
+  total: number;
+}> {
+  return api.get<{ items: PushSubscriptionRecord[]; total: number }>(
+    '/notifications/subscriptions',
+  );
+}
+
+export async function createPushSubscription(input: {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  userAgent?: string;
+}): Promise<PushSubscriptionRecord> {
+  return api.post<PushSubscriptionRecord>('/notifications/subscriptions', input);
+}
+
+export async function deletePushSubscription(id: string): Promise<void> {
+  await api.delete<void>(`/notifications/subscriptions/${id}`);
 }

@@ -177,3 +177,37 @@ export interface PatCreatedResponse {
   expiresAt: string;
   createdAt: string;
 }
+
+// ---------------------------------------------------------------------------
+// Notifications (epic #17, issue #58)
+//
+// The last link in the chain VISION §1 complains about: the watchdog can
+// notice a stall in ninety seconds and detection latency is still measured in
+// hours if nobody is actually told.
+// ---------------------------------------------------------------------------
+
+export interface NotificationConfig {
+  /** The VAPID public key a browser subscribes against. Public by definition. */
+  vapidPublicKey: string;
+  /**
+   * False when the server has no VAPID keys.
+   *
+   * The UI uses this to say "notifications are not set up on this server"
+   * rather than offering a button that silently does nothing — which would be
+   * the same failure as no notification at all, dressed as a feature.
+   */
+  pushConfigured: boolean;
+  /** Whether a second, independent path exists if Web Push fails. */
+  fallbackConfigured: boolean;
+}
+
+export interface PushSubscriptionRecord {
+  id: string;
+  endpoint: string;
+  userAgent: string | null;
+  /** Consecutive delivery failures. Non-zero means this device is not reliable. */
+  failureCount: number;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  createdAt: string;
+}
