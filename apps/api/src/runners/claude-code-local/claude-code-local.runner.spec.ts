@@ -12,6 +12,7 @@ import {
 import { RUNNER_SEAM_METHODS, type RunHandle, type WorkOrderSpec } from '../runner.types';
 import {
   ClaudeCodeLocalRunner,
+  FINISHED_RUN_RETENTION_MS,
   RunnerAtCapacityError,
 } from './claude-code-local.runner';
 import { RunWorkspaceService } from './run-workspace.service';
@@ -173,6 +174,8 @@ describe('ClaudeCodeLocalRunner', () => {
       // someone deliberately adds it to one list or the other, which is a
       // reviewable act rather than an accident.
       const INTERNALS = [
+        'armDeadline',
+        'reapFinishedRuns',
         'consumeLine',
         'runnerTag',
         'statusOf',
@@ -185,6 +188,13 @@ describe('ClaudeCodeLocalRunner', () => {
         'probeVersion',
       ];
 
+      // Listed apart from the internals on purpose. `onModuleDestroy` is a
+      // NestJS lifecycle hook, not a fifth seam function — nothing routes
+      // through it and no caller of `Runner` can see it. Naming it separately
+      // keeps that distinction visible rather than burying a public method in
+      // a list called INTERNALS.
+      const LIFECYCLE = ['onModuleDestroy'];
+
       const implemented = Object.getOwnPropertyNames(ClaudeCodeLocalRunner.prototype)
         .filter(
           (name) =>
@@ -192,7 +202,7 @@ describe('ClaudeCodeLocalRunner', () => {
             typeof Object.getOwnPropertyDescriptor(ClaudeCodeLocalRunner.prototype, name)?.value ===
               'function',
         )
-        .filter((name) => !INTERNALS.includes(name));
+        .filter((name) => !INTERNALS.includes(name) && !LIFECYCLE.includes(name));
 
       expect(implemented.sort()).toEqual([...RUNNER_SEAM_METHODS].sort());
     });
@@ -725,6 +735,197 @@ describe('ClaudeCodeLocalRunner', () => {
       expect(events.length).toBeGreaterThan(0);
       for (const event of events) expect(event.runner).toBe('claude-code-local@2.1.240');
     }, 30_000);
+  });
+
+  describe('limits (#61 slice 3)', () => {
+    it('kills a run that overruns its wall clock', async () => {
+      // The one ceiling this runner can actually enforce, because time is
+      // observable from outside the process.
+      const binary = await fakeClaude('overrun', 'sleep 30');
+      const runner = build({
+        'runners.claudeCodeLocal.binary': binary,
+        'runners.claudeCodeLocal.killGraceMs': 200,
+      });
+
+      // 1/1200 of a minute ≈ 50ms — the enforcement path is the same at any
+      // scale, and a test that waited a real minute would never be run.
+      const handle = await runner.submit(workOrder({ wallClockTimeoutMinutes: 1 / 1200 }));
+      const { status, events } = await drainUntilTerminal(runner, handle);
+
+      expect(status).toBe('failed');
+      const failed = events.find((event) => event.type === 'run.failed');
+      expect(failed?.failure?.reason).toContain('wall-clock ceiling');
+    }, 30_000);
+
+    it('calls a timeout retryable, unlike a cancel', async () => {
+      // #66 treats them differently and must: a run something DECIDED to stop
+      // should not be repeated as-is, while one that merely ran out of clock
+      // might well finish on a quieter machine.
+      const binary = await fakeClaude('overrun-retry', 'sleep 30');
+      const runner = build({
+        'runners.claudeCodeLocal.binary': binary,
+        'runners.claudeCodeLocal.killGraceMs': 200,
+      });
+
+      const handle = await runner.submit(workOrder({ wallClockTimeoutMinutes: 1 / 1200 }));
+      const { events } = await drainUntilTerminal(runner, handle);
+
+      const failed = events.find((event) => event.type === 'run.failed');
+      expect(failed?.failure?.retryable).toBe(true);
+      expect(failed?.failure?.reason).not.toContain('cancelled');
+    }, 30_000);
+
+    it('applies a default ceiling to a work order that names none', async () => {
+      // VISION §1's origin story is four hours dead, which is what an
+      // unbounded run looks like when it wedges. A missing ceiling must not
+      // mean "run forever".
+      const binary = await fakeClaude('defaulted', 'sleep 30');
+      const runner = build({
+        'runners.claudeCodeLocal.binary': binary,
+        'runners.claudeCodeLocal.killGraceMs': 200,
+        'runners.claudeCodeLocal.defaultTimeoutMinutes': 1 / 1200,
+      });
+
+      const handle = await runner.submit(workOrder({ wallClockTimeoutMinutes: null }));
+      const { events } = await drainUntilTerminal(runner, handle);
+
+      expect(events.find((event) => event.type === 'run.failed')?.failure?.reason).toContain(
+        'wall-clock ceiling',
+      );
+    }, 30_000);
+
+    it("lets the work order's own ceiling win over the default", async () => {
+      const binary = await fakeClaude('own-ceiling', 'sleep 30');
+      const runner = build({
+        'runners.claudeCodeLocal.binary': binary,
+        'runners.claudeCodeLocal.killGraceMs': 200,
+        // A default far longer than the work order's, so a run stopped early
+        // proves the work order's number was the one applied.
+        'runners.claudeCodeLocal.defaultTimeoutMinutes': 600,
+      });
+
+      const handle = await runner.submit(workOrder({ wallClockTimeoutMinutes: 1 / 1200 }));
+      const { events } = await drainUntilTerminal(runner, handle);
+
+      expect(events.find((event) => event.type === 'run.failed')?.failure?.reason).toContain(
+        'wall-clock ceiling',
+      );
+    }, 30_000);
+
+    it('leaves a run unbounded when nothing sets a ceiling', async () => {
+      // Genuinely unbounded is a deliberate operator choice, not an oversight,
+      // so an unset default must not silently become one.
+      const binary = await fakeClaude('unbounded', 'exit 0');
+      const runner = build({
+        'runners.claudeCodeLocal.binary': binary,
+        'runners.claudeCodeLocal.defaultTimeoutMinutes': null,
+      });
+
+      const handle = await runner.submit(workOrder({ wallClockTimeoutMinutes: null }));
+      const { status, events } = await drainUntilTerminal(runner, handle);
+
+      expect(status).toBe('succeeded');
+      expect(events.some((event) => event.type === 'run.failed')).toBe(false);
+    }, 30_000);
+
+    it('does not report a wall-clock overrun for an ordinary cancel', async () => {
+      const binary = await fakeClaude('plain-cancel', 'sleep 30');
+      const runner = build({
+        'runners.claudeCodeLocal.binary': binary,
+        'runners.claudeCodeLocal.killGraceMs': 200,
+        'runners.claudeCodeLocal.defaultTimeoutMinutes': 600,
+      });
+
+      const handle = await runner.submit(workOrder());
+      await runner.cancel(handle);
+      const { events } = await drainUntilTerminal(runner, handle);
+
+      const failed = events.find((event) => event.type === 'run.failed');
+      expect(failed?.failure?.reason).toContain('cancelled');
+      expect(failed?.failure?.reason).not.toContain('wall-clock');
+      expect(failed?.failure?.retryable).toBe(false);
+    }, 30_000);
+  });
+
+  describe('housekeeping (#61 slice 3)', () => {
+    it('reaps finished runs so the map does not grow forever', async () => {
+      // Slice 1 never dropped anything. On the single long-lived API VISION
+      // §11 designs for, that is a leak measured in weeks — every run ever
+      // submitted, with its events, stderr tail and workspace path.
+      const binary = await fakeClaude('reapable', 'exit 0');
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const handle = await runner.submit(workOrder());
+      await drainUntilTerminal(runner, handle);
+
+      // Age it past the retention window, then trigger a reap.
+      const runs = (runner as unknown as { runs: Map<string, { finishedAt: Date | null }> }).runs;
+      runs.get(workOrder().identity)!.finishedAt = new Date(
+        Date.now() - FINISHED_RUN_RETENTION_MS - 1_000,
+      );
+      await runner.submit(workOrder({ identity: 'wo_acme-widgets_99_abc1234_a1' }));
+
+      expect(runs.has(workOrder().identity)).toBe(false);
+    }, 30_000);
+
+    it('never reaps a run whose ending nobody has collected', async () => {
+      // The terminal event lives in `pending` until something polls for it.
+      // Reaping on age alone would throw away the event that says how the run
+      // ended — which is the one event nothing else can reconstruct.
+      const binary = await fakeClaude('uncollected', 'exit 0');
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const handle = await runner.submit(workOrder());
+      const runs = (runner as unknown as {
+        runs: Map<string, { finishedAt: Date | null; pending: unknown[] }>;
+      }).runs;
+
+      // Wait for the process to end WITHOUT polling, so the events stay queued.
+      await until(() => runs.get(workOrder().identity)!.finishedAt !== null);
+      runs.get(workOrder().identity)!.finishedAt = new Date(
+        Date.now() - FINISHED_RUN_RETENTION_MS - 1_000,
+      );
+      await runner.submit(workOrder({ identity: 'wo_acme-widgets_98_abc1234_a1' }));
+
+      expect(runs.has(workOrder().identity)).toBe(true);
+      expect((await runner.poll(handle)).events.length).toBeGreaterThan(0);
+    }, 30_000);
+
+    it('keeps a still-running run, however long it has been going', async () => {
+      const binary = await fakeClaude('long-lived', 'sleep 10');
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const handle = await runner.submit(workOrder());
+      await runner.poll(handle);
+      await runner.submit(workOrder({ identity: 'wo_acme-widgets_97_abc1234_a1' }));
+
+      expect((await runner.poll(handle)).status).toBe('running');
+      await runner.cancel(handle);
+    }, 30_000);
+
+    it('cancels live runs on a graceful shutdown', async () => {
+      // An agent still running after its supervisor has deliberately gone away
+      // is spending the operator's quota with nothing left to escalate on its
+      // behalf. A CRASH is different and deliberately not covered — the
+      // detached children survive it, and git-derived liveness (#52) is the
+      // second source that covers exactly that window.
+      const binary = await fakeClaude('shutdown', 'sleep 30');
+      const runner = build({
+        'runners.claudeCodeLocal.binary': binary,
+        'runners.claudeCodeLocal.killGraceMs': 200,
+      });
+
+      const handle = await runner.submit(workOrder());
+      await runner.onModuleDestroy();
+
+      const { status } = await drainUntilTerminal(runner, handle);
+      expect(status).toBe('failed');
+    }, 30_000);
+
+    it('shuts down cleanly with nothing running', async () => {
+      const runner = build({ 'runners.claudeCodeLocal.binary': '/bin/true' });
+      await expect(runner.onModuleDestroy()).resolves.toBeUndefined();
+    });
   });
 
   describe('conformance (#36)', () => {

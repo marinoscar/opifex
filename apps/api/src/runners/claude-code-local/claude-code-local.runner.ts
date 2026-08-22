@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 
@@ -56,9 +56,18 @@ import {
  * actually receiving"* — and a boolean would have forced the choice between
  * lying for one release and shipping nothing.
  *
- * Still NOT here: budget and wall-clock enforcement. The manifest says
- * `stabilityTier: 'experimental'` for that reason, and #61's third slice is
- * where it changes.
+ * Slice 3 added the limits, and the honest finding is that the two ceilings
+ * are not equally enforceable. The wall clock is: time is observable from
+ * outside the process, so {@link armDeadline} kills a run that overruns. A
+ * dollar budget is NOT, because the CLI reports cost once at the end and the
+ * per-message `usage` on assistant lines is a streaming snapshot that does not
+ * sum to the total — so the ceiling can only be applied to the next attempt.
+ * The manifest says which is which rather than implying both.
+ *
+ * Slice 3 also closed two things slice 1 got wrong: finished runs were never
+ * dropped from the map (a leak measured in weeks on the single long-lived API
+ * VISION §11 designs for), and a graceful shutdown left live agents running
+ * with nothing left to supervise them.
  *
  * ## Why the process is the source of truth
  *
@@ -68,7 +77,7 @@ import {
  * supervisor's outcome is the fact; the output stream is a report.
  */
 @Injectable()
-export class ClaudeCodeLocalRunner implements Runner {
+export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
   static readonly KEY = 'claude-code-local';
 
   private readonly logger = new Logger(ClaudeCodeLocalRunner.name);
@@ -99,6 +108,10 @@ export class ClaudeCodeLocalRunner implements Runner {
    * is a corrupted one — they would race each other's commits.
    */
   async submit(workOrder: WorkOrderSpec): Promise<RunHandle> {
+    // Cheap, and on the one path that grows the map. A timer would be a second
+    // thing to shut down cleanly for no benefit.
+    this.reapFinishedRuns();
+
     const existing = this.runs.get(workOrder.identity);
     if (existing) {
       this.logger.log(`Re-submit of ${workOrder.identity} returned the running handle`);
@@ -146,6 +159,7 @@ export class ClaudeCodeLocalRunner implements Runner {
       settled: false,
       loggedDrops: new Set(),
       parseFailures: 0,
+      finishedAt: null,
     };
 
     run.process = this.supervisor.start({
@@ -167,6 +181,7 @@ export class ClaudeCodeLocalRunner implements Runner {
     });
 
     this.runs.set(workOrder.identity, run);
+    this.armDeadline(run);
 
     // Not awaited: `submit` returns as soon as the run has started, and the
     // terminal event is queued whenever the process ends. Awaiting here would
@@ -288,9 +303,14 @@ export class ClaudeCodeLocalRunner implements Runner {
       // until this has actually run unattended.
       stabilityTier: 'experimental',
 
-      // `result` carries `total_cost_usd` and a token breakdown. Note the
-      // manifest makes no claim about ENFORCING a budget — only about being
-      // able to report one, which is the distinction #65 needs.
+      // `result` carries `total_cost_usd` and a token breakdown, so cost is
+      // REPORTED accurately. It is deliberately not a claim about enforcing a
+      // budget — the CLI emits cost once, at the end, and the per-message
+      // `usage` on assistant lines is a streaming snapshot that does not sum
+      // to the total. So a dollar ceiling can only be applied to the NEXT
+      // attempt, and `armDeadline` explains why pretending otherwise would be
+      // worse than admitting it. The wall clock is the ceiling this runner
+      // actually enforces.
       reportsCost: true,
 
       // VISION §3.4 permits session resumption only as an optimization and
@@ -319,6 +339,103 @@ export class ClaudeCodeLocalRunner implements Runner {
   }
 
   // -------------------------------------------------------------------------
+
+  /**
+   * Stop supervising, and stop what is being supervised.
+   *
+   * A graceful shutdown is the one moment where letting runs continue is
+   * clearly wrong. VISION §8 makes the runner never-trustable and §9 makes the
+   * watchdog the thing that notices when one goes bad — so an agent still
+   * running after its supervisor has deliberately gone away is spending the
+   * operator's quota with nothing left to escalate on its behalf. VISION
+   * §3.4's recovery model makes the cost of stopping it small: the next
+   * attempt starts from the pinned base regardless.
+   *
+   * A CRASH is different, and is deliberately not covered here — the detached
+   * children survive it, and git-derived liveness (#52) is the second source
+   * that covers exactly that window. This hook is for the ordered case.
+   */
+  async onModuleDestroy(): Promise<void> {
+    const live = [...this.runs.values()].filter((run) => run.process.isAlive());
+    if (live.length === 0) return;
+
+    this.logger.warn(`Shutting down: cancelling ${live.length} live run(s)`);
+    for (const run of live) {
+      run.cancelRequested = true;
+      run.process.kill();
+    }
+  }
+
+  // -------------------------------------------------------------------------
+
+  /**
+   * The wall clock, which is the only ceiling this runner can actually enforce.
+   *
+   * ## Why not the budget
+   *
+   * The CLI reports cost **once, on its final `result` line**. The per-message
+   * `usage` on `assistant` lines is a streaming SNAPSHOT, not a running total:
+   * in the captured transcript those lines sum to 25 output tokens while the
+   * result reports 362. Summing them would produce a number that is simply
+   * wrong, and a wrong spend figure is worse than none — it would silently
+   * license a run to keep going past a ceiling an operator believed was being
+   * applied.
+   *
+   * So a dollar ceiling cannot be enforced mid-run by this runner, and the
+   * manifest says so rather than implying otherwise. What it can do is report
+   * the real figure on the terminal event, which is what lets policy (#65,
+   * #66) refuse the NEXT attempt. Post-hoc enforcement is weaker than
+   * mid-flight enforcement, and pretending otherwise is the failure mode
+   * VISION §3.6 is about.
+   *
+   * The wall clock has none of that problem: time is observable from outside
+   * the process, which is exactly why it is the ceiling worth having.
+   */
+  private armDeadline(run: LocalRun): void {
+    const minutes = run.workOrder.wallClockTimeoutMinutes ?? this.defaultTimeoutMinutes;
+    // A ceiling of null AND no configured default means genuinely unbounded,
+    // which is a deliberate operator choice rather than an oversight.
+    if (minutes === null || minutes <= 0) return;
+
+    run.deadlineMinutes = minutes;
+    run.deadlineTimer = setTimeout(() => {
+      if (!run.process.isAlive()) return;
+      this.logger.warn(
+        `${run.workOrder.identity} exceeded its wall-clock ceiling of ${minutes} minute(s); killing`,
+      );
+      run.timedOut = true;
+      run.process.kill();
+    }, minutes * 60_000);
+
+    // The deadline must not hold the process open. A shutdown should not have
+    // to wait out the longest ceiling of anything still running.
+    run.deadlineTimer.unref();
+  }
+
+  /**
+   * Drop runs that ended long enough ago that nothing will poll them again.
+   *
+   * Without this the map grows for the life of the process — every run ever
+   * submitted, with its events, its stderr tail and its workspace path. On the
+   * single long-lived API VISION §11 designs for, that is a leak measured in
+   * weeks.
+   *
+   * The retention window is not decoration: a finished run's terminal event
+   * lives in `pending` until someone polls for it, and reaping on the tick it
+   * exits would throw away the very event that says how it ended. Anything
+   * still holding unpolled events is kept regardless of age, so the only runs
+   * dropped are ones whose ending has already been collected.
+   */
+  private reapFinishedRuns(): void {
+    const cutoff = Date.now() - FINISHED_RUN_RETENTION_MS;
+
+    for (const [identity, run] of this.runs) {
+      if (run.finishedAt === null) continue;
+      if (run.pending.length > 0) continue;
+      if (run.finishedAt.getTime() > cutoff) continue;
+      this.runs.delete(identity);
+    }
+  }
 
   /**
    * One line of `stream-json`, parsed and mapped.
@@ -406,6 +523,14 @@ export class ClaudeCodeLocalRunner implements Runner {
   private settle(run: LocalRun, outcome: NonNullable<ReturnType<SupervisedProcess['result']>>) {
     if (run.settled) return;
     run.settled = true;
+    run.finishedAt = new Date();
+
+    // The run is over; the deadline has nothing left to enforce. Left armed it
+    // would hold a reference to the whole run for as long as the ceiling.
+    if (run.deadlineTimer) {
+      clearTimeout(run.deadlineTimer);
+      run.deadlineTimer = undefined;
+    }
 
     const observed = `${run.linesObserved} output line(s)`;
     // Cost from the CLI's own result line, attached to whichever ending the
@@ -431,9 +556,13 @@ export class ClaudeCodeLocalRunner implements Runner {
         failure: {
           reason: this.failureReason(run, outcome),
           // Advisory only — VISION §3.6 leaves the decision to deterministic
-          // policy (#66). A cancelled run is the one case that is definitely
-          // not worth retrying as-is, because something decided to stop it.
-          retryable: !run.cancelRequested && outcome.kind !== 'spawn-failed',
+          // policy (#66). A run something DECIDED to stop is the one case that
+          // is definitely not worth repeating as-is; a run that merely ran out
+          // of clock might well finish on a quieter machine, so a timeout stays
+          // retryable even though the kill came from here.
+          retryable:
+            run.timedOut === true ||
+            (!run.cancelRequested && outcome.kind !== 'spawn-failed'),
         },
       }),
     );
@@ -489,6 +618,13 @@ export class ClaudeCodeLocalRunner implements Runner {
       case 'spawn-failed':
         return `could not start ${this.binary}: ${outcome.error.message}`;
       case 'signalled':
+        // A timeout and a cancel both arrive as a signal we sent, and #66
+        // treats them differently: one is a run that was too slow, the other
+        // is a run something decided to stop. Collapsing them would lose the
+        // distinction at exactly the point a retry decision needs it.
+        if (run.timedOut) {
+          return `exceeded its wall-clock ceiling of ${run.deadlineMinutes} minute(s)`;
+        }
         return run.cancelRequested
           ? `cancelled (${outcome.signal})${detail}`
           : `killed by ${outcome.signal}${detail}`;
@@ -572,6 +708,22 @@ export class ClaudeCodeLocalRunner implements Runner {
   }
 
   /**
+   * The ceiling applied to a work order that names none.
+   *
+   * A backstop rather than a policy. Most work orders should carry their own
+   * (#62 writes it), but one that does not must not mean "run forever": VISION
+   * §11 has these runs competing with a human for one quota, and the failure
+   * this whole system exists to catch is *four hours dead* — which is what an
+   * unbounded run looks like when it wedges.
+   */
+  private get defaultTimeoutMinutes(): number | null {
+    const configured = this.config.get<number | null>(
+      'runners.claudeCodeLocal.defaultTimeoutMinutes',
+    );
+    return configured ?? null;
+  }
+
+  /**
    * The permission mode the CLI runs under.
    *
    * Defaults to the narrow end. A mode broad enough to never ask is coupled to
@@ -591,6 +743,15 @@ export class ClaudeCodeLocalRunner implements Runner {
     return 'acceptEdits';
   }
 }
+
+/**
+ * How long a finished run is kept before reaping.
+ *
+ * Generous on purpose: it only has to outlast the gap between a run ending and
+ * something polling for its terminal event, and a reap that raced that poll
+ * would throw away the event saying how the run ended.
+ */
+export const FINISHED_RUN_RETENTION_MS = 15 * 60_000;
 
 export class RunnerAtCapacityError extends Error {
   constructor(message: string) {
@@ -614,4 +775,12 @@ interface LocalRun {
   /** Line kinds already logged as unmappable — see `consumeLine`. */
   loggedDrops: Set<string>;
   parseFailures: number;
+  /** Fires the wall-clock kill. Cleared the moment the process ends. */
+  deadlineTimer?: NodeJS.Timeout;
+  /** The ceiling actually applied, in minutes — the work order's or the default. */
+  deadlineMinutes?: number;
+  /** True when THIS runner stopped the run for exceeding its wall clock. */
+  timedOut?: boolean;
+  /** When the run ended, for reaping. Null while it is still going. */
+  finishedAt: Date | null;
 }
