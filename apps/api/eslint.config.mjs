@@ -50,7 +50,7 @@ export default tseslint.config(
       // them around Prisma's JSON columns and decorator plumbing. Typing them
       // is a change to runtime-adjacent code, which #30 explicitly does not
       // want bundled with the linter that found them ("do not include
-      // unrelated refactors"). Tracked separately — turn this on with that
+      // unrelated refactors"). Tracked in #186 — turn this on with that
       // work, not before, so it lands green.
       '@typescript-eslint/no-explicit-any': 'off',
     },

@@ -20,7 +20,8 @@ import globals from 'globals';
  * genuine issues here. Every one of them is a behavioural refactor of a
  * component, not a lint fix, so enabling them now would mean either a red
  * build or a large unreviewed change riding along with a tooling PR. They are
- * tracked separately. `rules-of-hooks` and `exhaustive-deps` — the classic
+ * tracked in #185, which also asks whether any of the set-state-in-effect
+ * findings explains #169. `rules-of-hooks` and `exhaustive-deps` — the classic
  * contract, and the two that catch real bugs cheaply — are on and blocking.
  */
 export default tseslint.config(
@@ -59,7 +60,7 @@ export default tseslint.config(
       // Off, not absent: a Vite fast-refresh ergonomics rule, and the 23 files
       // it flags export a helper or a type alongside their component. Fixing
       // it means moving exports between modules across the app — a refactor
-      // #30 does not want bundled with the linter. Tracked separately.
+      // #30 does not want bundled with the linter.
       'react-refresh/only-export-components': 'off',
 
       '@typescript-eslint/no-unused-vars': [
