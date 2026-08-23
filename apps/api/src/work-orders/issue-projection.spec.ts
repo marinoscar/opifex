@@ -257,17 +257,6 @@ P1
       expect(result).toMatchObject({ eligible: false, reason: 'not-marked-ready' });
     });
 
-    it('lets a hold outrank ready', () => {
-      // A human's decision. Honouring it here means a hold applied between
-      // ticks stops the work order being created at all, rather than being
-      // created and then suppressed.
-      const result = project({
-        issue: issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] }),
-      });
-
-      expect(result).toMatchObject({ eligible: false, reason: 'held' });
-    });
-
     it('skips an issue with no proposed solution', () => {
       const noSolution = BODY.replace(/## Proposed solution[\s\S]*?(?=## Acceptance)/, '');
       const result = project({ issue: issue({ body: noSolution }) });
@@ -286,6 +275,51 @@ P1
         eligible: false,
         reason: 'missing-acceptance-criteria',
       });
+    });
+  });
+
+  describe('a hold is recorded, not a refusal', () => {
+    const held = () =>
+      project({ issue: issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] }) });
+
+    it('still projects a work order', () => {
+      // `WorkOrderStatus.held` means "withheld by policy", which is a fact
+      // about a work order that EXISTS. Skipping the issue outright — which
+      // is what this function did first — leaves an operator unable to tell a
+      // paused issue from one the factory could not read.
+      expect(held().eligible).toBe(true);
+    });
+
+    it('marks it held so the writer can withhold it', () => {
+      const result = held();
+      if (!result.eligible) throw new Error('expected eligible');
+
+      expect(result.held).toBe(true);
+    });
+
+    it('projects the same document held or not', () => {
+      // The hold is a status, not a change to what was asked for. If lifting
+      // it produced a different work order, the pause would silently rewrite
+      // the work.
+      const a = held();
+      const b = project();
+      if (!a.eligible || !b.eligible) throw new Error('expected eligible');
+
+      expect(a.workOrder).toEqual(b.workOrder);
+    });
+
+    it('is not held when only ready is present', () => {
+      const result = project();
+      if (!result.eligible) throw new Error('expected eligible');
+
+      expect(result.held).toBe(false);
+    });
+
+    it('needs ready as well — a hold alone is not a candidate', () => {
+      // A hold does not make an unmarked issue into work.
+      const result = project({ issue: issue({ inputLabels: [INPUT_LABELS.HOLD] }) });
+
+      expect(result).toMatchObject({ eligible: false, reason: 'not-marked-ready' });
     });
   });
 

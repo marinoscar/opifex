@@ -1,7 +1,11 @@
 import { INPUT_LABELS } from '../github/labels/factory-labels';
 import type { NormalizedIssue } from '../github/read/github-read.types';
 import { PrismaService } from '../prisma/prisma.service';
-import { WorkOrderProjectionService } from './work-order-projection.service';
+import {
+  WorkOrderProjectionService,
+  digestOf,
+  type ExistingWorkOrder,
+} from './work-order-projection.service';
 
 /**
  * Prisma is a double; the projection is not.
@@ -59,19 +63,23 @@ P1
 
   let findUnique: jest.Mock;
   let create: jest.Mock;
+  let update: jest.Mock;
   let service: WorkOrderProjectionService;
 
   beforeEach(() => {
     findUnique = jest.fn().mockResolvedValue(null);
     create = jest.fn().mockResolvedValue({});
+    update = jest.fn().mockResolvedValue({});
 
     service = new WorkOrderProjectionService({
-      workOrder: { findUnique, create },
+      workOrder: { findUnique, create, update },
     } as unknown as PrismaService);
   });
 
-  const project = (issues: NormalizedIssue[] = [issue()]) =>
-    service.project({ repository: REPOSITORY, issues, baseCommit: BASE });
+  const project = (
+    issues: NormalizedIssue[] = [issue()],
+    existingWorkOrders: ExistingWorkOrder[] = [],
+  ) => service.project({ repository: REPOSITORY, issues, existingWorkOrders, baseCommit: BASE });
 
   describe('writing rows', () => {
     it('creates a queued work order for an eligible issue', async () => {
@@ -191,13 +199,199 @@ P1
       expect(create).not.toHaveBeenCalled();
     });
 
-    it('never writes a row for a held issue', async () => {
-      const result = await project([
-        issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] }),
-      ]);
+    it('carries the body digest on a rejection', async () => {
+      // So the caller can tell "I have already said this" from "they edited it
+      // and it is still wrong" without re-reading the issue.
+      const placeholder = BODY.replace(
+        /## Acceptance criteria[\s\S]*?(?=## Affected)/,
+        '## Acceptance criteria\n\n- [ ] TBD\n\n',
+      );
+
+      const result = await project([issue({ body: placeholder })]);
+
+      expect(result.rejected[0].bodyDigest).toBe(digestOf(placeholder));
+    });
+  });
+
+  describe('a held issue', () => {
+    const heldIssue = () => issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] });
+
+    it('is written as a held work order rather than skipped', async () => {
+      // WorkOrderStatus.held means "withheld by policy", which is a fact about
+      // a work order that EXISTS. Skipping the issue leaves an operator unable
+      // to tell paused work from work the factory could not read.
+      const result = await project([heldIssue()]);
+
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(create.mock.calls[0][0].data.status).toBe('held');
+      expect(result.heldOnCreate).toBe(1);
+    });
+
+    it('has no queuedAt, so lifting the hold does not jump the queue', async () => {
+      // queuedAt orders the dispatch queue. A held work order stamped with a
+      // queue time would outrank work that has actually been waiting.
+      await project([heldIssue()]);
+
+      expect(create.mock.calls[0][0].data.queuedAt).toBeNull();
+    });
+
+    it('carries the same document as an unheld one', async () => {
+      await project([heldIssue()]);
+      const heldData = create.mock.calls[0][0].data;
+
+      create.mockClear();
+      await project();
+      const queuedData = create.mock.calls[0][0].data;
+
+      expect(heldData.identity).toBe(queuedData.identity);
+      expect(heldData.taskSpec).toBe(queuedData.taskSpec);
+      expect(heldData.acceptanceCriteria).toEqual(queuedData.acceptanceCriteria);
+    });
+  });
+
+  describe('a hold applied or lifted after the work order exists', () => {
+    const existing = (status: string): ExistingWorkOrder => ({
+      id: 'wo-uuid',
+      issueNumber: 312,
+      status,
+    });
+
+    it('holds a queued work order when the label appears', async () => {
+      // VISION §4: you can always fix the factory by editing GitHub. A hold
+      // that only worked if applied before the creating tick would make that
+      // false in the one case where somebody is urgently stopping something.
+      const result = await project(
+        [issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] })],
+        [existing('queued')],
+      );
+
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(update.mock.calls[0][0]).toMatchObject({
+        where: { id: 'wo-uuid' },
+        data: { status: 'held', queuedAt: null },
+      });
+      expect(result.holdsApplied).toBe(1);
+    });
+
+    it('releases a held work order when the label goes away', async () => {
+      // A hold that could be applied and never lifted is a trap.
+      const result = await project([issue()], [existing('held')]);
+
+      expect(update.mock.calls[0][0].data.status).toBe('queued');
+      expect(update.mock.calls[0][0].data.queuedAt).toBeInstanceOf(Date);
+      expect(result.holdsLifted).toBe(1);
+    });
+
+    it('does nothing when the row already agrees with the label', async () => {
+      await project([issue()], [existing('queued')]);
+
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it.each(['dispatched', 'succeeded', 'failed', 'quarantined', 'superseded', 'cancelled'])(
+      'never touches a %s work order',
+      async (status) => {
+        // A dispatched work order has a run against it and an authorization
+        // record posted for it. Flipping that to held because a label appeared
+        // would make the record describe something no longer true, which is
+        // the one thing #63 exists to prevent. Stopping a run in flight is a
+        // cancel (#66), not a status edit.
+        await project(
+          [issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] })],
+          [existing(status)],
+        );
+
+        expect(update).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  describe('an issue that already has a work order', () => {
+    const existing: ExistingWorkOrder = { id: 'wo-uuid', issueNumber: 312, status: 'queued' };
+
+    it('is never projected again, even at a new base commit', async () => {
+      // #155 left this open. Answering it: no. Re-projecting at the current
+      // HEAD mints a new identity every time the default branch moves — on a
+      // repository that merges twenty times a day, every ready issue would
+      // accumulate twenty authorizations and, once dispatch is on, twenty
+      // runs. That is not a queue filling up, it is a bill.
+      const result = await service.project({
+        repository: REPOSITORY,
+        issues: [issue()],
+        existingWorkOrders: [existing],
+        baseCommit: 'ffffffffffffffffffffffffffffffffffffffff',
+      });
 
       expect(create).not.toHaveBeenCalled();
-      expect(result.skipped.held).toBe(1);
+      expect(findUnique).not.toHaveBeenCalled();
+      expect(result.alreadyPresent).toBe(1);
+    });
+
+    it('does not even consult the generator for it', async () => {
+      // A body that would be REJECTED must not produce a fresh complaint on
+      // every tick once the work order already exists.
+      const placeholder = BODY.replace(
+        /## Acceptance criteria[\s\S]*?(?=## Affected)/,
+        '## Acceptance criteria\n\n- [ ] TBD\n\n',
+      );
+
+      const result = await project([issue({ body: placeholder })], [existing]);
+
+      expect(result.rejected).toHaveLength(0);
+    });
+
+    it('still projects a DIFFERENT issue in the same repository', async () => {
+      const result = await project([issue({ number: 312 }), issue({ number: 313 })], [existing]);
+
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(result.created).toHaveLength(1);
+      expect(result.created[0].issueNumber).toBe(313);
+    });
+  });
+
+  describe('needsBaseCommit', () => {
+    it('is false when every ready issue already has a work order', async () => {
+      // The steady state, and the reason running this every 60 seconds is
+      // affordable: resolving HEAD is a GitHub request against the budget
+      // VISION §11 reserves for the operator.
+      expect(
+        WorkOrderProjectionService.needsBaseCommit(
+          [issue()],
+          [{ id: 'wo-uuid', issueNumber: 312, status: 'queued' }],
+        ),
+      ).toBe(false);
+    });
+
+    it('is true for a ready issue with no work order', () => {
+      expect(WorkOrderProjectionService.needsBaseCommit([issue()], [])).toBe(true);
+    });
+
+    it('is false when nothing is marked ready', () => {
+      expect(
+        WorkOrderProjectionService.needsBaseCommit([issue({ inputLabels: [] })], []),
+      ).toBe(false);
+    });
+
+    it('is false for a closed issue', () => {
+      expect(
+        WorkOrderProjectionService.needsBaseCommit([issue({ state: 'closed' })], []),
+      ).toBe(false);
+    });
+
+    it('is TRUE for a held issue with no work order', () => {
+      // A held issue still produces a row — a held one — so the base commit is
+      // still needed. Treating a hold as "nothing to do" here would disagree
+      // with projectIssue and silently skip the work.
+      expect(
+        WorkOrderProjectionService.needsBaseCommit(
+          [issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] })],
+          [],
+        ),
+      ).toBe(true);
+    });
+
+    it('is false for an empty repository', () => {
+      expect(WorkOrderProjectionService.needsBaseCommit([], [])).toBe(false);
     });
   });
 

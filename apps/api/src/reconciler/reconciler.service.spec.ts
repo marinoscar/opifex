@@ -6,6 +6,7 @@ import { RateLimitService } from '../github/rate-limit.service';
 import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoriesService } from '../repositories/repositories.service';
+import { WorkOrderProjectionService } from '../work-orders/work-order-projection.service';
 import { ReconcilerService } from './reconciler.service';
 import { ReconcileLogService } from './log/reconcile-log.service';
 import { TickLeaseService } from './tick-lease.service';
@@ -15,17 +16,41 @@ function repository(overrides: Record<string, unknown> = {}) {
     id: '11111111-1111-1111-1111-111111111111',
     owner: 'acme',
     name: 'app',
+    defaultBranch: 'main',
     lastObservedAt: null,
+    budgetCeilingUsd: null,
+    wallClockTimeoutMinutes: null,
+    specFeedbackEnabled: false,
     ...overrides,
+  };
+}
+
+/**
+ * A projection pass that produced nothing.
+ *
+ * These suites drive the tick with a live GitHub double and a Prisma double;
+ * the projection has its own suite, and letting it run here would make every
+ * label assertion depend on a work order write.
+ */
+function emptyProjection() {
+  return {
+    created: [],
+    heldOnCreate: 0,
+    alreadyPresent: 0,
+    holdsApplied: 0,
+    holdsLifted: 0,
+    rejected: [],
+    skipped: {},
   };
 }
 
 describe('ReconcilerService', () => {
   let lease: { withLease: jest.Mock };
   let repositories: { listObserved: jest.Mock };
-  let github: { listIssues: jest.Mock };
+  let github: { listIssues: jest.Mock; listCommits: jest.Mock };
   let http: { canSpend: jest.Mock };
   let rateLimit: RateLimitService;
+  let workOrders: { project: jest.Mock };
   let prisma: {
     repository: { update: jest.Mock };
     workOrder: { findMany: jest.Mock };
@@ -48,6 +73,9 @@ describe('ReconcilerService', () => {
       // Recording is a separate concern from reconciling — these suites are
       // about what the tick DECIDES, and #50's own spec covers persistence.
       { record: jest.fn().mockResolvedValue(undefined) } as unknown as ReconcileLogService,
+      // Projection is its own suite (`work-order-projection.service.spec.ts`).
+      // A double here keeps these tests about what the TICK does with it.
+      workOrders as unknown as WorkOrderProjectionService,
     );
   }
 
@@ -63,7 +91,9 @@ describe('ReconcilerService', () => {
     repositories = { listObserved: jest.fn().mockResolvedValue([repository()]) };
     github = {
       listIssues: jest.fn().mockResolvedValue({ issues: [], truncated: false, allFromCache: false }),
+      listCommits: jest.fn().mockResolvedValue([{ sha: 'a'.repeat(40) }]),
     };
+    workOrders = { project: jest.fn().mockResolvedValue(emptyProjection()) };
     http = { canSpend: jest.fn().mockReturnValue(true) };
     rateLimit = new RateLimitService();
     prisma = {
@@ -422,6 +452,175 @@ describe('ReconcilerService', () => {
 
     it('reports an unknown budget as null rather than zero', async () => {
       expect((await build().tick()).rateLimitRemaining).toBeNull();
+    });
+  });
+
+  describe('projecting work orders (#155)', () => {
+    const READY_ISSUE = {
+      number: 312,
+      title: 'Add a permit search prompt builder',
+      body: 'anything',
+      state: 'open' as const,
+      author: 'marinoscar',
+      labels: [],
+      inputLabels: ['factory:ready'],
+      unknownInputLabels: [],
+      observedMirrorLabels: [],
+    };
+
+    function withIssues(issues: unknown[]): void {
+      github.listIssues.mockResolvedValue({ issues, truncated: false, allFromCache: false });
+    }
+
+    it('pins the tip of the default branch onto the pass', async () => {
+      // #62: the base commit is pinned at generation and never resolved later.
+      withIssues([READY_ISSUE]);
+
+      await build().tick();
+
+      expect(github.listCommits).toHaveBeenCalledWith(
+        { owner: 'acme', name: 'app' },
+        expect.objectContaining({ branch: 'main' }),
+      );
+      expect(workOrders.project.mock.calls[0][0].baseCommit).toBe('a'.repeat(40));
+    });
+
+    it('resolves the head ONCE for a repository, not once per issue', async () => {
+      // Two issues projected in the same tick must not disagree about what
+      // "now" was — a race that only shows up on a repository someone is
+      // actively merging into.
+      withIssues([READY_ISSUE, { ...READY_ISSUE, number: 313 }]);
+
+      await build().tick();
+
+      expect(github.listCommits).toHaveBeenCalledTimes(1);
+      expect(workOrders.project).toHaveBeenCalledTimes(1);
+    });
+
+    it('spends no GitHub request when nothing is marked ready', async () => {
+      // VISION §11 holds a rate-limit reserve back for the operator. Resolving
+      // HEAD every 60 seconds to discover there is nothing to do would be a
+      // slow leak of exactly that reserve.
+      withIssues([{ ...READY_ISSUE, inputLabels: [] }]);
+
+      await build().tick();
+
+      expect(github.listCommits).not.toHaveBeenCalled();
+      expect(workOrders.project).not.toHaveBeenCalled();
+    });
+
+    it('spends no GitHub request when every ready issue already has one', async () => {
+      // The steady state, and the reason this is affordable on every tick.
+      withIssues([READY_ISSUE]);
+      prisma.workOrder.findMany.mockResolvedValue([
+        { id: 'wo', identity: 'wo_app_312_aaaaaaa_a1', issueNumber: 312, attempt: 1, status: 'queued', runs: [] },
+      ]);
+
+      await build().tick();
+
+      expect(github.listCommits).not.toHaveBeenCalled();
+    });
+
+    it('still runs the pass when dispatch is disabled', async () => {
+      // A queued work order is inert without DISPATCH_ENABLED, and seeing what
+      // the factory WOULD work on is the artifact VISION §12 asks the
+      // observation week to produce.
+      repositories.listObserved.mockResolvedValue([
+        { ...repository(), dispatchEnabled: false },
+      ]);
+      withIssues([READY_ISSUE]);
+
+      await build().tick();
+
+      expect(workOrders.project).toHaveBeenCalled();
+    });
+
+    it('carries rejections off the tick rather than acting on them', async () => {
+      // The component that decides an issue is unbuildable must not be the one
+      // that comments on it. The task is where computing meets acting.
+      withIssues([READY_ISSUE]);
+      workOrders.project.mockResolvedValue({
+        ...emptyProjection(),
+        rejected: [
+          { issueNumber: 312, problems: [], message: 'TBD is not a criterion', bodyDigest: 'abc' },
+        ],
+      });
+
+      const record = await build().tick();
+
+      expect(record.rejections).toHaveLength(1);
+      expect(record.rejections[0]).toMatchObject({
+        issueNumber: 312,
+        repository: { owner: 'acme', name: 'app' },
+      });
+    });
+
+    it('tells the task whether the repository opted in to feedback', async () => {
+      withIssues([READY_ISSUE]);
+      repositories.listObserved.mockResolvedValue([
+        { ...repository(), specFeedbackEnabled: true },
+      ]);
+      workOrders.project.mockResolvedValue({
+        ...emptyProjection(),
+        rejected: [{ issueNumber: 312, problems: [], message: 'no', bodyDigest: 'abc' }],
+      });
+
+      const record = await build().tick();
+
+      expect(record.rejections[0].feedbackEnabled).toBe(true);
+    });
+
+    it('counts what it created', async () => {
+      withIssues([READY_ISSUE]);
+      workOrders.project.mockResolvedValue({
+        ...emptyProjection(),
+        created: [{ identity: 'wo_app_312_aaaaaaa_a1' }],
+      });
+
+      const record = await build().tick();
+
+      expect(record.workOrdersCreated).toBe(1);
+    });
+
+    it('does not fail the tick when the head cannot be resolved', async () => {
+      // The repository observed fine. Failing the tick over it would take down
+      // the reconciliation of every repository behind it in the sweep.
+      withIssues([READY_ISSUE]);
+      github.listCommits.mockRejectedValue(new Error('502 from GitHub'));
+
+      const record = await build().tick();
+
+      expect(record.outcome).toBe('completed');
+      expect(record.failures).toEqual([]);
+    });
+
+    it('projects nothing for a repository with no commits yet', async () => {
+      // A newly created repository is a real thing, not an error. There is
+      // simply nothing to base work on.
+      withIssues([READY_ISSUE]);
+      github.listCommits.mockResolvedValue([]);
+
+      const record = await build().tick();
+
+      expect(workOrders.project).not.toHaveBeenCalled();
+      expect(record.outcome).toBe('completed');
+    });
+
+    it('does not fail the tick when the projection itself throws', async () => {
+      withIssues([READY_ISSUE]);
+      workOrders.project.mockRejectedValue(new Error('database gone'));
+
+      const record = await build().tick();
+
+      expect(record.outcome).toBe('completed');
+      expect(record.workOrdersCreated).toBe(0);
+    });
+
+    it('records zero on a tick that never swept', async () => {
+      const record = await build({ 'reconciler.enabled': false }).tick();
+
+      expect(record.workOrdersCreated).toBe(0);
+      expect(record.rejections).toEqual([]);
     });
   });
 });

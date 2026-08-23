@@ -386,6 +386,19 @@ model Repository {
   /// on for a label to be written.
   mirrorLabelsEnabled Boolean @default(false) @map("mirror_labels_enabled")
 
+  /// Opifex may tell an issue author why their spec was rejected (#155).
+  ///
+  /// A FOURTH switch rather than a reuse of `mirrorLabelsEnabled`, because the
+  /// two writes differ in kind: a mirror label restates a status the operator
+  /// already asked to see, and this is unsolicited prose addressed to a human
+  /// on their own issue. An operator who turned on labels did not thereby ask
+  /// Opifex to start giving people feedback, and VISION §12's staged exit is
+  /// only meaningful if each new kind of outward write is its own stage.
+  ///
+  /// Gated a second time by the global `GITHUB_WRITES_ENABLED`, like every
+  /// other write.
+  specFeedbackEnabled Boolean @default(false) @map("spec_feedback_enabled")
+
   /// Per-run spend ceiling in USD, inherited by work orders that do not set
   /// their own. Null means "no repository-level ceiling"; the global ceiling
   /// still applies.
@@ -404,8 +417,9 @@ model Repository {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  project    Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  workOrders WorkOrder[]
+  project        Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  workOrders     WorkOrder[]
+  specRejections IssueSpecRejection[]
 
   @@unique([owner, name])
   @@index([projectId])
@@ -414,6 +428,63 @@ model Repository {
   // table to order.
   @@index([observeEnabled, lastObservedAt])
   @@map("repositories")
+}
+
+/// What Opifex has already told an issue author about their spec.
+///
+/// ## Why a table and not a lookup
+///
+/// The reconciler recomputes from scratch every 60 seconds, so an issue whose
+/// acceptance criteria are placeholder is rejected again on every tick. Posting
+/// a comment each time would bury the issue under the feedback meant to help
+/// it — #155 names this as the thing to get right rather than discover.
+///
+/// The alternative is reading the issue's existing comments to look for a
+/// marker, which is what #63 does for the authorization record. That costs a
+/// GitHub request per rejected issue per tick, forever, against the budget
+/// VISION §11 reserves for the operator's own use. A row costs nothing and the
+/// answer never expires.
+///
+/// ## Why the body digest is the key, not the issue number
+///
+/// Keyed on the issue alone, an author who reads the feedback, edits the body
+/// and gets it wrong again would be met with silence — the worst possible
+/// response to someone doing exactly what was asked. The digest means an
+/// unchanged body is never re-reported and a changed one always is.
+///
+/// ## Written only after the comment lands
+///
+/// This records what was SAID, not what was found. A rejection discovered
+/// while `specFeedbackEnabled` was off, or one whose post failed, leaves no
+/// row — so enabling the flag later delivers the feedback instead of
+/// swallowing it.
+model IssueSpecRejection {
+  id           String @id @default(uuid()) @db.Uuid
+  repositoryId String @map("repository_id") @db.Uuid
+
+  issueNumber Int @map("issue_number")
+
+  /// SHA-256 of the issue body the rejection was computed from.
+  bodyDigest String @map("body_digest")
+
+  /// The problems, as the author was told them. Kept so the operator can see
+  /// what Opifex actually said without reading GitHub.
+  message String
+
+  /// When the comment was successfully posted.
+  commentedAt DateTime @default(now()) @map("commented_at") @db.Timestamptz
+  /// The comment itself, for the provenance graph (VISION §5).
+  commentUrl  String?  @map("comment_url")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  /// One row per issue, updated in place when the body changes. The tick asks
+  /// "have I told them about THIS body", which is a point lookup on this key.
+  @@unique([repositoryId, issueNumber])
+  @@map("issue_spec_rejections")
 }
 
 // =============================================================================
@@ -483,7 +554,7 @@ model WorkOrder {
 
   /// The GitHub issue this work order projects. A pointer into the record,
   /// not a copy of it.
-  issueNumber Int    @map("issue_number")
+  issueNumber Int     @map("issue_number")
   /// The issue's URL and title, copied at projection time.
   ///
   /// Copies rather than pointers, and deliberately: `work-order.schema.json`
@@ -493,16 +564,16 @@ model WorkOrder {
   /// here would mean a work order survives a restart as a row nothing can
   /// dispatch. The title moves; that is fine, because what was authorised is
   /// what the authorisation record says, not what the issue says today.
-  issueUrl    String  @map("issue_url") @default("")
+  issueUrl    String  @default("") @map("issue_url")
   issueTitle  String? @map("issue_title")
   /// The pinned base commit, full 40-character SHA. The identity and branch
   /// carry the 7-character prefix; this is the real thing a runner checks out.
-  baseCommit  String @map("base_commit")
+  baseCommit  String  @map("base_commit")
   /// 1-based. Bumped by abandon-and-re-run, never mutated in place.
-  attempt     Int    @default(1)
+  attempt     Int     @default(1)
   /// `factory/312-a3f91c2-a1`. Unique for the same reason `identity` is: two
   /// work orders must never target one branch.
-  branch      String @unique
+  branch      String  @unique
 
   status WorkOrderStatus @default(pending)
 
@@ -526,7 +597,7 @@ model WorkOrder {
   /// Free strings at the column, a closed union at the boundary
   /// (`RunnerNeed`). Postgres cannot express the union, and widening it later
   /// must not require a migration on a table that holds authorisation records.
-  needs              String[] @default([])
+  needs String[] @default([])
 
   /// Resolved ceilings - the repository defaults are copied in at projection
   /// time rather than read through, so changing a repository's budget cannot

@@ -29,6 +29,7 @@ function repositoryRow(overrides: Record<string, unknown> = {}) {
     observeEnabled: true,
     dispatchEnabled: false,
     mirrorLabelsEnabled: false,
+    specFeedbackEnabled: false,
     budgetCeilingUsd: null,
     wallClockTimeoutMinutes: null,
     pathConstraints: [],
@@ -112,6 +113,25 @@ describe('RepositoriesService', () => {
       const result = await service.register({ owner: 'acme', name: 'app' });
 
       expect(result.mirrorLabelsEnabled).toBe(false);
+    });
+
+    it('defaults spec feedback OFF too', async () => {
+      // Its own flag, and its own flip. An operator who asked for status
+      // labels did not thereby ask Opifex to start writing prose to humans on
+      // their own issues (#155).
+      const result = await service.register({ owner: 'acme', name: 'app' });
+
+      expect(result.specFeedbackEnabled).toBe(false);
+    });
+
+    it('honours an explicit spec-feedback choice', async () => {
+      const result = await service.register({
+        owner: 'acme',
+        name: 'app',
+        specFeedbackEnabled: true,
+      });
+
+      expect(result.specFeedbackEnabled).toBe(true);
     });
 
     it('honours an explicit dispatch choice', async () => {

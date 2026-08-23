@@ -14,6 +14,7 @@ import { RateLimitService } from '../github/rate-limit.service';
 import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoriesService } from '../repositories/repositories.service';
+import { WorkOrderProjectionService } from '../work-orders/work-order-projection.service';
 import { ReconcilerService } from './reconciler.service';
 import { ReconcileLogService } from './log/reconcile-log.service';
 import { TickLeaseService } from './tick-lease.service';
@@ -44,6 +45,25 @@ function ghIssue(number: number, inputLabels: string[]) {
     url: `https://github.com/acme/app/issues/${number}`,
     createdAt: new Date('2026-08-01T00:00:00Z'),
     updatedAt: new Date('2026-08-02T00:00:00Z'),
+  };
+}
+
+/**
+ * A projection pass that produced nothing.
+ *
+ * These suites drive the tick with a live GitHub double and a Prisma double;
+ * the projection has its own suite, and letting it run here would make every
+ * label assertion depend on a work order write.
+ */
+function emptyProjection() {
+  return {
+    created: [],
+    heldOnCreate: 0,
+    alreadyPresent: 0,
+    holdsApplied: 0,
+    holdsLifted: 0,
+    rejected: [],
+    skipped: {},
   };
 }
 
@@ -117,6 +137,11 @@ describe('factory input labels, through a whole tick', () => {
       // Recording is a separate concern from reconciling — these suites are
       // about what the tick DECIDES, and #50's own spec covers persistence.
       { record: jest.fn().mockResolvedValue(undefined) } as unknown as ReconcileLogService,
+      // These tests are about what an input LABEL makes the tick decide. The
+      // projection has its own suite; a double keeps a work order write out of
+      // assertions about intents.
+      { project: jest.fn().mockResolvedValue(emptyProjection()) } as unknown as
+        WorkOrderProjectionService,
     );
   });
 

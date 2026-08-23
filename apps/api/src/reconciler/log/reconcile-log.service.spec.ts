@@ -13,6 +13,8 @@ function tick(overrides: Partial<TickRecord> = {}): TickRecord {
     allFromCache: false,
     rateLimitRemaining: 4999,
     projections: [{ repository: 'acme/app', issues: [] }],
+    workOrdersCreated: 0,
+    rejections: [],
     actions: [],
     ...overrides,
   };

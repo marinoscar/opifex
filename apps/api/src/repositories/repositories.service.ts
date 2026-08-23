@@ -117,6 +117,8 @@ export class RepositoriesService {
         dispatchEnabled: dto.dispatchEnabled ?? false,
         // Same reasoning as dispatch: absence of a choice means off.
         mirrorLabelsEnabled: dto.mirrorLabelsEnabled ?? false,
+        // Off by default, like every other outward write.
+        specFeedbackEnabled: dto.specFeedbackEnabled ?? false,
         budgetCeilingUsd: dto.budgetCeilingUsd ?? null,
         wallClockTimeoutMinutes: dto.wallClockTimeoutMinutes ?? null,
         pathConstraints: dto.pathConstraints ?? [],
@@ -159,6 +161,9 @@ export class RepositoriesService {
         ...(dto.dispatchEnabled !== undefined && { dispatchEnabled: dto.dispatchEnabled }),
         ...(dto.mirrorLabelsEnabled !== undefined && {
           mirrorLabelsEnabled: dto.mirrorLabelsEnabled,
+        }),
+        ...(dto.specFeedbackEnabled !== undefined && {
+          specFeedbackEnabled: dto.specFeedbackEnabled,
         }),
         ...(dto.budgetCeilingUsd !== undefined && { budgetCeilingUsd: dto.budgetCeilingUsd }),
         ...(dto.wallClockTimeoutMinutes !== undefined && {
@@ -270,6 +275,7 @@ function toResponse(repository: Repository) {
     observeEnabled: repository.observeEnabled,
     dispatchEnabled: repository.dispatchEnabled,
     mirrorLabelsEnabled: repository.mirrorLabelsEnabled,
+    specFeedbackEnabled: repository.specFeedbackEnabled,
     budgetCeilingUsd: repository.budgetCeilingUsd?.toString() ?? null,
     wallClockTimeoutMinutes: repository.wallClockTimeoutMinutes,
     pathConstraints: repository.pathConstraints,

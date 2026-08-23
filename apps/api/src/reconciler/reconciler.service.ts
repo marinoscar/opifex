@@ -17,8 +17,9 @@ import type {
   ObservedState,
   ObservedWorkOrder,
 } from './projection/desired-state.types';
-import type { TickFailure, TickRecord, TickOutcome } from './reconciler.types';
+import type { TickFailure, TickRecord, TickOutcome, TickRejection } from './reconciler.types';
 import { TickLeaseService } from './tick-lease.service';
+import { WorkOrderProjectionService } from '../work-orders/work-order-projection.service';
 
 /**
  * The control loop.
@@ -41,6 +42,15 @@ import { TickLeaseService } from './tick-lease.service';
  * list to the executor separately. The component that decides what should
  * happen remains incapable of making it happen, which is the property VISION
  * §12's observation week actually rests on.
+ *
+ * "Cannot write" means **cannot write to GitHub**, which is the boundary that
+ * matters: it is the one an observation week is observing. This service does
+ * write to its own database — `lastObservedAt`, and since #155 the work orders
+ * it projects — because those are the tick's own bookkeeping. A queued work
+ * order is inert without `DISPATCH_ENABLED`, and seeing what the factory WOULD
+ * work on is precisely the artifact VISION §12 asks the week to produce. The
+ * rejection comments those projections imply are the outward half, and they
+ * leave on the tick record for `ReconcilerTask` to post.
  */
 @Injectable()
 export class ReconcilerService {
@@ -60,6 +70,7 @@ export class ReconcilerService {
     private readonly rateLimit: RateLimitService,
     private readonly prisma: PrismaService,
     private readonly log: ReconcileLogService,
+    private readonly workOrders: WorkOrderProjectionService,
   ) {
     this.rateLimitFloor = this.config.get<number>('github.rateLimitReserve') ?? 100;
   }
@@ -99,7 +110,7 @@ export class ReconcilerService {
     const startedAt = new Date();
 
     if (!this.enabled) {
-      return this.finish(startedAt, 'skipped-disabled', 0, [], true, [], []);
+      return this.finish(startedAt, 'skipped-disabled', nothingObserved());
     }
 
     // Checked BEFORE taking the lease: a tick that cannot afford to read
@@ -108,18 +119,17 @@ export class ReconcilerService {
       this.logger.warn(
         `Reconciler tick skipped: GitHub budget at or below the reserve of ${this.rateLimitFloor}`,
       );
-      return this.finish(startedAt, 'skipped-rate-limited', 0, [], true, [], []);
+      return this.finish(startedAt, 'skipped-rate-limited', nothingObserved());
     }
 
     const outcome = await this.lease.withLease(() => this.observeAll());
 
     if (!outcome.acquired) {
-      return this.finish(startedAt, 'skipped-locked', 0, [], true, [], []);
+      return this.finish(startedAt, 'skipped-locked', nothingObserved());
     }
 
-    const { observed, failures, allFromCache, projections, actions } = outcome.result;
-    const status: TickOutcome = failures.length > 0 ? 'partial' : 'completed';
-    return this.finish(startedAt, status, observed, failures, allFromCache, projections, actions);
+    const status: TickOutcome = outcome.result.failures.length > 0 ? 'partial' : 'completed';
+    return this.finish(startedAt, status, outcome.result);
   }
 
   /**
@@ -130,19 +140,15 @@ export class ReconcilerService {
    * a reconciler cares about — a tick that takes four seconds instead of one
    * is fine, and one that trips a secondary rate limit is not.
    */
-  private async observeAll(): Promise<{
-    observed: number;
-    failures: TickFailure[];
-    allFromCache: boolean;
-    projections: DesiredState[];
-    actions: ReconcileAction[];
-  }> {
+  private async observeAll(): Promise<SweepResult> {
     const repositories = await this.repositories.listObserved();
     const failures: TickFailure[] = [];
     const projections: DesiredState[] = [];
     const actions: ReconcileAction[] = [];
+    const rejections: TickRejection[] = [];
     let observed = 0;
     let allFromCache = true;
+    let workOrdersCreated = 0;
 
     for (const repository of repositories) {
       const name = `${repository.owner}/${repository.name}`;
@@ -199,6 +205,16 @@ export class ReconcilerService {
         // flag; nothing here can act on these.
         actions.push(...computeActions(state, projection));
 
+        // Turn eligible issues into work orders. AFTER the desired-state
+        // projection above, deliberately: that projection reads the work
+        // orders as they were at the start of the tick, and a row created
+        // mid-tick would make its conclusions describe a state that did not
+        // exist when it observed. The new work order is picked up by the next
+        // tick, which is what a reconciler recomputing from scratch means.
+        const projected = await this.projectWorkOrders(repository, state.issues, workOrders);
+        workOrdersCreated += projected.created;
+        rejections.push(...projected.rejections);
+
         // Recorded so the next tick starts with the repository that has waited
         // longest — `listObserved` orders on this column.
         await this.prisma.repository.update({
@@ -222,7 +238,118 @@ export class ReconcilerService {
       }
     }
 
-    return { observed, failures, allFromCache, projections, actions };
+    return { observed, failures, allFromCache, projections, actions, workOrdersCreated, rejections };
+  }
+
+  /**
+   * Turn this repository's eligible issues into work order rows.
+   *
+   * ## Why the base commit is resolved here and not per issue
+   *
+   * #62 requires the base commit be pinned at generation and never resolved
+   * later. Resolving it once per repository — rather than once per issue —
+   * additionally means two issues projected in the same tick cannot disagree
+   * about what "now" was, which would otherwise be a race that only shows up
+   * on a repository someone is actively merging into.
+   *
+   * ## Why it is often not resolved at all
+   *
+   * It costs a GitHub request, and VISION §11 holds a rate-limit reserve back
+   * for the operator's own interactive use. In the steady state every ready
+   * issue already has a work order, so `needsBaseCommit` is false and this
+   * whole pass costs nothing — which is what makes running it on a 60-second
+   * tick affordable rather than a slow leak of the reserve.
+   *
+   * ## Never throws
+   *
+   * A repository whose HEAD cannot be resolved still observed fine, and
+   * failing the tick over it would take down the reconciliation of every
+   * repository behind it in the sweep. The reason is logged and the next tick
+   * tries again — there is nothing to lose by waiting 60 seconds.
+   */
+  private async projectWorkOrders(
+    repository: {
+      id: string;
+      owner: string;
+      name: string;
+      defaultBranch: string;
+      budgetCeilingUsd: unknown;
+      wallClockTimeoutMinutes: number | null;
+      specFeedbackEnabled: boolean;
+    },
+    issues: ObservedState['issues'],
+    existingWorkOrders: ObservedWorkOrder[],
+  ): Promise<{ created: number; rejections: TickRejection[] }> {
+    const nothing = { created: 0, rejections: [] as TickRejection[] };
+
+    if (!WorkOrderProjectionService.needsBaseCommit(issues, existingWorkOrders)) return nothing;
+
+    try {
+      const baseCommit = await this.resolveHead(repository);
+      if (!baseCommit) return nothing;
+
+      const result = await this.workOrders.project({
+        repository: {
+          id: repository.id,
+          owner: repository.owner,
+          name: repository.name,
+          budgetCeilingUsd: repository.budgetCeilingUsd
+            ? Number(repository.budgetCeilingUsd)
+            : null,
+          wallClockTimeoutMinutes: repository.wallClockTimeoutMinutes,
+        },
+        issues,
+        existingWorkOrders,
+        baseCommit,
+      });
+
+      return {
+        created: result.created.length,
+        rejections: result.rejected.map((rejected) => ({
+          ...rejected,
+          repository: {
+            id: repository.id,
+            owner: repository.owner,
+            name: repository.name,
+          },
+          feedbackEnabled: repository.specFeedbackEnabled,
+        })),
+      };
+    } catch (error) {
+      this.logger.error(
+        `Could not project work orders for ${repository.owner}/${repository.name}: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+      return nothing;
+    }
+  }
+
+  /**
+   * The tip of the default branch.
+   *
+   * Null rather than a throw when the branch comes back empty: a repository
+   * with no commits at all is a real thing (one just created), and it is not
+   * an error — there is simply nothing to base work on yet.
+   */
+  private async resolveHead(repository: {
+    owner: string;
+    name: string;
+    defaultBranch: string;
+  }): Promise<string | null> {
+    const commits = await this.github.listCommits(
+      { owner: repository.owner, name: repository.name },
+      { branch: repository.defaultBranch, maxPages: 1 },
+    );
+
+    const head = commits[0]?.sha;
+    if (!head) {
+      this.logger.warn(
+        `${repository.owner}/${repository.name} has no commits on ${repository.defaultBranch}; ` +
+          `nothing to pin a work order to`,
+      );
+      return null;
+    }
+    return head;
   }
 
   /**
@@ -336,15 +463,16 @@ export class ReconcilerService {
     }));
   }
 
-  private finish(
-    startedAt: Date,
-    outcome: TickOutcome,
-    repositoriesObserved: number,
-    failures: TickFailure[],
-    allFromCache: boolean,
-    projections: DesiredState[],
-    actions: ReconcileAction[],
-  ): TickRecord {
+  private finish(startedAt: Date, outcome: TickOutcome, sweep: SweepResult): TickRecord {
+    const {
+      observed: repositoriesObserved,
+      failures,
+      allFromCache,
+      projections,
+      actions,
+      workOrdersCreated,
+      rejections,
+    } = sweep;
     const finishedAt = new Date();
     const record: TickRecord = {
       startedAt,
@@ -356,6 +484,8 @@ export class ReconcilerService {
       allFromCache,
       rateLimitRemaining: this.rateLimit.snapshot()?.remaining ?? null,
       projections,
+      workOrdersCreated,
+      rejections,
       actions,
     };
 
@@ -365,6 +495,8 @@ export class ReconcilerService {
       this.logger.log(
         `Tick completed in ${record.durationMs}ms: ${repositoriesObserved} repositories, ` +
           `${actions.length} actions computed (none executed)` +
+          (workOrdersCreated > 0 ? `, ${workOrdersCreated} work order(s) created` : '') +
+          (rejections.length > 0 ? `, ${rejections.length} spec rejection(s)` : '') +
           (allFromCache && repositoriesObserved > 0 ? ', all from cache' : ''),
       );
     } else if (outcome === 'partial' || outcome === 'failed') {
@@ -382,4 +514,34 @@ export class ReconcilerService {
   private get enabled(): boolean {
     return this.config.get<boolean>('reconciler.enabled') ?? false;
   }
+}
+
+/** What one sweep of every observed repository produced. */
+interface SweepResult {
+  observed: number;
+  failures: TickFailure[];
+  allFromCache: boolean;
+  projections: DesiredState[];
+  actions: ReconcileAction[];
+  workOrdersCreated: number;
+  rejections: TickRejection[];
+}
+
+/**
+ * A sweep that never ran.
+ *
+ * `allFromCache: true` because a tick that read nothing spent nothing, which
+ * is what that flag measures (#40). Reporting false would make a disabled or
+ * locked-out reconciler look like it was burning rate-limit budget.
+ */
+function nothingObserved(): SweepResult {
+  return {
+    observed: 0,
+    failures: [],
+    allFromCache: true,
+    projections: [],
+    actions: [],
+    workOrdersCreated: 0,
+    rejections: [],
+  };
 }

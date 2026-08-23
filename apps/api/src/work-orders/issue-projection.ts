@@ -45,7 +45,23 @@ export const TASK_SPEC_SECTION = 'Proposed solution';
 export const PATH_CONSTRAINTS_SECTION = 'Affected component';
 
 export type IssueProjectionResult =
-  | { eligible: true; workOrder: GeneratedWorkOrder }
+  | {
+      eligible: true;
+      workOrder: GeneratedWorkOrder;
+      /**
+       * `factory:hold` is on the issue, so the work order is withheld.
+       *
+       * Eligible and held, NOT skipped. The first version of this function
+       * skipped a held issue outright, which lost the distinction the
+       * `WorkOrderStatus.held` enum member exists to carry — *"withheld by
+       * policy"* is a fact about a work order that EXISTS, and an issue that
+       * produced nothing cannot record that a human paused it.
+       *
+       * The projection still decides nothing about status: it reports the
+       * hold, and the writer maps it onto a column.
+       */
+      held: boolean;
+    }
   /** The issue is not a candidate at all. Silent — not a complaint. */
   | { eligible: false; reason: SkipReason }
   /** It is a candidate and its spec is not good enough. The author is told. */
@@ -55,8 +71,12 @@ export type IssueProjectionResult =
  * Why an issue produced nothing, silently.
  *
  * Distinct values because they call for completely different responses: a
- * closed issue is nothing, a held one is a human's decision, and a missing
- * section is something the author can fix.
+ * closed issue is nothing, an unmarked one is waiting on a human, and a
+ * missing section is something the author can fix.
+ *
+ * `held` is deliberately NOT one of these either. A hold is a human pausing
+ * work that the factory otherwise understands, and recording it as "produced
+ * nothing" would make a paused issue indistinguishable from an unreadable one.
  *
  * `rejected` is deliberately NOT one of these. It is the other arm of the
  * union, because it carries problems and a message that a skip does not — and
@@ -67,7 +87,6 @@ export type IssueProjectionResult =
 export type SkipReason =
   | 'not-open'
   | 'not-marked-ready'
-  | 'held'
   | 'no-body'
   | 'missing-task-spec'
   | 'missing-acceptance-criteria';
@@ -101,11 +120,6 @@ export function projectIssue(input: ProjectIssueInput): IssueProjectionResult {
   // issue must be marked before the factory touches it — the alternative,
   // treating every open issue as work, turns a backlog into a bill.
   if (!issue.inputLabels.includes(INPUT_LABELS.READY)) return skip('not-marked-ready');
-
-  // A human's decision, and it outranks `ready`. #49 already reads this label;
-  // honouring it here means a hold applied between ticks stops the work order
-  // being created at all rather than being created and then suppressed.
-  if (issue.inputLabels.includes(INPUT_LABELS.HOLD)) return skip('held');
 
   if (!issue.body || issue.body.trim().length === 0) return skip('no-body');
 
@@ -148,7 +162,15 @@ export function projectIssue(input: ProjectIssueInput): IssueProjectionResult {
     };
   }
 
-  return { eligible: true, workOrder: generated.workOrder };
+  return {
+    eligible: true,
+    workOrder: generated.workOrder,
+    // A human's decision, and it outranks `ready`. #49 already reads this
+    // label; carrying it here rather than refusing the issue means the pause
+    // is recorded as a held work order the operator can see, instead of an
+    // issue the factory silently declined to understand.
+    held: issue.inputLabels.includes(INPUT_LABELS.HOLD),
+  };
 }
 
 // ---------------------------------------------------------------------------
