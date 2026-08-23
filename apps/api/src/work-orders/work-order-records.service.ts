@@ -6,10 +6,12 @@ import {
   GitHubWriteService,
   type WriteResult,
 } from '../github/write/github-write.service';
+import { ContractValidator } from '../contracts/contract-validator';
 import {
   EXECUTION_RECORD_PATH,
   executionRecordCommitMessage,
   serializeWorkOrder,
+  toWorkOrderDocument,
 } from './work-order-document';
 import type { GeneratedWorkOrder } from './work-order-generator';
 
@@ -60,6 +62,7 @@ export class WorkOrderRecordsService {
     private readonly reads: GitHubReadService,
     private readonly writes: GitHubWriteService,
     private readonly branches: GitBranchService,
+    private readonly contracts: ContractValidator,
   ) {}
 
   async write(input: WriteRecordsInput): Promise<RecordsResult> {
@@ -68,6 +71,26 @@ export class WorkOrderRecordsService {
       owner: workOrder.repositoryOwner,
       name: workOrder.repositoryName,
     };
+
+    // The boundary (#35), and the last moment it can be one. Both records are
+    // immutable: the authorization record is an issue comment that proves what
+    // was approved, the execution record is a commit that proves what the
+    // runner was given. A malformed work order is not a bad request to retry,
+    // it is a wrong document written down permanently, in two places, and
+    // #63's whole argument — that "the agent did something I did not ask for"
+    // is a checkable claim — rests on those two documents being trustworthy.
+    //
+    // Throwing rather than logging, unlike runner registration: there, a bad
+    // manifest keeps one runner out of the fleet and everything else proceeds.
+    // Here, continuing means writing the bad document.
+    const check = this.contracts.checkWorkOrder(toWorkOrderDocument(workOrder));
+    if (!check.valid) {
+      throw new Error(
+        `Refusing to write records for ${workOrder.identity}: the work order ` +
+          `does not match work-order.schema.json, and both records are ` +
+          `immutable — ${ContractValidator.describe(check.violations)}`,
+      );
+    }
 
     // ONE serialization. Both records carry these exact bytes, which is what
     // makes "verifiably identical" structural rather than a property somebody
