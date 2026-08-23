@@ -177,3 +177,40 @@ export function toPrismaEventSource(source: RunEventSourceName): string {
       return 'control_plane';
   }
 }
+
+// ---------------------------------------------------------------------------
+// And back out again, for the cockpit read models (#80)
+// ---------------------------------------------------------------------------
+//
+// The comment above said a translation is needed "in one direction". That was
+// true until something had to READ these rows and show them to a human. The
+// reverse mappers live here for the same reason the forward ones do: three
+// vocabularies exist for one concept, and keeping the translations apart is
+// how two of them silently drift.
+//
+// The three vocabularies, which are genuinely all different:
+//
+//   wire (schemas/run-event.schema.json)  run.started   runner-reported
+//   Prisma client enum                    run_started   control_plane
+//   cockpit (apps/web/src/types)          run.started   control-plane
+//
+// The dots come back because the cockpit renders the wire vocabulary — which
+// is correct, since that is the name an operator will find in the schema.
+
+/** `run_started` -> `run.started`, the name the wire and the cockpit use. */
+export function fromPrismaEventType(type: string): string {
+  return type.replace('_', '.');
+}
+
+/**
+ * `control_plane` -> `control-plane`, the cockpit's spelling.
+ *
+ * NOT the wire spelling (`control-plane-synthesized`): the cockpit uses a
+ * shorter vocabulary for this one field because it renders the value as a
+ * visible label on every row, and VISION §9's rule that *a synthesized event
+ * must never masquerade as a report* is served by the label being READ, not by
+ * it being long.
+ */
+export function fromPrismaEventSource(source: string): string {
+  return source.replace('_', '-');
+}
