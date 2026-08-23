@@ -1,3 +1,4 @@
+import { ContractValidator } from '../contracts/contract-validator';
 import { GitBranchService } from '../github/git/git-branch.service';
 import { GitHubReadService } from '../github/read/github-read.service';
 import { GitHubWriteService } from '../github/write/github-write.service';
@@ -76,8 +77,40 @@ describe('WorkOrderRecordsService', () => {
       reads as unknown as GitHubReadService,
       writes as unknown as GitHubWriteService,
       branches as unknown as GitBranchService,
+      // The real validator: it is stateless and reads the schema off disk, so
+      // these tests write documents the schema actually accepts rather than
+      // ones a stub agreed to.
+      new ContractValidator(),
     );
     jest.spyOn(service['logger'], 'log').mockImplementation(() => undefined);
+  });
+
+  describe('the schema boundary (#35)', () => {
+    it('refuses to write records for a work order the schema rejects', async () => {
+      // Both records are immutable — an issue comment proving what was
+      // approved and a commit proving what the runner was given. A malformed
+      // work order here is not a bad request to retry, it is a wrong document
+      // written down permanently, in two places. #63's argument that "the
+      // agent did something I did not ask for" is checkable rests on them.
+      const broken = { ...workOrder(), taskSpec: '' };
+
+      await expect(
+        service.write({ workOrder: broken, ...DISPATCH }),
+      ).rejects.toThrow(/work-order\.schema\.json/);
+    });
+
+    it('names the offending field, and writes nothing', async () => {
+      const broken = { ...workOrder(), budgetCeilingUsd: -5 };
+
+      await expect(
+        service.write({ workOrder: broken, ...DISPATCH }),
+      ).rejects.toThrow(/budgetCeilingUsd/);
+
+      // The refusal has to come BEFORE either write, or the immutability
+      // argument above is decorative.
+      expect(writes.postAuthorizationRecord).not.toHaveBeenCalled();
+      expect(branches.createFactoryBranch).not.toHaveBeenCalled();
+    });
   });
 
   describe('both records, from one serialization', () => {

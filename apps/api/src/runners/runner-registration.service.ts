@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { Prisma } from '@prisma/client';
 
+import { ContractValidator } from '../contracts/contract-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClaudeCodeLocalRunner } from './claude-code-local/claude-code-local.runner';
 import type { Runner, RunnerCapabilities } from './runner.types';
@@ -47,6 +48,7 @@ export class RunnerRegistrationService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly claudeCodeLocal: ClaudeCodeLocalRunner,
+    private readonly contracts: ContractValidator,
   ) {}
 
   /**
@@ -85,6 +87,25 @@ export class RunnerRegistrationService implements OnModuleInit {
       // handled inside `capabilities()` and comes back as zero capacity.
       this.logger.error(
         `Could not read capabilities; leaving the fleet unchanged: ${asMessage(error)}`,
+      );
+      return;
+    }
+
+    // The boundary (#35). A manifest is a runner's declaration of itself, and
+    // the schema says an overstated one produces "a control plane that trusts
+    // signal it is not actually receiving" — a run nobody is really watching,
+    // discovered much later. Checking it here means a malformed manifest keeps
+    // the runner out of the fleet instead of into it with a wrong shape.
+    //
+    // `capabilities.manifest` is the verbatim document the runner published;
+    // the parsed fields alongside it are this service's own projection, so the
+    // document is what the schema has an opinion about.
+    const check = this.contracts.checkCapability(capabilities.manifest);
+    if (!check.valid) {
+      this.logger.error(
+        `${capabilities.key} published a manifest that does not match ` +
+          `runner-capability.schema.json; leaving it unregistered so dispatch ` +
+          `cannot route to it: ${ContractValidator.describe(check.violations)}`,
       );
       return;
     }

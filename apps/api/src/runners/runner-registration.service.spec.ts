@@ -1,5 +1,7 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { ContractValidator } from '../contracts/contract-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClaudeCodeLocalRunner } from './claude-code-local/claude-code-local.runner';
 import { RunnerRegistrationService } from './runner-registration.service';
@@ -29,8 +31,36 @@ describe('RunnerRegistrationService', () => {
     resumable: false,
     maxConcurrency: 2,
     branchPatterns: ['factory/*'],
-    manifest: { key: 'claude-code-local', version: '2.1.240' },
+    // The full document, the way the real runner publishes it — it builds the
+    // manifest from its own typed fields rather than typing a second copy. A
+    // partial stand-in here would have passed before #35 and would now be
+    // rejected by the schema, which is the point: this fixture has to be a
+    // manifest a runner could actually send.
+    manifest: {
+      key: 'claude-code-local',
+      displayName: 'Claude Code (local)',
+      version: '2.1.240',
+      schemaVersion: '1.0.0',
+      invocationModel: 'process',
+      executionLocus: 'own_infrastructure',
+      streamingFidelity: 'full',
+      rateLimitSignal: 'structured',
+      stabilityTier: 'experimental',
+      reportsCost: true,
+      resumable: false,
+      maxConcurrency: 2,
+      branchPatterns: ['factory/*'],
+    },
   };
+
+  /**
+   * The real validator, not a double.
+   *
+   * It is stateless and reads the schema off disk, so using the real one means
+   * these tests exercise the actual contract rather than a stub that agrees
+   * with whatever they pass it.
+   */
+  const contracts = new ContractValidator();
 
   let runnerUpsert: jest.Mock;
   let capabilityUpsert: jest.Mock;
@@ -77,8 +107,56 @@ describe('RunnerRegistrationService', () => {
       }),
     } as unknown as ClaudeCodeLocalRunner;
 
-    return new RunnerRegistrationService(prisma, config, runner);
+    return new RunnerRegistrationService(prisma, config, runner, contracts);
   }
+
+  describe('the schema boundary (#35)', () => {
+    it('keeps a runner out of the fleet when its manifest does not validate', async () => {
+      // The failure this prevents is not a parse error. The schema says an
+      // overstated manifest produces "a control plane that trusts signal it is
+      // not actually receiving" — dispatch routing real work on a declaration
+      // nobody checked. Refusing to register is the honest outcome: the runner
+      // is absent from routing rather than present with a wrong shape.
+      const service = build({
+        capabilities: {
+          manifest: {
+            ...CAPABILITIES.manifest,
+            streamingFidelity: 'excellent',
+          },
+        },
+      });
+
+      await service.onModuleInit();
+
+      expect(runnerUpsert).not.toHaveBeenCalled();
+      expect(capabilityUpsert).not.toHaveBeenCalled();
+    });
+
+    it('names the offending field, so the runner author can fix it', async () => {
+      // #35: "validation failures produce an error naming the offending field
+      // and why". A log line saying only "invalid manifest" makes the next
+      // person read the schema and guess.
+      const errors = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+
+      await build({
+        capabilities: {
+          manifest: { ...CAPABILITIES.manifest, maxConcurrency: -1 },
+        },
+      }).onModuleInit();
+
+      const logged = errors.mock.calls
+        .map((call) => String(call[0]))
+        .join('\n');
+      expect(logged).toContain('maxConcurrency');
+      expect(logged).toContain('runner-capability.schema.json');
+      errors.mockRestore();
+    });
+
+    it('registers when the manifest is the one the real runner publishes', async () => {
+      await build().onModuleInit();
+      expect(runnerUpsert).toHaveBeenCalled();
+    });
+  });
 
   describe('what lands in the fleet', () => {
     it('registers the runner under the key everything else joins on', async () => {
@@ -177,6 +255,7 @@ describe('RunnerRegistrationService', () => {
         buildPrisma(),
         config,
         runner,
+        contracts,
       ).onModuleInit();
       expect(runnerUpsert.mock.calls[0][0].update).toMatchObject({
         enabled: false,
