@@ -18,6 +18,8 @@
     "lint:fix": "npm -w apps/api run lint:fix && npm -w apps/web run lint:fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "contracts:generate": "node scripts/generate-contract-types.mjs && prettier --write apps/api/src/contracts/generated apps/web/src/contracts/generated",
+    "contracts:check": "npm run contracts:generate && git diff --exit-code -- apps/api/src/contracts/generated apps/web/src/contracts/generated",
     "openapi:dump": "npm run openapi:dump --workspace=api -- ../../openapi.json",
     "openapi:lint": "spectral lint openapi.json --ruleset .spectral.yaml --fail-severity=error"
   },
@@ -37,6 +39,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.4",
     "globals": "^17.11.0",
+    "json-schema-to-typescript": "^15.0.4",
     "prettier": "^3.9.6",
     "typescript-eslint": "^8.67.0"
   }
