@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { RunEventsService, type IngestResult } from '../run-events/run-events.service';
 import { SILENCE_THRESHOLDS_MS } from '../watchdog/silent-detection';
@@ -46,7 +47,13 @@ describe('RunPollerService', () => {
     ...overrides,
   });
 
+  let config: ConfigService;
+  let defaultTimeoutMinutes: number | null = null;
+  let graceMinutes = 2;
+
   beforeEach(() => {
+    defaultTimeoutMinutes = null;
+    graceMinutes = 2;
     ingest = jest.fn(async (_runId, events: unknown[]) => ({
       accepted: events.length,
       duplicates: 0,
@@ -59,7 +66,20 @@ describe('RunPollerService', () => {
     const prisma = { run: { findMany, updateMany } } as unknown as PrismaService;
     const runEvents = { ingest } as unknown as RunEventsService;
 
-    poller = new RunPollerService(prisma, runEvents);
+    // Deadline config the deadline pass (#180) reads. Defaulted generously so
+    // every pre-existing test in this file keeps testing polling rather than
+    // silently exercising a cancellation -- the same care the executor spec
+    // takes with the spend gate.
+    config = {
+      get: (key: string) =>
+        key === 'runners.claudeCodeLocal.defaultTimeoutMinutes'
+          ? defaultTimeoutMinutes
+          : key === 'runners.deadlineGraceMinutes'
+            ? graceMinutes
+            : undefined,
+    } as unknown as ConfigService;
+
+    poller = new RunPollerService(prisma, runEvents, config);
   });
 
   /** A runner whose poll result the test dictates outright. */
@@ -313,7 +333,14 @@ describe('RunPollerService', () => {
 
       // The polling work already done in the same tick still counts.
       expect(result.eventsIngested).toBe(1);
-      expect(result.failed).toBe(1);
+      // Two, not one: `findMany` backs BOTH database passes -- the deadline
+      // sweep (#180) and the untracked reconcile -- and each is guarded
+      // separately so that one failing cannot discard the other's work. The
+      // count is the number of passes that could not complete, which is the
+      // honest figure; collapsing it to one would hide that two things went
+      // wrong. What this test is really about is the absence of a throw.
+      expect(result.failed).toBe(2);
+      expect(result.timedOut).toBe(0);
     });
   });
 

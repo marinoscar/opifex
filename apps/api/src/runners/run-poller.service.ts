@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
+import {
+  DEFAULT_DEADLINE_GRACE_MINUTES,
+  decideDeadline,
+} from '../budget/run-deadline';
 import { PrismaService } from '../prisma/prisma.service';
 import { RunEventsService } from '../run-events/run-events.service';
 import { SILENCE_THRESHOLDS_MS } from '../watchdog/silent-detection';
@@ -85,6 +90,8 @@ export interface PollTickResult {
   /** Runs whose handle this process no longer holds. */
   lost: number;
   failed: number;
+  /** Runs cancelled for passing their wall-clock ceiling (#180). */
+  timedOut: number;
 }
 
 @Injectable()
@@ -93,9 +100,20 @@ export class RunPollerService {
   /** runId → the handle needed to poll it. Deliberately in memory only. */
   private readonly tracked = new Map<string, TrackedRun>();
 
+  /**
+   * Runs this process has already cancelled for their deadline.
+   *
+   * In memory, like `tracked`, and for the same reason: it is a fact about
+   * what THIS process has done, not about the run. A restart re-deriving the
+   * decision from `startedAt` and cancelling once more is harmless and
+   * arguably correct -- the run is, after all, still over its ceiling.
+   */
+  private readonly deadlineEnforced = new Set<string>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly runEvents: RunEventsService,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -112,6 +130,10 @@ export class RunPollerService {
   /** Stop polling. Safe for a run that was never tracked. */
   forget(runId: string): void {
     this.tracked.delete(runId);
+    // Dropped together. Leaving the marker behind would grow without bound
+    // across a long-lived process, and it has nothing left to guard once the
+    // run is no longer tracked.
+    this.deadlineEnforced.delete(runId);
   }
 
   /** How many runs this process can currently poll. */
@@ -134,7 +156,21 @@ export class RunPollerService {
       duplicates: 0,
       lost: 0,
       failed: 0,
+      timedOut: 0,
     };
+
+    // BEFORE polling, not after. A run that is already past its ceiling
+    // should be cancelled on the tick that notices, not on the one after --
+    // and polling it first would spend a round trip on a run we are about to
+    // stop anyway.
+    try {
+      await this.enforceDeadlines(result);
+    } catch (error) {
+      result.failed += 1;
+      this.logger.error(
+        `Could not enforce wall-clock deadlines this tick: ${asMessage(error)}`,
+      );
+    }
 
     for (const [runId, entry] of [...this.tracked].slice(0, POLL_BATCH_SIZE)) {
       try {
@@ -196,6 +232,101 @@ export class RunPollerService {
     // from a different input is how two sources of truth appear.
     if (poll.status === 'succeeded' || poll.status === 'failed') {
       this.forget(runId);
+    }
+  }
+
+  /**
+   * Cancel every tracked run that has passed its wall-clock ceiling (#180).
+   *
+   * Only TRACKED runs, and that limit is honest rather than incidental: to
+   * cancel a run the control plane needs its handle, and #60 forbids reaching
+   * inside a `RunHandle` to reconstruct one. A run whose handle this process
+   * lost is already reported by `reconcileUntracked` as stalled with nobody
+   * watching it -- which is true. Claiming to have cancelled it would be the
+   * synthesized-event-as-report VISION §9 forbids, so this pass does not try.
+   *
+   * Reaping genuinely orphaned process groups after a restart needs a durable
+   * handle the control plane may act on, and is a separate problem.
+   */
+  private async enforceDeadlines(result: PollTickResult): Promise<void> {
+    const candidates = [...this.tracked.keys()].filter(
+      (runId) => !this.deadlineEnforced.has(runId),
+    );
+    if (candidates.length === 0) return;
+
+    const runs = await this.prisma.run.findMany({
+      where: { id: { in: candidates }, status: { in: LIVE_STATUSES as unknown as never } },
+      select: {
+        id: true,
+        startedAt: true,
+        workOrder: { select: { identity: true, wallClockTimeoutMinutes: true } },
+      },
+    });
+
+    const now = new Date();
+    const defaultTimeoutMinutes =
+      this.config.get<number | null>('runners.claudeCodeLocal.defaultTimeoutMinutes') ?? null;
+    const graceMinutes =
+      this.config.get<number>('runners.deadlineGraceMinutes') ??
+      DEFAULT_DEADLINE_GRACE_MINUTES;
+
+    for (const run of runs) {
+      const verdict = decideDeadline(
+        {
+          startedAt: run.startedAt,
+          timeoutMinutes: run.workOrder?.wallClockTimeoutMinutes ?? null,
+          defaultTimeoutMinutes,
+          graceMinutes,
+        },
+        now,
+      );
+
+      if (!verdict.overdue) continue;
+
+      result.timedOut += 1;
+      await this.cancelForDeadline(run.id, run.workOrder?.identity ?? run.id, verdict.reason);
+    }
+  }
+
+  /**
+   * Cancel through the seam, record the figure, and never try twice.
+   *
+   * The order matters. `attentionReason` is written FIRST, because a cancel
+   * that throws still leaves a run that has provably passed its ceiling and an
+   * operator who needs to know why -- writing the reason only on success would
+   * lose exactly the case worth reporting.
+   */
+  private async cancelForDeadline(
+    runId: string,
+    identity: string,
+    reason: string,
+  ): Promise<void> {
+    // Marked before the attempt, so a `cancel` that throws does not put this
+    // run back in the queue for another cancel fifteen seconds later, and the
+    // one after that. One enforcement per run per process; a failure to stop
+    // it is an escalation, not something to retry in a loop.
+    this.deadlineEnforced.add(runId);
+
+    await this.prisma.run.updateMany({
+      where: { id: runId, status: { in: LIVE_STATUSES as unknown as never } },
+      data: { attentionReason: reason },
+    });
+
+    const entry = this.tracked.get(runId);
+    if (!entry) return;
+
+    try {
+      await entry.runner.cancel(entry.handle);
+      this.logger.warn(`${identity}: ${reason}`);
+    } catch (error) {
+      // Not rethrown: one runner refusing to cancel must not stop the pass
+      // from reaching the next overdue run. The reason is already recorded, so
+      // the run is not silently over its ceiling -- it is loudly over it and
+      // still going, which is the accurate report.
+      this.logger.error(
+        `${identity}: passed its wall-clock ceiling and the runner refused to cancel it, so ` +
+          `it may STILL BE RUNNING: ${asMessage(error)}`,
+      );
     }
   }
 
