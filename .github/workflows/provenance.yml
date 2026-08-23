@@ -1,0 +1,53 @@
+name: Provenance
+
+# `edited` is the whole point of this file existing separately (#179).
+#
+# The default `pull_request` types are opened, synchronize and reopened. This
+# job's input is the PR BODY, so the one failure it exists to produce — "the
+# pull request body has no closing keyword" — was the one failure that editing
+# the body could not clear. An edit fires `pull_request.edited`, which triggered
+# nothing, and a re-run replays the ORIGINAL event payload, so the stale body
+# came back. That left pushing a commit, an empty commit, or close-and-reopen,
+# and CLAUDE.md forbids the last two by name.
+#
+# Split out rather than adding `edited` to ci.yml, because that would re-run
+# lint, both test suites and the build every time somebody fixed a typo in a
+# description. This job takes about six seconds; the rest of CI takes minutes.
+#
+# Per VISION §8 this check is on the never-trustable list: an agent that can
+# edit the workflow enforcing its own trailers "has the appearance of guardrails
+# and none of the substance." Its own file makes that boundary something
+# CODEOWNERS can point at. Changes here are human-only, and the token Opifex
+# runs with must not carry workflow-write permission.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  provenance:
+    name: Provenance
+    runs-on: ubuntu-latest
+    steps:
+      # The check walks base..head, so the shallow default clone is not enough.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # The body arrives through the environment, never interpolated into the
+      # shell. A PR body is attacker-controlled text, and `run: echo ${{ ... }}`
+      # is the textbook GitHub Actions script injection.
+      - name: Check provenance
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: >
+          node scripts/check-provenance.mjs
+          --base ${{ github.event.pull_request.base.sha }}
+          --head ${{ github.event.pull_request.head.sha }}
