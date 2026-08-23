@@ -371,6 +371,160 @@ describe('RunPollerService', () => {
       expect(POLL_INTERVAL_MS).toBeGreaterThanOrEqual(5_000);
     });
   });
+
+  /**
+   * The control-plane deadline sweep (#180).
+   *
+   * The policy's own boundary is exhaustively covered in
+   * `budget/run-deadline.spec.ts`. What is asserted here is the enforcement:
+   * that a cancel actually goes through the SEAM, that the figure is recorded
+   * even when the cancel fails, that it happens once, and that a run this
+   * process cannot reach is not claimed to have been cancelled.
+   */
+  describe('the wall-clock deadline', () => {
+    const HOUR_AGO = new Date(Date.now() - 60 * 60 * 1000);
+    const MINUTE_AGO = new Date(Date.now() - 60 * 1000);
+
+    /** What the deadline pass's own `findMany` should return. */
+    function liveRun(startedAt: Date, wallClockTimeoutMinutes: number | null) {
+      return {
+        id: RUN_ID,
+        startedAt,
+        workOrder: { identity: 'wo_acme-widgets_42_abc1234_a1', wallClockTimeoutMinutes },
+      };
+    }
+
+    it('cancels an overdue run through the seam and records the figure', async () => {
+      findMany.mockResolvedValue([liveRun(HOUR_AGO, 10)]);
+      const runner = stubRunner();
+      poller.track(RUN_ID, runner, handle());
+
+      const result = await poller.tick();
+
+      expect(result.timedOut).toBe(1);
+      // Through `cancel(handle)` -- never through anything that knows what an
+      // `externalId` contains, which #60's seam forbids.
+      expect(runner.cancel).toHaveBeenCalledWith(handle());
+      expect(updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { attentionReason: expect.stringContaining('ceiling of 10 minute(s)') },
+        }),
+      );
+    });
+
+    it('leaves a run inside its ceiling alone', async () => {
+      findMany.mockResolvedValue([liveRun(MINUTE_AGO, 60)]);
+      const runner = stubRunner();
+      poller.track(RUN_ID, runner, handle());
+
+      const result = await poller.tick();
+
+      expect(result.timedOut).toBe(0);
+      expect(runner.cancel).not.toHaveBeenCalled();
+    });
+
+    it('uses the configured default when the order names no ceiling', async () => {
+      defaultTimeoutMinutes = 5;
+      findMany.mockResolvedValue([liveRun(HOUR_AGO, null)]);
+      const runner = stubRunner();
+      poller.track(RUN_ID, runner, handle());
+
+      expect((await poller.tick()).timedOut).toBe(1);
+      expect(runner.cancel).toHaveBeenCalled();
+    });
+
+    it('leaves an unbounded run running, however long it has been going', async () => {
+      // No ceiling on the order and no default configured is a deliberate
+      // operator choice, per RUNNER_DEFAULT_TIMEOUT_MINUTES' own docs.
+      defaultTimeoutMinutes = null;
+      findMany.mockResolvedValue([liveRun(HOUR_AGO, null)]);
+      const runner = stubRunner();
+      poller.track(RUN_ID, runner, handle());
+
+      expect((await poller.tick()).timedOut).toBe(0);
+      expect(runner.cancel).not.toHaveBeenCalled();
+    });
+
+    it('cancels once, not on every tick', async () => {
+      // Fifteen seconds apart, forever, against a runner already killing the
+      // process -- the same churn `reconcileUntracked` refuses for
+      // LOST_HANDLE_REASON.
+      findMany.mockResolvedValue([liveRun(HOUR_AGO, 10)]);
+      const runner = stubRunner();
+      poller.track(RUN_ID, runner, handle());
+
+      await poller.tick();
+      const second = await poller.tick();
+
+      expect(runner.cancel).toHaveBeenCalledTimes(1);
+      expect(second.timedOut).toBe(0);
+    });
+
+    it('records the reason even when the runner refuses to cancel', async () => {
+      // THE case most worth reporting: the run has provably passed its
+      // ceiling and is still going. Writing the reason only on a successful
+      // cancel would lose exactly this one.
+      findMany.mockResolvedValue([liveRun(HOUR_AGO, 10)]);
+      const runner = stubRunner();
+      (runner.cancel as jest.Mock).mockRejectedValue(new Error('runner is wedged'));
+      poller.track(RUN_ID, runner, handle());
+
+      const result = await poller.tick();
+
+      expect(result.timedOut).toBe(1);
+      // "may STILL BE RUNNING", never "cancelled". The run passed its ceiling
+      // and nothing stopped it, and that is the sentence an operator has to
+      // act on -- reporting a cancellation that did not happen would be the
+      // one failure mode this whole pass is built to avoid.
+      const written = updateMany.mock.calls.map(
+        ([arg]) => (arg as { data: { attentionReason: string } }).data.attentionReason,
+      );
+      expect(written.at(-1)).toContain('may STILL BE RUNNING');
+      expect(written.at(-1)).toContain('runner refused');
+      expect(written.at(-1)).not.toContain('The control plane cancelled it');
+    });
+
+    it('records the certain part first, so a crash mid-cancel still leaves a reason', async () => {
+      // The ordering IS the design. The first write says only what
+      // `decideDeadline` could prove -- the run passed its ceiling and its
+      // runner did not stop it -- so a process that dies between the two
+      // writes still leaves an operator something true. The second appends
+      // the outcome once it is a fact.
+      findMany.mockResolvedValue([liveRun(HOUR_AGO, 10)]);
+      poller.track(RUN_ID, stubRunner(), handle());
+
+      await poller.tick();
+
+      const written = updateMany.mock.calls.map(
+        ([arg]) => (arg as { data: { attentionReason: string } }).data.attentionReason,
+      );
+
+      expect(written).toHaveLength(2);
+      expect(written[0]).toContain('ceiling of 10 minute(s)');
+      expect(written[0]).not.toContain('control plane');
+      expect(written[1]).toContain('The control plane cancelled it.');
+    });
+
+    it('does not throw when the runner refuses to cancel', async () => {
+      findMany.mockResolvedValue([liveRun(HOUR_AGO, 10)]);
+      const runner = stubRunner();
+      (runner.cancel as jest.Mock).mockRejectedValue(new Error('runner is wedged'));
+      poller.track(RUN_ID, runner, handle());
+
+      await expect(poller.tick()).resolves.toBeDefined();
+    });
+
+    it('never touches a run this process has no handle for', async () => {
+      // It cannot cancel one -- #60 forbids rebuilding a handle -- so it must
+      // not report one as cancelled either. `reconcileUntracked` already says
+      // the true thing about those runs: nobody is watching them.
+      findMany.mockResolvedValue([liveRun(HOUR_AGO, 10)]);
+
+      const result = await poller.tick();
+
+      expect(result.timedOut).toBe(0);
+    });
+  });
 });
 
 let sequence = 0;
