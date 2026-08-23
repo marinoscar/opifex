@@ -201,6 +201,106 @@ describe('RunWorkspaceService', () => {
     }, 60_000);
   });
 
+  describe('when the execution record is already on the branch (#63)', () => {
+    let staged = 0;
+
+    /**
+     * Puts a factory branch on the origin, one commit ahead of the base — the
+     * exact state `WorkOrderRecordsService.write()` leaves behind.
+     *
+     * Returns the record commit and the base it was built on, read from a full
+     * clone: the workspace itself is shallow, so it has no parent to inspect.
+     */
+    async function pushExecutionRecord(branch: string) {
+      staged += 1;
+      const staging = join(scratch, `staging-${staged}`);
+      await exec('git', ['clone', '--quiet', origin, staging]);
+      await git(staging, 'config', 'user.email', 'factory@opifex.local');
+      await git(staging, 'config', 'user.name', 'Opifex Factory');
+      await git(staging, 'checkout', '--quiet', '-b', branch, baseCommit);
+      await writeFile(join(staging, 'work-order.json'), '{"identity":"probe"}\n');
+      await git(staging, 'add', '.');
+      await git(staging, 'commit', '-m', 'chore(factory): record the work order');
+      await git(staging, 'push', '--quiet', 'origin', branch);
+
+      return {
+        commit: await git(staging, 'rev-parse', 'HEAD'),
+        parent: await git(staging, 'rev-parse', 'HEAD~1'),
+      };
+    }
+
+    afterEach(async () => {
+      // The origin is shared across the whole file. A factory branch left
+      // behind would change where every later test starts from, which is
+      // exactly the pollution that made three of these fail while they were
+      // being written.
+      await exec('git', ['push', '--quiet', origin, '--delete', request().branch]).catch(() => {});
+      await exec('git', ['push', '--quiet', origin, '--delete', 'factory/99-abc1234-a1']).catch(
+        () => {},
+      );
+    });
+
+    it('starts from the branch tip so the agent can actually push', async () => {
+      // The bug this test exists for: #63 commits the execution record as the
+      // branch's FIRST commit, so a workspace checked out at baseCommit is
+      // behind its own remote and every push is rejected as a non-fast-forward
+      // — after the whole run has been paid for. It survived both #61's and
+      // #63's suites because it only appears once dispatch joins them.
+      const record = await pushExecutionRecord(request().branch);
+      expect(record.parent).toBe(baseCommit); // the pin is intact upstream
+
+      const workspace = await service.provision(request());
+
+      expect(workspace.headCommit).toBe(record.commit);
+      expect(await git(workspace.dir, 'rev-parse', 'HEAD')).toBe(record.commit);
+      // The record is present in the tree, which is what "at the record
+      // commit" means locally — the clone is shallow, so there is no parent
+      // to walk to.
+      expect(await readFile(join(workspace.dir, 'work-order.json'), 'utf8')).toContain('probe');
+    }, 60_000);
+
+    it('leaves a push able to fast-forward', async () => {
+      // The property the checkout exists to preserve, asserted end to end
+      // rather than inferred from the sha. This is the assertion that would
+      // have failed before the fix.
+      await pushExecutionRecord(request().branch);
+      const workspace = await service.provision(request());
+
+      await writeFile(join(workspace.dir, 'agent-work.txt'), 'what the agent did\n');
+      await git(workspace.dir, 'add', '.');
+      await git(workspace.dir, 'commit', '-m', 'feat: the agent did something');
+
+      await expect(git(workspace.dir, 'push', 'origin', request().branch)).resolves.toBeDefined();
+    }, 60_000);
+
+    it('reuses a workspace already at the branch tip', async () => {
+      // The reuse check compares HEAD against wherever provisioning WOULD put
+      // it. Comparing against baseCommit unconditionally would rebuild the
+      // workspace on every dispatch once the record existed.
+      await pushExecutionRecord(request().branch);
+
+      const first = await service.provision(request());
+      const second = await service.provision(request());
+
+      expect(second.reused).toBe(true);
+      expect(second.headCommit).toBe(first.headCommit);
+    }, 60_000);
+
+    it('still starts from the base commit when the branch does not exist yet', async () => {
+      // Writes disabled, or the records step not reached. Nothing to
+      // fast-forward onto, so the pinned base is the only correct start.
+      const fresh = {
+        ...request(),
+        branch: 'factory/99-abc1234-a1',
+        identity: 'wo_acme-widgets_99_abc1234_a1',
+      };
+
+      const workspace = await service.provision(fresh);
+
+      expect(workspace.headCommit).toBe(baseCommit);
+    }, 30_000);
+  });
+
   describe('git configuration', () => {
     it('sets a factory commit identity, so the agent can commit at all', async () => {
       // Without one `git commit` fails deep inside the agent, where the reason
