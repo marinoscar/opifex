@@ -11,6 +11,7 @@ import {
   DarkMode as DarkIcon,
   SettingsBrightness as SystemIcon,
 } from '@mui/icons-material';
+import { useThemePolicy } from '../../hooks/useThemePolicy';
 
 interface ThemeSettingsProps {
   currentTheme: 'light' | 'dark' | 'system';
@@ -23,6 +24,13 @@ export function ThemeSettings({
   onThemeChange,
   disabled = false,
 }: ThemeSettingsProps) {
+  // On the settings page the control is DISABLED rather than hidden, unlike
+  // the AppBar toggle (#79). The difference is that this page is a list of
+  // settings a user came looking for: a missing row reads as "this app has no
+  // theme setting", while a disabled one with a reason reads as "an
+  // administrator decided this", which is the true statement.
+  const { canOverrideTheme } = useThemePolicy();
+  const locked = disabled || !canOverrideTheme;
   const handleChange = (
     _event: React.MouseEvent<HTMLElement>,
     newTheme: 'light' | 'dark' | 'system' | null,
@@ -39,7 +47,9 @@ export function ThemeSettings({
           Appearance
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Choose how the application looks to you
+          {canOverrideTheme
+            ? 'Choose how the application looks to you'
+            : 'Your administrator has set a fixed theme for this deployment.'}
         </Typography>
 
         <ToggleButtonGroup
@@ -47,7 +57,7 @@ export function ThemeSettings({
           exclusive
           onChange={handleChange}
           aria-label="theme selection"
-          disabled={disabled}
+          disabled={locked}
           sx={{ mt: 1 }}
         >
           <ToggleButton value="light" aria-label="light mode">

@@ -48,6 +48,15 @@ export class CurrentUserDto {
 
   @ApiProperty({
     example: true,
+    description:
+      'Whether this deployment lets a user choose their own theme ' +
+      '(system_settings.ui.allowUserThemeOverride). Carried here because ' +
+      'GET /api/system-settings 403s for exactly the users this constrains.',
+  })
+  allowUserThemeOverride!: boolean;
+
+  @ApiProperty({
+    example: true,
     description: 'Whether the user account is active',
   })
   isActive!: boolean;

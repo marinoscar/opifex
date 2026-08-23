@@ -7,6 +7,7 @@ import { GoogleProfile } from './strategies/google.strategy';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminBootstrapService } from '../common/services/admin-bootstrap.service';
 import { AllowlistService } from '../allowlist/allowlist.service';
+import { SystemSettingsService } from '../settings/system-settings/system-settings.service';
 import {
   createMockPrismaService,
   MockPrismaService,
@@ -63,6 +64,13 @@ describe('AuthService', () => {
         { provide: ConfigService, useValue: mockConfigService },
         { provide: AdminBootstrapService, useValue: mockAdminBootstrap },
         { provide: AllowlistService, useValue: mockAllowlistService },
+        {
+          // The theme policy (#79). Defaulting the double to `true` keeps
+          // every existing assertion about /auth/me unchanged; the flag's own
+          // behaviour is covered by useThemePolicy's tests on the web side.
+          provide: SystemSettingsService,
+          useValue: { getSettingValue: jest.fn().mockResolvedValue(true) },
+        },
       ],
     }).compile();
 

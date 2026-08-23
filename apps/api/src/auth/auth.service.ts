@@ -18,6 +18,7 @@ import { JwtPayload } from './strategies/jwt.strategy';
 import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 import { TokenResponseDto } from './dto/auth-user.dto';
 import { AuthProviderDto } from './dto/auth-provider.dto';
+import { SystemSettingsService } from '../settings/system-settings/system-settings.service';
 
 export interface FullTokenResponse {
   accessToken: string;
@@ -35,6 +36,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly adminBootstrapService: AdminBootstrapService,
     private readonly allowlistService: AllowlistService,
+    private readonly systemSettings: SystemSettingsService,
   ) {}
 
   /**
@@ -631,6 +633,19 @@ export class AuthService {
     });
     const permissions = Array.from(permissionsSet);
 
+    // The theme policy, carried on the response every user already fetches
+    // (#79).
+    //
+    // `GET /api/system-settings` requires `system_settings:read` and 403s for
+    // non-admins — which is exactly the population this flag constrains. Read
+    // from always-mounted chrome it would guarantee a 403 on every page load
+    // for every Viewer, so the flag rides here instead: one field, no new
+    // endpoint, no additional request.
+    const allowUserThemeOverride =
+      (await this.systemSettings.getSettingValue<boolean>(
+        'ui.allowUserThemeOverride',
+      )) ?? true;
+
     return {
       id: user.id,
       email: user.email,
@@ -639,6 +654,7 @@ export class AuthService {
       isActive: user.isActive,
       roles,
       permissions,
+      allowUserThemeOverride,
     };
   }
 
