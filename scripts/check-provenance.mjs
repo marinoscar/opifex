@@ -155,9 +155,18 @@ export function parseTrailers(message) {
   return { trailers, malformed };
 }
 
-/** `ADR-0008` must resolve to exactly one `docs/adr/0008-*.md`. */
+/**
+ * `ADR-0008` must resolve to exactly one `docs/adr/0008-*.md`.
+ *
+ * `ADR-0000` never resolves. 0000 is the template (ADR-0009), so a placeholder
+ * copied out of it and left in a commit message has to fail here rather than
+ * point at a file full of instructions — a reference that resolves to nothing
+ * useful while looking like it resolves is the failure mode the whole
+ * vocabulary exists to avoid.
+ */
 function resolvesToAdr(value) {
   const number = value.slice(4);
+  if (number === '0000') return false;
   const dir = join(REPO_ROOT, 'docs/adr');
   if (!existsSync(dir)) return false;
   return (
@@ -215,7 +224,9 @@ export function checkCommit(commit, patterns) {
     const value = present.get('Decision');
     if (patterns.Decision.test(value) && !resolvesToAdr(value)) {
       problems.push(
-        `Decision: ${value} names no file under docs/adr/ — a dangling decision reference`,
+        value === 'ADR-0000'
+          ? `Decision: ADR-0000 is the ADR template, not a decision — name the ADR this work implements, or drop the trailer`
+          : `Decision: ${value} names no file under docs/adr/ — a dangling decision reference`,
       );
     }
   }

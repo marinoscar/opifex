@@ -107,11 +107,11 @@ optional-but-validated-if-present on human-authored ones.
 
 ### `Decision:` — the Decision node
 
-|              |                                                                                      |
-| ------------ | ------------------------------------------------------------------------------------ |
-| **Format**   | `ADR-{4 digits}`, matching `^ADR-\d{4}$`                                             |
-| **Referent** | A file under `docs/adr/`. `ADR-0005` is `docs/adr/0005-*.md`.                        |
-| **Required** | Optional. Present when the work implements or is constrained by a recorded decision. |
+|              |                                                                                                           |
+| ------------ | --------------------------------------------------------------------------------------------------------- |
+| **Format**   | `ADR-{4 digits}`, matching `^ADR-\d{4}$`                                                                  |
+| **Referent** | A file under `docs/adr/`. `ADR-0005` is `docs/adr/0005-*.md`. `ADR-0000` is the template and is rejected. |
+| **Required** | Optional. Present when the work implements or is constrained by a recorded decision.                      |
 
 Optional because most commits implement no ADR, and a vocabulary that demanded
 one would be satisfied with a fictional value within a week.

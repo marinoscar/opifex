@@ -234,6 +234,22 @@ describe('check-provenance.mjs', () => {
       expect(problems[0]).toContain('dangling');
     });
 
+    it('fails Decision: ADR-0000, which is the template rather than a decision', () => {
+      // 0000 is reserved for the template (ADR-0009). A placeholder copied out
+      // of it must fail rather than resolve to a file of instructions — the
+      // file does exist on disk, so nothing but the explicit rule stops it.
+      const message = [
+        'fix(web): correct the button label',
+        '',
+        'Decision: ADR-0000',
+      ].join('\n');
+      const problems = checkCommit(message);
+
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toContain('ADR-0000');
+      expect(problems[0]).toContain('template');
+    });
+
     it('passes a Decision: that does resolve to a real ADR', () => {
       const message = [
         'fix(web): correct the button label',
