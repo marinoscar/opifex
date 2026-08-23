@@ -1528,6 +1528,66 @@ A single "message" field would destroy exactly that distinction.
 `costUsd` is `null` when the runner reports no cost — which is not the same
 claim as a run that was free.
 
+#### `GET /api/metrics/summary`
+
+The six VISION §10 success metrics, in one request. Requires `runs:read`.
+
+| Query | Type | Default | Notes |
+|---|---|---|---|
+| `days` | number | `7` | Window length, 1–90. |
+
+**One request for the whole stat row, not six** — six requests to paint one row
+is six chances to render a half-updated screen.
+
+**A `value` of `null` means NOT MEASURED. It never means zero.** The cockpit
+renders `null` as an em dash and its `MetricTile` has no code path from `null` to
+`0`; this endpoint must not undo that from the other side. A zero detection
+latency is a spectacular claim to make by accident — it says the system noticed
+every stall instantly, when what happened is that nothing was measured.
+
+Two of the six are computed today:
+
+| Metric | Today | Why |
+|---|---|---|
+| `detectionLatency` | **computed** | p50 of `Escalation.detectLatencyMs` (#59), in seconds |
+| `attemptsPerWorkOrder` | **computed** | mean runs over work orders that reached `succeeded` |
+| `deadTimePerDay` | `null` | nothing records how long a run *spent* stalled or parked |
+| `firstPassAcceptance` | `null` | merge state is not tracked anywhere |
+| `costPerMergedPr` | `null` | merge state is not tracked anywhere |
+| `quotaBurn` | `null` | consumption against a window capacity is not recorded |
+
+Each `null` refuses a specific temptation. Dead time could be approximated from
+currently-stalled runs — that answers *"dead time right now"*, not *"per day
+across the window"*. Quota burn could be computed from the GitHub rate limit, but
+VISION §11's shared quota is the agent subscription, and labelling one while
+measuring the other is the same substitution in a better disguise.
+
+`trend` is the sparkline series, **oldest first, with quiet days dropped**. The
+array is `number[]` and cannot express a gap, so a zero would draw a latency
+sparkline through the floor and claim a perfect day. A shorter array is the
+honest representation; `Sparkline` draws nothing for zero or one point rather
+than a flat line implying stability nobody measured.
+
+```json
+{
+  "data": {
+    "generatedAt": "2026-08-23T04:40:00.000Z",
+    "window": { "from": "2026-08-16T04:40:00.000Z", "to": "2026-08-23T04:40:00.000Z" },
+    "metrics": {
+      "detectionLatency": { "value": 15, "trend": [5, 60] },
+      "deadTimePerDay": { "value": null, "trend": [] },
+      "firstPassAcceptance": { "value": null, "trend": [] },
+      "attemptsPerWorkOrder": { "value": 3, "trend": [3] },
+      "costPerMergedPr": { "value": null, "trend": [] },
+      "quotaBurn": { "value": null, "trend": [] }
+    }
+  }
+}
+```
+
+`generatedAt` is when the control plane computed the summary, not when the client
+fetched it, so a panel showing a stale row can say how stale.
+
 #### `GET /api/runs/{id}/events`
 
 One run's normalized event timeline, newest first. Requires `runs:read`.

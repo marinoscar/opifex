@@ -53,8 +53,11 @@ export type CockpitResourceKey = 'metrics' | 'attention' | 'queue' | 'activity';
  */
 export const COCKPIT_ENDPOINTS: Record<CockpitResourceKey, CockpitEndpoint> = {
   metrics: {
+    // LIVE as of #80. Two of the six are computed and four return null —
+    // "not measured", never zero. The tile renders null as an em dash, so an
+    // unbuilt metric still shows its name and its meaning.
     path: '/metrics/summary',
-    available: false,
+    available: true,
     phase: 'Phase 3 — Liveness and escalation',
   },
   attention: {

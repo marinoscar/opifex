@@ -64,12 +64,14 @@ describe('DashboardPage', () => {
       expect(screen.queryByRole('button', { name: /account settings/i })).not.toBeInTheDocument();
     });
 
-    it('says it is not wired and hides the refresh control', () => {
+    it('stops saying the metrics are unwired, now that the endpoint exists', () => {
+      // #80 wired `/metrics/summary`. The tiles still read `—` because four of
+      // the six genuinely return null and the other two have no data yet —
+      // but "not yet wired" is now false, and saying it would be the honesty
+      // contract failing in the direction nobody checks for.
       render(<DashboardPage />);
 
-      expect(screen.getByText(/^Not yet wired — Phase 3/)).toBeInTheDocument();
-      // Hidden rather than disabled: a permanently disabled control is noise.
-      expect(screen.queryByRole('button', { name: /refresh/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/^Not yet wired — Phase 3/)).not.toBeInTheDocument();
     });
   });
 
@@ -107,12 +109,19 @@ describe('DashboardPage', () => {
     it('names a roadmap phase on every panel that is still unbuilt', () => {
       render(<DashboardPage />);
 
+      // Activity is the last unwired panel, and it still names its phase.
       expect(screen.getByText(/Events appear here once the reconciler runs/)).toBeInTheDocument();
       expect(screen.getByText(/Arrives in Phase 2 — Reconciler, read-only/)).toBeInTheDocument();
-      // Metrics is still unbuilt and still names its phase.
+    });
+
+    it('has no Phase 3 copy left, because both Phase 3 panels are wired', () => {
+      // Attention and metrics were the two. Leaving the copy would tell an
+      // operator to wait for something that already arrived.
+      render(<DashboardPage />);
+
       expect(
-        screen.getAllByText(/Arrives in Phase 3 — Liveness and escalation/).length,
-      ).toBeGreaterThan(0);
+        screen.queryByText(/Arrives in Phase 3 — Liveness and escalation/),
+      ).not.toBeInTheDocument();
     });
 
     it('stops claiming the queue and attention panels are unbuilt, now that they are not', () => {

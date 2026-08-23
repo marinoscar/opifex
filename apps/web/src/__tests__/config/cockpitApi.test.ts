@@ -28,10 +28,10 @@ describe('COCKPIT_ENDPOINTS', () => {
    * Naming both sets is the deliberate speed bump: flipping one fails here,
    * and the fix is to move it between these lists in the SAME pull request as
    * the endpoint — which is exactly the review conversation that should
-   * happen. `queue` and `attention` both moved on #80.
+   * happen. `queue`, `attention` and `metrics` all moved on #80.
    */
-  const WIRED: CockpitResourceKey[] = ['queue', 'attention'];
-  const NOT_WIRED: CockpitResourceKey[] = ['metrics', 'activity'];
+  const WIRED: CockpitResourceKey[] = ['queue', 'attention', 'metrics'];
+  const NOT_WIRED: CockpitResourceKey[] = ['activity'];
 
   it('accounts for every resource as either wired or not', () => {
     // So a fifth resource cannot be added without deciding which it is.
