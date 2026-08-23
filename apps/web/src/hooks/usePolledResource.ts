@@ -266,10 +266,21 @@ export function usePolledResource<T>({
   // Unmount is the one abort that cannot live in the effect above: that
   // effect's cleanup also runs on every reschedule, where aborting the
   // in-flight request would be wrong.
+  //
+  // Disarming the session guard here is what makes issue #169 impossible. The
+  // guard's meaning is "a request for this session is outstanding or has
+  // completed" — so the moment we abandon that request, it is neither, and the
+  // guard is a lie. React StrictMode runs effects mount -> unmount -> mount on
+  // the same instance in development: refs survive that simulated remount, the
+  // abort does not, and without this line the second mount saw an armed guard,
+  // declined to re-fire, and left every cockpit panel spinning until the first
+  // 30-second tick. On a genuine unmount the reset costs nothing — the ref
+  // dies with the component.
   useEffect(
     () => () => {
       abortRef.current?.abort();
       abortRef.current = null;
+      sessionStartedRef.current = false;
     },
     [],
   );
