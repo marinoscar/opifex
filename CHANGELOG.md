@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Contracts**: `schemas/work-order.schema.json`, `schemas/runner-capability.schema.json` and `schemas/run-event.schema.json`, with worked examples, invalid fixtures and a conformance suite that asserts each fixture is rejected for the reason it was written for.
+- **Contract types**: TypeScript generated from the three schemas by `npm run contracts:generate` into both `apps/api` and `apps/web`, so the cockpit and the API cannot disagree about a shape. `npm run contracts:check` fails the build when a schema changes and the generated output does not.
+- **Boundary validation**: work orders are validated before they become an authorization record and an execution record, capability manifests before a runner enters the fleet, and run events at ingestion. Failures name the offending field.
+- **Schema versioning**: `schemaVersion` accepts the whole `1.x` range with `default` naming the version a producer should write; one schema file per major, and the old file stays so a persisted work order remains re-runnable. Policy recorded as ADR-0010.
+- **OpenAPI**: `npm run openapi:dump` and `npm run openapi:lint` are wired and enforced in CI against a Spectral ruleset; the document is generated rather than committed.
 - **CI**: GitHub Actions pipeline (`.github/workflows/ci.yml`) with `provenance`, `lint`, `typecheck`, `test-api`, `test-web`, and `build` jobs, running on pull requests and pushes to `main`. `provenance` is pull-request-only, since a push to `main` has no PR body to carry a closing keyword.
 - **Provenance enforcement**: `scripts/check-provenance.mjs` fails a pull request whose body carries no closing keyword, whose commits are missing a required trailer, or that names a decision resolving to no file under `docs/adr/`. Its patterns are read out of `docs/PROVENANCE.md` at run time so the check and the specification cannot drift.
 - **Architecture decision records**: `docs/adr/` with a template, an index, and the numbering, lifecycle and supersession conventions (`docs/adr/README.md`); recorded as ADR-0009. Every ADR names its discussion issue, and CI enforces it.
