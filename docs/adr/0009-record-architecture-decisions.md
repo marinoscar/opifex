@@ -19,7 +19,7 @@ failure.
 made provenance immutable by putting it in commit trailers, and VISION §5's
 vocabulary includes `Decision: ADR-0042`. `docs/PROVENANCE.md` says the
 referent is "a file under `docs/adr/`" — but nothing said what a file under
-`docs/adr/` *is*, whether its number could change, or what happens to the
+`docs/adr/` _is_, whether its number could change, or what happens to the
 trailer if it does. An immutable pointer to a mutable target is not a pointer.
 
 **Two ADRs both claimed 0006.** `Decision: ADR-0006` was ambiguous from the
@@ -63,9 +63,9 @@ accepted ADR to say the reverse destroys the record of what was believed and
 why, which is the only durable thing a decision record has.
 
 **Anyone may propose an ADR; a human merges it.** This is VISION §13's open
-question — *may agents author ADRs?* — recorded as its current answer rather
+question — _may agents author ADRs?_ — recorded as its current answer rather
 than left implicit. It is revisited after three months of evidence, and the
-evidence to look at is whether agent-proposed ADRs were *reversed* or *ignored*,
+evidence to look at is whether agent-proposed ADRs were _reversed_ or _ignored_,
 not whether they were well-written.
 
 An ADR is warranted when a choice had real tension — two options that could not

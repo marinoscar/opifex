@@ -13,17 +13,17 @@ one.
 
 ## The index
 
-| # | Decision | Status | Issue |
-|---|---|---|---|
-| [0001](0001-github-authentication.md) | Authenticate to GitHub with a fine-grained personal access token | Accepted | [#40](https://github.com/marinoscar/opifex/issues/40) |
-| [0002](0002-github-http-client.md) | Call GitHub with the platform `fetch`, not an SDK | Accepted | [#40](https://github.com/marinoscar/opifex/issues/40) |
-| [0003](0003-observability-backend.md) | Uptrace is the observability backend; Grafana is not deployed | Accepted | [#59](https://github.com/marinoscar/opifex/issues/59) |
-| [0004](0004-notification-transport.md) | Web Push for notifications, with a configurable webhook as the second path | Accepted | [#58](https://github.com/marinoscar/opifex/issues/58) |
-| [0005](0005-execution-record-authorship.md) | The control plane creates the factory branch and its first commit | Accepted | [#63](https://github.com/marinoscar/opifex/issues/63) |
-| [0006](0006-provenance-in-commit-trailers.md) | Provenance lives in git commit trailers, and carries identity only | Accepted | [#26](https://github.com/marinoscar/opifex/issues/26) |
-| [0007](0007-preview-runner-acknowledgement.md) | A single-runner fleet may be load-bearing only by explicit operator acknowledgement | Accepted | [#147](https://github.com/marinoscar/opifex/issues/147) |
-| [0008](0008-claude-code-local-invocation.md) | Invoke `claude-code-local` as a subprocess, not through the Agent SDK | Accepted | [#61](https://github.com/marinoscar/opifex/issues/61) |
-| [0009](0009-record-architecture-decisions.md) | Record architecture decisions in this directory, proposed by anyone and merged by a human | Accepted | [#25](https://github.com/marinoscar/opifex/issues/25) |
+| #                                              | Decision                                                                                  | Status   | Issue                                                   |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------- |
+| [0001](0001-github-authentication.md)          | Authenticate to GitHub with a fine-grained personal access token                          | Accepted | [#40](https://github.com/marinoscar/opifex/issues/40)   |
+| [0002](0002-github-http-client.md)             | Call GitHub with the platform `fetch`, not an SDK                                         | Accepted | [#40](https://github.com/marinoscar/opifex/issues/40)   |
+| [0003](0003-observability-backend.md)          | Uptrace is the observability backend; Grafana is not deployed                             | Accepted | [#59](https://github.com/marinoscar/opifex/issues/59)   |
+| [0004](0004-notification-transport.md)         | Web Push for notifications, with a configurable webhook as the second path                | Accepted | [#58](https://github.com/marinoscar/opifex/issues/58)   |
+| [0005](0005-execution-record-authorship.md)    | The control plane creates the factory branch and its first commit                         | Accepted | [#63](https://github.com/marinoscar/opifex/issues/63)   |
+| [0006](0006-provenance-in-commit-trailers.md)  | Provenance lives in git commit trailers, and carries identity only                        | Accepted | [#26](https://github.com/marinoscar/opifex/issues/26)   |
+| [0007](0007-preview-runner-acknowledgement.md) | A single-runner fleet may be load-bearing only by explicit operator acknowledgement       | Accepted | [#147](https://github.com/marinoscar/opifex/issues/147) |
+| [0008](0008-claude-code-local-invocation.md)   | Invoke `claude-code-local` as a subprocess, not through the Agent SDK                     | Accepted | [#61](https://github.com/marinoscar/opifex/issues/61)   |
+| [0009](0009-record-architecture-decisions.md)  | Record architecture decisions in this directory, proposed by anyone and merged by a human | Accepted | [#25](https://github.com/marinoscar/opifex/issues/25)   |
 
 `0000-template.md` is the template. It is not a decision and never becomes one;
 see [Numbering](#numbering) for what that means for `Decision: ADR-0000`.
@@ -55,11 +55,11 @@ real decision reference.
 
 ## Lifecycle
 
-| Status | Meaning |
-|---|---|
-| `Proposed` | The ADR's pull request is open. The decision is not in force. |
-| `Accepted` | Merged. This is the current answer. |
-| `Superseded by ADR-NNNN` | A later decision replaced it. The file stays. |
+| Status                   | Meaning                                                       |
+| ------------------------ | ------------------------------------------------------------- |
+| `Proposed`               | The ADR's pull request is open. The decision is not in force. |
+| `Accepted`               | Merged. This is the current answer.                           |
+| `Superseded by ADR-NNNN` | A later decision replaced it. The file stays.                 |
 
 **A reversed decision is superseded, not deleted or rewritten.** Editing an
 accepted ADR to say the opposite destroys the record of what was believed and
@@ -100,5 +100,5 @@ the Context section, where a reader will find it.
 ## Who may write one
 
 **Anyone may propose; a human merges.** This is VISION §13's open question —
-*may agents author ADRs?* — and its recorded answer. The reasoning, and what
+_may agents author ADRs?_ — and its recorded answer. The reasoning, and what
 would cause it to be revisited, is in [ADR-0009](0009-record-architecture-decisions.md).
