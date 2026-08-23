@@ -453,6 +453,44 @@ export async function getRuns(
   return api.get<RunsPage>(query ? `/runs?${query}` : '/runs', { signal });
 }
 
+/** `GET /runs/:id` — one run, with its work order resolved. */
+export async function getRun(
+  id: string,
+  signal?: AbortSignal,
+): Promise<RunSummary> {
+  return api.get<RunSummary>(`/runs/${encodeURIComponent(id)}`, { signal });
+}
+
+export interface RunEventsPage {
+  items: RunEvent[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * `GET /runs/:id/events` — a run's normalized timeline, newest first.
+ *
+ * Paginated because `RunEvent` is the highest-volume table in the schema: a
+ * single run emits a progress event per tool call plus heartbeats, so an
+ * unpaginated timeline would not survive a real run (#83).
+ */
+export async function getRunEvents(
+  id: string,
+  params: { page?: number; pageSize?: number } = {},
+  signal?: AbortSignal,
+): Promise<RunEventsPage> {
+  const searchParams = new URLSearchParams();
+  if (params.page) searchParams.set('page', String(params.page));
+  if (params.pageSize) searchParams.set('pageSize', String(params.pageSize));
+  const query = searchParams.toString();
+
+  return api.get<RunEventsPage>(
+    `/runs/${encodeURIComponent(id)}/events${query ? `?${query}` : ''}`,
+    { signal },
+  );
+}
+
 /** `GET /queue` — work orders waiting to dispatch, in dispatch order. */
 export async function getRunQueue(
   params?: { limit?: number },

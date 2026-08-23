@@ -20,6 +20,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 // costs nothing today and means the chunk boundary is already in place when
 // each one grows a DataTable.
 const RunsPage = lazy(() => import('./pages/RunsPage'));
+const RunDetailPage = lazy(() => import('./pages/RunDetailPage'));
 const QueuePage = lazy(() => import('./pages/QueuePage'));
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
 const CostPage = lazy(() => import('./pages/CostPage'));
@@ -67,6 +68,7 @@ function AppRoutes() {
                     the API can never grant. Each gains its real permission in
                     the pull request that adds its endpoint. */}
                 <Route path="/runs" element={<RunsPage />} />
+                <Route path="/runs/:id" element={<RunDetailPage />} />
                 <Route path="/queue" element={<QueuePage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/cost" element={<CostPage />} />
