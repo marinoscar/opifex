@@ -750,7 +750,12 @@ describe('Cockpit API', () => {
       server.use(
         http.get('*/api/runs', ({ request }) => {
           query = new URL(request.url).searchParams;
-          return HttpResponse.json({ data: [{ id: 'run-1' }] });
+          // The real envelope since #80: the endpoint paginates like every
+          // other list in this API, and the client unwraps `items` because a
+          // dashboard panel has no pager and no use for `total`.
+          return HttpResponse.json({
+            data: { items: [{ id: 'run-1' }], total: 1, page: 1, pageSize: 5 },
+          });
         }),
       );
 
@@ -760,7 +765,10 @@ describe('Cockpit API', () => {
       // The watchdog's verdict belongs to the control plane. A UI filtering by
       // status locally would be a second, lagging copy of the escalation rules.
       expect(query!.get('needsAttention')).toBe('true');
-      expect(query!.get('limit')).toBe('5');
+      // `pageSize`, not `limit` — the endpoint's vocabulary, not the panel's.
+      // This is the reconciliation `types/cockpit.ts` asks for by name.
+      expect(query!.get('pageSize')).toBe('5');
+      expect(query!.get('limit')).toBeNull();
     });
 
     it('omits the limit when none is given', async () => {
@@ -769,7 +777,9 @@ describe('Cockpit API', () => {
       server.use(
         http.get('*/api/runs', ({ request }) => {
           query = new URL(request.url).searchParams;
-          return HttpResponse.json({ data: [] });
+          return HttpResponse.json({
+            data: { items: [], total: 0, page: 1, pageSize: 25 },
+          });
         }),
       );
 

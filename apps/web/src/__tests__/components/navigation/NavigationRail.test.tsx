@@ -50,7 +50,12 @@ function setPrefs(railCollapsed: boolean) {
   });
 }
 
-const ADMIN_PERMISSIONS = ['users:read', 'system_settings:read', 'workorders:read'];
+const ADMIN_PERMISSIONS = [
+  'users:read',
+  'system_settings:read',
+  'workorders:read',
+  'runs:read',
+];
 
 /**
  * What a real seeded VIEWER holds.
@@ -61,7 +66,7 @@ const ADMIN_PERMISSIONS = ['users:read', 'system_settings:read', 'workorders:rea
  * viewer, it is a user the API cannot produce. Testing navigation against one
  * would assert that a Viewer cannot see the Queue, which is false.
  */
-const VIEWER_PERMISSIONS = ['workorders:read'];
+const VIEWER_PERMISSIONS = ['workorders:read', 'runs:read'];
 
 describe('NavigationRail', () => {
   beforeEach(() => {

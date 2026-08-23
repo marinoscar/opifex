@@ -58,8 +58,11 @@ export const COCKPIT_ENDPOINTS: Record<CockpitResourceKey, CockpitEndpoint> = {
     phase: 'Phase 3 — Liveness and escalation',
   },
   attention: {
+    // LIVE as of #80. `needsAttention=true` means "has an escalation nobody
+    // has acknowledged or resolved" — the control plane's verdict, ordered by
+    // longest silence first.
     path: '/runs?needsAttention=true',
-    available: false,
+    available: true,
     phase: 'Phase 3 — Liveness and escalation',
   },
   queue: {

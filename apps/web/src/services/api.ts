@@ -379,9 +379,21 @@ export async function getRunsNeedingAttention(
   signal?: AbortSignal,
 ): Promise<RunSummary[]> {
   const searchParams = new URLSearchParams({ needsAttention: 'true' });
-  if (params?.limit) searchParams.set('limit', String(params.limit));
+  // The endpoint paginates like every other list in this API — `page` and
+  // `pageSize`, not `limit`. The panel wants the first N and nothing else, so
+  // the page size IS the limit here and the envelope is unwrapped for the
+  // caller: a dashboard panel has no pager and no use for `total`.
+  //
+  // This is the reconciliation `types/cockpit.ts` asks for by name: the shapes
+  // in that file were written before an endpoint existed, and where one
+  // disagrees the parse boundary is where it must surface.
+  if (params?.limit) searchParams.set('pageSize', String(params.limit));
 
-  return api.get<RunSummary[]>(`/runs?${searchParams}`, { signal });
+  const page = await api.get<{ items: RunSummary[]; total: number }>(
+    `/runs?${searchParams}`,
+    { signal },
+  );
+  return page.items;
 }
 
 /** `GET /queue` — work orders waiting to dispatch, in dispatch order. */

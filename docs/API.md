@@ -1476,6 +1476,84 @@ authorization stakes and are tracked separately (#116).
 
 ---
 
+#### `GET /api/runs`
+
+Runs, newest first. Requires `runs:read`.
+
+| Query | Type | Default | Notes |
+|---|---|---|---|
+| `page` / `pageSize` | number | `1` / `25` | `pageSize` max 100. |
+| `needsAttention` | boolean | — | See below. |
+| `status` | enum | — | `running`, `succeeded`, `stalled`, `blocked`, `failed`, `quarantined`. |
+
+**`needsAttention` means "has an escalation nobody has acknowledged or
+resolved"** — not a status list. The obvious `status IN (stalled, failed,
+quarantined)` never drains: a run that failed last Tuesday is still `failed`
+today, so the panel fills with history and the thing needing a human right now
+is on page three. The escalation lifecycle (#57) is the mechanism built to be
+resolved, and this filter reuses the same `UNRESOLVED` set the notification path
+dedupes on, so the two cannot disagree.
+
+It is a **server-side** filter deliberately: whether a run needs a human is the
+control plane's verdict, and a UI filtering by status locally would be the
+watchdog re-implemented in a browser, out of date by one poll interval.
+
+With `needsAttention=true`, results are ordered by **longest silence first**,
+with never-reported runs at the very top — `lastEventAt` is the age the panel is
+about, and a run that has never reported anything is the worst case rather than
+a null to sort past. Unfiltered, results are newest-started first.
+
+**One known lag.** The poller writes `attentionReason` the moment it finds a run
+with no handle, before any escalation exists; in that window the run is not
+listed. It closes on its own — the watchdog sweeps `stalled` runs too and
+escalates once the run has been silent long enough. Widening the filter to
+`attentionReason IS NOT NULL` would trade that bounded lag for an unbounded one,
+since nothing clears that column and the panel would never drain.
+
+#### `GET /api/runs/{id}`
+
+One run. Requires `runs:read`. `404` if it does not exist.
+
+**`attentionReason` and `resumesAt` are separate fields and must stay that way.**
+VISION §9 gives three failure modes three different responses, and the
+operator's next move is decided by which is populated:
+
+| Field set | Meaning | What to do |
+|---|---|---|
+| `attentionReason` | A human has to act | Kill, re-plan, review a quarantine |
+| `resumesAt` | The system will handle it | Nothing — acting is wasted effort |
+
+A single "message" field would destroy exactly that distinction.
+
+`costUsd` is `null` when the runner reports no cost — which is not the same
+claim as a run that was free.
+
+#### `GET /api/runs/{id}/events`
+
+One run's normalized event timeline, newest first. Requires `runs:read`.
+
+| Query | Type | Default | Notes |
+|---|---|---|---|
+| `page` / `pageSize` | number | `1` / `50` | `pageSize` max 200. |
+
+**Its own endpoint rather than an array on the run**, because `RunEvent` is
+high-volume (#39): a single run emits a progress event per tool call plus
+heartbeats, so an unpaginated timeline would not survive a real run. Making it a
+separate route means the pagination cannot be forgotten.
+
+Ordered `occurredAt` then `recordedAt`. The tiebreak is load-bearing: two events
+can share a reported millisecond, and an unstable sort would shuffle them
+between pages so a reader could see one twice and another never.
+
+`type` uses the wire vocabulary — `run.started`, not the `run_started` the
+database stores (Postgres cannot hold a dot in an enum label). `source` says
+whether a runner reported the event, the git watcher derived it, or the control
+plane synthesized it; VISION §9 requires that **a synthesized event never
+masquerade as a report**, which is why it is a field rather than a note in the
+summary text.
+
+---
+
 ### Escalations
 
 What needs a human. VISION §9 is explicit that **escalation is an action, not
