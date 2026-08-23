@@ -25,7 +25,7 @@
       "description": "Version of this schema the manifest claims to conform to. Any 1.x version is accepted: within a major, every change is an added optional field, so a document written against an earlier minor still validates here (ADR-0010). A 2.x document is rejected by this file \u2014 majors get their own.",
       "type": "string",
       "pattern": "^1\\.\\d+\\.\\d+$",
-      "default": "1.1.0"
+      "default": "1.2.0"
     },
     "key": {
       "description": "Stable identifier, used as the foreign key on every run and written into the `Runner:` commit trailer. Lowercase and hyphenated so it is safe in a trailer, a branch name and a log line.",
@@ -154,6 +154,16 @@
       },
       "required": ["workOrder", "runEvent"],
       "additionalProperties": false
+    },
+    "modelTiers": {
+      "description": "The model tiers this runner can serve. ABSENT means it serves any tier, which is what keeps the field additive in behaviour as well as in schema \u2014 a runner written before tiers existed stays eligible for everything. Declaring the list is how a runner that genuinely cannot reach a tier says so, and routing then refuses rather than dispatching work it cannot size correctly.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["small", "standard", "large"]
+      },
+      "minItems": 1,
+      "uniqueItems": true
     },
     "notes": {
       "description": "Anything the operator should know that no field above captures. Prose, never parsed \u2014 a field the control plane branched on would be a capability in disguise.",

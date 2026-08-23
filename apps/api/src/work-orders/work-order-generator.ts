@@ -1,4 +1,4 @@
-import type { RunnerNeed } from '../runners/runner.types';
+import type { ModelTier, RunnerNeed } from '../runners/runner.types';
 import {
   assessCriteria,
   describeProblems,
@@ -42,6 +42,13 @@ export interface IssueProjection {
    * explicitly rather than leaving the field absent for a reader to interpret.
    */
   needs?: RunnerNeed[];
+
+  /**
+   * The model class this work wants (#205), or undefined for the runner's own
+   * default. Absent is the normal case: a tier is stated when the work is
+   * unusually small or unusually hard, not on every order.
+   */
+  modelTier?: ModelTier;
 }
 
 export interface GenerationInput {
@@ -90,6 +97,7 @@ export interface GeneratedWorkOrder {
   budgetCeilingUsd: number | null;
   wallClockTimeoutMinutes: number | null;
   needs: RunnerNeed[];
+  modelTier?: ModelTier;
 }
 
 export type GenerationResult =
@@ -161,6 +169,7 @@ export function generateWorkOrder(input: GenerationInput): GenerationResult {
       issueUrl: issue.issueUrl.trim(),
       issueTitle: issue.title?.trim() || null,
       needs: issue.needs ?? [],
+      ...(issue.modelTier ? { modelTier: issue.modelTier } : {}),
 
       taskSpec: issue.taskSpec.trim(),
       // Trimmed and de-blanked, so what is stored is what was assessed.

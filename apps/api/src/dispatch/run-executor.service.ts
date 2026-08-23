@@ -93,6 +93,7 @@ export class RunExecutorService {
     const decision = await this.dispatch.decide(
       workOrder.needs,
       workOrder.identity,
+      workOrder.modelTier,
     );
 
     if (decision.outcome === 'queued' || decision.runnerKey === null) {

@@ -18,9 +18,9 @@ import {
  * pinned base commit, so an old work order being unreadable is not a
  * compatibility inconvenience, it is a lost recovery path.
  *
- * `runner-capability` is the first schema to move (1.0.0 -> 1.1.0, adding
- * `speaksSchemaVersions`), so it is the case that actually exercises the rule
- * rather than asserting it vacuously.
+ * Both schemas that have moved are exercised here rather than asserted
+ * vacuously: `runner-capability` twice (1.1.0 added `speaksSchemaVersions`,
+ * 1.2.0 added `modelTiers`) and `work-order` once (1.1.0 added `modelTier`).
  */
 
 interface SchemaShape {
@@ -90,16 +90,26 @@ describe('schema versioning (ADR-0010)', () => {
   });
 
   describe('a document from an earlier minor still validates', () => {
-    it('accepts a 1.0.0 manifest against the 1.1.0 schema', () => {
-      // The real case, not a hypothetical: runner-capability moved to 1.1.0 by
-      // adding `speaksSchemaVersions`, and this is a manifest written before
-      // that field existed.
+    it('accepts a 1.0.0 manifest against the current schema', () => {
+      // The real case, not a hypothetical: runner-capability has moved twice
+      // now — 1.1.0 added `speaksSchemaVersions`, 1.2.0 added `modelTiers` —
+      // and this is a manifest written before either existed. That it still
+      // validates is the whole promise ADR-0010 makes.
       expect(
         schemaFor('runner-capability').properties.schemaVersion.default,
-      ).toBe('1.1.0');
+      ).toBe('1.2.0');
       expect(
         validatorFor('runner-capability')(manifest({ schemaVersion: '1.0.0' })),
       ).toBe(true);
+    });
+
+    it('accepts a 1.0.0 work order against the 1.1.0 schema', () => {
+      // Same promise, other contract — and this one matters more, because
+      // VISION §3.4 re-runs a work order from its pinned base commit long
+      // after it was written.
+      expect(schemaFor('work-order').properties.schemaVersion.default).toBe(
+        '1.1.0',
+      );
     });
 
     it.each([...CONTRACTS])(

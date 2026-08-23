@@ -1,4 +1,8 @@
-import type { RunnerCapabilities, RunnerNeed } from '../runners/runner.types';
+import type {
+  ModelTier,
+  RunnerCapabilities,
+  RunnerNeed,
+} from '../runners/runner.types';
 
 /**
  * Which runner gets a work order, decided by arithmetic.
@@ -126,6 +130,30 @@ export function satisfies(
   }
 }
 
+/**
+ * Whether a runner can serve the tier this work order asked for (#205).
+ *
+ * Absent on the work order means the runner's own default is fine. Absent on
+ * the manifest means the runner serves anything — which is what keeps the field
+ * additive in behaviour as well as in schema: a runner written before tiers
+ * existed stays eligible for everything, rather than becoming ineligible for
+ * work it had been taking all along.
+ *
+ * Deliberately separate from `satisfies`. The `needs` enum is closed and its
+ * mapping is exhaustive by design, so folding a tier into it would mean either
+ * a major schema bump (ADR-0010: adding an enum value is breaking, because
+ * consumers switch on the set) or a need whose rule is not a capability at all.
+ */
+export function servesTier(
+  modelTier: ModelTier | undefined,
+  capabilities: RunnerCapabilities,
+): boolean {
+  if (!modelTier) return true;
+  const served = capabilities.modelTiers;
+  if (!served || served.length === 0) return true;
+  return served.includes(modelTier);
+}
+
 /** Needs this runner cannot meet. */
 export function unmetNeeds(
   needs: readonly RunnerNeed[],
@@ -164,6 +192,8 @@ export function isPreview(capabilities: RunnerCapabilities): boolean {
 export function decideDispatch(
   input: {
     needs: readonly RunnerNeed[];
+    /** The model class this work asked for, if it asked (#205). */
+    modelTier?: ModelTier;
     /** Only for the reason line. Routing never branches on it. */
     identity?: string;
   },
@@ -209,7 +239,12 @@ export function decideDispatch(
     enabled.some(
       (entry) =>
         !isPreview(entry.capabilities) &&
-        unmetNeeds(needs, entry.capabilities).length === 0,
+        unmetNeeds(needs, entry.capabilities).length === 0 &&
+        // The fallback has to be able to take THIS work order, tier included.
+        // A stable runner that cannot serve the requested tier is not a
+        // fallback for it, and counting it as one is how a fleet ends up
+        // load-bearing on a preview runner without noticing.
+        servesTier(input.modelTier, entry.capabilities),
     );
 
   const candidates = enabled
@@ -226,6 +261,18 @@ export function decideDispatch(
           input.needs,
           false,
           `does not advertise ${unmet.join(', ')}`,
+        );
+      }
+      if (!servesTier(input.modelTier, entry.capabilities)) {
+        // Refused rather than dispatched-and-hoped: a runner that cannot serve
+        // the tier would run the work at whatever size it does have, which is
+        // the quota decision VISION §11 wants made deliberately.
+        return verdict(
+          entry,
+          input.needs,
+          false,
+          `serves model tier(s) ${entry.capabilities.modelTiers?.join(', ')} ` +
+            `and this work order asked for '${input.modelTier}'`,
         );
       }
       if (isPreview(entry.capabilities) && !hasGaFallback(input.needs)) {
