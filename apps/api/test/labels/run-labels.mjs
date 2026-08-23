@@ -12,6 +12,7 @@
 import {
   declaredLabels,
   diffLabels,
+  validateLabels,
 } from '../../../../scripts/sync-labels.mjs';
 
 function readStdin() {
@@ -34,6 +35,9 @@ async function main() {
     }
     if (task.fn === 'diffLabels') {
       return diffLabels(task.declared, task.actual);
+    }
+    if (task.fn === 'validateLabels') {
+      return { problems: validateLabels(task.labels) };
     }
     throw new Error(`run-labels.mjs: unknown task fn "${task.fn}"`);
   });

@@ -51,15 +51,15 @@
 
 - name: "factory/blocked"
   color: "5319E7"
-  description: "Mirror: the run is parked (rate limit, stall, or awaiting approval). Visibility only — do not hand-edit."
+  description: "Mirror: the run is parked — rate limit, stall, or approval. Visibility only."
 
 - name: "factory/review"
   color: "006B75"
-  description: "Mirror: a pull request from this work order is awaiting human review. Visibility only — do not hand-edit."
+  description: "Mirror: a pull request from this work order awaits review. Visibility only."
 
 - name: "factory/quarantine"
   color: "666666"
-  description: "Mirror: this issue/work order has been quarantined after repeated failure. Visibility only — do not hand-edit."
+  description: "Mirror: quarantined after repeated failure. Visibility only — do not hand-edit."
 
 # -----------------------------------------------------------------------------
 # Type — what kind of issue this is

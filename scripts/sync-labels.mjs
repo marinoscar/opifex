@@ -81,6 +81,44 @@ export function declaredLabels(source = readFileSync(LABELS_FILE, 'utf8')) {
 }
 
 /**
+ * GitHub's own constraints, checked before anything is written.
+ *
+ * The first real run of `--apply` created four labels and then died on the
+ * fifth with HTTP 422 — three declared descriptions were over the 100-character
+ * cap (#197). Half-applied is the worst of the three possible states: the drift
+ * report shrinks, `gh label list` looks partly right, and nothing says the run
+ * did not finish.
+ *
+ * So the whole declaration is validated first and every offender is named at
+ * once. Reporting one per attempt would mean discovering the file's problems
+ * one round trip at a time.
+ */
+export function validateLabels(labels) {
+  const problems = [];
+  const seen = new Set();
+
+  for (const label of labels) {
+    if (seen.has(label.name)) {
+      problems.push(`${label.name}: declared more than once`);
+    }
+    seen.add(label.name);
+
+    if (label.description.length > 100) {
+      problems.push(
+        `${label.name}: description is ${label.description.length} characters, ` +
+          'and GitHub allows 100',
+      );
+    }
+    if (!/^[0-9a-f]{6}$/.test(label.color)) {
+      problems.push(
+        `${label.name}: color '${label.color}' is not six hex digits`,
+      );
+    }
+  }
+  return problems;
+}
+
+/**
  * Compare declared against actual.
  *
  * Pure, so the tests can drive it without a network or a `gh` login.
@@ -153,6 +191,16 @@ function main() {
   const repo = repoIndex === -1 ? undefined : argv[repoIndex + 1];
 
   const declared = declaredLabels();
+
+  // Before the network, and before any write: a declaration GitHub will reject
+  // should fail here, whole, rather than part-way through the repository.
+  const problems = validateLabels(declared);
+  if (problems.length > 0) {
+    console.error('.github/labels.yml declares labels GitHub will not accept:');
+    for (const problem of problems) console.error(`  ${problem}`);
+    process.exit(1);
+  }
+
   const actual = actualLabels(repo);
   const { missing, changed, extra } = diffLabels(declared, actual);
 
@@ -183,11 +231,30 @@ function main() {
   }
 
   const present = new Set(actual.map((label) => label.name));
+  const failed = [];
   for (const label of [...missing, ...changed]) {
-    applyLabel(label, present.has(label.name), repo);
-    console.log(`  applied ${label.name}`);
+    try {
+      applyLabel(label, present.has(label.name), repo);
+      console.log(`  applied ${label.name}`);
+    } catch (error) {
+      // Carry on. One label GitHub refuses should not decide the fate of the
+      // rest — stopping here is what produced the half-applied taxonomy in
+      // #197, and leaving the remainder unapplied makes the next run's drift
+      // report the only record that anything went wrong.
+      const detail = String(error.stderr ?? error.message ?? error).trim();
+      failed.push(`${label.name}: ${detail.split('\n')[0]}`);
+      console.error(`  FAILED ${label.name}`);
+    }
   }
-  console.log(`\n✓ Applied ${missing.length + changed.length} label(s).`);
+
+  const applied = missing.length + changed.length - failed.length;
+  console.log(`\n✓ Applied ${applied} label(s).`);
+
+  if (failed.length > 0) {
+    console.error(`\n${failed.length} label(s) could not be applied:`);
+    for (const failure of failed) console.error(`  ${failure}`);
+    process.exit(1);
+  }
 }
 
 // Only when invoked directly, so the tests can import the pure functions.
