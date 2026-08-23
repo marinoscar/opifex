@@ -99,7 +99,26 @@ export interface WorkOrderSpec {
    * seam. Empty means anything enabled will do.
    */
   needs: RunnerNeed[];
+
+  /**
+   * The model class this work asked for (#205), or undefined for the runner's
+   * own default.
+   *
+   * Separate from `needs` on purpose: that union is closed and exhaustively
+   * switched on, so adding to it is a major schema bump (ADR-0010).
+   */
+  modelTier?: ModelTier;
 }
+
+/**
+ * How much model a piece of work wants.
+ *
+ * A SIZE, never a model name. Naming one would put a vendor's catalogue into
+ * the contract every runner has to speak, and VISION §6 makes the seam
+ * vendor-neutral by construction. `small` for a work order whose acceptance
+ * criteria are mechanical, `large` for one that needs real reasoning.
+ */
+export type ModelTier = 'small' | 'standard' | 'large';
 
 /**
  * A capability a work order requires.
@@ -232,6 +251,15 @@ export interface RunnerCapabilities {
   maxConcurrency: number;
   /** Branch globs the runner is allowed to create, e.g. `factory/*`. */
   branchPatterns: string[];
+
+  /**
+   * Model tiers this runner can serve (#205).
+   *
+   * Undefined means ANY, which is what keeps the field additive in behaviour
+   * as well as in schema: a runner written before tiers existed stays eligible
+   * for work it had been taking all along.
+   */
+  modelTiers?: ModelTier[];
 
   /** The raw manifest, kept verbatim for the record. */
   manifest: Record<string, unknown>;

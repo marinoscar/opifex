@@ -82,10 +82,17 @@ export interface WorkOrder {
     | 'structured-rate-limits'
     | 'own-infrastructure'
   )[];
+  /**
+   * Which class of model this work wants, so a small fix does not spend a large model's quota (VISION §11: 'scheduling and model tiering are first-class concerns, not optimizations'). Vendor-neutral by design — a tier is a size, never a model name, because naming one would put a vendor's catalogue in the contract every runner has to speak. Absent means the runner's own default. Deliberately NOT a value in `needs`: that enum is closed and consumers switch on it exhaustively, so adding to it is a major bump (ADR-0010).
+   */
+  modelTier?: 'small' | 'standard' | 'large';
 }
 
 /** The version a producer should write, from the schema's `default`. */
-export const WORK_ORDER_SCHEMA_VERSION = '1.0.0';
+export const WORK_ORDER_SCHEMA_VERSION = '1.1.0';
+
+/** Every value `modelTier` may take. Closed — adding one is a major bump (ADR-0010). */
+export const WORK_ORDER_MODEL_TIER = ['small', 'standard', 'large'] as const;
 
 /** Every value `needs` may take. Closed — adding one is a major bump (ADR-0010). */
 export const WORK_ORDER_NEEDS = [

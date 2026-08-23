@@ -2,7 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../prisma/prisma.service';
-import type { RunnerCapabilities, RunnerNeed } from '../runners/runner.types';
+import type {
+  ModelTier,
+  RunnerCapabilities,
+  RunnerNeed,
+} from '../runners/runner.types';
 import {
   decideDispatch,
   type DispatchDecision,
@@ -50,13 +54,14 @@ export class DispatchService {
   async decide(
     needs: readonly RunnerNeed[],
     identity?: string,
+    modelTier?: ModelTier,
   ): Promise<DispatchDecision> {
     const [pool, globalLiveRuns] = await Promise.all([
       this.loadPool(),
       this.countLiveRuns(),
     ]);
 
-    const decision = decideDispatch({ needs, identity }, pool, {
+    const decision = decideDispatch({ needs, identity, modelTier }, pool, {
       globalMaxConcurrent:
         this.config.get<number | null>('dispatch.maxConcurrent') ?? null,
       globalLiveRuns,

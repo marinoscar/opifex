@@ -262,6 +262,105 @@ describe('dispatch policy', () => {
     });
   });
 
+  describe('model tiers (#205)', () => {
+    // VISION §11: "scheduling and model tiering are first-class concerns, not
+    // optimizations." A tier is a SIZE, never a model name — naming one would
+    // put a vendor's catalogue into the contract every runner speaks.
+
+    it('routes to a runner that serves the requested tier', () => {
+      const decision = decideDispatch(
+        { needs: [], modelTier: 'small' },
+        [entry({ modelTiers: ['small', 'standard'] })],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('dispatch');
+    });
+
+    it('refuses a runner that does not serve it, and says which it does', () => {
+      // Refused rather than dispatched-and-hoped: a runner that cannot serve
+      // the tier would run the work at whatever size it does have, which is
+      // exactly the quota decision VISION §11 wants made deliberately.
+      const decision = decideDispatch(
+        { needs: [], modelTier: 'large' },
+        [entry({ modelTiers: ['small'] })],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('queued');
+      const [candidate] = decision.candidates;
+      expect(candidate.eligible).toBe(false);
+      expect(candidate.reason).toContain('small');
+      expect(candidate.reason).toContain('large');
+    });
+
+    it('treats a runner declaring no tiers as serving any', () => {
+      // What keeps the field additive in BEHAVIOUR as well as in schema: a
+      // runner written before tiers existed stays eligible for work it had
+      // been taking all along.
+      const decision = decideDispatch(
+        { needs: [], modelTier: 'large' },
+        [entry({ modelTiers: undefined })],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('dispatch');
+    });
+
+    it('ignores tiers entirely when the work order asked for none', () => {
+      const decision = decideDispatch(
+        { needs: [] },
+        [entry({ modelTiers: ['small'] })],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('dispatch');
+    });
+
+    it('picks the runner that serves the tier over one that does not', () => {
+      const decision = decideDispatch(
+        { needs: [], modelTier: 'large' },
+        [
+          entry({ key: 'small-only', modelTiers: ['small'] }),
+          entry({ key: 'big', modelTiers: ['large'] }),
+        ],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('dispatch');
+      expect(decision.runnerKey).toBe('big');
+    });
+
+    it('does not count a stable runner as a GA fallback for a tier it cannot serve', () => {
+      // The subtle one. VISION §11 requires "every preview runner needs a GA
+      // fallback accepting IDENTICAL work orders" — and a stable runner that
+      // cannot serve the requested tier cannot accept this one. Counting it
+      // anyway is how a fleet ends up load-bearing on a preview runner.
+      const decision = decideDispatch(
+        { needs: [], modelTier: 'large' },
+        [
+          entry({
+            key: 'preview',
+            stabilityTier: 'experimental',
+            modelTiers: ['large'],
+          }),
+          entry({
+            key: 'stable-small',
+            stabilityTier: 'stable',
+            modelTiers: ['small'],
+          }),
+        ],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('queued');
+      const preview = decision.candidates.find(
+        (c) => c.runnerKey === 'preview',
+      );
+      expect(preview?.reason).toContain('load-bearing');
+    });
+  });
+
   describe('the preview acknowledgement (ADR 0007)', () => {
     // A single-runner fleet cannot satisfy VISION §11's GA-fallback rule, and
     // VISION §3.7 forbids building the second runner to satisfy it. The

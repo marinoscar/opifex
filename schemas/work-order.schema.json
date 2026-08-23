@@ -25,7 +25,7 @@
       "description": "Version of this schema the work order claims to conform to. Stored with it so an authorization record posted a year ago stays readable after the schema moves on. Any 1.x version is accepted: within a major, every change is an added optional field, so a document written against an earlier minor still validates here (ADR-0010). A 2.x document is rejected by this file \u2014 majors get their own.",
       "type": "string",
       "pattern": "^1\\.\\d+\\.\\d+$",
-      "default": "1.0.0"
+      "default": "1.1.0"
     },
     "identity": {
       "description": "wo_{repo}_{issue}_{commit7}_a{attempt}. Deterministic and content-addressed: the string itself names the repository, issue, base commit and attempt, so it keeps resolving even if every row in the database is deleted. Expressed as a pattern rather than prose because a format nothing enforces is a format that drifts.",
@@ -136,6 +136,11 @@
           "own-infrastructure"
         ]
       }
+    },
+    "modelTier": {
+      "description": "Which class of model this work wants, so a small fix does not spend a large model's quota (VISION \u00a711: 'scheduling and model tiering are first-class concerns, not optimizations'). Vendor-neutral by design \u2014 a tier is a size, never a model name, because naming one would put a vendor's catalogue in the contract every runner has to speak. Absent means the runner's own default. Deliberately NOT a value in `needs`: that enum is closed and consumers switch on it exhaustively, so adding to it is a major bump (ADR-0010).",
+      "type": "string",
+      "enum": ["small", "standard", "large"]
     }
   },
   "$comment": "There is deliberately NO field naming a runner, and unevaluatedProperties:false is what enforces it. VISION \u00a76: work orders never name a runner. A work order that named one could not be re-dispatched when that runner was at capacity, which is most of the value of having a seam at all."

@@ -49,6 +49,9 @@ export function toWorkOrderDocument(
     budgetCeilingUsd: workOrder.budgetCeilingUsd,
     wallClockTimeoutMinutes: workOrder.wallClockTimeoutMinutes,
     needs: workOrder.needs,
+    // Only when stated. An absent tier means the runner's default, and writing
+    // it explicitly would turn "unspecified" into a decision nobody made.
+    ...(workOrder.modelTier ? { modelTier: workOrder.modelTier } : {}),
   };
 }
 
@@ -79,6 +82,7 @@ export interface WorkOrderDocument {
   budgetCeilingUsd: number | null;
   wallClockTimeoutMinutes: number | null;
   needs: string[];
+  modelTier?: string;
 }
 
 /**

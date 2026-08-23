@@ -81,6 +81,15 @@ export type RunnerCapabilityManifest = {
     runEvent: [string, ...string[]];
   };
   /**
+   * The model tiers this runner can serve. ABSENT means it serves any tier, which is what keeps the field additive in behaviour as well as in schema — a runner written before tiers existed stays eligible for everything. Declaring the list is how a runner that genuinely cannot reach a tier says so, and routing then refuses rather than dispatching work it cannot size correctly.
+   *
+   * @minItems 1
+   */
+  modelTiers?: [
+    'small' | 'standard' | 'large',
+    ...('small' | 'standard' | 'large')[],
+  ];
+  /**
    * Anything the operator should know that no field above captures. Prose, never parsed — a field the control plane branched on would be a capability in disguise.
    */
   notes?: string;
@@ -93,7 +102,7 @@ export type RunnerCapabilityManifest = {
 };
 
 /** The version a producer should write, from the schema's `default`. */
-export const RUNNER_CAPABILITY_SCHEMA_VERSION = '1.1.0';
+export const RUNNER_CAPABILITY_SCHEMA_VERSION = '1.2.0';
 
 /** Every value `executionLocus` may take. Closed — adding one is a major bump (ADR-0010). */
 export const RUNNER_CAPABILITY_EXECUTION_LOCUS = [
@@ -106,4 +115,11 @@ export const RUNNER_CAPABILITY_INVOCATION_MODEL = [
   'process',
   'http_api',
   'hosted_job',
+] as const;
+
+/** Every value `modelTiers` may take. Closed — adding one is a major bump (ADR-0010). */
+export const RUNNER_CAPABILITY_MODEL_TIERS = [
+  'small',
+  'standard',
+  'large',
 ] as const;
