@@ -92,7 +92,7 @@ function documentedPattern(provenance, trailer) {
   return new RegExp(`^${match[1]}$`);
 }
 
-function loadPatterns() {
+export function loadPatterns() {
   const provenance = readFileSync(join(REPO_ROOT, 'docs/PROVENANCE.md'), 'utf8');
   return Object.fromEntries(ALL_TRAILERS.map((t) => [t, documentedPattern(provenance, t)]));
 }
