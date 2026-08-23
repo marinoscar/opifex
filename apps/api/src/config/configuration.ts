@@ -166,6 +166,17 @@ export default () => {
 
   // Runners (epic #18, #61)
   runners: {
+    // How long past a run's own wall-clock ceiling before the CONTROL PLANE
+    // cancels it (#180).
+    //
+    // A margin rather than zero, so this is a backstop and not a race: firing
+    // at the same instant as the runner's own timer would land a cancel while
+    // the runner is already killing its process, producing two conflicting
+    // reasons for one stop. Two minutes is comfortably longer than
+    // RUNNER_KILL_GRACE_MS plus a poll interval, so a runner shutting down
+    // cleanly always finishes first.
+    deadlineGraceMinutes: parseInt(process.env.RUNNER_DEADLINE_GRACE_MINUTES || '2', 10),
+
     // The v1 runner: Claude Code, invoked as a child process on our own
     // hardware. See docs/adr/0008-claude-code-local-invocation.md for why a
     // subprocess rather than the Agent SDK.
