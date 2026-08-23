@@ -15,10 +15,12 @@ not an SDK" — rather than the area it covers ("GitHub HTTP client"). An index
 of topics tells a reader what was discussed; an index of decisions tells them
 what is true. Delete these comments as you fill the sections in.
 
-`Issue:` is the discussion issue this decision came out of, and it is not
-optional: the ADR is the durable artifact, the issue is the conversation that
-produced it, and VISION §5 wants both edges walkable. `Epic:` is the epic the
-work belongs to, or omit the line if there is none.
+`Issue:` is the discussion issue this decision came out of — filed with the
+Decision proposal form — and it is not optional: the ADR is the durable
+artifact, the issue is the conversation that produced it, and VISION §5 wants
+both edges walkable. `scripts/check-provenance.mjs` fails CI on an ADR without
+it. This PR should also carry `Closes #N` for the same issue; see README.md.
+`Epic:` is the epic the work belongs to, or omit the line if there is none.
 
 `Status:` is `Proposed` while the PR is open and `Accepted` when it merges. A
 decision that is later reversed is not edited or deleted — see README.md.
