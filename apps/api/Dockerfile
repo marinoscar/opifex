@@ -49,6 +49,9 @@ FROM base AS development
 COPY --from=deps /app ./
 COPY tsconfig.base.json ./
 COPY scripts ./scripts
+# Root-level JSON Schemas (e.g. run-event.schema.json), read at runtime by
+# RunEventValidator via a path resolved relative to /app.
+COPY schemas ./schemas
 COPY apps/api ./apps/api
 WORKDIR /app/apps/api
 EXPOSE 3000
@@ -73,6 +76,9 @@ COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY apps/api/prisma ./apps/api/prisma/
 COPY apps/api/prisma.config.ts ./apps/api/
 COPY scripts ./scripts
+# Root-level JSON Schemas (e.g. run-event.schema.json), read at runtime by
+# RunEventValidator via a path resolved relative to /app.
+COPY schemas ./schemas
 WORKDIR /app/apps/api
 EXPOSE 3000
 CMD ["npm", "run", "start:prod"]

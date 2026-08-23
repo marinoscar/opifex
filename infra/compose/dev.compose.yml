@@ -28,6 +28,10 @@ services:
     volumes:
       - ../../apps/api/src:/app/apps/api/src:ro
       - ../../apps/api/prisma:/app/apps/api/prisma:ro
+      # Root-level JSON Schemas (e.g. run-event.schema.json), read at runtime
+      # by RunEventValidator from /app/schemas. Mounted so schema edits are
+      # picked up without a rebuild, matching the src/prisma mounts above.
+      - ../../schemas:/app/schemas:ro
     environment:
       - NODE_ENV=development
     command: npm run start:dev
