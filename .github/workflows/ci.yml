@@ -73,6 +73,14 @@ jobs:
       - name: Check formatting
         run: npx prettier --check .
 
+      # #35: "a schema edit that is not reflected in code fails the build".
+      # Regenerates and diffs, so a schema changed without re-running the
+      # generator is caught here rather than by whatever mis-parses first. This
+      # is also what makes writing the types into both apps safe — two copies of
+      # a generated file are only one source of truth while something checks it.
+      - name: Check generated contract types are current
+        run: npm run contracts:check
+
   openapi:
     name: OpenAPI
     runs-on: ubuntu-latest
