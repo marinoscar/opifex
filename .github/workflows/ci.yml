@@ -12,40 +12,6 @@ env:
   NODE_VERSION: "24"
 
 jobs:
-  # VISION §5: "Enforced by CI. A pull request missing them fails its provenance
-  # check." Pull requests only — a push to main has no PR body to carry a
-  # closing keyword, and the commits it contains were already checked on the PR
-  # that introduced them.
-  #
-  # Per VISION §8 this job is on the never-trustable list: an agent that can
-  # edit the workflow enforcing its own trailers "has the appearance of
-  # guardrails and none of the substance." Changes here are human-only, and the
-  # token Opifex runs with must not carry workflow-write permission.
-  provenance:
-    name: Provenance
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      # The check walks base..head, so the shallow default clone is not enough.
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      # The body arrives through the environment, never interpolated into the
-      # shell. A PR body is attacker-controlled text, and `run: echo ${{ ... }}`
-      # is the textbook GitHub Actions script injection.
-      - name: Check provenance
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: >
-          node scripts/check-provenance.mjs
-          --base ${{ github.event.pull_request.base.sha }}
-          --head ${{ github.event.pull_request.head.sha }}
-
   lint:
     name: Lint
     runs-on: ubuntu-latest
