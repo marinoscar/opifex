@@ -47,6 +47,7 @@ const ADMIN_PERMISSIONS = [
   'system_settings:read',
   'workorders:read',
   'runs:read',
+  'projects:read',
 ];
 
 /**
@@ -56,7 +57,7 @@ const ADMIN_PERMISSIONS = [
  * permission: `prisma/seed.ts` grants `workorders:read` to all three roles, so
  * a permission-less user is not a viewer, it is a user the API cannot produce.
  */
-const VIEWER_PERMISSIONS = ['workorders:read', 'runs:read'];
+const VIEWER_PERMISSIONS = ['workorders:read', 'runs:read', 'projects:read'];
 const PHONE = 375;
 
 /** Renders at a phone width, which is the only width this bar exists at. */
