@@ -6,6 +6,7 @@ import { GitHubWriteModule } from '../github/write/github-write.module';
 import { LivenessModule } from '../liveness/liveness.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { WatchdogModule } from '../watchdog/watchdog.module';
+import { WorkOrdersModule } from '../work-orders/work-orders.module';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
 import { RepositoriesModule } from '../repositories/repositories.module';
 import { ReconcileLogCleanupTask } from './log/reconcile-log.cleanup.task';
@@ -30,7 +31,11 @@ import { TickLeaseService } from './tick-lease.service';
  *
  *  - `ReconcilerService` — observation, projection, diff — does not depend on
  *    `MirrorLabelExecutor` or on any write service. The component that decides
- *    what should happen is still incapable of making it happen.
+ *    what should happen is still incapable of making it happen. #155 gave it
+ *    `WorkOrderProjectionService`, which writes ROWS; the GitHub half of that
+ *    work — telling an author why their spec was rejected — leaves on the tick
+ *    record and is posted by the task, on the same side of the line as every
+ *    other outward action.
  *  - `ReconcilerTask` is the only place the two meet: it calls the reconciler
  *    to COMPUTE, then hands the action list to the executor to APPLY.
  *  - The executor handles two label action types and ignores everything else.
@@ -55,6 +60,12 @@ import { TickLeaseService } from './tick-lease.service';
     // an escalation and telling somebody are both ACTIONS, and the component
     // that decides to escalate can do neither.
     NotificationsModule,
+    // Turning eligible issues into work order rows (#155). A DATABASE write,
+    // not a GitHub one — which is why `ReconcilerService` may hold it while
+    // still being unable to touch a repository. A queued work order is inert
+    // without `DISPATCH_ENABLED`, and seeing what the factory would work on is
+    // the artifact VISION §12 asks the observation week to produce.
+    WorkOrdersModule,
   ],
   controllers: [ReconcilerController],
   providers: [

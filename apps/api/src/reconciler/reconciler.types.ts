@@ -1,5 +1,20 @@
 import type { ReconcileAction } from './diff/actions.types';
 import type { DesiredState } from './projection/desired-state.types';
+import type { RejectedIssue } from '../work-orders/work-order-projection.service';
+
+/**
+ * An issue whose spec the generator refused, and where to say so.
+ *
+ * Carried off the tick rather than acted on inside it, for the same reason
+ * actions are: the component that DECIDES an issue is unbuildable must not be
+ * the one that comments on it. `ReconcilerTask` is where computing meets
+ * acting, and it is the only place that may post.
+ */
+export interface TickRejection extends RejectedIssue {
+  repository: { id: string; owner: string; name: string };
+  /** Whether this repository has opted in to receiving spec feedback. */
+  feedbackEnabled: boolean;
+}
 
 /**
  * What one tick did, recorded whether or not it found anything to do.
@@ -34,6 +49,22 @@ export interface TickRecord {
    * week. #50 persists these.
    */
   projections: DesiredState[];
+  /**
+   * Work orders this tick created, across every repository.
+   *
+   * A count rather than the documents: the rows are the record, and copying
+   * them onto the tick log would duplicate an authorization document into a
+   * second place it could drift from.
+   */
+  workOrdersCreated: number;
+  /**
+   * Issues whose spec was rejected, for the task to report once each.
+   *
+   * VISION §10 makes spec quality the throughput ceiling — *the factory cannot
+   * be better than what it is told to build* — so a rejection is a message to
+   * a human, not a log line, and it has to survive the tick to become one.
+   */
+  rejections: TickRejection[];
   /**
    * What the tick decided to do — and, during the observation week, did NOT do.
    *
