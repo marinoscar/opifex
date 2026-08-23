@@ -231,12 +231,30 @@ describe('QueueService', () => {
       expect(entries.map((e) => e.state)).toEqual(['ready', 'ready', 'waiting']);
     });
 
-    it('explains the ones past the headroom', async () => {
+    it('says the slots are taken, not that it is dispatching', async () => {
+      // The policy's own sentence begins "Dispatch to claude-code-local…",
+      // which on a row that is NOT dispatching reads as though it is. Reusing
+      // it here was a real bug, caught by a probe against a fleet with finite
+      // headroom and three rows to fit into it — the double could not, because
+      // the double had never run out.
       findMany.mockResolvedValue([row({ id: 'a' }), row({ id: 'b' }), row({ id: 'c' })]);
 
       const entries = await service.list();
 
-      expect(entries[2].waitingOn).toContain('Dispatch to claude-code-local');
+      expect(entries[2].waitingOn).not.toMatch(/^Dispatch to/);
+      expect(entries[2].waitingOn).toContain('free slot');
+      expect(entries[2].waitingOn).toContain('claude-code-local');
+    });
+
+    it('still reuses the policy sentence when the POLICY refused it', async () => {
+      // #64: selection reasoning is recorded, and the two places an operator
+      // reads it must agree. This is the case where that still applies.
+      decide.mockResolvedValue(QUEUED_FULL);
+      findMany.mockResolvedValue([row({ id: 'a' })]);
+
+      const entries = await service.list();
+
+      expect(entries[0].waitingOn).toBe('Queued: every capable runner is at capacity.');
     });
 
     it('does not let a held row consume a slot', async () => {

@@ -202,9 +202,10 @@ describe('destinations — the table itself', () => {
    * against the controllers rather than assumed:
    *   users.controller.ts           → PERMISSIONS.USERS_READ
    *   system-settings.controller.ts → PERMISSIONS.SYSTEM_SETTINGS_READ
+   *   cockpit/queue.controller.ts   → PERMISSIONS.WORKORDERS_READ   (#80)
    * Nothing else in `apps/api` guards a page this app routes to.
    */
-  const ENFORCED_PERMISSIONS = ['users:read', 'system_settings:read'];
+  const ENFORCED_PERMISSIONS = ['users:read', 'system_settings:read', 'workorders:read'];
 
   it('gates the admin destinations on the permission the API enforces', () => {
     expect(byKey.users.permission).toBe('users:read');
@@ -230,8 +231,15 @@ describe('destinations — the table itself', () => {
     }
   });
 
+  it('gates the queue on the permission its controller enforces', () => {
+    // #80. `workorders:read` is the string `QueueController` really requires,
+    // and it is granted to all three seeded roles including `viewer` — so the
+    // destination narrows to nobody it should not.
+    expect(byKey.queue.permission).toBe('workorders:read');
+  });
+
   it('gives every PLANNED destination no permission at all', () => {
-    // `apps/api` has no runs, queue, projects or cost module, so there is no
+    // `apps/api` has no runs, projects or cost module, so there is no
     // `runs:read` to require. This is the assertion that stops one being
     // invented ahead of the endpoint.
     for (const destination of DESTINATIONS) {
@@ -244,8 +252,16 @@ describe('destinations — the table itself', () => {
   });
 
   it('marks exactly the destinations with a real API as live', () => {
+    // `queue` joined on #80, in the same pull request as its endpoint. That
+    // simultaneity is the rule this file's header sets, and this list is what
+    // makes breaking it fail rather than merely be noticed in review.
     const live = DESTINATIONS.filter((d) => d.status === 'live').map((d) => d.key);
-    expect(live.sort()).toEqual(['dashboard', 'settings', 'system', 'users']);
+    expect(live.sort()).toEqual(['dashboard', 'queue', 'settings', 'system', 'users']);
+  });
+
+  it('leaves the still-unbuilt cockpit destinations planned', () => {
+    const planned = DESTINATIONS.filter((d) => d.status === 'planned').map((d) => d.key);
+    expect(planned.sort()).toEqual(['cost', 'projects', 'runs']);
   });
 
   it('puts every destination in a declared section', () => {
@@ -339,8 +355,21 @@ describe('destinations — the bottom-bar split', () => {
   });
 
   it('drops a primary the user cannot see rather than leaving a hole', () => {
-    const { primary } = bottomNavSplit((d) => d.key !== 'runs' && !d.permission);
+    // A user who can see everything EXCEPT `runs`. Written as an explicit key
+    // exclusion rather than `!d.permission`, which is what it used to be: once
+    // #80 gave `queue` a real permission that predicate started excluding it
+    // too, and the test would have gone on passing while exercising a
+    // one-primary case instead of the drop-one case it is named for.
+    const { primary } = bottomNavSplit((d) => d.key !== 'runs');
     expect(primary.map((d) => d.key)).toEqual(['dashboard', 'queue']);
+  });
+
+  it('drops a primary the user lacks the permission for', () => {
+    // The permission path specifically, now that a primary destination has
+    // one: a viewer without `workorders:read` loses the Queue tab and the bar
+    // closes up rather than rendering a gap.
+    const { primary } = bottomNavSplit((d) => d.permission !== 'workorders:read');
+    expect(primary.map((d) => d.key)).toEqual(['dashboard', 'runs']);
   });
 
   it('keeps the overflow in table order, not in permission order', () => {

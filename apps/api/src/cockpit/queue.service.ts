@@ -87,7 +87,7 @@ export class QueueService {
 
     return rows.map((row, index) => {
       const decision = decisions.get(needsKey(row.needs));
-      const state = this.stateOf(row.status, decision, remaining);
+      const { state, outOfHeadroom } = this.stateOf(row.status, decision, remaining);
 
       return {
         id: row.id,
@@ -110,7 +110,7 @@ export class QueueService {
         // cannot jump the queue. `createdAt` is when it entered the queue in
         // every sense the operator cares about.
         enqueuedAt: (row.queuedAt ?? row.createdAt).toISOString(),
-        waitingOn: this.waitingOn(row.status, state, row.holdReason, decision),
+        waitingOn: this.waitingOn(row.status, state, outOfHeadroom, row.holdReason, decision),
       };
     });
   }
@@ -161,9 +161,11 @@ export class QueueService {
     status: string,
     decision: DispatchDecision | undefined,
     remaining: Map<string, number>,
-  ): QueueEntryState {
-    if (status === 'held') return 'held';
-    if (!decision || decision.outcome !== 'dispatch' || !decision.runnerKey) return 'waiting';
+  ): { state: QueueEntryState; outOfHeadroom: boolean } {
+    if (status === 'held') return { state: 'held', outOfHeadroom: false };
+    if (!decision || decision.outcome !== 'dispatch' || !decision.runnerKey) {
+      return { state: 'waiting', outOfHeadroom: false };
+    }
 
     const key = decision.runnerKey;
     if (!remaining.has(key)) {
@@ -172,23 +174,36 @@ export class QueueService {
     }
 
     const left = remaining.get(key) ?? 0;
-    if (left <= 0) return 'waiting';
+    // Waiting because the rows AHEAD of it took the free slots, which is a
+    // different fact from "the policy refused this work order" — and the
+    // reason string has to say which. See `waitingOn`.
+    if (left <= 0) return { state: 'waiting', outOfHeadroom: true };
 
     remaining.set(key, left - 1);
-    return 'ready';
+    return { state: 'ready', outOfHeadroom: false };
   }
 
   /**
    * One line naming what must clear first.
    *
-   * The policy's own `reason` string is reused rather than rewritten, because
-   * #64 requires that *"selection is deterministic and its reasoning is
-   * recorded"* — and an operator comparing the queue panel against the dispatch
-   * log should read the same sentence in both, not two paraphrases of it.
+   * ## Two different kinds of waiting
+   *
+   * When the POLICY queued the work order, its own `reason` string is reused
+   * rather than rewritten: #64 requires that *"selection is deterministic and
+   * its reasoning is recorded"*, and an operator comparing the queue panel
+   * against the dispatch log should read the same sentence in both.
+   *
+   * When the policy would dispatch and the rows AHEAD took the free slots,
+   * that sentence is wrong — it begins *"Dispatch to claude-code-local…"*,
+   * which on a row that is not dispatching reads as though it is. A probe
+   * against a real fleet is what caught that; the double could not, because
+   * the double never had a runner with finite headroom and three rows to fit
+   * into it.
    */
   private waitingOn(
     status: string,
     state: QueueEntryState,
+    outOfHeadroom: boolean,
     holdReason: string | null,
     decision: DispatchDecision | undefined,
   ): string | null {
@@ -199,6 +214,10 @@ export class QueueService {
       return holdReason ?? 'Held by a factory:hold label; release it on the issue';
     }
     if (state === 'ready') return null;
+    if (outOfHeadroom) {
+      const runner = decision?.runnerKey ?? 'the fleet';
+      return `Waiting for a free slot on ${runner}; the work orders ahead of it take them all`;
+    }
     return decision?.reason ?? 'No dispatch decision is available for this work order';
   }
 }

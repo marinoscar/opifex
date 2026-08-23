@@ -145,6 +145,15 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
           'retried delivery is recognised rather than duplicated.',
       },
       {
+        name: 'Cockpit',
+        description:
+          'The read models the operator dashboard is built on (#80). These answer operational ' +
+          'questions — what is queued and why it is not running yet — rather than returning ' +
+          'rows for the browser to interpret: the verdict about why a work order is waiting is ' +
+          "the control plane's, and a UI that recomputed it would be a second implementation of " +
+          'dispatch policy, out of date by one poll interval.',
+      },
+      {
         name: 'Repositories',
         description:
           'Which repositories Opifex watches, and the policy for each: whether the reconciler ' +

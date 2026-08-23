@@ -1394,6 +1394,88 @@ chain survives. Set `observeEnabled` and `dispatchEnabled` to `false` instead.
 
 ---
 
+### Cockpit
+
+The read models the operator dashboard is built on. These answer operational
+questions rather than returning rows for the browser to interpret — the verdict
+about *why* a work order is not running is the control plane's, and a UI that
+recomputed it would be a second implementation of dispatch policy, out of date
+by one poll interval and wrong the moment the rules change.
+
+#### `GET /api/queue`
+
+Queued and held work orders, in dispatch order. Requires `workorders:read`.
+
+| Query | Type | Default | Notes |
+|---|---|---|---|
+| `limit` | number | `25` | 1–100. |
+
+**Position 1 is what the next reconciler tick will pick up.** The order is the
+same one the dispatch pass drains in (`queuedAt` ascending), which is what makes
+`position` a fact rather than a decoration. Held work orders have no `queuedAt`
+— it is nulled so releasing one cannot jump the queue — so they sort last, and
+their `enqueuedAt` falls back to when the row was created.
+
+**Dispatched work orders are not listed.** They have a run against them and
+belong to the runs view; listing them here as well would make queue depth read
+high while the factory is busy working through it.
+
+`state` is the answer to "why is this not running yet":
+
+| State | Meaning | Clears when |
+|---|---|---|
+| `ready` | A runner could take it right now | The next tick dispatches it |
+| `waiting` | No capable runner, or the rows ahead take every free slot | On its own |
+| `held` | A `factory:hold` label, or a quarantine | **A human acts** |
+| `dispatching` | In the vocabulary, never returned — see below | — |
+
+`held` is kept apart from `waiting` because they call for opposite responses:
+waiting is a scheduling outcome that resolves itself, held is a policy outcome
+that does not.
+
+`dispatching` is never emitted. A work order stops being `queued` the instant
+the executor creates its `Run` row, inside the same pass, so there is no
+committed state between the two for this endpoint to observe. It stays in the
+vocabulary because the state becomes real the moment dispatch is asynchronous.
+
+`waitingOn` carries one line naming what must clear. Where the dispatch policy
+refused the work order, it is **the policy's own sentence verbatim** — an
+operator comparing this panel against the dispatch log should read the same
+words in both, not two paraphrases.
+
+```json
+{
+  "data": [
+    {
+      "id": "3f2a...",
+      "workOrder": {
+        "id": "wo_opifex_312_a3f91c2_a1",
+        "issueNumber": 312,
+        "repository": "marinoscar/opifex",
+        "baseCommit": "a3f91c2",
+        "attempt": 1,
+        "branch": "factory/312-a3f91c2-a1",
+        "title": "Add a permit search prompt builder",
+        "issueUrl": "https://github.com/marinoscar/opifex/issues/312"
+      },
+      "state": "waiting",
+      "position": 3,
+      "enqueuedAt": "2026-08-23T03:00:00.000Z",
+      "waitingOn": "Waiting for a free slot on claude-code-local; the work orders ahead of it take them all"
+    }
+  ]
+}
+```
+
+`baseCommit` is shortened to 7 characters by the API. `id` and `branch` are
+carried verbatim rather than recomposed from the parts: re-run idempotency rests
+on those strings matching exactly, so nothing downstream may re-derive them.
+
+**Hold and release are not here.** They are a write path with different
+authorization stakes and are tracked separately (#116).
+
+---
+
 ### Escalations
 
 What needs a human. VISION §9 is explicit that **escalation is an action, not

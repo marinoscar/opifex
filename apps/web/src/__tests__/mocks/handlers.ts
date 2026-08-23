@@ -190,6 +190,19 @@ export const handlers = [
   }),
 
   // Health endpoints
+  /**
+   * `GET /queue` — the dispatch queue (#80).
+   *
+   * Empty by default, which is the honest default for a test database with no
+   * work orders in it: the queue panel's EMPTY state ("nothing is queued") and
+   * its NOT-WIRED state ("dispatch does not exist yet") are opposite meanings,
+   * and a fixture with rows in it would stop either being exercised. Tests that
+   * need entries override this handler.
+   */
+  http.get(`${API_BASE}/queue`, () => {
+    return HttpResponse.json({ data: [] });
+  }),
+
   http.get(`${API_BASE}/health/live`, () => {
     return HttpResponse.json({
       data: {

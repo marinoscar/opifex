@@ -42,7 +42,16 @@ function setPermissions(granted: string[], isAdmin = false) {
   });
 }
 
-const ADMIN_PERMISSIONS = ['users:read', 'system_settings:read'];
+const ADMIN_PERMISSIONS = ['users:read', 'system_settings:read', 'workorders:read'];
+
+/**
+ * What a real seeded VIEWER holds.
+ *
+ * `[]` stopped representing anybody once #80 gave the Queue destination a real
+ * permission: `prisma/seed.ts` grants `workorders:read` to all three roles, so
+ * a permission-less user is not a viewer, it is a user the API cannot produce.
+ */
+const VIEWER_PERMISSIONS = ['workorders:read'];
 const PHONE = 375;
 
 /** Renders at a phone width, which is the only width this bar exists at. */
@@ -128,13 +137,27 @@ describe('BottomNav', () => {
     });
 
     it('keeps the same three tabs for a user with no admin permissions', () => {
-      // The primaries carry no permission, so the bar's SHAPE is stable across
-      // users — only the sheet's contents change. A bar that reflows between
-      // roles is a bar whose muscle memory is worthless.
-      setPermissions([]);
+      // The bar's SHAPE is stable across roles — only the sheet's contents
+      // change. A bar that reflows between roles is a bar whose muscle memory
+      // is worthless. A viewer holds `workorders:read` (see VIEWER_PERMISSIONS),
+      // so Queue stays on the bar for them too.
+      setPermissions(VIEWER_PERMISSIONS);
       renderPhone();
 
       expect(barActions()).toHaveLength(4);
+      expect(screen.getByRole('button', { name: 'Runs' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Queue' })).toBeInTheDocument();
+    });
+
+    it('closes the bar up when a user lacks a primary permission', () => {
+      // The one case that DOES reflow, and it must not leave a hole: a user
+      // without `workorders:read` loses Queue and the bar renders three
+      // actions rather than four with a gap.
+      setPermissions([]);
+      renderPhone();
+
+      expect(screen.queryByRole('button', { name: 'Queue' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Cockpit' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Runs' })).toBeInTheDocument();
     });
 
@@ -267,7 +290,7 @@ describe('BottomNav', () => {
 
     it('hides the destinations the user lacks permission for', async () => {
       const user = userEvent.setup();
-      setPermissions([]);
+      setPermissions(VIEWER_PERMISSIONS);
       renderPhone('/');
 
       await user.click(screen.getByRole('button', { name: 'More destinations' }));

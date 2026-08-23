@@ -200,7 +200,13 @@ export const DESTINATIONS: readonly Destination[] = [
     Icon: PendingActionsIcon,
     path: '/queue',
     section: 'operate',
-    status: 'planned',
+    // LIVE as of #80, and gaining its real permission in the same pull request
+    // that added the endpoint — which is the rule this file's header sets.
+    // `workorders:read` is the string `QueueController` actually enforces, and
+    // it is in all three seeded roles including `viewer`, so this narrows the
+    // destination to nobody it should not.
+    status: 'live',
+    permission: 'workorders:read',
   },
   {
     key: 'projects',
