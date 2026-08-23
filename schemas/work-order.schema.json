@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/marinoscar/opifex/schemas/work-order.schema.json",
   "title": "Work Order",
-  "description": "The central artifact of the system (VISION.MD §4). A work order is a PROJECTION of a GitHub issue, pinned to a commit — never an independent source of truth. Its identity is deterministic, which is what makes abandon-and-re-run recovery (§3.4) idempotent: two dispatches of the same work at the same commit compute the same branch name, and the second runner finds the first one's branch already there. This same document is posted to the issue as the authorization record and committed to the branch as the execution record (#63, ADR-0005), and the two must be byte-identical.",
+  "description": "The central artifact of the system (VISION.MD \u00a74). A work order is a PROJECTION of a GitHub issue, pinned to a commit \u2014 never an independent source of truth. Its identity is deterministic, which is what makes abandon-and-re-run recovery (\u00a73.4) idempotent: two dispatches of the same work at the same commit compute the same branch name, and the second runner finds the first one's branch already there. This same document is posted to the issue as the authorization record and committed to the branch as the execution record (#63, ADR-0005), and the two must be byte-identical.",
   "type": "object",
   "unevaluatedProperties": false,
   "required": [
@@ -22,78 +22,98 @@
   ],
   "properties": {
     "schemaVersion": {
-      "description": "Version of this schema the work order claims to conform to. Stored with it so an authorization record posted a year ago stays readable after the schema moves on.",
+      "description": "Version of this schema the work order claims to conform to. Stored with it so an authorization record posted a year ago stays readable after the schema moves on. Any 1.x version is accepted: within a major, every change is an added optional field, so a document written against an earlier minor still validates here (ADR-0010). A 2.x document is rejected by this file \u2014 majors get their own.",
       "type": "string",
-      "const": "1.0.0"
+      "pattern": "^1\\.\\d+\\.\\d+$",
+      "default": "1.0.0"
     },
-
     "identity": {
       "description": "wo_{repo}_{issue}_{commit7}_a{attempt}. Deterministic and content-addressed: the string itself names the repository, issue, base commit and attempt, so it keeps resolving even if every row in the database is deleted. Expressed as a pattern rather than prose because a format nothing enforces is a format that drifts.",
       "type": "string",
       "pattern": "^wo_[a-z0-9-]+_[1-9][0-9]*_[0-9a-f]{7}_a[1-9][0-9]*$"
     },
     "branch": {
-      "description": "factory/{issue}-{commit7}-a{attempt}. Under the factory/ prefix every runner declares in branchPatterns, so a branch Opifex created is distinguishable from one a human made at a glance and by a glob. Derived from the same coordinates as the identity — the idempotency IS this naming scheme, not a lock.",
+      "description": "factory/{issue}-{commit7}-a{attempt}. Under the factory/ prefix every runner declares in branchPatterns, so a branch Opifex created is distinguishable from one a human made at a glance and by a glob. Derived from the same coordinates as the identity \u2014 the idempotency IS this naming scheme, not a lock.",
       "type": "string",
       "pattern": "^factory/[1-9][0-9]*-[0-9a-f]{7}-a[1-9][0-9]*$"
     },
-
     "repository": {
-      "description": "Where the work happens. Owner and name are separate because the identity above uses the NAME alone, per §4, and the owner still has to reach whoever reads this document.",
+      "description": "Where the work happens. Owner and name are separate because the identity above uses the NAME alone, per \u00a74, and the owner still has to reach whoever reads this document.",
       "type": "object",
       "unevaluatedProperties": false,
       "required": ["owner", "name"],
       "properties": {
-        "owner": { "type": "string", "minLength": 1 },
-        "name": { "type": "string", "minLength": 1 }
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "baseCommit": {
-      "description": "The full 40-character SHA the work starts from, pinned at generation and NEVER resolved later. Resolved at dispatch instead, a work order authorized on Monday and run on Tuesday would start from a tree the authorizer never saw — and the identity, which encodes this commit's first seven characters, would name a commit the run never used. Full rather than abbreviated because an abbreviation is ambiguous the moment the repository grows, and this has to still resolve to one commit in a year.",
+      "description": "The full 40-character SHA the work starts from, pinned at generation and NEVER resolved later. Resolved at dispatch instead, a work order authorized on Monday and run on Tuesday would start from a tree the authorizer never saw \u2014 and the identity, which encodes this commit's first seven characters, would name a commit the run never used. Full rather than abbreviated because an abbreviation is ambiguous the moment the repository grows, and this has to still resolve to one commit in a year.",
       "type": "string",
       "pattern": "^[0-9a-f]{40}$"
     },
     "attempt": {
-      "description": "1 for the first go at this issue at this base. The only component a human or the retry policy increments. A retry keeps the same base — abandon-and-re-run means the same starting tree, a fresh run.",
+      "description": "1 for the first go at this issue at this base. The only component a human or the retry policy increments. A retry keeps the same base \u2014 abandon-and-re-run means the same starting tree, a fresh run.",
       "type": "integer",
       "minimum": 1
     },
-
     "issue": {
-      "description": "The issue this work order projects. REQUIRED, and required is the whole point: §4 makes a work order a projection of an issue rather than an independent source of truth, and §5 warns that a missing Issue -> WorkOrder edge is not detectable after the fact. There is no way to express a work order that came from nowhere.",
+      "description": "The issue this work order projects. REQUIRED, and required is the whole point: \u00a74 makes a work order a projection of an issue rather than an independent source of truth, and \u00a75 warns that a missing Issue -> WorkOrder edge is not detectable after the fact. There is no way to express a work order that came from nowhere.",
       "type": "object",
       "unevaluatedProperties": false,
       "required": ["number", "url"],
       "properties": {
-        "number": { "type": "integer", "minimum": 1 },
-        "url": { "type": "string", "format": "uri", "minLength": 1 },
-        "title": { "type": "string" }
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        }
       }
     },
     "decisionRefs": {
       "description": "ADRs this work implements or is constrained by, as ADR-NNNN. Optional, because most work implements no ADR and a required field would be satisfied with a fictional value within a week.",
       "type": "array",
-      "items": { "type": "string", "pattern": "^ADR-[0-9]{4}$" },
+      "items": {
+        "type": "string",
+        "pattern": "^ADR-[0-9]{4}$"
+      },
       "default": []
     },
-
     "taskSpec": {
       "description": "What to do, in prose. The runner's actual instruction.",
       "type": "string",
       "minLength": 1
     },
     "acceptanceCriteria": {
-      "description": "How anyone will know it is done. TESTABLE, per §4 — and at least one, because a work order with no definition of done cannot produce a run that FAILS. It can only produce something nobody can check. §10: throughput ceiling is spec quality, not token budget. The schema enforces presence and non-emptiness; whether a criterion is genuinely testable is a policy question decided in deterministic code (§3.6), not something JSON Schema can express.",
+      "description": "How anyone will know it is done. TESTABLE, per \u00a74 \u2014 and at least one, because a work order with no definition of done cannot produce a run that FAILS. It can only produce something nobody can check. \u00a710: throughput ceiling is spec quality, not token budget. The schema enforces presence and non-emptiness; whether a criterion is genuinely testable is a policy question decided in deterministic code (\u00a73.6), not something JSON Schema can express.",
       "type": "array",
       "minItems": 1,
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "pathConstraints": {
-      "description": "Globs the run may write within. An EMPTY ARRAY means the whole repository — present-but-empty rather than absent, so 'unconstrained' is a stated choice rather than a forgotten field.",
+      "description": "Globs the run may write within. An EMPTY ARRAY means the whole repository \u2014 present-but-empty rather than absent, so 'unconstrained' is a stated choice rather than a forgotten field.",
       "type": "array",
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
-
     "budgetCeilingUsd": {
       "description": "Hard spend ceiling. REQUIRED, and nullable: null means no ceiling, which is a decision somebody made rather than a field they forgot. Making it optional would let an unbounded work order look identical to one nobody thought about. Enforcement is deterministic policy (#65), never the runner's judgement.",
       "type": ["number", "null"],
@@ -104,7 +124,6 @@
       "type": ["integer", "null"],
       "minimum": 1
     },
-
     "needs": {
       "description": "What this work requires OF a runner, matched against advertised capabilities by routing (#64). This is the indirection that makes the seam real: a work order declares needs, never a runner. An empty array means anything enabled will do. A closed enum so a need nothing advertises fails loudly at routing rather than silently matching everything.",
       "type": "array",
@@ -119,6 +138,5 @@
       }
     }
   },
-
-  "$comment": "There is deliberately NO field naming a runner, and unevaluatedProperties:false is what enforces it. VISION §6: work orders never name a runner. A work order that named one could not be re-dispatched when that runner was at capacity, which is most of the value of having a seam at all."
+  "$comment": "There is deliberately NO field naming a runner, and unevaluatedProperties:false is what enforces it. VISION \u00a76: work orders never name a runner. A work order that named one could not be re-dispatched when that runner was at capacity, which is most of the value of having a seam at all."
 }
