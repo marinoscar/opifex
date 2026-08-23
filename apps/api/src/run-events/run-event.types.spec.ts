@@ -23,14 +23,17 @@ const schema = JSON.parse(
     'utf8',
   ),
 ) as {
-  properties: Record<string, { enum?: string[]; const?: string }>;
+  properties: Record<string, { enum?: string[]; default?: string }>;
   allOf: { then?: { properties?: Record<string, unknown> } }[];
 };
 
 describe('run-event types, pinned against the schema', () => {
-  it('matches the schema version', () => {
+  it('matches the version the schema says to write', () => {
+    // `default`, not `const`: since ADR-0010 the schema ACCEPTS any 1.x and
+    // names the current version as the one a producer should emit. What this
+    // code emits has to be that one.
     expect(RUN_EVENT_SCHEMA_VERSION).toBe(
-      schema.properties.schemaVersion.const,
+      schema.properties.schemaVersion.default,
     );
   });
 

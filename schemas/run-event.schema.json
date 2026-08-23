@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/marinoscar/opifex/schemas/run-event.schema.json",
   "title": "Run Event",
-  "description": "The normalized event floor every runner maps into (VISION.MD §9). Exactly six types. A seventh requires a schema version bump, which is the point: the floor is what makes runners comparable, and a floor that grows on demand is not a floor.",
+  "description": "The normalized event floor every runner maps into (VISION.MD \u00a79). Exactly six types. A seventh requires a schema version bump, which is the point: the floor is what makes runners comparable, and a floor that grows on demand is not a floor.",
   "type": "object",
   "unevaluatedProperties": false,
   "required": [
@@ -16,9 +16,10 @@
   ],
   "properties": {
     "schemaVersion": {
-      "description": "Version of this schema the event claims to conform to. Stored with the event so an old payload stays readable after the schema moves on.",
+      "description": "Version of this schema the event claims to conform to. Stored with the event so an old payload stays readable after the schema moves on. Any 1.x version is accepted: within a major, every change is an added optional field, so a document written against an earlier minor still validates here (ADR-0010). A 2.x document is rejected by this file \u2014 majors get their own.",
       "type": "string",
-      "const": "1.0.0"
+      "pattern": "^1\\.\\d+\\.\\d+$",
+      "default": "1.0.0"
     },
     "eventId": {
       "description": "Stable identifier chosen by the SENDER, not by Opifex. This is what makes ingestion idempotent: a runner retrying a delivery reuses the id, and the second delivery is recognised rather than stored twice (#53).",
@@ -26,7 +27,10 @@
       "minLength": 1,
       "maxLength": 200
     },
-    "runId": { "type": "string", "format": "uuid" },
+    "runId": {
+      "type": "string",
+      "format": "uuid"
+    },
     "workOrderId": {
       "description": "The deterministic work-order identity, wo_{repo}_{issue}_{commit7}_a{attempt}. Carried on every event so a trace can be assembled without joining through the run.",
       "type": "string",
@@ -44,11 +48,11 @@
       ]
     },
     "source": {
-      "description": "Where this event came from. REQUIRED, and deliberately given no default. VISION §9: 'a synthesized event must never masquerade as a report.' A watchdog that cannot tell 'the runner told me it was blocked' from 'I decided it looked blocked' will eventually make an unrecoverable decision on its own guess — so a sender that omits this gets an error, not a plausible assumption.",
+      "description": "Where this event came from. REQUIRED, and deliberately given no default. VISION \u00a79: 'a synthesized event must never masquerade as a report.' A watchdog that cannot tell 'the runner told me it was blocked' from 'I decided it looked blocked' will eventually make an unrecoverable decision on its own guess \u2014 so a sender that omits this gets an error, not a plausible assumption.",
       "enum": ["runner-reported", "git-derived", "control-plane-synthesized"]
     },
     "occurredAt": {
-      "description": "When the event actually happened, per its source — NOT when Opifex stored it. The gap between the two is detection latency, success metric 1.",
+      "description": "When the event actually happened, per its source \u2014 NOT when Opifex stored it. The gap between the two is detection latency, success metric 1.",
       "type": "string",
       "format": "date-time"
     },
@@ -62,12 +66,18 @@
       "type": "string"
     },
     "trace": {
-      "description": "OpenTelemetry correlation. VISION §9 maps one trace per work order and one span per turn or tool call.",
+      "description": "OpenTelemetry correlation. VISION \u00a79 maps one trace per work order and one span per turn or tool call.",
       "type": "object",
       "unevaluatedProperties": false,
       "properties": {
-        "traceId": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
-        "spanId": { "type": "string", "pattern": "^[0-9a-f]{16}$" }
+        "traceId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "spanId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        }
       },
       "required": ["traceId"]
     },
@@ -76,27 +86,44 @@
       "type": "object",
       "unevaluatedProperties": false,
       "properties": {
-        "usd": { "type": "number", "minimum": 0 },
-        "tokensInput": { "type": "integer", "minimum": 0 },
-        "tokensOutput": { "type": "integer", "minimum": 0 }
+        "usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "tokensInput": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokensOutput": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     }
   },
   "allOf": [
     {
       "if": {
-        "properties": { "type": { "const": "run.progress" } },
+        "properties": {
+          "type": {
+            "const": "run.progress"
+          }
+        },
         "required": ["type"]
       },
       "then": {
         "properties": {
           "tool": {
-            "description": "Tool name plus a normalized argument signature. OPTIONAL, because a non-streaming runner cannot supply it — the capability manifest declares which can. Loop detection (#55) is built entirely on this field, and defining it now rather than later is what avoids a version bump the moment Phase 3 arrives.",
+            "description": "Tool name plus a normalized argument signature. OPTIONAL, because a non-streaming runner cannot supply it \u2014 the capability manifest declares which can. Loop detection (#55) is built entirely on this field, and defining it now rather than later is what avoids a version bump the moment Phase 3 arrives.",
             "type": "object",
             "unevaluatedProperties": false,
             "required": ["name", "signature"],
             "properties": {
-              "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
               "signature": {
                 "description": "A stable digest of the arguments, computed by the sender. A digest rather than the raw arguments because arguments can be enormous and can contain secrets, and loop detection only ever compares them for equality.",
                 "type": "string",
@@ -115,14 +142,18 @@
     },
     {
       "if": {
-        "properties": { "type": { "const": "run.blocked" } },
+        "properties": {
+          "type": {
+            "const": "run.blocked"
+          }
+        },
         "required": ["type"]
       },
       "then": {
         "required": ["blocked"],
         "properties": {
           "blocked": {
-            "description": "REQUIRED on a blocked event. This is what separates 'park and auto-resume' from 'kill and re-run' — VISION §9's three failure modes collapse into two without it, and the collapse is the most common supervision bug.",
+            "description": "REQUIRED on a blocked event. This is what separates 'park and auto-resume' from 'kill and re-run' \u2014 VISION \u00a79's three failure modes collapse into two without it, and the collapse is the most common supervision bug.",
             "type": "object",
             "unevaluatedProperties": false,
             "required": ["reason"],
@@ -138,11 +169,14 @@
                 ]
               },
               "resetAt": {
-                "description": "When the block is expected to clear. Absent when the runner cannot say — see `reason: unknown`.",
+                "description": "When the block is expected to clear. Absent when the runner cannot say \u2014 see `reason: unknown`.",
                 "type": "string",
                 "format": "date-time"
               },
-              "detail": { "type": "string", "maxLength": 500 }
+              "detail": {
+                "type": "string",
+                "maxLength": 500
+              }
             }
           }
         }
@@ -150,7 +184,11 @@
     },
     {
       "if": {
-        "properties": { "type": { "const": "run.completed" } },
+        "properties": {
+          "type": {
+            "const": "run.completed"
+          }
+        },
         "required": ["type"]
       },
       "then": {
@@ -159,9 +197,17 @@
             "type": "object",
             "unevaluatedProperties": false,
             "properties": {
-              "branch": { "type": "string" },
-              "headCommit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
-              "pullRequestUrl": { "type": "string", "format": "uri" }
+              "branch": {
+                "type": "string"
+              },
+              "headCommit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{7,40}$"
+              },
+              "pullRequestUrl": {
+                "type": "string",
+                "format": "uri"
+              }
             }
           }
         }
@@ -169,7 +215,11 @@
     },
     {
       "if": {
-        "properties": { "type": { "const": "run.failed" } },
+        "properties": {
+          "type": {
+            "const": "run.failed"
+          }
+        },
         "required": ["type"]
       },
       "then": {
@@ -180,9 +230,13 @@
             "unevaluatedProperties": false,
             "required": ["reason"],
             "properties": {
-              "reason": { "type": "string", "minLength": 1, "maxLength": 500 },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
               "retryable": {
-                "description": "The runner's own view of whether a retry could succeed. Advisory: policy decides, per VISION §3.6 — no model output takes effect without passing through deterministic policy.",
+                "description": "The runner's own view of whether a retry could succeed. Advisory: policy decides, per VISION \u00a73.6 \u2014 no model output takes effect without passing through deterministic policy.",
                 "type": "boolean"
               }
             }
