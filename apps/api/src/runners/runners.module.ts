@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { EscalationsModule } from '../escalations/escalations.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RunEventsModule } from '../run-events/run-events.module';
 import { ClaudeCodeLocalRunner } from './claude-code-local/claude-code-local.runner';
@@ -23,7 +24,7 @@ import { RunPollerTask } from './run-poller.task';
  * this file is where that stays true or quietly stops being true.
  */
 @Module({
-  imports: [PrismaModule, RunEventsModule],
+  imports: [PrismaModule, RunEventsModule, EscalationsModule],
   providers: [
     RunWorkspaceService,
     ClaudeCodeLocalRunner,
