@@ -87,27 +87,43 @@ describe('DataTable — WCAG contrast (computed against the real theme)', () => 
   describe('body text on the card / paper surface', () => {
     // Measured: 16.07:1. `text.primary` is rgba(0,0,0,0.87) composited over #ffffff.
     it('light theme: text.primary on background.paper meets AA normal text (4.5:1)', () => {
-      const ratio = contrastRatio(lightPalette.text!.primary!, LIGHT_PAPER, LIGHT_PAPER);
+      const ratio = contrastRatio(
+        lightPalette.text!.primary!,
+        LIGHT_PAPER,
+        LIGHT_PAPER,
+      );
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     });
 
     // Measured: 5.74:1 — the tightest of the four, and the reason the alpha
     // must be composited: read as opaque black it would report 21:1.
     it('light theme: text.secondary on background.paper meets AA normal text (4.5:1)', () => {
-      const ratio = contrastRatio(lightPalette.text!.secondary!, LIGHT_PAPER, LIGHT_PAPER);
+      const ratio = contrastRatio(
+        lightPalette.text!.secondary!,
+        LIGHT_PAPER,
+        LIGHT_PAPER,
+      );
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     });
 
     // Measured: 13.77:1. `text.primary` is opaque #F7F8FA (`neutral[50]`) on
     // the #1E293B card — no longer pure white on near-black.
     it('dark theme: text.primary on background.paper meets AA normal text (4.5:1)', () => {
-      const ratio = contrastRatio(darkPalette.text!.primary!, DARK_PAPER, DARK_PAPER);
+      const ratio = contrastRatio(
+        darkPalette.text!.primary!,
+        DARK_PAPER,
+        DARK_PAPER,
+      );
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     });
 
     // Measured: 7.50:1. rgba(247,248,250,0.7) composited over #1E293B.
     it('dark theme: text.secondary on background.paper meets AA normal text (4.5:1)', () => {
-      const ratio = contrastRatio(darkPalette.text!.secondary!, DARK_PAPER, DARK_PAPER);
+      const ratio = contrastRatio(
+        darkPalette.text!.secondary!,
+        DARK_PAPER,
+        DARK_PAPER,
+      );
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     });
   });
@@ -122,13 +138,21 @@ describe('DataTable — WCAG contrast (computed against the real theme)', () => 
 
     // Measured: 14.87:1.
     it('light theme: text.primary over the selected-row tint (composited over paper) meets AA', () => {
-      const ratio = contrastRatio(lightPalette.text!.primary!, SELECTED_ROW_TINT_LIGHT, LIGHT_PAPER);
+      const ratio = contrastRatio(
+        lightPalette.text!.primary!,
+        SELECTED_ROW_TINT_LIGHT,
+        LIGHT_PAPER,
+      );
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     });
 
     // Measured: 11.02:1.
     it('dark theme: text.primary over the selected-row tint (composited over paper) meets AA', () => {
-      const ratio = contrastRatio(darkPalette.text!.primary!, SELECTED_ROW_TINT_DARK, DARK_PAPER);
+      const ratio = contrastRatio(
+        darkPalette.text!.primary!,
+        SELECTED_ROW_TINT_DARK,
+        DARK_PAPER,
+      );
       expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     });
   });
@@ -244,14 +268,30 @@ describe('DataTable — WCAG contrast (computed against the real theme)', () => 
     // edit drops the third argument, `text.secondary` collapses onto
     // `text.primary`'s ratio and every assertion above silently over-reports.
     it('light theme: text.secondary is measurably LOWER contrast than text.primary', () => {
-      const primary = contrastRatio(lightPalette.text!.primary!, LIGHT_PAPER, LIGHT_PAPER);
-      const secondary = contrastRatio(lightPalette.text!.secondary!, LIGHT_PAPER, LIGHT_PAPER);
+      const primary = contrastRatio(
+        lightPalette.text!.primary!,
+        LIGHT_PAPER,
+        LIGHT_PAPER,
+      );
+      const secondary = contrastRatio(
+        lightPalette.text!.secondary!,
+        LIGHT_PAPER,
+        LIGHT_PAPER,
+      );
       expect(secondary).toBeLessThan(primary);
     });
 
     it('dark theme: text.secondary is measurably LOWER contrast than text.primary', () => {
-      const primary = contrastRatio(darkPalette.text!.primary!, DARK_PAPER, DARK_PAPER);
-      const secondary = contrastRatio(darkPalette.text!.secondary!, DARK_PAPER, DARK_PAPER);
+      const primary = contrastRatio(
+        darkPalette.text!.primary!,
+        DARK_PAPER,
+        DARK_PAPER,
+      );
+      const secondary = contrastRatio(
+        darkPalette.text!.secondary!,
+        DARK_PAPER,
+        DARK_PAPER,
+      );
       expect(secondary).toBeLessThan(primary);
     });
 

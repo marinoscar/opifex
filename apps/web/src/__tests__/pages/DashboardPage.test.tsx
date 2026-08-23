@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import { render } from '../utils/test-utils';
-import DashboardPage, { deriveDashboardStatus } from '../../pages/DashboardPage';
+import DashboardPage, {
+  deriveDashboardStatus,
+} from '../../pages/DashboardPage';
 import { METRIC_LIST } from '../../components/dashboard/metrics';
-
 
 /**
  * Read the `order` an element is given inside a specific breakpoint.
@@ -21,7 +22,9 @@ function orderAt(element: HTMLElement, minWidthPx: number): string | null {
 
   for (const className of element.className.split(' ').filter(Boolean)) {
     const block = css.match(
-      new RegExp(`@media \\(min-width:${minWidthPx}px\\)\\{\\.${className}\\{([^}]*)\\}\\}`),
+      new RegExp(
+        `@media \\(min-width:${minWidthPx}px\\)\\{\\.${className}\\{([^}]*)\\}\\}`,
+      ),
     );
     const order = block?.[1].match(/(?:^|;)order:(\d+)/);
     if (order) return order[1];
@@ -52,7 +55,9 @@ describe('DashboardPage', () => {
       // The old HomePage greeted the user and linked to four pages the
       // navigation already lists. VISION §10: the app exists primarily to show
       // the six metrics.
-      expect(screen.getByRole('heading', { level: 1, name: 'Cockpit' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Cockpit' }),
+      ).toBeInTheDocument();
       expect(screen.queryByText(/welcome back/i)).not.toBeInTheDocument();
     });
 
@@ -61,7 +66,9 @@ describe('DashboardPage', () => {
 
       // `UserProfileCard` moved to `/settings`; `QuickActions` was deleted.
       expect(screen.queryByText(/quick actions/i)).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /account settings/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /account settings/i }),
+      ).not.toBeInTheDocument();
     });
 
     it('stops saying the metrics are unwired, now that the endpoint exists', () => {
@@ -71,7 +78,9 @@ describe('DashboardPage', () => {
       // contract failing in the direction nobody checks for.
       render(<DashboardPage />);
 
-      expect(screen.queryByText(/^Not yet wired — Phase 3/)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/^Not yet wired — Phase 3/),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -90,7 +99,9 @@ describe('DashboardPage', () => {
       render(<DashboardPage />);
 
       for (const metric of METRIC_LIST) {
-        expect(screen.getByRole('heading', { name: metric.label })).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: metric.label }),
+        ).toBeInTheDocument();
         expect(screen.getByText(metric.definition)).toBeInTheDocument();
       }
     });
@@ -138,14 +149,18 @@ describe('DashboardPage', () => {
       expect(
         screen.queryByText(/Escalations appear here once the watchdog lands/),
       ).not.toBeInTheDocument();
-      expect(screen.queryByText(/Arrives in Phase 4 — Execution/)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/Arrives in Phase 4 — Execution/),
+      ).not.toBeInTheDocument();
     });
 
     it('never claims that nothing needs attention', () => {
       render(<DashboardPage />);
       // That is the EMPTY state, and it would be a lie from a panel that has
       // never looked at a run.
-      expect(screen.queryByText('Nothing needs attention.')).not.toBeInTheDocument();
+      expect(
+        screen.queryByText('Nothing needs attention.'),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -153,9 +168,15 @@ describe('DashboardPage', () => {
     it('mounts the three panels once each', () => {
       render(<DashboardPage />);
 
-      expect(screen.getByRole('heading', { level: 2, name: 'Needs attention' })).toBeInTheDocument();
-      expect(screen.getByRole('heading', { level: 2, name: 'Queue' })).toBeInTheDocument();
-      expect(screen.getByRole('heading', { level: 2, name: 'Activity' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { level: 2, name: 'Needs attention' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { level: 2, name: 'Queue' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { level: 2, name: 'Activity' }),
+      ).toBeInTheDocument();
     });
 
     /**
@@ -171,8 +192,9 @@ describe('DashboardPage', () => {
     it('paints attention above the metrics on a phone, from one mount', () => {
       const { container } = render(<DashboardPage />);
 
-      const metricsItem = screen.getByRole('region', { name: 'Success metrics' })
-        .parentElement as HTMLElement;
+      const metricsItem = screen.getByRole('region', {
+        name: 'Success metrics',
+      }).parentElement as HTMLElement;
       const attentionItem = screen
         .getByRole('heading', { level: 2, name: 'Needs attention' })
         .closest('section')?.parentElement as HTMLElement;
@@ -192,7 +214,9 @@ describe('DashboardPage', () => {
       // And exactly one of each panel exists in the tree — no duplicate mount
       // hiding behind a breakpoint.
       expect(container.querySelectorAll('section').length).toBeGreaterThan(0);
-      expect(screen.getAllByRole('heading', { level: 2, name: 'Needs attention' })).toHaveLength(1);
+      expect(
+        screen.getAllByRole('heading', { level: 2, name: 'Needs attention' }),
+      ).toHaveLength(1);
     });
   });
 });

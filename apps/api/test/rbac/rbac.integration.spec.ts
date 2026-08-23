@@ -73,7 +73,9 @@ describe('RBAC System (Integration)', () => {
           updatedAt: new Date(),
         };
 
-        context.prismaMock.systemSettings.update.mockResolvedValue(updatedSettings);
+        context.prismaMock.systemSettings.update.mockResolvedValue(
+          updatedSettings,
+        );
 
         const response = await request(context.app.getHttpServer())
           .patch('/api/system-settings')

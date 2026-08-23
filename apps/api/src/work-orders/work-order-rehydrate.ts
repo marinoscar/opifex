@@ -162,7 +162,9 @@ function readNeeds(row: StoredWorkOrder): RunnerNeed[] {
   return row.needs as RunnerNeed[];
 }
 
-function toNumberOrNull(value: StoredWorkOrder['budgetCeilingUsd']): number | null {
+function toNumberOrNull(
+  value: StoredWorkOrder['budgetCeilingUsd'],
+): number | null {
   if (value === null || value === undefined) return null;
   return typeof value === 'number' ? value : value.toNumber();
 }

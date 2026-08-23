@@ -77,9 +77,9 @@ describe('useSystemSettings', () => {
         http.get('*/api/system-settings', () => {
           return HttpResponse.json(
             { message: 'Internal server error' },
-            { status: 500 }
+            { status: 500 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSystemSettings());
@@ -96,7 +96,7 @@ describe('useSystemSettings', () => {
       server.use(
         http.get('*/api/system-settings', () => {
           return HttpResponse.error();
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSystemSettings());
@@ -112,11 +112,8 @@ describe('useSystemSettings', () => {
     it('should handle 403 permission error with specific message', async () => {
       server.use(
         http.get('*/api/system-settings', () => {
-          return HttpResponse.json(
-            { message: 'Forbidden' },
-            { status: 403 }
-          );
-        })
+          return HttpResponse.json({ message: 'Forbidden' }, { status: 403 });
+        }),
       );
 
       const { result } = renderHook(() => useSystemSettings());
@@ -126,7 +123,9 @@ describe('useSystemSettings', () => {
       });
 
       expect(result.current.settings).toBeNull();
-      expect(result.current.error).toBe('You do not have permission to view system settings');
+      expect(result.current.error).toBe(
+        'You do not have permission to view system settings',
+      );
     });
   });
 
@@ -175,12 +174,14 @@ describe('useSystemSettings', () => {
               version: 2,
             },
           });
-        })
+        }),
       );
 
       let updatePromise: Promise<void>;
       act(() => {
-        updatePromise = result.current.updateSettings({ ui: { allowUserThemeOverride: false } });
+        updatePromise = result.current.updateSettings({
+          ui: { allowUserThemeOverride: false },
+        });
       });
 
       // Should be saving
@@ -217,11 +218,13 @@ describe('useSystemSettings', () => {
               version: 2,
             },
           });
-        })
+        }),
       );
 
       await act(async () => {
-        await result.current.updateSettings({ ui: { allowUserThemeOverride: false } });
+        await result.current.updateSettings({
+          ui: { allowUserThemeOverride: false },
+        });
       });
 
       expect(requestHeaders?.get('if-match')).toBe('1');
@@ -231,11 +234,8 @@ describe('useSystemSettings', () => {
       // Start with a failed initial fetch
       server.use(
         http.get('*/api/system-settings', () => {
-          return HttpResponse.json(
-            { message: 'Not found' },
-            { status: 404 }
-          );
-        })
+          return HttpResponse.json({ message: 'Not found' }, { status: 404 });
+        }),
       );
 
       const { result } = renderHook(() => useSystemSettings());
@@ -248,7 +248,9 @@ describe('useSystemSettings', () => {
 
       // This should not throw or make a request - it should just return early
       await act(async () => {
-        await result.current.updateSettings({ ui: { allowUserThemeOverride: false } });
+        await result.current.updateSettings({
+          ui: { allowUserThemeOverride: false },
+        });
       });
 
       // Should still be null
@@ -266,16 +268,18 @@ describe('useSystemSettings', () => {
         http.patch('*/api/system-settings', () => {
           return HttpResponse.json(
             { message: 'Update failed' },
-            { status: 500 }
+            { status: 500 },
           );
-        })
+        }),
       );
 
       // Should throw when update fails
       await expect(
         act(async () => {
-          await result.current.updateSettings({ ui: { allowUserThemeOverride: false } });
-        })
+          await result.current.updateSettings({
+            ui: { allowUserThemeOverride: false },
+          });
+        }),
       ).rejects.toThrow();
 
       // isSaving should be false after error
@@ -329,7 +333,7 @@ describe('useSystemSettings', () => {
               version: 1,
             },
           });
-        })
+        }),
       );
 
       const newSettings = {
@@ -365,9 +369,9 @@ describe('useSystemSettings', () => {
         http.put('*/api/system-settings', () => {
           return HttpResponse.json(
             { message: 'Replace failed' },
-            { status: 500 }
+            { status: 500 },
           );
-        })
+        }),
       );
 
       const newSettings = {
@@ -379,7 +383,7 @@ describe('useSystemSettings', () => {
       await expect(
         act(async () => {
           await result.current.replaceSettings(newSettings);
-        })
+        }),
       ).rejects.toThrow();
 
       // isSaving should be false after error
@@ -407,7 +411,7 @@ describe('useSystemSettings', () => {
               updatedAt: new Date().toISOString(),
             },
           });
-        })
+        }),
       );
 
       await act(async () => {
@@ -434,7 +438,7 @@ describe('useSystemSettings', () => {
         http.get('*/api/system-settings', async () => {
           await requestPromise;
           return HttpResponse.json({ data: mockSystemSettings });
-        })
+        }),
       );
 
       let refreshPromise: Promise<void>;
@@ -468,9 +472,9 @@ describe('useSystemSettings', () => {
         http.get('*/api/system-settings', () => {
           return HttpResponse.json(
             { message: 'Server error' },
-            { status: 500 }
+            { status: 500 },
           );
-        })
+        }),
       );
 
       // Refresh to trigger the error
@@ -508,16 +512,20 @@ describe('useSystemSettings', () => {
         http.patch('*/api/system-settings', () => {
           return HttpResponse.json(
             { message: 'Version conflict', code: 'VERSION_CONFLICT' },
-            { status: 409 }
+            { status: 409 },
           );
-        })
+        }),
       );
 
       await expect(
         act(async () => {
-          await result.current.updateSettings({ ui: { allowUserThemeOverride: false } });
-        })
-      ).rejects.toThrow('Settings were updated elsewhere. Please review and try again.');
+          await result.current.updateSettings({
+            ui: { allowUserThemeOverride: false },
+          });
+        }),
+      ).rejects.toThrow(
+        'Settings were updated elsewhere. Please review and try again.',
+      );
 
       // Should have refreshed settings after conflict
       await waitFor(() => {
@@ -538,7 +546,7 @@ describe('useSystemSettings', () => {
         http.patch('*/api/system-settings', () => {
           return HttpResponse.json(
             { message: 'Version conflict' },
-            { status: 409 }
+            { status: 409 },
           );
         }),
         http.get('*/api/system-settings', () => {
@@ -549,14 +557,16 @@ describe('useSystemSettings', () => {
               version: getCallCount + 1,
             },
           });
-        })
+        }),
       );
 
       const initialGetCount = getCallCount;
 
       try {
         await act(async () => {
-          await result.current.updateSettings({ ui: { allowUserThemeOverride: false } });
+          await result.current.updateSettings({
+            ui: { allowUserThemeOverride: false },
+          });
         });
       } catch {
         // Expected to throw
@@ -576,7 +586,9 @@ describe('useSystemSettings', () => {
       });
 
       await act(async () => {
-        await result.current.updateSettings({ ui: { allowUserThemeOverride: false } });
+        await result.current.updateSettings({
+          ui: { allowUserThemeOverride: false },
+        });
       });
 
       // isLoading should only be true during initial fetch and refresh
@@ -592,7 +604,9 @@ describe('useSystemSettings', () => {
       });
 
       await act(async () => {
-        await result.current.updateSettings({ ui: { allowUserThemeOverride: false } });
+        await result.current.updateSettings({
+          ui: { allowUserThemeOverride: false },
+        });
       });
 
       expect(result.current.isSaving).toBe(false);
@@ -609,14 +623,16 @@ describe('useSystemSettings', () => {
         http.patch('*/api/system-settings', () => {
           return HttpResponse.json(
             { message: 'Update failed' },
-            { status: 500 }
+            { status: 500 },
           );
-        })
+        }),
       );
 
       try {
         await act(async () => {
-          await result.current.updateSettings({ ui: { allowUserThemeOverride: false } });
+          await result.current.updateSettings({
+            ui: { allowUserThemeOverride: false },
+          });
         });
       } catch {
         // Expected to throw
@@ -636,18 +652,17 @@ describe('useSystemSettings', () => {
 
       server.use(
         http.patch('*/api/system-settings', () => {
-          return HttpResponse.json(
-            { message: 'Forbidden' },
-            { status: 403 }
-          );
-        })
+          return HttpResponse.json({ message: 'Forbidden' }, { status: 403 });
+        }),
       );
 
       // Should throw when permission is denied
       await expect(
         act(async () => {
-          await result.current.updateSettings({ ui: { allowUserThemeOverride: false } });
-        })
+          await result.current.updateSettings({
+            ui: { allowUserThemeOverride: false },
+          });
+        }),
       ).rejects.toThrow();
 
       // isSaving should be false after error
@@ -663,11 +678,8 @@ describe('useSystemSettings', () => {
 
       server.use(
         http.put('*/api/system-settings', () => {
-          return HttpResponse.json(
-            { message: 'Forbidden' },
-            { status: 403 }
-          );
-        })
+          return HttpResponse.json({ message: 'Forbidden' }, { status: 403 });
+        }),
       );
 
       const newSettings = {
@@ -703,7 +715,9 @@ describe('useSystemSettings', () => {
       // Both updates should complete without errors
       await act(async () => {
         await Promise.all([
-          result.current.updateSettings({ ui: { allowUserThemeOverride: false } }),
+          result.current.updateSettings({
+            ui: { allowUserThemeOverride: false },
+          }),
           result.current.updateSettings({ features: { testFeature: true } }),
         ]);
       });
@@ -727,9 +741,9 @@ describe('useSystemSettings', () => {
         http.get('*/api/system-settings', () => {
           return HttpResponse.json(
             { message: 'Server error' },
-            { status: 500 }
+            { status: 500 },
           );
-        })
+        }),
       );
 
       // Refresh to trigger the error
@@ -746,7 +760,9 @@ describe('useSystemSettings', () => {
       server.resetHandlers();
 
       await act(async () => {
-        await result.current.updateSettings({ ui: { allowUserThemeOverride: false } });
+        await result.current.updateSettings({
+          ui: { allowUserThemeOverride: false },
+        });
       });
 
       // Error should be cleared by the successful update

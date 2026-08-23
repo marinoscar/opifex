@@ -22,7 +22,10 @@ export interface CommandResult {
   ok: boolean;
 }
 
-export interface CommandRequest extends Omit<SpawnRequest, 'onLine' | 'onError'> {
+export interface CommandRequest extends Omit<
+  SpawnRequest,
+  'onLine' | 'onError'
+> {
   /**
    * Kills the process group after this long.
    *
@@ -49,7 +52,10 @@ export async function runCommand(
     onLine: (line) => stdout.push(line),
   });
 
-  const timer = setTimeout(() => proc.kill(), timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS);
+  const timer = setTimeout(
+    () => proc.kill(),
+    timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
+  );
   timer.unref();
 
   try {

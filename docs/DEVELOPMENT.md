@@ -17,6 +17,7 @@ This document provides essential information for developers working on this proj
 ## Technology Stack
 
 ### Backend
+
 - **Framework**: NestJS with **Fastify adapter** (NOT Express)
 - **ORM**: Prisma with PostgreSQL
 - **Authentication**: Passport.js (Google OAuth)
@@ -28,6 +29,7 @@ This document provides essential information for developers working on this proj
 This application uses **Fastify** as the HTTP adapter, not Express. This has important implications for how you write controllers and work with request/response objects.
 
 **Why Fastify?**
+
 - Faster performance (2-3x faster than Express)
 - Better TypeScript support
 - Lower overhead
@@ -38,6 +40,7 @@ This application uses **Fastify** as the HTTP adapter, not Express. This has imp
 ## Development Setup
 
 ### Prerequisites
+
 - Node.js 24+ (see `.nvmrc`; enforced by the `engines` field)
 - Docker Desktop
 - PostgreSQL (via Docker)
@@ -46,6 +49,7 @@ This application uses **Fastify** as the HTTP adapter, not Express. This has imp
 ### Initial Setup
 
 1. **Clone and install dependencies**
+
    ```bash
    git clone <repository-url>
    cd opifex
@@ -53,6 +57,7 @@ This application uses **Fastify** as the HTTP adapter, not Express. This has imp
    ```
 
 2. **Set up environment variables**
+
    ```bash
    cd infra/compose
    cp .env.example .env
@@ -60,6 +65,7 @@ This application uses **Fastify** as the HTTP adapter, not Express. This has imp
    ```
 
 3. **Start development environment**
+
    ```bash
    cd infra/compose
    docker compose -f base.compose.yml -f dev.compose.yml up
@@ -122,6 +128,7 @@ The first user to login with the email matching `INITIAL_ADMIN_EMAIL` (from .env
 #### 1. Response Methods
 
 **❌ WRONG (Express-style):**
+
 ```typescript
 @Get('example')
 example(@Res() res: Response) {
@@ -130,6 +137,7 @@ example(@Res() res: Response) {
 ```
 
 **✅ CORRECT (Fastify-style):**
+
 ```typescript
 @Get('example')
 example(@Res() res: FastifyReply) {
@@ -138,6 +146,7 @@ example(@Res() res: FastifyReply) {
 ```
 
 **Key Differences:**
+
 - Use `code()` instead of `status()`
 - Use `send()` instead of `json()`
 - Import types from `fastify` not `express`
@@ -156,6 +165,7 @@ example() {
 #### 2. Request Objects
 
 **Type Imports:**
+
 ```typescript
 import { FastifyRequest, FastifyReply } from 'fastify';
 
@@ -164,6 +174,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 ```
 
 **Request Properties:**
+
 ```typescript
 @Get('example')
 example(@Req() req: FastifyRequest) {
@@ -226,6 +237,7 @@ export class GoogleOAuthGuard extends AuthGuard('google') {
 ```
 
 **What this does:**
+
 1. `getRequest()` returns `request.raw` - the underlying Node.js request object
 2. `getResponse()` returns `response.raw` - the underlying Node.js response object
 3. Passport performs OAuth using these raw objects
@@ -233,6 +245,7 @@ export class GoogleOAuthGuard extends AuthGuard('google') {
 5. Your controllers can now access `req.user` as normal
 
 **Example in Controller:**
+
 ```typescript
 @Get('google/callback')
 @Public()
@@ -254,6 +267,7 @@ async googleAuthCallback(
 Fastify uses `@fastify/cookie` plugin for cookie handling.
 
 **Set Cookie:**
+
 ```typescript
 res.setCookie('name', 'value', {
   httpOnly: true,
@@ -265,11 +279,13 @@ res.setCookie('name', 'value', {
 ```
 
 **Read Cookie:**
+
 ```typescript
 const value = req.cookies['name'];
 ```
 
 **Clear Cookie:**
+
 ```typescript
 res.clearCookie('name', { path: '/api/auth' });
 ```
@@ -287,21 +303,23 @@ When creating related records (e.g., user with roles), always use transactions t
 Without transactions, you can encounter foreign key violations:
 
 **❌ WRONG (No Transaction):**
+
 ```typescript
 // This can fail if user creation succeeds but role assignment fails
 const user = await prisma.user.create({
-  data: { email, displayName }
+  data: { email, displayName },
 });
 
 await prisma.userRole.create({
   data: {
     userId: user.id,
     roleId: defaultRole.id, // FK violation if role doesn't exist
-  }
+  },
 });
 ```
 
 **✅ CORRECT (With Transaction):**
+
 ```typescript
 const user = await prisma.$transaction(async (tx) => {
   const newUser = await tx.user.create({
@@ -331,6 +349,7 @@ const user = await prisma.$transaction(async (tx) => {
 ```
 
 **Benefits:**
+
 - All-or-nothing: Either all records are created or none
 - No orphaned records
 - No foreign key violations
@@ -378,6 +397,7 @@ The seed script (`apps/api/prisma/seed.ts`) is idempotent and safe to run multip
 **Running Seeds:**
 
 **In Docker:**
+
 ```bash
 docker compose exec api sh
 cd /app/apps/api
@@ -385,18 +405,21 @@ npx tsx prisma/seed.ts
 ```
 
 **Locally:**
+
 ```bash
 cd apps/api
 npx tsx prisma/seed.ts
 ```
 
 **What Gets Seeded:**
+
 - RBAC roles (admin, contributor, viewer)
 - RBAC permissions (users:read, users:write, system_settings:read, etc.)
 - Role-permission assignments
 - Default system settings
 
 **When to Run Seeds:**
+
 - Before first login
 - After database reset
 - After pulling schema changes that add new roles/permissions
@@ -413,6 +436,7 @@ npx tsx prisma/seed.ts
 **Cause:** Database hasn't been seeded with RBAC roles.
 
 **Solution:**
+
 ```bash
 docker compose exec api sh
 cd /app/apps/api
@@ -451,10 +475,14 @@ exit
 **Cause:** Error messages contain newlines or special characters not safe for URLs.
 
 **Solution:** Sanitize error messages before adding to URL:
+
 ```typescript
-const errorMessage = error instanceof Error
-  ? encodeURIComponent(error.message.replace(/[\r\n]/g, ' ').substring(0, 100))
-  : 'authentication_failed';
+const errorMessage =
+  error instanceof Error
+    ? encodeURIComponent(
+        error.message.replace(/[\r\n]/g, ' ').substring(0, 100),
+      )
+    : 'authentication_failed';
 return res.redirect(`${appUrl}/auth/callback?error=${errorMessage}`);
 ```
 
@@ -465,6 +493,7 @@ return res.redirect(`${appUrl}/auth/callback?error=${errorMessage}`);
 ### Running Tests
 
 **Backend Tests:**
+
 ```bash
 cd apps/api
 npm test                # Run all tests
@@ -474,6 +503,7 @@ npm run test:e2e        # E2E tests only
 ```
 
 **Frontend Tests:**
+
 ```bash
 cd apps/web
 npm test                # Run all tests
@@ -519,6 +549,7 @@ const response = await request(app.getHttpServer())
 ### Debugging OAuth Flow
 
 1. **Check Environment Variables:**
+
    ```bash
    echo $GOOGLE_CLIENT_ID
    echo $GOOGLE_CLIENT_SECRET
@@ -531,6 +562,7 @@ const response = await request(app.getHttpServer())
    - Include port if not 80/443: `http://localhost:3535/api/auth/google/callback`
 
 3. **Check Container Logs:**
+
    ```bash
    docker compose logs api -f
    ```
@@ -543,6 +575,7 @@ const response = await request(app.getHttpServer())
 ### Debugging Database Issues
 
 1. **Check Prisma Connection:**
+
    ```bash
    cd apps/api
    npx prisma db push --preview-feature
@@ -553,6 +586,7 @@ const response = await request(app.getHttpServer())
    The compose stack does not bundle a `db` service — PostgreSQL runs
    separately and is reached via the `POSTGRES_HOST`/`POSTGRES_PORT` values
    in `.env`. Connect to it directly:
+
    ```bash
    psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U postgres -d appdb
    \dt              # List tables
@@ -584,12 +618,14 @@ const response = await request(app.getHttpServer())
 ### Making Database Changes
 
 1. **Update Prisma Schema:**
+
    ```bash
    cd apps/api
    # Edit prisma/schema.prisma
    ```
 
 2. **Create Migration:**
+
    ```bash
    # Using npm script (recommended - handles environment variables)
    npm run prisma:migrate:dev -- --name descriptive_name
@@ -599,6 +635,7 @@ const response = await request(app.getHttpServer())
    ```
 
 3. **Generate Prisma Client:**
+
    ```bash
    # Using npm script (recommended)
    npm run prisma:generate
@@ -646,6 +683,7 @@ const response = await request(app.getHttpServer())
 ### Database Query Optimization
 
 1. **Use `select` to limit fields:**
+
    ```typescript
    const user = await prisma.user.findUnique({
      where: { id },
@@ -654,6 +692,7 @@ const response = await request(app.getHttpServer())
    ```
 
 2. **Use `include` judiciously:**
+
    ```typescript
    // Only include what you need
    include: {

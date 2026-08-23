@@ -17,7 +17,9 @@ export class TokenCleanupTask {
     this.logger.log('Running token cleanup task');
 
     const refreshCount = await this.authService.cleanupExpiredTokens();
-    this.logger.log(`Refresh token cleanup completed: ${refreshCount} tokens removed`);
+    this.logger.log(
+      `Refresh token cleanup completed: ${refreshCount} tokens removed`,
+    );
 
     const patCount = await this.patService.cleanupExpiredTokens();
     this.logger.log(`PAT cleanup completed: ${patCount} tokens removed`);

@@ -119,7 +119,9 @@ describe('Auth Controller (Integration)', () => {
         },
       };
 
-      context.prismaMock.refreshToken.findUnique.mockResolvedValue(mockRefreshToken);
+      context.prismaMock.refreshToken.findUnique.mockResolvedValue(
+        mockRefreshToken,
+      );
       context.prismaMock.refreshToken.update.mockResolvedValue({});
       context.prismaMock.refreshToken.create.mockResolvedValue({});
 
@@ -164,7 +166,9 @@ describe('Auth Controller (Integration)', () => {
         },
       };
 
-      context.prismaMock.refreshToken.findUnique.mockResolvedValue(expiredToken);
+      context.prismaMock.refreshToken.findUnique.mockResolvedValue(
+        expiredToken,
+      );
 
       const response = await request(context.app.getHttpServer())
         .post('/api/auth/refresh')
@@ -192,8 +196,12 @@ describe('Auth Controller (Integration)', () => {
         },
       };
 
-      context.prismaMock.refreshToken.findUnique.mockResolvedValue(revokedToken);
-      context.prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+      context.prismaMock.refreshToken.findUnique.mockResolvedValue(
+        revokedToken,
+      );
+      context.prismaMock.refreshToken.updateMany.mockResolvedValue({
+        count: 0,
+      });
 
       const response = await request(context.app.getHttpServer())
         .post('/api/auth/refresh')
@@ -221,7 +229,9 @@ describe('Auth Controller (Integration)', () => {
         },
       };
 
-      context.prismaMock.refreshToken.findUnique.mockResolvedValue(mockRefreshToken);
+      context.prismaMock.refreshToken.findUnique.mockResolvedValue(
+        mockRefreshToken,
+      );
       context.prismaMock.refreshToken.update.mockResolvedValue({});
       context.prismaMock.refreshToken.create.mockResolvedValue({});
 
@@ -257,7 +267,9 @@ describe('Auth Controller (Integration)', () => {
         },
       };
 
-      context.prismaMock.refreshToken.findUnique.mockResolvedValue(mockRefreshToken);
+      context.prismaMock.refreshToken.findUnique.mockResolvedValue(
+        mockRefreshToken,
+      );
       context.prismaMock.refreshToken.update.mockResolvedValue({});
       context.prismaMock.refreshToken.create.mockResolvedValue({});
 
@@ -294,8 +306,12 @@ describe('Auth Controller (Integration)', () => {
         },
       };
 
-      context.prismaMock.refreshToken.findUnique.mockResolvedValue(revokedToken);
-      context.prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 3 });
+      context.prismaMock.refreshToken.findUnique.mockResolvedValue(
+        revokedToken,
+      );
+      context.prismaMock.refreshToken.updateMany.mockResolvedValue({
+        count: 3,
+      });
 
       await request(context.app.getHttpServer())
         .post('/api/auth/refresh')
@@ -323,7 +339,9 @@ describe('Auth Controller (Integration)', () => {
     it('should return 204 and clear cookies with valid auth', async () => {
       const user = await createMockTestUser(context);
 
-      context.prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+      context.prismaMock.refreshToken.updateMany.mockResolvedValue({
+        count: 1,
+      });
 
       const response = await request(context.app.getHttpServer())
         .post('/api/auth/logout')
@@ -345,7 +363,9 @@ describe('Auth Controller (Integration)', () => {
     it('should revoke refresh token on logout', async () => {
       const user = await createMockTestUser(context);
 
-      context.prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+      context.prismaMock.refreshToken.updateMany.mockResolvedValue({
+        count: 1,
+      });
 
       await request(context.app.getHttpServer())
         .post('/api/auth/logout')
@@ -367,7 +387,9 @@ describe('Auth Controller (Integration)', () => {
     it('should work even without refresh token cookie', async () => {
       const user = await createMockTestUser(context);
 
-      context.prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+      context.prismaMock.refreshToken.updateMany.mockResolvedValue({
+        count: 0,
+      });
 
       await request(context.app.getHttpServer())
         .post('/api/auth/logout')
@@ -389,7 +411,9 @@ describe('Auth Controller (Integration)', () => {
     it('should return 204 and revoke all user tokens', async () => {
       const user = await createMockTestUser(context);
 
-      context.prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 5 });
+      context.prismaMock.refreshToken.updateMany.mockResolvedValue({
+        count: 5,
+      });
 
       const response = await request(context.app.getHttpServer())
         .post('/api/auth/logout-all')
@@ -411,7 +435,9 @@ describe('Auth Controller (Integration)', () => {
     it('should clear refresh token cookie', async () => {
       const user = await createMockTestUser(context);
 
-      context.prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 3 });
+      context.prismaMock.refreshToken.updateMany.mockResolvedValue({
+        count: 3,
+      });
 
       const response = await request(context.app.getHttpServer())
         .post('/api/auth/logout-all')
@@ -431,7 +457,9 @@ describe('Auth Controller (Integration)', () => {
       const user = await createMockTestUser(context);
 
       // Mock multiple active tokens (e.g., from different devices)
-      context.prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 7 });
+      context.prismaMock.refreshToken.updateMany.mockResolvedValue({
+        count: 7,
+      });
 
       await request(context.app.getHttpServer())
         .post('/api/auth/logout-all')

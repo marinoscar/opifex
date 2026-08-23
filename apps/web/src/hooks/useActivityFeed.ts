@@ -10,7 +10,10 @@
  */
 
 import { useCallback } from 'react';
-import { COCKPIT_ENDPOINTS, COCKPIT_POLL_INTERVAL_MS } from '../config/cockpitApi';
+import {
+  COCKPIT_ENDPOINTS,
+  COCKPIT_POLL_INTERVAL_MS,
+} from '../config/cockpitApi';
 import { getActivityFeed } from '../services/api';
 import type { RunEvent } from '../types/cockpit';
 import { usePolledResource } from './usePolledResource';
@@ -25,7 +28,9 @@ import type { UsePolledResourceResult } from './usePolledResource';
  */
 export const ACTIVITY_FEED_LIMIT = 10;
 
-export interface UseActivityFeedResult extends UsePolledResourceResult<RunEvent[]> {
+export interface UseActivityFeedResult extends UsePolledResourceResult<
+  RunEvent[]
+> {
   phase: string;
 }
 

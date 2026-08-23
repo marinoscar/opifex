@@ -1,17 +1,5 @@
-import {
-  Controller,
-  Get,
-  Put,
-  Patch,
-  Body,
-  Headers,
-} from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiHeader,
-} from '@nestjs/swagger';
+import { Controller, Get, Put, Patch, Body, Headers } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiHeader } from '@nestjs/swagger';
 
 import { SystemSettingsService } from './system-settings.service';
 import { Auth } from '../../auth/decorators/auth.decorator';
@@ -77,6 +65,10 @@ export class SystemSettingsController {
     @Headers('if-match') ifMatch?: string,
   ) {
     const expectedVersion = ifMatch ? parseInt(ifMatch, 10) : undefined;
-    return this.systemSettingsService.patchSettings(dto, userId, expectedVersion);
+    return this.systemSettingsService.patchSettings(
+      dto,
+      userId,
+      expectedVersion,
+    );
   }
 }

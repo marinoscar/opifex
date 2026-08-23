@@ -357,11 +357,7 @@ describe('UserSettingsService', () => {
       mockPrisma.user.update.mockResolvedValue({} as any);
 
       // Current version is 1, expected version is 1
-      const result = await service.patchSettings(
-        mockUserId,
-        partialUpdate,
-        1,
-      );
+      const result = await service.patchSettings(mockUserId, partialUpdate, 1);
 
       expect(result).toBeDefined();
       expect(result.version).toBe(2);
@@ -557,9 +553,7 @@ describe('UserSettingsService', () => {
     it('railCollapsed: null deletes the field', () => {
       const current = { railCollapsed: true };
 
-      expect(
-        mergeNavigation(current, { railCollapsed: null }),
-      ).toBeUndefined();
+      expect(mergeNavigation(current, { railCollapsed: null })).toBeUndefined();
     });
 
     it('navigation: null clears the whole namespace', () => {

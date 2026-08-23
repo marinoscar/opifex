@@ -128,7 +128,10 @@ export class DispatchQueueService {
 
   // -------------------------------------------------------------------------
 
-  private async dispatchOne(row: StoredRow, result: DrainResult): Promise<void> {
+  private async dispatchOne(
+    row: StoredRow,
+    result: DrainResult,
+  ): Promise<void> {
     // Per work order rather than filtered in the query, so the skip is
     // COUNTED. A repository quietly excluded by a `where` clause looks
     // identical to one with an empty queue, and during the observation week
@@ -216,7 +219,11 @@ export class DispatchQueueService {
   }
 
   private log(result: DrainResult, considered: number): void {
-    if (result.dispatched > 0 || result.failed > 0 || result.unrebuildable > 0) {
+    if (
+      result.dispatched > 0 ||
+      result.failed > 0 ||
+      result.unrebuildable > 0
+    ) {
       this.logger.log(
         `Dispatch queue: ${considered} considered, ${result.dispatched} dispatched, ` +
           `${result.stillQueued} still queued, ${result.failed} failed, ` +

@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { MIRROR_LABELS } from '../../github/labels/factory-labels';
 import { GitHubWriteService } from '../../github/write/github-write.service';
 import { Reversibility, WriteAction } from '../../github/write/reversibility';
-import type { ReconcileAction, ReconcileActionType } from '../diff/actions.types';
+import type {
+  ReconcileAction,
+  ReconcileActionType,
+} from '../diff/actions.types';
 import { MirrorLabelExecutor } from './mirror-label.executor';
 
 function action(
@@ -86,7 +89,10 @@ describe('MirrorLabelExecutor', () => {
 
   describe('the per-repository flag', () => {
     it('suppresses a repository that has not opted in', async () => {
-      const outcome = await executor.execute([action('add-mirror-label')], new Set());
+      const outcome = await executor.execute(
+        [action('add-mirror-label')],
+        new Set(),
+      );
 
       expect(writes.addLabel).not.toHaveBeenCalled();
       expect(outcome.suppressed).toBe(1);
@@ -113,7 +119,10 @@ describe('MirrorLabelExecutor', () => {
       // wondering why nothing was written.
       writes.addLabel.mockResolvedValue(writeResult({ performed: false }));
 
-      const outcome = await executor.execute([action('add-mirror-label')], ENABLED);
+      const outcome = await executor.execute(
+        [action('add-mirror-label')],
+        ENABLED,
+      );
 
       expect(outcome).toMatchObject({ executed: 0, suppressed: 1 });
     });
@@ -127,13 +136,19 @@ describe('MirrorLabelExecutor', () => {
       // way and the accounting has to tell them apart.
       writes.removeLabel.mockResolvedValue(writeResult({ noop: true }));
 
-      const outcome = await executor.execute([action('remove-mirror-label')], ENABLED);
+      const outcome = await executor.execute(
+        [action('remove-mirror-label')],
+        ENABLED,
+      );
 
       expect(outcome).toMatchObject({ executed: 0, noops: 1 });
     });
 
     it('running the same list twice is safe', async () => {
-      const actions = [action('add-mirror-label'), action('remove-mirror-label')];
+      const actions = [
+        action('add-mirror-label'),
+        action('remove-mirror-label'),
+      ];
 
       await executor.execute(actions, ENABLED);
       writes.addLabel.mockResolvedValue(writeResult({ noop: true }));
@@ -176,7 +191,10 @@ describe('MirrorLabelExecutor', () => {
         .mockResolvedValue(writeResult());
 
       const outcome = await executor.execute(
-        [action('add-mirror-label', { issueNumber: 1 }), action('add-mirror-label', { issueNumber: 2 })],
+        [
+          action('add-mirror-label', { issueNumber: 1 }),
+          action('add-mirror-label', { issueNumber: 2 }),
+        ],
         ENABLED,
       );
 
@@ -219,7 +237,10 @@ describe('MirrorLabelExecutor', () => {
       // the SOURCE rather than the runtime class, because the failure mode is
       // somebody adding a constructor parameter — which a behavioural test
       // cannot see, and `Function.toString()` does not include.
-      const source = readFileSync(join(__dirname, '..', 'reconciler.service.ts'), 'utf8');
+      const source = readFileSync(
+        join(__dirname, '..', 'reconciler.service.ts'),
+        'utf8',
+      );
 
       expect(source).not.toMatch(/MirrorLabelExecutor/);
       expect(source).not.toMatch(/GitHubWriteService/);

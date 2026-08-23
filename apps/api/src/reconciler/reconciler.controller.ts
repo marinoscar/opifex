@@ -1,5 +1,18 @@
-import { Controller, Get, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Query,
+} from '@nestjs/common';
+import {
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { Auth } from '../auth/decorators/auth.decorator';
 import { PERMISSIONS } from '../common/constants/roles.constants';
@@ -33,7 +46,10 @@ export class ReconcilerController {
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
   @ApiQuery({ name: 'outcome', required: false, type: String })
   @ApiQuery({ name: 'actionsOnly', required: false, type: Boolean })
-  @ApiDataResponse(TickRecordDto, { pagination: 'flat', description: 'Paginated tick history' })
+  @ApiDataResponse(TickRecordDto, {
+    pagination: 'flat',
+    description: 'Paginated tick history',
+  })
   async listTicks(@Query() query: TickHistoryQueryDto) {
     return this.log.history(query);
   }

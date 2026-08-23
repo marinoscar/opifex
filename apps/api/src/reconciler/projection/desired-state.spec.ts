@@ -1,6 +1,12 @@
-import { INPUT_LABELS, MIRROR_LABELS } from '../../github/labels/factory-labels';
+import {
+  INPUT_LABELS,
+  MIRROR_LABELS,
+} from '../../github/labels/factory-labels';
 import type { NormalizedIssue } from '../../github/read/github-read.types';
-import { assertNoMirrorLabelsObserved, projectDesiredState } from './desired-state';
+import {
+  assertNoMirrorLabelsObserved,
+  projectDesiredState,
+} from './desired-state';
 import type {
   ObservedState,
   ObservedWorkOrder,
@@ -27,7 +33,9 @@ function issue(overrides: Partial<NormalizedIssue> = {}): NormalizedIssue {
   };
 }
 
-function workOrder(overrides: Partial<ObservedWorkOrder> = {}): ObservedWorkOrder {
+function workOrder(
+  overrides: Partial<ObservedWorkOrder> = {},
+): ObservedWorkOrder {
   return {
     id: 'wo-uuid',
     identity: 'wo_app_312_a3f91c2_a1',
@@ -68,7 +76,9 @@ describe('projectDesiredState', () => {
       // brake evaluated after anything else is a brake with conditions.
       const result = project(
         observed({
-          issues: [issue({ inputLabels: [INPUT_LABELS.HOLD, INPUT_LABELS.READY] })],
+          issues: [
+            issue({ inputLabels: [INPUT_LABELS.HOLD, INPUT_LABELS.READY] }),
+          ],
         }),
       );
 
@@ -80,7 +90,16 @@ describe('projectDesiredState', () => {
       const result = project(
         observed({
           issues: [issue({ inputLabels: [INPUT_LABELS.HOLD] })],
-          workOrders: [workOrder({ run: { id: 'r', status: 'running', costUsd: null, pullRequestUrl: null } })],
+          workOrders: [
+            workOrder({
+              run: {
+                id: 'r',
+                status: 'running',
+                costUsd: null,
+                pullRequestUrl: null,
+              },
+            }),
+          ],
         }),
       );
 
@@ -169,12 +188,21 @@ describe('projectDesiredState', () => {
   });
 
   describe('live run state', () => {
-    function withRun(status: RunStatusLike, extra: Record<string, unknown> = {}) {
+    function withRun(
+      status: RunStatusLike,
+      extra: Record<string, unknown> = {},
+    ) {
       return observed({
         issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
         workOrders: [
           workOrder({
-            run: { id: 'r', status, costUsd: null, pullRequestUrl: null, ...extra },
+            run: {
+              id: 'r',
+              status,
+              costUsd: null,
+              pullRequestUrl: null,
+              ...extra,
+            },
           }),
         ],
       });
@@ -202,7 +230,9 @@ describe('projectDesiredState', () => {
     });
 
     it('marks a succeeded run with a PR as awaiting review', () => {
-      const result = project(withRun('succeeded', { pullRequestUrl: 'https://x/pull/9' }));
+      const result = project(
+        withRun('succeeded', { pullRequestUrl: 'https://x/pull/9' }),
+      );
 
       expect(result.intent).toBe('review');
       expect(result.desiredMirrorLabels).toEqual([MIRROR_LABELS.REVIEW]);
@@ -229,7 +259,9 @@ describe('projectDesiredState', () => {
 
     it('does not dispatch when the repository has dispatch disabled', () => {
       // VISION §12's observation week ends one repository at a time.
-      const state = observed({ issues: [issue({ inputLabels: [INPUT_LABELS.READY] })] });
+      const state = observed({
+        issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
+      });
       state.repository.dispatchEnabled = false;
 
       const result = project(state);
@@ -242,7 +274,9 @@ describe('projectDesiredState', () => {
       // Both produce no dispatch and they mean opposite things: one is a
       // human's brake, the other is an issue that was never a candidate.
       const ignored = project(observed());
-      const held = project(observed({ issues: [issue({ inputLabels: [INPUT_LABELS.HOLD] })] }));
+      const held = project(
+        observed({ issues: [issue({ inputLabels: [INPUT_LABELS.HOLD] })] }),
+      );
 
       expect(ignored.intent).not.toBe(held.intent);
     });
@@ -253,7 +287,9 @@ describe('projectDesiredState', () => {
       const state = observed({
         issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
         workOrders: [
-          workOrder({ run: { id: 'r', status: 'failed', costUsd, pullRequestUrl: null } }),
+          workOrder({
+            run: { id: 'r', status: 'failed', costUsd, pullRequestUrl: null },
+          }),
         ],
       });
       state.repository.budgetCeilingUsd = ceiling;
@@ -295,7 +331,12 @@ describe('projectDesiredState', () => {
             workOrder({
               identity: 'a2',
               attempt: 2,
-              run: { id: 'r', status: 'running', costUsd: null, pullRequestUrl: null },
+              run: {
+                id: 'r',
+                status: 'running',
+                costUsd: null,
+                pullRequestUrl: null,
+              },
             }),
           ],
         }),
@@ -314,7 +355,12 @@ describe('projectDesiredState', () => {
             workOrder({
               attempt: 1,
               status: 'superseded',
-              run: { id: 'r', status: 'running', costUsd: null, pullRequestUrl: null },
+              run: {
+                id: 'r',
+                status: 'running',
+                costUsd: null,
+                pullRequestUrl: null,
+              },
             }),
           ],
         }),
@@ -349,20 +395,32 @@ describe('projectDesiredState', () => {
     it('does not mutate its input', () => {
       // A projection that edited observed state would make "recompute from
       // scratch" false on the second call within one tick.
-      const state = observed({ issues: [issue({ inputLabels: [INPUT_LABELS.READY] })] });
-      const before = JSON.stringify(state, (_k, v) => (v instanceof Set ? [...v] : v));
+      const state = observed({
+        issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
+      });
+      const before = JSON.stringify(state, (_k, v) =>
+        v instanceof Set ? [...v] : v,
+      );
 
       projectDesiredState(state);
 
-      expect(JSON.stringify(state, (_k, v) => (v instanceof Set ? [...v] : v))).toBe(before);
+      expect(
+        JSON.stringify(state, (_k, v) => (v instanceof Set ? [...v] : v)),
+      ).toBe(before);
     });
 
     it('reflects a manual edit on the very next call, with no reset', () => {
       // The reconciler-vs-queue property from VISION §4. A queue would need to
       // be told; the projection simply reads the new input.
-      const before = project(observed({ issues: [issue({ inputLabels: [INPUT_LABELS.READY] })] }));
+      const before = project(
+        observed({ issues: [issue({ inputLabels: [INPUT_LABELS.READY] })] }),
+      );
       const after = project(
-        observed({ issues: [issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] })] }),
+        observed({
+          issues: [
+            issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] }),
+          ],
+        }),
       );
 
       expect(before.intent).toBe('dispatch');
@@ -391,7 +449,9 @@ describe('projectDesiredState', () => {
       // what SHOULD be true depend on Opifex's own previous output, so a
       // failed mirror write or a human hand-edit would roll the control
       // plane's state backwards.
-      const clean = project(observed({ issues: [issue({ inputLabels: [INPUT_LABELS.READY] })] }));
+      const clean = project(
+        observed({ issues: [issue({ inputLabels: [INPUT_LABELS.READY] })] }),
+      );
       const dirty = project(
         observed({
           issues: [
@@ -423,8 +483,16 @@ describe('projectDesiredState', () => {
             issue({
               inputLabels: [INPUT_LABELS.READY],
               labels: [
-                { name: MIRROR_LABELS.DISPATCHED, color: 'ededed', description: null },
-                { name: MIRROR_LABELS.QUARANTINE, color: 'ededed', description: null },
+                {
+                  name: MIRROR_LABELS.DISPATCHED,
+                  color: 'ededed',
+                  description: null,
+                },
+                {
+                  name: MIRROR_LABELS.QUARANTINE,
+                  color: 'ededed',
+                  description: null,
+                },
               ],
             }),
           ],
@@ -444,7 +512,13 @@ describe('projectDesiredState', () => {
       expect(() =>
         assertNoMirrorLabelsObserved([
           issue({
-            labels: [{ name: MIRROR_LABELS.DISPATCHED, color: 'ededed', description: null }],
+            labels: [
+              {
+                name: MIRROR_LABELS.DISPATCHED,
+                color: 'ededed',
+                description: null,
+              },
+            ],
           }),
         ]),
       ).toThrow(/VISION §3.3/);
@@ -462,8 +536,15 @@ describe('the decoupled enums', () => {
   it('matches Prisma WorkOrderStatus exactly', async () => {
     const { WorkOrderStatus } = await import('@prisma/client');
     const local: WorkOrderStatusLike[] = [
-      'pending', 'queued', 'held', 'dispatched', 'succeeded',
-      'failed', 'quarantined', 'superseded', 'cancelled',
+      'pending',
+      'queued',
+      'held',
+      'dispatched',
+      'succeeded',
+      'failed',
+      'quarantined',
+      'superseded',
+      'cancelled',
     ];
 
     expect(Object.values(WorkOrderStatus).sort()).toEqual([...local].sort());
@@ -472,7 +553,12 @@ describe('the decoupled enums', () => {
   it('matches Prisma RunStatus exactly', async () => {
     const { RunStatus } = await import('@prisma/client');
     const local: RunStatusLike[] = [
-      'running', 'succeeded', 'stalled', 'blocked', 'failed', 'quarantined',
+      'running',
+      'succeeded',
+      'stalled',
+      'blocked',
+      'failed',
+      'quarantined',
     ];
 
     expect(Object.values(RunStatus).sort()).toEqual([...local].sort());

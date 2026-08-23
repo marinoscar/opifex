@@ -157,7 +157,9 @@ export function shouldRenderViewBar({
 const MOBILE_RENDERER = CardListRenderer;
 
 /** Which renderer module serves a given layout. */
-export function rendererForLayout(layout: DataTableLayout): DataTableRendererKind {
+export function rendererForLayout(
+  layout: DataTableLayout,
+): DataTableRendererKind {
   return layout === 'mobile' ? 'mobile' : 'desktop';
 }
 
@@ -201,7 +203,10 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
 
   // The filter bar sees every declared column; everything that paints, picks or
   // exports a column sees only the drawable ones (#258).
-  const painted = useMemo(() => drawableColumns(props.columns), [props.columns]);
+  const painted = useMemo(
+    () => drawableColumns(props.columns),
+    [props.columns],
+  );
 
   // Zero rows with nothing applied and nothing in flight: the view bar is
   // chrome about rows that do not exist, so the empty state stands alone

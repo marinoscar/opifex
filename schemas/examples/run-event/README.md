@@ -26,7 +26,7 @@ underneath.
 Note what is **absent**, not just what is present:
 
 - no `run.heartbeat` at all — nothing is streaming
-- no `tool` on progress, so #55's loop detection is *unavailable* for this
+- no `tool` on progress, so #55's loop detection is _unavailable_ for this
   runner and must say so rather than appearing to pass
 - no per-event `cost` — and absent means **not reported**, which is not the
   same as zero (VISION §6 makes cost reporting a declared capability)
@@ -41,7 +41,7 @@ the `source` field is what makes that visible instead of silent.
 The third `source`. Opifex concluded this, no runner said it, and the event
 says so in the one field a watchdog must never have to guess at.
 
-VISION §9: *a synthesized event must never masquerade as a report.* Its
+VISION §9: _a synthesized event must never masquerade as a report._ Its
 `summary` and `failure.reason` name the threshold and the observed age, so the
 conclusion can be checked rather than taken on trust — the same rule the
 reconciler's action reasons follow.

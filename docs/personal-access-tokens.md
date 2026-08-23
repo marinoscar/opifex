@@ -65,7 +65,7 @@ curl -H "Authorization: Bearer pat_abc123..." https://your-app.com/api/auth/me
 ```javascript
 const response = await fetch('https://your-app.com/api/users', {
   headers: {
-    'Authorization': `Bearer ${process.env.PAT_TOKEN}`,
+    Authorization: `Bearer ${process.env.PAT_TOKEN}`,
   },
 });
 ```
@@ -92,13 +92,13 @@ All tokens for the current user are visible at **Settings > Personal Access Toke
 
 Each token entry shows:
 
-| Field | Description |
-|-------|-------------|
-| Name | The descriptive label entered at creation |
-| Prefix | A short prefix of the token for identification (e.g., `pat_ab12...`) |
-| Created | Date the token was created |
-| Expires | Date and time the token expires |
-| Last used | Date of the most recent successful request using this token |
+| Field     | Description                                                          |
+| --------- | -------------------------------------------------------------------- |
+| Name      | The descriptive label entered at creation                            |
+| Prefix    | A short prefix of the token for identification (e.g., `pat_ab12...`) |
+| Created   | Date the token was created                                           |
+| Expires   | Date and time the token expires                                      |
+| Last used | Date of the most recent successful request using this token          |
 
 To revoke a token, click **Revoke** next to the token entry. Revoked tokens are invalidated immediately. Revocation is permanent — the token cannot be re-activated. Create a new token if continued access is needed.
 
@@ -108,11 +108,11 @@ To revoke a token, click **Revoke** next to the token entry. Revoked tokens are 
 
 Choose the duration that matches how long the token needs to remain valid. Prefer shorter durations to limit exposure if a token is compromised.
 
-| Unit | Range | Typical use |
-|------|-------|-------------|
-| Minutes | 1-999 | Short-lived automation tasks, one-off scripts |
-| Days | 1-999 | CI/CD pipelines, active development workflows |
-| Months | 1-999 | Long-lived integrations, infrequently rotated credentials |
+| Unit    | Range | Typical use                                               |
+| ------- | ----- | --------------------------------------------------------- |
+| Minutes | 1-999 | Short-lived automation tasks, one-off scripts             |
+| Days    | 1-999 | CI/CD pipelines, active development workflows             |
+| Months  | 1-999 | Long-lived integrations, infrequently rotated credentials |
 
 ---
 
@@ -120,17 +120,18 @@ Choose the duration that matches how long the token needs to remain valid. Prefe
 
 All PAT endpoints require a valid JWT Bearer token or a PAT token.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/pat` | Create a new personal access token |
-| GET | `/api/pat` | List all tokens for the current user |
-| DELETE | `/api/pat/:id` | Revoke a token by ID |
+| Method | Endpoint       | Description                          |
+| ------ | -------------- | ------------------------------------ |
+| POST   | `/api/pat`     | Create a new personal access token   |
+| GET    | `/api/pat`     | List all tokens for the current user |
+| DELETE | `/api/pat/:id` | Revoke a token by ID                 |
 
 ### POST /api/pat
 
 Create a new personal access token.
 
 **Request:**
+
 ```json
 {
   "name": "CI Pipeline",
@@ -141,13 +142,14 @@ Create a new personal access token.
 
 **Request Fields:**
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | Yes | Descriptive label for the token |
-| `duration` | integer | Yes | Length of validity (1-999) |
-| `durationUnit` | string | Yes | Unit of duration: `minutes`, `days`, or `months` |
+| Field          | Type    | Required | Description                                      |
+| -------------- | ------- | -------- | ------------------------------------------------ |
+| `name`         | string  | Yes      | Descriptive label for the token                  |
+| `duration`     | integer | Yes      | Length of validity (1-999)                       |
+| `durationUnit` | string  | Yes      | Unit of duration: `minutes`, `days`, or `months` |
 
 **Response (201 Created):**
+
 ```json
 {
   "data": {
@@ -170,12 +172,14 @@ The `token` field is only present in this response. It is not returned by any ot
 List all personal access tokens belonging to the current user.
 
 **Request:**
+
 ```http
 GET /api/pat
 Authorization: Bearer <token>
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "data": [
@@ -200,12 +204,14 @@ Expired and revoked tokens are not included in the list.
 Revoke a personal access token by its ID.
 
 **Request:**
+
 ```http
 DELETE /api/pat/uuid-1234
 Authorization: Bearer <token>
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "data": {
@@ -215,6 +221,7 @@ Authorization: Bearer <token>
 ```
 
 **Error Responses:**
+
 - **404 Not Found** - Token not found or does not belong to the current user
 
 ---
@@ -222,20 +229,25 @@ Authorization: Bearer <token>
 ## Security Considerations
 
 **Token storage:**
+
 - Tokens are hashed with SHA-256 before being stored in the database. The raw token value cannot be recovered from the database.
 - Only a short prefix is stored alongside the hash for identification in the management UI.
 
 **Token handling:**
+
 - Treat PATs like passwords. Do not commit them to version control, include them in logs, or share them in plain text.
 - Store tokens in environment variables or secrets management systems (for example, GitHub Actions secrets, HashiCorp Vault, or a CI/CD platform's credential store).
 
 **Rotation and expiration:**
+
 - Use the shortest token duration that meets your needs.
 - Rotate tokens on a schedule, especially for long-lived integrations.
 - Revoke tokens immediately when they are no longer needed or if they may have been exposed.
 
 **Cleanup:**
+
 - Expired and revoked tokens are removed from the database by an automated daily cleanup job.
 
 **Scope:**
+
 - PATs carry the full permissions of the user who created them. A token created by an Admin user can perform Admin-level operations. Prefer using Contributor or Viewer accounts for automated access when full Admin permissions are not required.

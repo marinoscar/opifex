@@ -25,9 +25,23 @@
  * viewport so a `mobile` result can only have come from the container.
  */
 
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { useState } from 'react';
-import { act, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import {
+  act,
+  screen,
+  within,
+  fireEvent,
+  waitFor,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../../../__tests__/utils/test-utils';
 import { DataTable } from '../DataTable';
@@ -56,7 +70,10 @@ import {
   writeDataTableUrlState,
 } from '../filter/filterUrl';
 import type { DataTableColumn, DataTableFilterModel } from '../types';
-import { assertNoInvisibleHitTargets, describeControl } from './testUtils/a11yGuards';
+import {
+  assertNoInvisibleHitTargets,
+  describeControl,
+} from './testUtils/a11yGuards';
 
 // ---------------------------------------------------------------------------
 // Layout stubs (same recipe as the #253 suite)
@@ -82,26 +99,31 @@ function installLayoutStubs() {
       get: () => containerWidth,
     });
   }
-  for (const prop of ['clientHeight', 'offsetHeight', 'scrollHeight'] as const) {
+  for (const prop of [
+    'clientHeight',
+    'offsetHeight',
+    'scrollHeight',
+  ] as const) {
     Object.defineProperty(HTMLElement.prototype, prop, {
       configurable: true,
       get: () => VIEWPORT_HEIGHT,
     });
   }
 
-  HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
-    return {
-      width: containerWidth,
-      height: VIEWPORT_HEIGHT,
-      top: 0,
-      left: 0,
-      right: containerWidth,
-      bottom: VIEWPORT_HEIGHT,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    } as DOMRect;
-  };
+  HTMLElement.prototype.getBoundingClientRect =
+    function getBoundingClientRect() {
+      return {
+        width: containerWidth,
+        height: VIEWPORT_HEIGHT,
+        top: 0,
+        left: 0,
+        right: containerWidth,
+        bottom: VIEWPORT_HEIGHT,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      } as DOMRect;
+    };
 
   class ControllableResizeObserver {
     private readonly entry: FakeObserver;
@@ -136,7 +158,8 @@ function installLayoutStubs() {
     }
   }
 
-  global.ResizeObserver = ControllableResizeObserver as unknown as typeof ResizeObserver;
+  global.ResizeObserver =
+    ControllableResizeObserver as unknown as typeof ResizeObserver;
 
   window.matchMedia = vi.fn().mockImplementation((query: string) => {
     const max = /max-width:\s*([\d.]+)px/.exec(query);
@@ -293,14 +316,21 @@ function renderAtWidth(width: number, overrides: Partial<TableProps> = {}) {
 }
 
 /** Open a MUI Select by its visible label and pick an option by name. */
-async function pickOption(user: ReturnType<typeof userEvent.setup>, label: string, option: string) {
+async function pickOption(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+  option: string,
+) {
   await user.click(screen.getByRole('combobox', { name: label }));
   const listbox = await screen.findByRole('listbox');
   await user.click(within(listbox).getByRole('option', { name: option }));
 }
 
 /** The option NAMES currently offered by a select, without choosing one. */
-async function optionsOf(user: ReturnType<typeof userEvent.setup>, label: string) {
+async function optionsOf(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+) {
   await user.click(screen.getByRole('combobox', { name: label }));
   const listbox = await screen.findByRole('listbox');
   const names = within(listbox)
@@ -315,7 +345,7 @@ async function optionsOf(user: ReturnType<typeof userEvent.setup>, label: string
 // ---------------------------------------------------------------------------
 
 describe('filter operators — per value type', () => {
-  it('publishes issue #254\'s operator sets verbatim', () => {
+  it("publishes issue #254's operator sets verbatim", () => {
     expect(OPERATORS_BY_FILTER_TYPE).toEqual({
       text: ['contains', 'equals', 'startsWith', 'isEmpty'],
       number: ['equals', 'gt', 'lt', 'between'],
@@ -334,21 +364,43 @@ describe('filter operators — per value type', () => {
       'startsWith',
       'isEmpty',
     ]);
-    expect(operatorsForColumn(byId('attempts'))).toEqual(['equals', 'gt', 'lt', 'between']);
-    expect(operatorsForColumn(byId('createdAt'))).toEqual(['before', 'after', 'between']);
-    expect(operatorsForColumn(byId('status'))).toEqual(['is', 'isNot', 'isAnyOf']);
+    expect(operatorsForColumn(byId('attempts'))).toEqual([
+      'equals',
+      'gt',
+      'lt',
+      'between',
+    ]);
+    expect(operatorsForColumn(byId('createdAt'))).toEqual([
+      'before',
+      'after',
+      'between',
+    ]);
+    expect(operatorsForColumn(byId('status'))).toEqual([
+      'is',
+      'isNot',
+      'isAnyOf',
+    ]);
     expect(operatorsForColumn(byId('favorite'))).toEqual(['is']);
   });
 
   it('defaults an undeclared filterType to text', () => {
-    expect(operatorsForColumn({ id: 'x', label: 'X', priority: 'primary', filterable: true })).toEqual(
-      OPERATORS_BY_FILTER_TYPE.text,
-    );
+    expect(
+      operatorsForColumn({
+        id: 'x',
+        label: 'X',
+        priority: 'primary',
+        filterable: true,
+      }),
+    ).toEqual(OPERATORS_BY_FILTER_TYPE.text);
   });
 
   it('lets an explicit array pin the operators, in the order given', () => {
     const byId = COLUMNS.find((column) => column.id === 'lastError')!;
-    expect(operatorsForColumn(byId)).toEqual(['contains', 'isEmpty', 'isNotEmpty']);
+    expect(operatorsForColumn(byId)).toEqual([
+      'contains',
+      'isEmpty',
+      'isNotEmpty',
+    ]);
   });
 
   it('labels numeric comparisons as symbols, everything else as words', () => {
@@ -381,7 +433,9 @@ describe('filter operators — per value type', () => {
       }),
     ).toBe(false);
 
-    expect(isFilterableColumn(COLUMNS.find((c) => c.id === 'status')!)).toBe(true);
+    expect(isFilterableColumn(COLUMNS.find((c) => c.id === 'status')!)).toBe(
+      true,
+    );
     expect(isFilterableColumn(COLUMNS.find((c) => c.id === 'id')!)).toBe(false);
   });
 
@@ -394,7 +448,11 @@ describe('filter operators — per value type', () => {
       'favorite',
       'lastError',
     ]);
-    expect(searchableColumns(COLUMNS).map((c) => c.id)).toEqual(['type', 'status', 'lastError']);
+    expect(searchableColumns(COLUMNS).map((c) => c.id)).toEqual([
+      'type',
+      'status',
+      'lastError',
+    ]);
   });
 });
 
@@ -430,13 +488,26 @@ describe('DataTable — operators offered in the filter UI', () => {
     ]);
 
     await pickOption(user, 'Column', 'Attempts');
-    expect(await optionsOf(user, 'Operator')).toEqual(['=', '>', '<', 'is between']);
+    expect(await optionsOf(user, 'Operator')).toEqual([
+      '=',
+      '>',
+      '<',
+      'is between',
+    ]);
 
     await pickOption(user, 'Column', 'Created');
-    expect(await optionsOf(user, 'Operator')).toEqual(['is before', 'is after', 'is between']);
+    expect(await optionsOf(user, 'Operator')).toEqual([
+      'is before',
+      'is after',
+      'is between',
+    ]);
 
     await pickOption(user, 'Column', 'Status');
-    expect(await optionsOf(user, 'Operator')).toEqual(['is', 'is not', 'is any of']);
+    expect(await optionsOf(user, 'Operator')).toEqual([
+      'is',
+      'is not',
+      'is any of',
+    ]);
 
     await pickOption(user, 'Column', 'Favorite');
     expect(await optionsOf(user, 'Operator')).toEqual(['is']);
@@ -451,7 +522,9 @@ describe('DataTable — operators offered in the filter UI', () => {
 
     // number -> a spinbutton
     await pickOption(user, 'Column', 'Attempts');
-    expect(screen.getByRole('spinbutton', { name: 'Value' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('spinbutton', { name: 'Value' }),
+    ).toBeInTheDocument();
 
     // enum -> a select over enumValues, using the LABELS not the raw values
     await pickOption(user, 'Column', 'Status');
@@ -474,9 +547,13 @@ describe('DataTable — operators offered in the filter UI', () => {
     await pickOption(user, 'Column', 'Attempts');
     await pickOption(user, 'Operator', 'is between');
 
-    expect(screen.getByRole('spinbutton', { name: 'From' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('spinbutton', { name: 'From' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('spinbutton', { name: 'To' })).toBeInTheDocument();
-    expect(screen.queryByRole('spinbutton', { name: 'Value' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('spinbutton', { name: 'Value' }),
+    ).not.toBeInTheDocument();
   });
 
   it('drops the operand control entirely for a 0-arity operator', async () => {
@@ -485,7 +562,9 @@ describe('DataTable — operators offered in the filter UI', () => {
 
     await pickOption(user, 'Operator', 'is empty');
 
-    expect(screen.queryByRole('textbox', { name: 'Value' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('textbox', { name: 'Value' }),
+    ).not.toBeInTheDocument();
     // ...and "is empty" is complete on its own, so Add is live immediately.
     expect(screen.getByTestId('datatable-filter-apply')).toBeEnabled();
   });
@@ -556,7 +635,9 @@ describe('DataTable — quick search debounce', () => {
   it('honours a per-instance debounceMs', () => {
     vi.useFakeTimers();
     const onChange = vi.fn();
-    renderAtWidth(1400, { quickSearch: { value: '', onChange, debounceMs: 1000 } });
+    renderAtWidth(1400, {
+      quickSearch: { value: '', onChange, debounceMs: 1000 },
+    });
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search' }), {
       target: { value: 'x' },
@@ -690,7 +771,11 @@ describe('DataTable — filter model round-trip', () => {
     renderAtWidth(1400, {
       filters: [
         { columnId: 'status', operator: 'is', value: 'failed' },
-        { columnId: 'type', operator: 'contains', value: 'nothing-matches-this' },
+        {
+          columnId: 'type',
+          operator: 'contains',
+          value: 'nothing-matches-this',
+        },
       ],
       onFiltersChange: vi.fn(),
     });
@@ -709,7 +794,9 @@ describe('DataTable — filter model round-trip', () => {
     await user.click(screen.getByTestId('datatable-filter-apply'));
 
     // The page never fed a new model back, so no chip appeared.
-    expect(screen.queryByTestId('datatable-filter-chip')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-filter-chip'),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -760,7 +847,9 @@ describe('DataTable — active filter chips', () => {
 
   it('offers no "Clear all" for a single filter — the chip already is one', () => {
     renderAtWidth(1400, { filters: [FILTERS[0]], onFiltersChange: vi.fn() });
-    expect(screen.queryByTestId('datatable-filter-clear-all')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-filter-clear-all'),
+    ).not.toBeInTheDocument();
   });
 
   it('still renders a removable chip for a column the table no longer declares', () => {
@@ -770,7 +859,9 @@ describe('DataTable — active filter chips', () => {
     });
     // Falls back to the raw columnId rather than crashing on a URL-restored
     // filter whose column was renamed.
-    expect(screen.getByTestId('datatable-filter-chip')).toHaveTextContent('ghostColumn contains x');
+    expect(screen.getByTestId('datatable-filter-chip')).toHaveTextContent(
+      'ghostColumn contains x',
+    );
   });
 });
 
@@ -792,10 +883,14 @@ describe('DataTable — filter surface per layout', () => {
       'desktop',
     );
     expect(screen.getByTestId('datatable-filter-editor')).toBeInTheDocument();
-    expect(screen.queryByTestId('datatable-filter-toggle')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-filter-toggle'),
+    ).not.toBeInTheDocument();
     // Chips wrap; no sideways scroller on a wide layout.
     expect(screen.getByTestId('datatable-filter-chips')).toBeInTheDocument();
-    expect(screen.queryByTestId('datatable-filter-chip-strip')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-filter-chip-strip'),
+    ).not.toBeInTheDocument();
   });
 
   it('tablet: the panel is collapsed behind a Filters button carrying the count', async () => {
@@ -809,13 +904,17 @@ describe('DataTable — filter surface per layout', () => {
 
     const toggle = screen.getByTestId('datatable-filter-toggle');
     // The count is visible as a badge...
-    expect(document.querySelector(`.${FILTER_COUNT_CLASS}`)).toHaveTextContent('2');
+    expect(document.querySelector(`.${FILTER_COUNT_CLASS}`)).toHaveTextContent(
+      '2',
+    );
     // ...and spoken, since a badge bubble is invisible to a screen reader.
     expect(toggle).toHaveAccessibleName('Filters (2 active)');
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
     // Collapsed: no editor until asked for.
-    expect(screen.queryByTestId('datatable-filter-editor')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-filter-editor'),
+    ).not.toBeInTheDocument();
 
     await user.click(toggle);
     expect(screen.getByTestId('datatable-filter-panel')).toBeInTheDocument();
@@ -823,12 +922,16 @@ describe('DataTable — filter surface per layout', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
 
     await user.click(toggle);
-    expect(screen.queryByTestId('datatable-filter-editor')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-filter-editor'),
+    ).not.toBeInTheDocument();
   });
 
   it('tablet: the Filters button reads plainly when nothing is applied', () => {
     renderAtWidth(800, { filters: [], onFiltersChange: vi.fn() });
-    expect(screen.getByTestId('datatable-filter-toggle')).toHaveAccessibleName('Filters');
+    expect(screen.getByTestId('datatable-filter-toggle')).toHaveAccessibleName(
+      'Filters',
+    );
   });
 
   it('phone: filters open in a full-screen sheet that traps focus', async () => {
@@ -847,10 +950,16 @@ describe('DataTable — filter surface per layout', () => {
     expect(sheet).toHaveAccessibleName('Filters');
     // MUI's modal marks everything outside inert; focus is inside the sheet.
     expect(sheet).toContainElement(document.activeElement as HTMLElement);
-    expect(within(sheet).getByTestId('datatable-filter-editor')).toBeInTheDocument();
+    expect(
+      within(sheet).getByTestId('datatable-filter-editor'),
+    ).toBeInTheDocument();
 
-    await user.click(within(sheet).getByRole('button', { name: 'Close filters' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await user.click(
+      within(sheet).getByRole('button', { name: 'Close filters' }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    );
   });
 
   it('phone: Escape closes the sheet', async () => {
@@ -861,7 +970,9 @@ describe('DataTable — filter surface per layout', () => {
     await screen.findByRole('dialog');
 
     await user.keyboard('{Escape}');
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    );
   });
 
   it('phone: active filters are a horizontally scrollable chip strip', () => {
@@ -874,12 +985,16 @@ describe('DataTable — filter surface per layout', () => {
     expect(style.overflowX).toBe('auto');
     expect(style.flexWrap).toBe('nowrap');
     expect(style.maxWidth).toBe('100%');
-    expect(within(strip).getAllByTestId('datatable-filter-chip')).toHaveLength(2);
+    expect(within(strip).getAllByTestId('datatable-filter-chip')).toHaveLength(
+      2,
+    );
   });
 
   it('renders no filter bar at all when neither filtering nor search is configured', () => {
     renderAtWidth(1400);
-    expect(screen.queryByTestId('datatable-filter-bar')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-filter-bar'),
+    ).not.toBeInTheDocument();
   });
 
   it('renders search alone when no column is filterable', () => {
@@ -897,8 +1012,12 @@ describe('DataTable — filter surface per layout', () => {
     );
 
     expect(screen.getByTestId('datatable-quick-search')).toBeInTheDocument();
-    expect(screen.queryByTestId('datatable-filter-editor')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('datatable-filter-toggle')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-filter-editor'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-filter-toggle'),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -946,8 +1065,12 @@ describe('DataTable — filters survive a layout switch', () => {
     // Same state, different surface.
     expect(screen.getByTestId('probe-filters')).toHaveTextContent(expected);
     expect(screen.getByTestId('probe-search')).toHaveTextContent('tagging');
-    expect(screen.getByTestId('datatable-filter-chip-strip')).toBeInTheDocument();
-    expect(screen.getByRole('searchbox', { name: 'Search' })).toHaveValue('tagging');
+    expect(
+      screen.getByTestId('datatable-filter-chip-strip'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search' })).toHaveValue(
+      'tagging',
+    );
 
     act(() => {
       containerWidth = 1400;
@@ -965,18 +1088,46 @@ describe('DataTable — filters survive a layout switch', () => {
 
 describe('filter model helpers', () => {
   it('recognises an incomplete draft', () => {
-    expect(isFilterComplete({ columnId: 'type', operator: 'contains', value: '' })).toBe(false);
-    expect(isFilterComplete({ columnId: 'type', operator: 'contains', value: '   ' })).toBe(false);
-    expect(isFilterComplete({ columnId: 'type', operator: 'contains', value: 'geo' })).toBe(true);
-    expect(isFilterComplete({ columnId: 'a', operator: 'between', value: [1, ''] })).toBe(false);
-    expect(isFilterComplete({ columnId: 'a', operator: 'between', value: [1, 5] })).toBe(true);
-    expect(isFilterComplete({ columnId: 'a', operator: 'isAnyOf', value: [] })).toBe(false);
-    expect(isFilterComplete({ columnId: 'a', operator: 'isAnyOf', value: ['x'] })).toBe(true);
-    expect(isFilterComplete({ columnId: 'a', operator: 'isEmpty', value: null })).toBe(true);
+    expect(
+      isFilterComplete({ columnId: 'type', operator: 'contains', value: '' }),
+    ).toBe(false);
+    expect(
+      isFilterComplete({
+        columnId: 'type',
+        operator: 'contains',
+        value: '   ',
+      }),
+    ).toBe(false);
+    expect(
+      isFilterComplete({
+        columnId: 'type',
+        operator: 'contains',
+        value: 'geo',
+      }),
+    ).toBe(true);
+    expect(
+      isFilterComplete({ columnId: 'a', operator: 'between', value: [1, ''] }),
+    ).toBe(false);
+    expect(
+      isFilterComplete({ columnId: 'a', operator: 'between', value: [1, 5] }),
+    ).toBe(true);
+    expect(
+      isFilterComplete({ columnId: 'a', operator: 'isAnyOf', value: [] }),
+    ).toBe(false);
+    expect(
+      isFilterComplete({ columnId: 'a', operator: 'isAnyOf', value: ['x'] }),
+    ).toBe(true);
+    expect(
+      isFilterComplete({ columnId: 'a', operator: 'isEmpty', value: null }),
+    ).toBe(true);
     // A boolean `false` is a real operand, not an empty one.
-    expect(isFilterComplete({ columnId: 'a', operator: 'is', value: false })).toBe(true);
+    expect(
+      isFilterComplete({ columnId: 'a', operator: 'is', value: false }),
+    ).toBe(true);
     // Zero likewise.
-    expect(isFilterComplete({ columnId: 'a', operator: 'equals', value: 0 })).toBe(true);
+    expect(
+      isFilterComplete({ columnId: 'a', operator: 'equals', value: 0 }),
+    ).toBe(true);
   });
 
   it('opens a boolean draft on Yes rather than on nothing', () => {
@@ -992,13 +1143,21 @@ describe('filter model helpers', () => {
     const model: DataTableFilterModel = [
       { columnId: 'status', operator: 'is', value: 'failed' },
     ];
-    const duplicate = { columnId: 'status', operator: 'is' as const, value: 'failed' };
+    const duplicate = {
+      columnId: 'status',
+      operator: 'is' as const,
+      value: 'failed',
+    };
     expect(containsFilter(model, duplicate)).toBe(true);
     expect(addFilter(model, duplicate)).toBe(model);
     // A different operand on the same column is NOT a duplicate.
-    expect(addFilter(model, { columnId: 'status', operator: 'is', value: 'pending' })).toHaveLength(
-      2,
-    );
+    expect(
+      addFilter(model, {
+        columnId: 'status',
+        operator: 'is',
+        value: 'pending',
+      }),
+    ).toHaveLength(2);
   });
 
   it('returns a new array from every transition', () => {
@@ -1014,14 +1173,27 @@ describe('filter model helpers', () => {
 
   it('builds a chip label from labels, not raw ids or values', () => {
     expect(
-      filterChipLabel({ columnId: 'status', operator: 'isAnyOf', value: ['failed', 'pending'] }, COLUMNS),
+      filterChipLabel(
+        {
+          columnId: 'status',
+          operator: 'isAnyOf',
+          value: ['failed', 'pending'],
+        },
+        COLUMNS,
+      ),
     ).toBe('Status is any of Failed, Pending');
     expect(
-      filterChipLabel({ columnId: 'attempts', operator: 'between', value: [1, 5] }, COLUMNS),
+      filterChipLabel(
+        { columnId: 'attempts', operator: 'between', value: [1, 5] },
+        COLUMNS,
+      ),
     ).toBe('Attempts is between 1 and 5');
-    expect(filterChipLabel({ columnId: 'favorite', operator: 'is', value: true }, COLUMNS)).toBe(
-      'Favorite is Yes',
-    );
+    expect(
+      filterChipLabel(
+        { columnId: 'favorite', operator: 'is', value: true },
+        COLUMNS,
+      ),
+    ).toBe('Favorite is Yes');
   });
 });
 
@@ -1049,28 +1221,43 @@ describe('filter URL helper', () => {
   });
 
   it('survives a trip through a real query STRING, not just the object', () => {
-    const written = writeDataTableUrlState(new URLSearchParams(), { filters: MODEL });
+    const written = writeDataTableUrlState(new URLSearchParams(), {
+      filters: MODEL,
+    });
     // toString() re-encodes our percent escapes; parsing undoes it symmetrically.
     const reparsed = new URLSearchParams(written.toString());
 
-    expect(readDataTableUrlState(reparsed, { columns: COLUMNS }).filters).toEqual(MODEL);
+    expect(
+      readDataTableUrlState(reparsed, { columns: COLUMNS }).filters,
+    ).toEqual(MODEL);
   });
 
   it('survives values containing the delimiters', () => {
     const awkward: DataTableFilterModel = [
-      { columnId: 'lastError', operator: 'contains', value: 'rate: limited, twice' },
+      {
+        columnId: 'lastError',
+        operator: 'contains',
+        value: 'rate: limited, twice',
+      },
       { columnId: 'type', operator: 'equals', value: 'a:b,c' },
     ];
-    const written = writeDataTableUrlState(new URLSearchParams(), { filters: awkward });
+    const written = writeDataTableUrlState(new URLSearchParams(), {
+      filters: awkward,
+    });
 
-    expect(readDataTableUrlState(new URLSearchParams(written.toString()), { columns: COLUMNS }).filters).toEqual(
-      awkward,
-    );
+    expect(
+      readDataTableUrlState(new URLSearchParams(written.toString()), {
+        columns: COLUMNS,
+      }).filters,
+    ).toEqual(awkward);
   });
 
   it('keeps unrelated params untouched and does not mutate the input', () => {
     const params = new URLSearchParams('page=3&tab=runs');
-    const written = writeDataTableUrlState(params, { filters: MODEL, search: 'geo' });
+    const written = writeDataTableUrlState(params, {
+      filters: MODEL,
+      search: 'geo',
+    });
 
     expect(written.get('page')).toBe('3');
     expect(written.get('tab')).toBe('runs');
@@ -1081,7 +1268,10 @@ describe('filter URL helper', () => {
 
   it('removes its params entirely when the model and search are empty', () => {
     const params = new URLSearchParams('page=3');
-    const seeded = writeDataTableUrlState(params, { filters: MODEL, search: 'geo' });
+    const seeded = writeDataTableUrlState(params, {
+      filters: MODEL,
+      search: 'geo',
+    });
     const cleared = writeDataTableUrlState(seeded, { filters: [], search: '' });
 
     expect(cleared.toString()).toBe('page=3');
@@ -1098,10 +1288,12 @@ describe('filter URL helper', () => {
   });
 
   it('drops a malformed filter param instead of throwing', () => {
-    const params = new URLSearchParams('filter=nonsense&filter=status:is:failed&filter=');
-    expect(readDataTableUrlState(params, { columns: COLUMNS }).filters).toEqual([
-      { columnId: 'status', operator: 'is', value: 'failed' },
-    ]);
+    const params = new URLSearchParams(
+      'filter=nonsense&filter=status:is:failed&filter=',
+    );
+    expect(readDataTableUrlState(params, { columns: COLUMNS }).filters).toEqual(
+      [{ columnId: 'status', operator: 'is', value: 'failed' }],
+    );
   });
 
   it('honours custom param names', () => {
@@ -1113,21 +1305,28 @@ describe('filter URL helper', () => {
     expect(written.getAll('f')).toHaveLength(1);
     expect(written.get('search')).toBe('geo');
     expect(
-      readDataTableUrlState(written, { filterParam: 'f', searchParam: 'search', columns: COLUMNS })
-        .filters,
+      readDataTableUrlState(written, {
+        filterParam: 'f',
+        searchParam: 'search',
+        columns: COLUMNS,
+      }).filters,
     ).toEqual([MODEL[0]]);
   });
 
   it('encodes one filter to the documented shape', () => {
-    expect(encodeFilter({ columnId: 'status', operator: 'is', value: 'failed' })).toBe(
-      'status:is:failed',
-    );
-    expect(encodeFilter({ columnId: 'attempts', operator: 'between', value: [1, 5] })).toBe(
-      'attempts:between:1,5',
-    );
-    expect(encodeFilter({ columnId: 'lastError', operator: 'isEmpty', value: null })).toBe(
-      'lastError:isEmpty',
-    );
+    expect(
+      encodeFilter({ columnId: 'status', operator: 'is', value: 'failed' }),
+    ).toBe('status:is:failed');
+    expect(
+      encodeFilter({
+        columnId: 'attempts',
+        operator: 'between',
+        value: [1, 5],
+      }),
+    ).toBe('attempts:between:1,5');
+    expect(
+      encodeFilter({ columnId: 'lastError', operator: 'isEmpty', value: null }),
+    ).toBe('lastError:isEmpty');
     expect(decodeFilter('lastError:isEmpty')).toEqual({
       columnId: 'lastError',
       operator: 'isEmpty',
@@ -1208,7 +1407,8 @@ describe('DataTable filter surface — no invisible-but-tappable controls (#243 
 
     for (const control of mustBeTouchSized) {
       // A select's sizing lives on its InputBase wrapper, not the combobox div.
-      const sized = control.closest<HTMLElement>('.MuiInputBase-root') ?? control;
+      const sized =
+        control.closest<HTMLElement>('.MuiInputBase-root') ?? control;
       const style = getComputedStyle(sized);
       // `height: auto` parses to NaN, which would poison a bare Math.max.
       const px = (raw: string) => {
@@ -1228,7 +1428,9 @@ describe('DataTable filter surface — no invisible-but-tappable controls (#243 
     });
 
     const bar = screen.getByTestId('datatable-filter-bar');
-    const painted = Array.from(bar.querySelectorAll<HTMLElement>('button, .MuiChip-root'));
+    const painted = Array.from(
+      bar.querySelectorAll<HTMLElement>('button, .MuiChip-root'),
+    );
     expect(painted.length).toBeGreaterThan(0);
     for (const control of painted) {
       expect(getComputedStyle(control).opacity).not.toBe('0');

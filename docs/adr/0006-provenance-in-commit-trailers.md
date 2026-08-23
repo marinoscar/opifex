@@ -14,8 +14,8 @@ caused it, along this chain:
 Decision --informed--> Issue --generated--> WorkOrder --produced--> PR --contains--> Commit
 ```
 
-and calls the vocabulary that carries it *"the single cheapest high-leverage
-decision in this project."* The leverage is entirely in the timing. There are
+and calls the vocabulary that carries it _"the single cheapest high-leverage
+decision in this project."_ The leverage is entirely in the timing. There are
 currently a few dozen commits in this repository. Deciding the vocabulary now
 costs an afternoon; deciding it after a thousand agent-authored commits means
 either rewriting history or accepting a permanent gap between the old commits
@@ -79,7 +79,7 @@ it is called out in `PROVENANCE.md` for that reason.
 `prov:Entity`, `WorkOrder` to `prov:Activity`, the runner to `prov:Agent`. The
 vocabulary was chosen so that mapping is mechanical later. Publishing RDF now
 would be building for a consumer that does not exist; choosing names that
-*cannot* be mapped would be a decision made by accident.
+_cannot_ be mapped would be a decision made by accident.
 
 ## Alternatives considered
 
@@ -94,7 +94,7 @@ convention with a parser we would own.
 and query, and it lives on GitHub rather than in the repository. A clone would
 carry no provenance at all, and the chain would depend on one vendor's API
 staying available and unchanged. The mirror labels (#48) are already deliberately
-*derived* state for exactly this reason; provenance is the opposite — it is the
+_derived_ state for exactly this reason; provenance is the opposite — it is the
 source.
 
 **`git notes`.** Mutable, which sounds like an advantage and is the
@@ -104,7 +104,7 @@ configuration, so in practice most people would never see them.
 
 **A sidecar file committed alongside the change.** The execution record
 (ADR 0005) is exactly this, and it is complementary rather than an alternative:
-it carries the *whole work order* at the branch's first commit. It cannot
+it carries the _whole work order_ at the branch's first commit. It cannot
 replace trailers, because it says what the branch was for, not what each
 individual commit belongs to — and a commit cherry-picked to another branch
 would leave its sidecar behind while carrying its trailers with it.

@@ -92,9 +92,7 @@ describe('Health Endpoints (Integration)', () => {
     it('should not require authentication', async () => {
       context.prismaMock.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
 
-      await request(context.app.getHttpServer())
-        .get('/api/health')
-        .expect(200);
+      await request(context.app.getHttpServer()).get('/api/health').expect(200);
     });
 
     it('should include timestamp in response', async () => {

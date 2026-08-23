@@ -1,4 +1,3 @@
-
 /**
  * Options for uploading a file to storage
  */

@@ -50,7 +50,10 @@ function harness(): Harness {
   };
   const windowStub: Record<string, unknown> = {
     Scalar: {
-      createApiReference: (_selector: string, config: Record<string, unknown>) => {
+      createApiReference: (
+        _selector: string,
+        config: Record<string, unknown>,
+      ) => {
         mountedConfig = config;
       },
     },
@@ -63,7 +66,6 @@ function harness(): Harness {
 
   return {
     run: async (fetchImpl) => {
-       
       const evaluate = new Function('window', 'document', 'fetch', script);
       evaluate(windowStub, documentStub, fetchImpl);
       return windowStub.__eafDocsAuth;
@@ -83,7 +85,10 @@ describe('docs page bootstrap script', () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       // The exact wire shape: TransformInterceptor wraps the handler's
       // `{ accessToken, expiresIn }` return value.
-      jsonResponse({ data: { accessToken: 'tok-123', expiresIn: 900 }, meta: { timestamp: 'x' } }),
+      jsonResponse({
+        data: { accessToken: 'tok-123', expiresIn: 900 },
+        meta: { timestamp: 'x' },
+      }),
     );
 
     await h.run(fetchImpl);
@@ -92,12 +97,17 @@ describe('docs page bootstrap script', () => {
       preferredSecurityScheme: SCHEME,
       securitySchemes: { [SCHEME]: { token: 'tok-123' } },
     });
-    expect(h.status()).toEqual({ text: 'Authorized with your session', kind: 'eaf-ok' });
+    expect(h.status()).toEqual({
+      text: 'Authorized with your session',
+      kind: 'eaf-ok',
+    });
   });
 
   it('also accepts an unwrapped body, so it survives the envelope changing', async () => {
     const h = harness();
-    await h.run(jest.fn().mockResolvedValue(jsonResponse({ accessToken: 'tok-bare' })));
+    await h.run(
+      jest.fn().mockResolvedValue(jsonResponse({ accessToken: 'tok-bare' })),
+    );
 
     expect(h.mountedConfig()?.authentication).toEqual({
       preferredSecurityScheme: SCHEME,
@@ -107,7 +117,9 @@ describe('docs page bootstrap script', () => {
 
   it('calls the refresh endpoint with the cookie attached', async () => {
     const h = harness();
-    const fetchImpl = jest.fn().mockResolvedValue(jsonResponse({ data: { accessToken: 't' } }));
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: { accessToken: 't' } }));
 
     await h.run(fetchImpl);
 
@@ -119,7 +131,9 @@ describe('docs page bootstrap script', () => {
 
   it('still mounts, unauthorized, when the caller is not signed in', async () => {
     const h = harness();
-    await h.run(jest.fn().mockResolvedValue({ ok: false, json: async () => ({}) }));
+    await h.run(
+      jest.fn().mockResolvedValue({ ok: false, json: async () => ({}) }),
+    );
 
     expect(h.mountedConfig()).toBeDefined();
     expect(h.mountedConfig()?.authentication).toBeUndefined();
@@ -137,14 +151,18 @@ describe('docs page bootstrap script', () => {
 
   it('preserves the rest of the configuration when authorizing', async () => {
     const h = harness();
-    await h.run(jest.fn().mockResolvedValue(jsonResponse({ data: { accessToken: 't' } })));
+    await h.run(
+      jest.fn().mockResolvedValue(jsonResponse({ data: { accessToken: 't' } })),
+    );
 
     expect(h.mountedConfig()).toMatchObject(CONFIG);
   });
 
   it('reloads on Authorize, which is what re-runs the exchange', async () => {
     const h = harness();
-    await h.run(jest.fn().mockResolvedValue(jsonResponse({ data: { accessToken: 't' } })));
+    await h.run(
+      jest.fn().mockResolvedValue(jsonResponse({ data: { accessToken: 't' } })),
+    );
 
     expect(h.reloads()).toBe(0);
     h.clickAuthorize();

@@ -16,7 +16,7 @@ VISION §11:
 > Every preview runner needs a GA fallback accepting identical work orders.
 
 #64 implemented that literally, and correctly: a runner whose declared
-`stabilityTier` is anything but `stable` is ineligible unless some *other*,
+`stabilityTier` is anything but `stable` is ineligible unless some _other_,
 `stable` runner could take the same work order.
 
 VISION §3.7:
@@ -56,11 +56,11 @@ until something has actually run unattended.
 ## Consequences
 
 **The invariant that matters survives; the one that cannot hold does not.**
-Read as a whole, VISION §11's concern is a fleet becoming *quietly* dependent on
+Read as a whole, VISION §11's concern is a fleet becoming _quietly_ dependent on
 something its own vendor calls a preview — §8's "never trustable" reasoning, one
 level up. An operator who has set an environment variable named
 `DISPATCH_ALLOW_PREVIEW_RUNNER` has not done it quietly. What is being kept is
-"never *silently* load-bearing"; what is being given up is "never load-bearing",
+"never _silently_ load-bearing"; what is being given up is "never load-bearing",
 which is unreachable for a single-runner fleet by construction.
 
 **Off by default, like every other outward-acting switch here.**

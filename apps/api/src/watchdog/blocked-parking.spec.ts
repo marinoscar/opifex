@@ -45,7 +45,9 @@ describe('decideParking', () => {
 
       expect(decision.kind).toBe('park');
       if (decision.kind !== 'park') return;
-      expect(decision.resumeAt.getTime()).toBeGreaterThanOrEqual(at(240).getTime());
+      expect(decision.resumeAt.getTime()).toBeGreaterThanOrEqual(
+        at(240).getTime(),
+      );
     });
 
     it('explains the park in terms a human can check', () => {
@@ -92,7 +94,9 @@ describe('decideParking', () => {
     it('never exceeds the ceiling, even for a very long block', () => {
       // Otherwise a 24-hour quota block would add hours of dead time — the
       // exact thing being recovered.
-      expect(jitterFor(at(60 * 24), at(0), () => 0.999)).toBeLessThanOrEqual(MAX_JITTER_MS);
+      expect(jitterFor(at(60 * 24), at(0), () => 0.999)).toBeLessThanOrEqual(
+        MAX_JITTER_MS,
+      );
     });
 
     it('is never negative', () => {
@@ -104,13 +108,21 @@ describe('decideParking', () => {
     it('waits rather than re-deciding', () => {
       // Re-deciding every tick would move the resume time on each pass and the
       // run would never resume — the jitter would chase itself.
-      const decision = decideParking(blocked({ resumesAt: at(60) }), NOW, () => 0.5);
+      const decision = decideParking(
+        blocked({ resumesAt: at(60) }),
+        NOW,
+        () => 0.5,
+      );
 
       expect(decision.kind).toBe('waiting');
     });
 
     it('resumes once its scheduled time has passed', () => {
-      const decision = decideParking(blocked({ resumesAt: at(-1) }), NOW, () => 0.5);
+      const decision = decideParking(
+        blocked({ resumesAt: at(-1) }),
+        NOW,
+        () => 0.5,
+      );
 
       expect(decision.kind).toBe('resume');
       expect(decision.reason).toContain('has passed');
@@ -134,7 +146,9 @@ describe('decideParking', () => {
         blocked({
           resetAt: null,
           reason: 'unknown',
-          blockedSince: new Date(NOW.getTime() - UNDATED_BLOCK_PATIENCE_MS - 60_000),
+          blockedSince: new Date(
+            NOW.getTime() - UNDATED_BLOCK_PATIENCE_MS - 60_000,
+          ),
         }),
         NOW,
       );
@@ -161,7 +175,9 @@ describe('decideParking', () => {
     it('takes now and the randomness as parameters', () => {
       const run = blocked();
 
-      expect(decideParking(run, NOW, () => 0.42)).toEqual(decideParking(run, NOW, () => 0.42));
+      expect(decideParking(run, NOW, () => 0.42)).toEqual(
+        decideParking(run, NOW, () => 0.42),
+      );
     });
   });
 });
@@ -174,24 +190,30 @@ describe('actionsForParking', () => {
     const [action] = actionsForParking(run, decision);
 
     expect(action.type).toBe('park');
-    expect(new Date(action.resumeAt!).getTime()).toBeGreaterThan(at(240).getTime());
+    expect(new Date(action.resumeAt!).getTime()).toBeGreaterThan(
+      at(240).getTime(),
+    );
   });
 
   it('emits a resume action when due', () => {
     const run = blocked({ resumesAt: at(-1) });
 
-    expect(actionsForParking(run, decideParking(run, NOW)).map((a) => a.type)).toEqual(['resume']);
+    expect(
+      actionsForParking(run, decideParking(run, NOW)).map((a) => a.type),
+    ).toEqual(['resume']);
   });
 
   it('emits an escalation for an undated block that waited too long', () => {
     const run = blocked({
       resetAt: null,
-      blockedSince: new Date(NOW.getTime() - UNDATED_BLOCK_PATIENCE_MS - 60_000),
+      blockedSince: new Date(
+        NOW.getTime() - UNDATED_BLOCK_PATIENCE_MS - 60_000,
+      ),
     });
 
-    expect(actionsForParking(run, decideParking(run, NOW)).map((a) => a.type)).toEqual([
-      'escalate',
-    ]);
+    expect(
+      actionsForParking(run, decideParking(run, NOW)).map((a) => a.type),
+    ).toEqual(['escalate']);
   });
 
   it('emits NOTHING while a run is simply waiting', () => {
@@ -205,7 +227,10 @@ describe('actionsForParking', () => {
   it('carries the runId and work order on every action', () => {
     const run = blocked();
 
-    for (const action of actionsForParking(run, decideParking(run, NOW, () => 0.5))) {
+    for (const action of actionsForParking(
+      run,
+      decideParking(run, NOW, () => 0.5),
+    )) {
       expect(action.runId).toBe(run.runId);
       expect(action.evidence.workOrderIdentity).toBe(run.workOrderIdentity);
     }

@@ -321,4 +321,9 @@ export interface Runner {
  * an implementation's prototype against this list, which turns "we agreed not
  * to widen it" into a failing build.
  */
-export const RUNNER_SEAM_METHODS = ['submit', 'poll', 'cancel', 'capabilities'] as const;
+export const RUNNER_SEAM_METHODS = [
+  'submit',
+  'poll',
+  'cancel',
+  'capabilities',
+] as const;

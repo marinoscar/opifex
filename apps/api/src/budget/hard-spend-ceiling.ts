@@ -48,7 +48,8 @@ import { Injectable, Logger } from '@nestjs/common';
 export const HARD_SPEND_CEILING_ENV = 'OPIFEX_HARD_SPEND_CEILING_USD';
 
 /** The only name that sets the window the ceiling is measured over. */
-export const HARD_SPEND_CEILING_WINDOW_ENV = 'OPIFEX_HARD_SPEND_CEILING_WINDOW_DAYS';
+export const HARD_SPEND_CEILING_WINDOW_ENV =
+  'OPIFEX_HARD_SPEND_CEILING_WINDOW_DAYS';
 
 /**
  * The default window: thirty days.

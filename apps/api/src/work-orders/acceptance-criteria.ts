@@ -111,7 +111,10 @@ export function assessCriteria(criteria: string[]): CriteriaVerdict {
   }
 
   for (const criterion of cleaned) {
-    const normalized = criterion.toLowerCase().replace(/[.!]+$/, '').trim();
+    const normalized = criterion
+      .toLowerCase()
+      .replace(/[.!]+$/, '')
+      .trim();
 
     if (PLACEHOLDERS.has(normalized)) {
       problems.push({
@@ -131,7 +134,9 @@ export function assessCriteria(criteria: string[]): CriteriaVerdict {
       continue;
     }
 
-    const subjective = SUBJECTIVE.find((phrase) => containsPhrase(normalized, phrase));
+    const subjective = SUBJECTIVE.find((phrase) =>
+      containsPhrase(normalized, phrase),
+    );
     if (subjective) {
       problems.push({
         criterion,

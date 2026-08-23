@@ -1,4 +1,9 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
+} from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { mockDeep, DeepMockProxy } from 'jest-mock-extended';
 
@@ -7,7 +12,10 @@ import { mockDeep, DeepMockProxy } from 'jest-mock-extended';
  * This prevents the need for a real database connection during testing
  */
 @Injectable()
-export class MockPrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class MockPrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger('MockPrismaService');
   private mock: DeepMockProxy<PrismaClient>;
 

@@ -48,7 +48,9 @@ export interface UsePushNotificationsResult {
 
 export function usePushNotifications(): UsePushNotificationsResult {
   const [config, setConfig] = useState<NotificationConfig | null>(null);
-  const [subscriptions, setSubscriptions] = useState<PushSubscriptionRecord[]>([]);
+  const [subscriptions, setSubscriptions] = useState<PushSubscriptionRecord[]>(
+    [],
+  );
   const [currentEndpoint, setCurrentEndpoint] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
@@ -68,7 +70,11 @@ export function usePushNotifications(): UsePushNotificationsResult {
       setError(null);
     } catch (err) {
       if (isMounted()) {
-        setError(err instanceof Error ? err.message : 'Failed to load notification settings');
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Failed to load notification settings',
+        );
       }
     } finally {
       if (isMounted()) setIsLoading(false);
@@ -86,10 +92,12 @@ export function usePushNotifications(): UsePushNotificationsResult {
   useEffect(() => {
     if (!browserSupportsPush()) return;
 
-    void navigator.serviceWorker.getRegistration(SERVICE_WORKER_URL).then(async (registration) => {
-      const existing = await registration?.pushManager.getSubscription();
-      if (isMounted()) setCurrentEndpoint(existing?.endpoint ?? null);
-    });
+    void navigator.serviceWorker
+      .getRegistration(SERVICE_WORKER_URL)
+      .then(async (registration) => {
+        const existing = await registration?.pushManager.getSubscription();
+        if (isMounted()) setCurrentEndpoint(existing?.endpoint ?? null);
+      });
   }, [isMounted]);
 
   const subscribe = useCallback(async () => {
@@ -109,7 +117,8 @@ export function usePushNotifications(): UsePushNotificationsResult {
         return;
       }
 
-      const registration = await navigator.serviceWorker.register(SERVICE_WORKER_URL);
+      const registration =
+        await navigator.serviceWorker.register(SERVICE_WORKER_URL);
       // `ready` rather than the register() result: a worker that is installed
       // but not yet active cannot receive a push, and subscribing before it is
       // would register a device that silently drops the first notification.
@@ -137,7 +146,9 @@ export function usePushNotifications(): UsePushNotificationsResult {
       await refresh();
     } catch (err) {
       if (isMounted()) {
-        setError(err instanceof Error ? err.message : 'Failed to enable notifications');
+        setError(
+          err instanceof Error ? err.message : 'Failed to enable notifications',
+        );
       }
     } finally {
       if (isMounted()) setIsBusy(false);
@@ -148,7 +159,8 @@ export function usePushNotifications(): UsePushNotificationsResult {
     setIsBusy(true);
     setError(null);
     try {
-      const registration = await navigator.serviceWorker.getRegistration(SERVICE_WORKER_URL);
+      const registration =
+        await navigator.serviceWorker.getRegistration(SERVICE_WORKER_URL);
       const subscription = await registration?.pushManager.getSubscription();
       const endpoint = subscription?.endpoint;
 
@@ -165,7 +177,11 @@ export function usePushNotifications(): UsePushNotificationsResult {
       await refresh();
     } catch (err) {
       if (isMounted()) {
-        setError(err instanceof Error ? err.message : 'Failed to disable notifications');
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Failed to disable notifications',
+        );
       }
     } finally {
       if (isMounted()) setIsBusy(false);
@@ -181,7 +197,9 @@ export function usePushNotifications(): UsePushNotificationsResult {
         await refresh();
       } catch (err) {
         if (isMounted()) {
-          setError(err instanceof Error ? err.message : 'Failed to remove the device');
+          setError(
+            err instanceof Error ? err.message : 'Failed to remove the device',
+          );
         }
       } finally {
         if (isMounted()) setIsBusy(false);
@@ -213,7 +231,8 @@ function unsupportedReason(
   // Order matters: report the FIRST thing the operator would have to fix.
   // Telling somebody on plain HTTP that their browser is unsupported sends
   // them to buy a different phone.
-  if (typeof window !== 'undefined' && !window.isSecureContext) return 'insecure-context';
+  if (typeof window !== 'undefined' && !window.isSecureContext)
+    return 'insecure-context';
   if (!browserSupportsPush()) return 'browser';
   if (config && !config.pushConfigured) return 'server';
   if (permissionDenied) return 'permission-denied';
@@ -237,7 +256,9 @@ export function browserSupportsPush(): boolean {
  * a dependency here would be a supply-chain surface on the one code path that
  * decides whether an operator can be reached at all.
  */
-export function urlBase64ToUint8Array(base64UrlKey: string): Uint8Array<ArrayBuffer> {
+export function urlBase64ToUint8Array(
+  base64UrlKey: string,
+): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64UrlKey.length % 4)) % 4);
   const base64 = (base64UrlKey + padding).replace(/-/g, '+').replace(/_/g, '/');
   const raw = atob(base64);

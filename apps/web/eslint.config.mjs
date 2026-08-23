@@ -65,7 +65,11 @@ export default tseslint.config(
 
       '@typescript-eslint/no-unused-vars': [
         'error',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
       ],
     },
   },
@@ -79,7 +83,11 @@ export default tseslint.config(
     },
   },
   {
-    files: ['**/*.test.{ts,tsx}', 'src/__tests__/**/*.{ts,tsx}', 'src/test/**/*.{ts,tsx}'],
+    files: [
+      '**/*.test.{ts,tsx}',
+      'src/__tests__/**/*.{ts,tsx}',
+      'src/test/**/*.{ts,tsx}',
+    ],
     languageOptions: { globals: { ...globals.vitest } },
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',

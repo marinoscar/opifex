@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { METRIC_DEFINITIONS, METRIC_LIST } from '../../../components/dashboard/metrics';
+import {
+  METRIC_DEFINITIONS,
+  METRIC_LIST,
+} from '../../../components/dashboard/metrics';
 import { METRIC_IDS } from '../../../types/cockpit';
 
 /**
@@ -42,7 +45,9 @@ describe('metric definitions', () => {
    * fabricating product goals in a UI data file.
    */
   it('carries a target only where VISION states one', () => {
-    const withTarget = METRIC_LIST.filter((metric) => metric.target !== undefined);
+    const withTarget = METRIC_LIST.filter(
+      (metric) => metric.target !== undefined,
+    );
     expect(withTarget.map((metric) => metric.id)).toEqual(['detectionLatency']);
     expect(METRIC_DEFINITIONS.detectionLatency.target).toBe('Target: seconds.');
   });
@@ -53,7 +58,9 @@ describe('metric definitions', () => {
    * would make every sparkline description say the opposite of the truth.
    */
   it('marks first-pass acceptance as the only higher-is-better metric', () => {
-    const higher = METRIC_LIST.filter((m) => m.direction === 'higher-is-better');
+    const higher = METRIC_LIST.filter(
+      (m) => m.direction === 'higher-is-better',
+    );
     expect(higher.map((m) => m.id)).toEqual(['firstPassAcceptance']);
   });
 
@@ -77,7 +84,9 @@ describe('metric definitions', () => {
     });
 
     it('renders cost with cents', () => {
-      expect(METRIC_DEFINITIONS.costPerMergedPr.format(12.4)).toContain('12.40');
+      expect(METRIC_DEFINITIONS.costPerMergedPr.format(12.4)).toContain(
+        '12.40',
+      );
     });
 
     it('renders attempts to one decimal', () => {

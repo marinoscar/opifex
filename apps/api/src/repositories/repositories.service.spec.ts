@@ -75,7 +75,8 @@ describe('RepositoriesService', () => {
     beforeEach(() => {
       prisma.repository.findUnique.mockResolvedValue(null);
       prisma.repository.create.mockImplementation(
-        async ({ data }: { data: Record<string, unknown> }) => repositoryRow(data),
+        async ({ data }: { data: Record<string, unknown> }) =>
+          repositoryRow(data),
       );
     });
 
@@ -84,7 +85,10 @@ describe('RepositoriesService', () => {
       // 404, spending budget forever to rediscover a typo made once.
       await service.register({ owner: 'acme', name: 'app' });
 
-      expect(github.getRepository).toHaveBeenCalledWith({ owner: 'acme', name: 'app' });
+      expect(github.getRepository).toHaveBeenCalledWith({
+        owner: 'acme',
+        name: 'app',
+      });
       expect(prisma.repository.create).toHaveBeenCalled();
     });
 
@@ -147,9 +151,9 @@ describe('RepositoriesService', () => {
     it('rejects a repository that is already registered', async () => {
       prisma.repository.findUnique.mockResolvedValue(repositoryRow());
 
-      await expect(service.register({ owner: 'acme', name: 'app' })).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(
+        service.register({ owner: 'acme', name: 'app' }),
+      ).rejects.toBeInstanceOf(ConflictException);
       // The reachability check costs a GitHub request; not spending it on a
       // duplicate is why the uniqueness check comes first.
       expect(github.getRepository).not.toHaveBeenCalled();
@@ -160,9 +164,9 @@ describe('RepositoriesService', () => {
       // a pull request.
       github.getRepository.mockResolvedValue({ ...REACHABLE, archived: true });
 
-      await expect(service.register({ owner: 'acme', name: 'app' })).rejects.toThrow(
-        /archived/,
-      );
+      await expect(
+        service.register({ owner: 'acme', name: 'app' }),
+      ).rejects.toThrow(/archived/);
       expect(prisma.repository.create).not.toHaveBeenCalled();
     });
 
@@ -187,12 +191,17 @@ describe('RepositoriesService', () => {
       // The caller's input was fine; the deployment is not configured. A 400
       // would send them editing a repository name that is correct.
       github.getRepository.mockRejectedValue(
-        new GitHubAuthError('No GitHub credential configured', null, 'GET', '/x'),
+        new GitHubAuthError(
+          'No GitHub credential configured',
+          null,
+          'GET',
+          '/x',
+        ),
       );
 
-      await expect(service.register({ owner: 'acme', name: 'app' })).rejects.toBeInstanceOf(
-        ServiceUnavailableException,
-      );
+      await expect(
+        service.register({ owner: 'acme', name: 'app' }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
 
     it('rejects an unknown project rather than orphaning the reference', async () => {
@@ -212,7 +221,8 @@ describe('RepositoriesService', () => {
     beforeEach(() => {
       prisma.repository.findUnique.mockResolvedValue(repositoryRow());
       prisma.repository.update.mockImplementation(
-        async ({ data }: { data: Record<string, unknown> }) => repositoryRow(data),
+        async ({ data }: { data: Record<string, unknown> }) =>
+          repositoryRow(data),
       );
     });
 
@@ -220,7 +230,9 @@ describe('RepositoriesService', () => {
       // This is the moment a repository stops being observed and starts being
       // written to. A token whose access was revoked since registration must
       // not have dispatch enabled against it.
-      await service.update('11111111-1111-1111-1111-111111111111', { dispatchEnabled: true });
+      await service.update('11111111-1111-1111-1111-111111111111', {
+        dispatchEnabled: true,
+      });
 
       expect(github.getRepository).toHaveBeenCalled();
     });
@@ -228,23 +240,33 @@ describe('RepositoriesService', () => {
     it('does not re-verify when dispatch is being turned OFF', async () => {
       // Turning it off is always safe, and must work even when GitHub is
       // unreachable — that is precisely when an operator wants to stop.
-      prisma.repository.findUnique.mockResolvedValue(repositoryRow({ dispatchEnabled: true }));
+      prisma.repository.findUnique.mockResolvedValue(
+        repositoryRow({ dispatchEnabled: true }),
+      );
 
-      await service.update('11111111-1111-1111-1111-111111111111', { dispatchEnabled: false });
+      await service.update('11111111-1111-1111-1111-111111111111', {
+        dispatchEnabled: false,
+      });
 
       expect(github.getRepository).not.toHaveBeenCalled();
     });
 
     it('does not re-verify when dispatch was already on', async () => {
-      prisma.repository.findUnique.mockResolvedValue(repositoryRow({ dispatchEnabled: true }));
+      prisma.repository.findUnique.mockResolvedValue(
+        repositoryRow({ dispatchEnabled: true }),
+      );
 
-      await service.update('11111111-1111-1111-1111-111111111111', { dispatchEnabled: true });
+      await service.update('11111111-1111-1111-1111-111111111111', {
+        dispatchEnabled: true,
+      });
 
       expect(github.getRepository).not.toHaveBeenCalled();
     });
 
     it('leaves omitted fields alone instead of writing undefined over them', async () => {
-      await service.update('11111111-1111-1111-1111-111111111111', { observeEnabled: false });
+      await service.update('11111111-1111-1111-1111-111111111111', {
+        observeEnabled: false,
+      });
 
       const [{ data }] = prisma.repository.update.mock.calls[0] as [
         { data: Record<string, unknown> },
@@ -269,7 +291,9 @@ describe('RepositoriesService', () => {
       prisma.repository.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.update('11111111-1111-1111-1111-111111111111', { observeEnabled: false }),
+        service.update('11111111-1111-1111-1111-111111111111', {
+          observeEnabled: false,
+        }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
@@ -340,7 +364,9 @@ describe('RepositoriesService', () => {
         repositoryRow({ budgetCeilingUsd: { toString: () => '12.3456' } }),
       );
 
-      const result = await service.findById('11111111-1111-1111-1111-111111111111');
+      const result = await service.findById(
+        '11111111-1111-1111-1111-111111111111',
+      );
 
       expect(result.budgetCeilingUsd).toBe('12.3456');
     });
@@ -348,9 +374,10 @@ describe('RepositoriesService', () => {
     it('assembles fullName so no consumer has to', async () => {
       prisma.repository.findUnique.mockResolvedValue(repositoryRow());
 
-      expect((await service.findById('11111111-1111-1111-1111-111111111111')).fullName).toBe(
-        'acme/app',
-      );
+      expect(
+        (await service.findById('11111111-1111-1111-1111-111111111111'))
+          .fullName,
+      ).toBe('acme/app');
     });
   });
 });

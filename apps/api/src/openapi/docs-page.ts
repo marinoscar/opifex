@@ -24,7 +24,8 @@
 // =============================================================================
 
 /** Where the standalone Scalar bundle is loaded from. */
-export const DEFAULT_SCALAR_CDN = 'https://cdn.jsdelivr.net/npm/@scalar/api-reference';
+export const DEFAULT_SCALAR_CDN =
+  'https://cdn.jsdelivr.net/npm/@scalar/api-reference';
 
 export interface DocsPageOptions {
   /** Browser tab title. */

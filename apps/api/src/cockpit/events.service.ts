@@ -8,7 +8,10 @@ import {
   toPrismaEventSource,
   toPrismaEventType,
 } from '../run-events/run-event.types';
-import type { RunEventTypeName, RunEventSourceName } from '../run-events/run-event.types';
+import type {
+  RunEventTypeName,
+  RunEventSourceName,
+} from '../run-events/run-event.types';
 import { EVENTS_FEED_DEFAULT_PAGE_SIZE } from './dto/events.dto';
 import type { RunEventView } from './dto/runs.dto';
 
@@ -41,7 +44,12 @@ export class EventsService {
     pageSize?: number;
     type?: string;
     source?: string;
-  }): Promise<{ items: RunEventView[]; total: number; page: number; pageSize: number }> {
+  }): Promise<{
+    items: RunEventView[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? EVENTS_FEED_DEFAULT_PAGE_SIZE;
 

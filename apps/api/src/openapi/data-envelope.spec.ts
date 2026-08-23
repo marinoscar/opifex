@@ -11,9 +11,16 @@ function documentWith(
   };
 }
 
-function schemaOf(doc: MutableDocument, status: string): Record<string, unknown> | undefined {
-  const op = (doc.paths!['/api/thing'] as Record<string, { responses: Record<string, unknown> }>)
-    .get;
+function schemaOf(
+  doc: MutableDocument,
+  status: string,
+): Record<string, unknown> | undefined {
+  const op = (
+    doc.paths!['/api/thing'] as Record<
+      string,
+      { responses: Record<string, unknown> }
+    >
+  ).get;
   const response = op.responses[status] as {
     content?: Record<string, { schema?: Record<string, unknown> }>;
   };
@@ -50,8 +57,12 @@ describe('applyDataEnvelope', () => {
     });
     applyDataEnvelope(doc);
 
-    expect(schemaOf(doc, '404')).toEqual({ $ref: '#/components/schemas/ErrorDto' });
-    expect(schemaOf(doc, 'default')).toEqual({ $ref: '#/components/schemas/ErrorDto' });
+    expect(schemaOf(doc, '404')).toEqual({
+      $ref: '#/components/schemas/ErrorDto',
+    });
+    expect(schemaOf(doc, 'default')).toEqual({
+      $ref: '#/components/schemas/ErrorDto',
+    });
   });
 
   it('leaves a schemaless response alone — that is the byte-proxy and 204 case', () => {
@@ -74,11 +85,15 @@ describe('applyDataEnvelope', () => {
   it('follows a $ref before deciding, so an envelope DTO is not wrapped twice', () => {
     const doc = documentWith(
       { '200': jsonResponse({ $ref: '#/components/schemas/Envelope' }) },
-      { Envelope: { type: 'object', properties: { data: { type: 'string' } } } },
+      {
+        Envelope: { type: 'object', properties: { data: { type: 'string' } } },
+      },
     );
     applyDataEnvelope(doc);
 
-    expect(schemaOf(doc, '200')).toEqual({ $ref: '#/components/schemas/Envelope' });
+    expect(schemaOf(doc, '200')).toEqual({
+      $ref: '#/components/schemas/Envelope',
+    });
   });
 
   it('leaves composed schemas alone rather than guessing at their shape', () => {
@@ -90,10 +105,14 @@ describe('applyDataEnvelope', () => {
   });
 
   it('leaves an unresolvable $ref alone', () => {
-    const doc = documentWith({ '200': jsonResponse({ $ref: '#/components/schemas/Missing' }) });
+    const doc = documentWith({
+      '200': jsonResponse({ $ref: '#/components/schemas/Missing' }),
+    });
     applyDataEnvelope(doc);
 
-    expect(schemaOf(doc, '200')).toEqual({ $ref: '#/components/schemas/Missing' });
+    expect(schemaOf(doc, '200')).toEqual({
+      $ref: '#/components/schemas/Missing',
+    });
   });
 
   it('only touches application/json', () => {
@@ -105,7 +124,11 @@ describe('applyDataEnvelope', () => {
             responses: {
               '200': {
                 description: 'bytes',
-                content: { 'image/jpeg': { schema: { type: 'string', format: 'binary' } } },
+                content: {
+                  'image/jpeg': {
+                    schema: { type: 'string', format: 'binary' },
+                  },
+                },
               },
             },
           },
@@ -114,9 +137,18 @@ describe('applyDataEnvelope', () => {
     };
     applyDataEnvelope(doc);
 
-    const op = (doc.paths!['/api/thing'] as Record<string, { responses: Record<string, unknown> }>)
-      .get;
-    const response = op.responses['200'] as { content: Record<string, { schema: unknown }> };
-    expect(response.content['image/jpeg'].schema).toEqual({ type: 'string', format: 'binary' });
+    const op = (
+      doc.paths!['/api/thing'] as Record<
+        string,
+        { responses: Record<string, unknown> }
+      >
+    ).get;
+    const response = op.responses['200'] as {
+      content: Record<string, { schema: unknown }>;
+    };
+    expect(response.content['image/jpeg'].schema).toEqual({
+      type: 'string',
+      format: 'binary',
+    });
   });
 });

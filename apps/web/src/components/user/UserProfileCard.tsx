@@ -34,19 +34,22 @@ export interface UserProfileCardProps {
   showSettingsAction?: boolean;
 }
 
-export function UserProfileCard({ showSettingsAction = true }: UserProfileCardProps = {}) {
+export function UserProfileCard({
+  showSettingsAction = true,
+}: UserProfileCardProps = {}) {
   const { user } = useAuth();
   const navigate = useNavigate();
 
   if (!user) return null;
 
   // Get initials for avatar fallback
-  const initials = user.displayName
-    ?.split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2) || user.email[0].toUpperCase();
+  const initials =
+    user.displayName
+      ?.split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2) || user.email[0].toUpperCase();
 
   return (
     <Card>
@@ -93,8 +96,12 @@ export function UserProfileCard({ showSettingsAction = true }: UserProfileCardPr
                 key={role.name}
                 label={role.name}
                 size="small"
-                color={role.name.toLowerCase() === 'admin' ? 'primary' : 'default'}
-                variant={role.name.toLowerCase() === 'admin' ? 'filled' : 'outlined'}
+                color={
+                  role.name.toLowerCase() === 'admin' ? 'primary' : 'default'
+                }
+                variant={
+                  role.name.toLowerCase() === 'admin' ? 'filled' : 'outlined'
+                }
               />
             ))}
           </Stack>

@@ -309,7 +309,9 @@ export interface CreateMockAuditEventOptions {
   createdAt?: Date;
 }
 
-export function createMockAuditEvent(options: CreateMockAuditEventOptions): any {
+export function createMockAuditEvent(
+  options: CreateMockAuditEventOptions,
+): any {
   const {
     id = randomUUID(),
     actorUserId = null,
@@ -355,10 +357,7 @@ export const rolePermissionsMap = {
     mockPermissions.userSettingsRead,
     mockPermissions.userSettingsWrite,
   ],
-  viewer: [
-    mockPermissions.userSettingsRead,
-    mockPermissions.userSettingsWrite,
-  ],
+  viewer: [mockPermissions.userSettingsRead, mockPermissions.userSettingsWrite],
 };
 
 // ============================================================================

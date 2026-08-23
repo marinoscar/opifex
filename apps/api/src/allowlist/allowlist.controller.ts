@@ -38,8 +38,16 @@ export class AllowlistController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
   @ApiQuery({ name: 'search', required: false, type: String })
-  @ApiQuery({ name: 'status', required: false, enum: ['all', 'pending', 'claimed'] })
-  @ApiQuery({ name: 'sortBy', required: false, enum: ['email', 'addedAt', 'claimedAt'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['all', 'pending', 'claimed'],
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: ['email', 'addedAt', 'claimedAt'],
+  })
   @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'] })
   @ApiDataResponse(AllowlistEntryDto, {
     pagination: 'flat',

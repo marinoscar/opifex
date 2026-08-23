@@ -36,7 +36,9 @@ export class MetricsController {
       'cannot express a gap and a zero would draw a line claiming a perfect day.',
   })
   @ApiQuery({ name: 'days', required: false, type: Number })
-  @ApiDataResponse(MetricsSummaryDto, { description: 'The stat row, in one request' })
+  @ApiDataResponse(MetricsSummaryDto, {
+    description: 'The stat row, in one request',
+  })
   async summary(@Query() query: MetricsQueryDto) {
     return this.metrics.summary(query.days);
   }

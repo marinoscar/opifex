@@ -45,7 +45,11 @@ Add a permit search prompt builder to the chat surface.
 P1
 `;
 
-  const label = (name: string) => ({ name, color: 'ededed', description: null });
+  const label = (name: string) => ({
+    name,
+    color: 'ededed',
+    description: null,
+  });
 
   function issue(overrides: Partial<NormalizedIssue> = {}): NormalizedIssue {
     return {
@@ -79,7 +83,13 @@ P1
   const project = (
     issues: NormalizedIssue[] = [issue()],
     existingWorkOrders: ExistingWorkOrder[] = [],
-  ) => service.project({ repository: REPOSITORY, issues, existingWorkOrders, baseCommit: BASE });
+  ) =>
+    service.project({
+      repository: REPOSITORY,
+      issues,
+      existingWorkOrders,
+      baseCommit: BASE,
+    });
 
   describe('writing rows', () => {
     it('creates a queued work order for an eligible issue', async () => {
@@ -100,7 +110,9 @@ P1
       // actually populates needs, issueUrl and issueTitle — the three fields
       // whose absence made a stored work order undispatchable.
       await project([
-        issue({ labels: [label('feature'), label('needs:own-infrastructure')] }),
+        issue({
+          labels: [label('feature'), label('needs:own-infrastructure')],
+        }),
       ]);
 
       expect(create.mock.calls[0][0].data).toMatchObject({
@@ -156,7 +168,9 @@ P1
       // Two ticks racing. The unique constraint is the real guard; the read is
       // only an optimisation, so losing the race is correct rather than an
       // error.
-      create.mockRejectedValue(Object.assign(new Error('duplicate'), { code: 'P2002' }));
+      create.mockRejectedValue(
+        Object.assign(new Error('duplicate'), { code: 'P2002' }),
+      );
 
       const result = await project();
 
@@ -214,7 +228,8 @@ P1
   });
 
   describe('a held issue', () => {
-    const heldIssue = () => issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] });
+    const heldIssue = () =>
+      issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] });
 
     it('is written as a held work order rather than skipped', async () => {
       // WorkOrderStatus.held means "withheld by policy", which is a fact about
@@ -245,7 +260,9 @@ P1
 
       expect(heldData.identity).toBe(queuedData.identity);
       expect(heldData.taskSpec).toBe(queuedData.taskSpec);
-      expect(heldData.acceptanceCriteria).toEqual(queuedData.acceptanceCriteria);
+      expect(heldData.acceptanceCriteria).toEqual(
+        queuedData.acceptanceCriteria,
+      );
     });
   });
 
@@ -288,26 +305,34 @@ P1
       expect(update).not.toHaveBeenCalled();
     });
 
-    it.each(['dispatched', 'succeeded', 'failed', 'quarantined', 'superseded', 'cancelled'])(
-      'never touches a %s work order',
-      async (status) => {
-        // A dispatched work order has a run against it and an authorization
-        // record posted for it. Flipping that to held because a label appeared
-        // would make the record describe something no longer true, which is
-        // the one thing #63 exists to prevent. Stopping a run in flight is a
-        // cancel (#66), not a status edit.
-        await project(
-          [issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] })],
-          [existing(status)],
-        );
+    it.each([
+      'dispatched',
+      'succeeded',
+      'failed',
+      'quarantined',
+      'superseded',
+      'cancelled',
+    ])('never touches a %s work order', async (status) => {
+      // A dispatched work order has a run against it and an authorization
+      // record posted for it. Flipping that to held because a label appeared
+      // would make the record describe something no longer true, which is
+      // the one thing #63 exists to prevent. Stopping a run in flight is a
+      // cancel (#66), not a status edit.
+      await project(
+        [issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] })],
+        [existing(status)],
+      );
 
-        expect(update).not.toHaveBeenCalled();
-      },
-    );
+      expect(update).not.toHaveBeenCalled();
+    });
   });
 
   describe('an issue that already has a work order', () => {
-    const existing: ExistingWorkOrder = { id: 'wo-uuid', issueNumber: 312, status: 'queued' };
+    const existing: ExistingWorkOrder = {
+      id: 'wo-uuid',
+      issueNumber: 312,
+      status: 'queued',
+    };
 
     it('is never projected again, even at a new base commit', async () => {
       // #155 left this open. Answering it: no. Re-projecting at the current
@@ -341,7 +366,10 @@ P1
     });
 
     it('still projects a DIFFERENT issue in the same repository', async () => {
-      const result = await project([issue({ number: 312 }), issue({ number: 313 })], [existing]);
+      const result = await project(
+        [issue({ number: 312 }), issue({ number: 313 })],
+        [existing],
+      );
 
       expect(create).toHaveBeenCalledTimes(1);
       expect(result.created).toHaveLength(1);
@@ -363,18 +391,26 @@ P1
     });
 
     it('is true for a ready issue with no work order', () => {
-      expect(WorkOrderProjectionService.needsBaseCommit([issue()], [])).toBe(true);
+      expect(WorkOrderProjectionService.needsBaseCommit([issue()], [])).toBe(
+        true,
+      );
     });
 
     it('is false when nothing is marked ready', () => {
       expect(
-        WorkOrderProjectionService.needsBaseCommit([issue({ inputLabels: [] })], []),
+        WorkOrderProjectionService.needsBaseCommit(
+          [issue({ inputLabels: [] })],
+          [],
+        ),
       ).toBe(false);
     });
 
     it('is false for a closed issue', () => {
       expect(
-        WorkOrderProjectionService.needsBaseCommit([issue({ state: 'closed' })], []),
+        WorkOrderProjectionService.needsBaseCommit(
+          [issue({ state: 'closed' })],
+          [],
+        ),
       ).toBe(false);
     });
 
@@ -404,7 +440,10 @@ P1
         .mockRejectedValueOnce(new Error('database hiccup'))
         .mockResolvedValue({});
 
-      const result = await project([issue({ number: 312 }), issue({ number: 313 })]);
+      const result = await project([
+        issue({ number: 312 }),
+        issue({ number: 313 }),
+      ]);
 
       expect(create).toHaveBeenCalledTimes(2);
       expect(result.created).toHaveLength(1);

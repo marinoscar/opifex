@@ -33,13 +33,8 @@ function TabPanel({ children, value, index }: TabPanelProps) {
 
 export default function SystemSettingsPage() {
   const { hasPermission } = usePermissions();
-  const {
-    settings,
-    isLoading,
-    error,
-    isSaving,
-    updateSettings,
-  } = useSystemSettings();
+  const { settings, isLoading, error, isSaving, updateSettings } =
+    useSystemSettings();
 
   const [tabIndex, setTabIndex] = useState(0);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);

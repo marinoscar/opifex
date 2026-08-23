@@ -54,7 +54,8 @@ export const INPUT_LABELS = {
 
 export type InputLabel = (typeof INPUT_LABELS)[keyof typeof INPUT_LABELS];
 
-export const ALL_INPUT_LABELS: readonly InputLabel[] = Object.values(INPUT_LABELS);
+export const ALL_INPUT_LABELS: readonly InputLabel[] =
+  Object.values(INPUT_LABELS);
 
 /** Mirror labels Opifex writes. Listed so #42 cannot invent a fourth quietly. */
 export const MIRROR_LABELS = {
@@ -66,7 +67,8 @@ export const MIRROR_LABELS = {
 
 export type MirrorLabel = (typeof MIRROR_LABELS)[keyof typeof MIRROR_LABELS];
 
-export const ALL_MIRROR_LABELS: readonly MirrorLabel[] = Object.values(MIRROR_LABELS);
+export const ALL_MIRROR_LABELS: readonly MirrorLabel[] =
+  Object.values(MIRROR_LABELS);
 
 export function isMirrorLabel(name: string): boolean {
   return name.startsWith(MIRROR_LABEL_PREFIX);

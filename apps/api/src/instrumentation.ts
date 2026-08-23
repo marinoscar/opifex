@@ -12,7 +12,10 @@ import {
 import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
 
 // Enable OTEL diagnostics in development
-if (process.env.NODE_ENV === 'development' && process.env.OTEL_DEBUG === 'true') {
+if (
+  process.env.NODE_ENV === 'development' &&
+  process.env.OTEL_DEBUG === 'true'
+) {
   diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.INFO);
 }
 
@@ -24,7 +27,8 @@ export function initializeOtel(): NodeSDK | null {
     return null;
   }
 
-  const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318';
+  const endpoint =
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318';
   const serviceName = process.env.OTEL_SERVICE_NAME || 'opifex-api';
 
   const resource = resourceFromAttributes({
@@ -50,7 +54,10 @@ export function initializeOtel(): NodeSDK | null {
         '@opentelemetry/instrumentation-http': {
           ignoreIncomingRequestHook: (request) => {
             const url = request.url || '';
-            return url.includes('/api/health/live') || url.includes('/api/health/ready');
+            return (
+              url.includes('/api/health/live') ||
+              url.includes('/api/health/ready')
+            );
           },
         },
         '@opentelemetry/instrumentation-fs': {
@@ -66,7 +73,8 @@ export function initializeOtel(): NodeSDK | null {
 
   // Graceful shutdown
   process.on('SIGTERM', () => {
-    sdk.shutdown()
+    sdk
+      .shutdown()
       .then(() => console.log('OpenTelemetry SDK shut down'))
       .catch((err) => console.error('Error shutting down OTEL SDK', err))
       .finally(() => process.exit(0));

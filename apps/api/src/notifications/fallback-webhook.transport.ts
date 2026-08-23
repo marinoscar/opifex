@@ -44,20 +44,25 @@ export class FallbackWebhookTransport implements NotificationTransport {
   private readonly url: string;
 
   constructor(private readonly config: ConfigService) {
-    this.url = this.config.get<string>('notifications.fallbackWebhookUrl') ?? '';
+    this.url =
+      this.config.get<string>('notifications.fallbackWebhookUrl') ?? '';
   }
 
   isConfigured(): boolean {
     return this.url.length > 0;
   }
 
-  async send(target: NotificationTarget, payload: NotificationPayload): Promise<SendOutcome> {
+  async send(
+    target: NotificationTarget,
+    payload: NotificationPayload,
+  ): Promise<SendOutcome> {
     if (!this.isConfigured()) {
       return {
         targetId: target.id,
         accepted: false,
         gone: false,
-        error: 'No fallback transport is configured (NOTIFY_FALLBACK_WEBHOOK_URL)',
+        error:
+          'No fallback transport is configured (NOTIFY_FALLBACK_WEBHOOK_URL)',
       };
     }
 
@@ -97,8 +102,15 @@ export class FallbackWebhookTransport implements NotificationTransport {
         };
       }
 
-      this.logger.log(`Escalation ${payload.escalationId} sent via the fallback webhook`);
-      return { targetId: target.id, accepted: true, gone: false, statusCode: response.status };
+      this.logger.log(
+        `Escalation ${payload.escalationId} sent via the fallback webhook`,
+      );
+      return {
+        targetId: target.id,
+        accepted: true,
+        gone: false,
+        statusCode: response.status,
+      };
     } catch (error) {
       return {
         targetId: target.id,

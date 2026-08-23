@@ -181,16 +181,24 @@ describe('AllowlistQueryDto', () => {
     });
 
     it('should accept valid sortBy values', () => {
-      expect(allowlistQuerySchema.parse({ sortBy: 'email' }).sortBy).toBe('email');
-      expect(allowlistQuerySchema.parse({ sortBy: 'addedAt' }).sortBy).toBe('addedAt');
+      expect(allowlistQuerySchema.parse({ sortBy: 'email' }).sortBy).toBe(
+        'email',
+      );
+      expect(allowlistQuerySchema.parse({ sortBy: 'addedAt' }).sortBy).toBe(
+        'addedAt',
+      );
       expect(allowlistQuerySchema.parse({ sortBy: 'claimedAt' }).sortBy).toBe(
         'claimedAt',
       );
     });
 
     it('should accept valid sortOrder values', () => {
-      expect(allowlistQuerySchema.parse({ sortOrder: 'asc' }).sortOrder).toBe('asc');
-      expect(allowlistQuerySchema.parse({ sortOrder: 'desc' }).sortOrder).toBe('desc');
+      expect(allowlistQuerySchema.parse({ sortOrder: 'asc' }).sortOrder).toBe(
+        'asc',
+      );
+      expect(allowlistQuerySchema.parse({ sortOrder: 'desc' }).sortOrder).toBe(
+        'desc',
+      );
     });
 
     it('should reject invalid sortBy values', () => {

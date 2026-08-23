@@ -41,7 +41,10 @@ export class RunEventValidator {
 
   constructor() {
     const schemaPath = RunEventValidator.resolveSchemaPath();
-    const schema = JSON.parse(readFileSync(schemaPath, 'utf8')) as Record<string, unknown>;
+    const schema = JSON.parse(readFileSync(schemaPath, 'utf8')) as Record<
+      string,
+      unknown
+    >;
 
     // The 2020 entry point, not ajv's default: the default only knows
     // draft-07 and would silently ignore `unevaluatedProperties`, which is
@@ -62,7 +65,15 @@ export class RunEventValidator {
    */
   private static resolveSchemaPath(): string {
     const candidates = [
-      join(__dirname, '..', '..', '..', '..', 'schemas', 'run-event.schema.json'),
+      join(
+        __dirname,
+        '..',
+        '..',
+        '..',
+        '..',
+        'schemas',
+        'run-event.schema.json',
+      ),
       join(__dirname, '..', '..', '..', 'schemas', 'run-event.schema.json'),
       join(process.cwd(), '..', '..', 'schemas', 'run-event.schema.json'),
     ];
@@ -88,10 +99,12 @@ export class RunEventValidator {
    * field per round trip is exactly the friction that leads to someone
    * disabling validation.
    */
-  check(candidate: unknown): { valid: true; event: RunEventPayload } | {
-    valid: false;
-    failures: ValidationFailure[];
-  } {
+  check(candidate: unknown):
+    | { valid: true; event: RunEventPayload }
+    | {
+        valid: false;
+        failures: ValidationFailure[];
+      } {
     if (this.validate(candidate)) {
       return { valid: true, event: candidate as RunEventPayload };
     }

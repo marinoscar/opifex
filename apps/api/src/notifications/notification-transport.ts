@@ -52,5 +52,8 @@ export interface NotificationTransport {
    */
   isConfigured(): boolean;
 
-  send(target: NotificationTarget, payload: NotificationPayload): Promise<SendOutcome>;
+  send(
+    target: NotificationTarget,
+    payload: NotificationPayload,
+  ): Promise<SendOutcome>;
 }

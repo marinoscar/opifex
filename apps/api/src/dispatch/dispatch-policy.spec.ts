@@ -8,7 +8,9 @@ import {
   type RunnerPoolEntry,
 } from './dispatch-policy';
 
-function capabilities(overrides: Partial<RunnerCapabilities> = {}): RunnerCapabilities {
+function capabilities(
+  overrides: Partial<RunnerCapabilities> = {},
+): RunnerCapabilities {
   return {
     key: 'claude-code-local',
     displayName: 'Claude Code (local)',
@@ -28,23 +30,45 @@ function capabilities(overrides: Partial<RunnerCapabilities> = {}): RunnerCapabi
   };
 }
 
-function entry(overrides: Partial<RunnerCapabilities> = {}, live = 0, enabled = true): RunnerPoolEntry {
+function entry(
+  overrides: Partial<RunnerCapabilities> = {},
+  live = 0,
+  enabled = true,
+): RunnerPoolEntry {
   return { capabilities: capabilities(overrides), enabled, liveRuns: live };
 }
 
-const NO_LIMIT: DispatchLimits = { globalMaxConcurrent: null, globalLiveRuns: 0 };
+const NO_LIMIT: DispatchLimits = {
+  globalMaxConcurrent: null,
+  globalLiveRuns: 0,
+};
 
 describe('dispatch policy', () => {
   describe('needs match capabilities, never a runner name', () => {
     it.each([
-      ['full-streaming', { streamingFidelity: 'full' }, { streamingFidelity: 'partial' }],
+      [
+        'full-streaming',
+        { streamingFidelity: 'full' },
+        { streamingFidelity: 'partial' },
+      ],
       ['cost-reporting', { reportsCost: true }, { reportsCost: false }],
-      ['structured-rate-limits', { rateLimitSignal: 'structured' }, { rateLimitSignal: 'heuristic' }],
-      ['own-infrastructure', { executionLocus: 'own_infrastructure' }, { executionLocus: 'vendor_cloud' }],
-    ] as const)('%s is satisfied by the declaration and nothing else', (need, met, unmet) => {
-      expect(satisfies(need as RunnerNeed, capabilities(met))).toBe(true);
-      expect(satisfies(need as RunnerNeed, capabilities(unmet))).toBe(false);
-    });
+      [
+        'structured-rate-limits',
+        { rateLimitSignal: 'structured' },
+        { rateLimitSignal: 'heuristic' },
+      ],
+      [
+        'own-infrastructure',
+        { executionLocus: 'own_infrastructure' },
+        { executionLocus: 'vendor_cloud' },
+      ],
+    ] as const)(
+      '%s is satisfied by the declaration and nothing else',
+      (need, met, unmet) => {
+        expect(satisfies(need as RunnerNeed, capabilities(met))).toBe(true);
+        expect(satisfies(need as RunnerNeed, capabilities(unmet))).toBe(false);
+      },
+    );
 
     it('reports every unmet need, not just the first', () => {
       // An operator fixing one and re-dispatching only to be told about the
@@ -68,9 +92,16 @@ describe('dispatch policy', () => {
 
   describe('choosing', () => {
     it('dispatches to a runner that meets every need', () => {
-      const decision = decideDispatch({ needs: ['full-streaming'] }, [entry()], NO_LIMIT);
+      const decision = decideDispatch(
+        { needs: ['full-streaming'] },
+        [entry()],
+        NO_LIMIT,
+      );
 
-      expect(decision).toMatchObject({ outcome: 'dispatch', runnerKey: 'claude-code-local' });
+      expect(decision).toMatchObject({
+        outcome: 'dispatch',
+        runnerKey: 'claude-code-local',
+      });
     });
 
     it('skips a runner missing a capability and takes one that has it', () => {
@@ -87,7 +118,10 @@ describe('dispatch policy', () => {
       // A single runner's failure should not take every live run with it.
       const decision = decideDispatch(
         { needs: [] },
-        [entry({ key: 'busy', maxConcurrency: 4 }, 3), entry({ key: 'idle', maxConcurrency: 4 }, 0)],
+        [
+          entry({ key: 'busy', maxConcurrency: 4 }, 3),
+          entry({ key: 'idle', maxConcurrency: 4 }, 0),
+        ],
         NO_LIMIT,
       );
 
@@ -112,15 +146,27 @@ describe('dispatch policy', () => {
       // the recorded reason describes a choice nobody can arrive at again.
       const pool = [entry({ key: 'zeta' }), entry({ key: 'alpha' })];
 
-      expect(decideDispatch({ needs: [] }, pool, NO_LIMIT).runnerKey).toBe('alpha');
-      expect(decideDispatch({ needs: [] }, [...pool].reverse(), NO_LIMIT).runnerKey).toBe('alpha');
+      expect(decideDispatch({ needs: [] }, pool, NO_LIMIT).runnerKey).toBe(
+        'alpha',
+      );
+      expect(
+        decideDispatch({ needs: [] }, [...pool].reverse(), NO_LIMIT).runnerKey,
+      ).toBe('alpha');
     });
 
     it('does not depend on the order the pool arrived in', () => {
-      const pool = [entry({ key: 'a' }, 2), entry({ key: 'b' }, 0), entry({ key: 'c' }, 1)];
+      const pool = [
+        entry({ key: 'a' }, 2),
+        entry({ key: 'b' }, 0),
+        entry({ key: 'c' }, 1),
+      ];
 
       const forwards = decideDispatch({ needs: [] }, pool, NO_LIMIT);
-      const backwards = decideDispatch({ needs: [] }, [...pool].reverse(), NO_LIMIT);
+      const backwards = decideDispatch(
+        { needs: [] },
+        [...pool].reverse(),
+        NO_LIMIT,
+      );
 
       expect(forwards.runnerKey).toBe(backwards.runnerKey);
       expect(forwards.candidates.map((c) => c.runnerKey)).toEqual(
@@ -141,14 +187,22 @@ describe('dispatch policy', () => {
 
   describe('concurrency', () => {
     it('will not exceed a runner limit', () => {
-      const decision = decideDispatch({ needs: [] }, [entry({ maxConcurrency: 2 }, 2)], NO_LIMIT);
+      const decision = decideDispatch(
+        { needs: [] },
+        [entry({ maxConcurrency: 2 }, 2)],
+        NO_LIMIT,
+      );
 
       expect(decision.outcome).toBe('queued');
       expect(decision.queueReason).toBe('capable-runners-are-at-capacity');
     });
 
     it('names the limit it hit', () => {
-      const decision = decideDispatch({ needs: [] }, [entry({ maxConcurrency: 2 }, 2)], NO_LIMIT);
+      const decision = decideDispatch(
+        { needs: [] },
+        [entry({ maxConcurrency: 2 }, 2)],
+        NO_LIMIT,
+      );
 
       expect(decision.reason).toContain('concurrency limit of 2');
     });
@@ -165,10 +219,14 @@ describe('dispatch policy', () => {
     it('reports the GLOBAL limit rather than blaming a runner', () => {
       // Reporting "runner X is full" when the real limit is the fleet's would
       // send somebody to raise the wrong number.
-      const decision = decideDispatch({ needs: [] }, [entry({ maxConcurrency: 9 }, 0)], {
-        globalMaxConcurrent: 3,
-        globalLiveRuns: 3,
-      });
+      const decision = decideDispatch(
+        { needs: [] },
+        [entry({ maxConcurrency: 9 }, 0)],
+        {
+          globalMaxConcurrent: 3,
+          globalLiveRuns: 3,
+        },
+      );
 
       expect(decision.reason).toContain('global limit of 3');
     });
@@ -194,7 +252,11 @@ describe('dispatch policy', () => {
     it('never reports negative headroom', () => {
       // An over-subscribed runner (a stale row, a manual insert) must read as
       // full rather than as having a negative number of slots.
-      const decision = decideDispatch({ needs: [] }, [entry({ maxConcurrency: 1 }, 5)], NO_LIMIT);
+      const decision = decideDispatch(
+        { needs: [] },
+        [entry({ maxConcurrency: 1 }, 5)],
+        NO_LIMIT,
+      );
 
       expect(decision.candidates[0].headroom).toBe(0);
     });
@@ -205,7 +267,10 @@ describe('dispatch policy', () => {
     // VISION §3.7 forbids building the second runner to satisfy it. The
     // acknowledgement keeps "never SILENTLY load-bearing" and gives up "never
     // load-bearing", which is unreachable by construction.
-    const ACKNOWLEDGED: DispatchLimits = { ...NO_LIMIT, allowPreviewWithoutGaFallback: true };
+    const ACKNOWLEDGED: DispatchLimits = {
+      ...NO_LIMIT,
+      allowPreviewWithoutGaFallback: true,
+    };
 
     it('still refuses by default, because a bypass that defaults on is not a rule', () => {
       const decision = decideDispatch(
@@ -215,7 +280,9 @@ describe('dispatch policy', () => {
       );
 
       expect(decision.outcome).toBe('queued');
-      expect(decision.queueReason).toBe('only-preview-runners-and-no-ga-fallback');
+      expect(decision.queueReason).toBe(
+        'only-preview-runners-and-no-ga-fallback',
+      );
     });
 
     it('dispatches to the only runner once the operator has acknowledged it', () => {
@@ -239,7 +306,9 @@ describe('dispatch policy', () => {
         ACKNOWLEDGED,
       );
 
-      const chosen = decision.candidates.find((c) => c.runnerKey === 'claude-code-local');
+      const chosen = decision.candidates.find(
+        (c) => c.runnerKey === 'claude-code-local',
+      );
       expect(chosen?.reason).toContain('acknowledged');
       expect(chosen?.reason).toContain('experimental');
     });
@@ -250,7 +319,13 @@ describe('dispatch policy', () => {
       // need would route work to a runner that will fail at it.
       const decision = decideDispatch(
         { needs: ['cost-reporting'] },
-        [entry({ key: 'claude-code-local', stabilityTier: 'experimental', reportsCost: false })],
+        [
+          entry({
+            key: 'claude-code-local',
+            stabilityTier: 'experimental',
+            reportsCost: false,
+          }),
+        ],
         ACKNOWLEDGED,
       );
 
@@ -258,10 +333,19 @@ describe('dispatch policy', () => {
       expect(decision.queueReason).toBe('no-runner-has-the-capabilities');
     });
 
-    it('still respects the runner\'s own concurrency ceiling', () => {
+    it("still respects the runner's own concurrency ceiling", () => {
       const decision = decideDispatch(
         { needs: [] },
-        [entry({ key: 'claude-code-local', stabilityTier: 'experimental', maxConcurrency: 1 }, 1)],
+        [
+          entry(
+            {
+              key: 'claude-code-local',
+              stabilityTier: 'experimental',
+              maxConcurrency: 1,
+            },
+            1,
+          ),
+        ],
         ACKNOWLEDGED,
       );
 
@@ -273,7 +357,11 @@ describe('dispatch policy', () => {
       const decision = decideDispatch(
         { needs: [] },
         [entry({ key: 'claude-code-local', stabilityTier: 'experimental' })],
-        { globalMaxConcurrent: 1, globalLiveRuns: 1, allowPreviewWithoutGaFallback: true },
+        {
+          globalMaxConcurrent: 1,
+          globalLiveRuns: 1,
+          allowPreviewWithoutGaFallback: true,
+        },
       );
 
       expect(decision.outcome).toBe('queued');
@@ -287,7 +375,11 @@ describe('dispatch policy', () => {
       const decision = decideDispatch(
         { needs: [] },
         [
-          entry({ key: 'preview', stabilityTier: 'experimental', maxConcurrency: 9 }),
+          entry({
+            key: 'preview',
+            stabilityTier: 'experimental',
+            maxConcurrency: 9,
+          }),
           entry({ key: 'ga', stabilityTier: 'stable', maxConcurrency: 1 }),
         ],
         ACKNOWLEDGED,
@@ -303,7 +395,13 @@ describe('dispatch policy', () => {
     it('leaves a disabled preview runner disabled', () => {
       const decision = decideDispatch(
         { needs: [] },
-        [{ capabilities: capabilities({ stabilityTier: 'experimental' }), enabled: false, liveRuns: 0 }],
+        [
+          {
+            capabilities: capabilities({ stabilityTier: 'experimental' }),
+            enabled: false,
+            liveRuns: 0,
+          },
+        ],
         ACKNOWLEDGED,
       );
 
@@ -312,9 +410,12 @@ describe('dispatch policy', () => {
   });
 
   describe('preview runners are never load-bearing', () => {
-    it.each(['experimental', 'beta'] as const)('treats %s as preview', (tier) => {
-      expect(isPreview(capabilities({ stabilityTier: tier }))).toBe(true);
-    });
+    it.each(['experimental', 'beta'] as const)(
+      'treats %s as preview',
+      (tier) => {
+        expect(isPreview(capabilities({ stabilityTier: tier }))).toBe(true);
+      },
+    );
 
     it('treats stable as GA', () => {
       expect(isPreview(capabilities({ stabilityTier: 'stable' }))).toBe(false);
@@ -330,7 +431,9 @@ describe('dispatch policy', () => {
       );
 
       expect(decision.outcome).toBe('queued');
-      expect(decision.queueReason).toBe('only-preview-runners-and-no-ga-fallback');
+      expect(decision.queueReason).toBe(
+        'only-preview-runners-and-no-ga-fallback',
+      );
     });
 
     it('allows a preview runner once a GA one could take the same work order', () => {
@@ -369,14 +472,24 @@ describe('dispatch policy', () => {
       const decision = decideDispatch(
         { needs: ['full-streaming'] },
         [
-          entry({ key: 'preview', stabilityTier: 'beta', streamingFidelity: 'full' }),
-          entry({ key: 'ga', stabilityTier: 'stable', streamingFidelity: 'none' }),
+          entry({
+            key: 'preview',
+            stabilityTier: 'beta',
+            streamingFidelity: 'full',
+          }),
+          entry({
+            key: 'ga',
+            stabilityTier: 'stable',
+            streamingFidelity: 'none',
+          }),
         ],
         NO_LIMIT,
       );
 
       expect(decision.outcome).toBe('queued');
-      expect(decision.queueReason).toBe('only-preview-runners-and-no-ga-fallback');
+      expect(decision.queueReason).toBe(
+        'only-preview-runners-and-no-ga-fallback',
+      );
     });
 
     it('says the fleet would become load-bearing on a preview', () => {
@@ -391,7 +504,11 @@ describe('dispatch policy', () => {
 
     it('prefers nothing over a preview runner, rather than dispatching anyway', () => {
       expect(
-        decideDispatch({ needs: [] }, [entry({ stabilityTier: 'beta' })], NO_LIMIT).runnerKey,
+        decideDispatch(
+          { needs: [] },
+          [entry({ stabilityTier: 'beta' })],
+          NO_LIMIT,
+        ).runnerKey,
       ).toBeNull();
     });
   });
@@ -415,13 +532,19 @@ describe('dispatch policy', () => {
     });
 
     it('queues when nothing is registered at all', () => {
-      expect(decideDispatch({ needs: [] }, [], NO_LIMIT).queueReason).toBe('no-runners-registered');
+      expect(decideDispatch({ needs: [] }, [], NO_LIMIT).queueReason).toBe(
+        'no-runners-registered',
+      );
     });
 
     it('distinguishes disabled runners from an empty fleet', () => {
       // Different fixes: one needs a runner registered, the other needs a
       // switch flipped.
-      const decision = decideDispatch({ needs: [] }, [entry({}, 0, false)], NO_LIMIT);
+      const decision = decideDispatch(
+        { needs: [] },
+        [entry({}, 0, false)],
+        NO_LIMIT,
+      );
 
       expect(decision.reason).toContain('disabled');
     });
@@ -442,7 +565,10 @@ describe('dispatch policy', () => {
     it('reports capacity when the capable runners are merely busy', () => {
       const decision = decideDispatch(
         { needs: ['cost-reporting'] },
-        [entry({ key: 'incapable', reportsCost: false }), entry({ key: 'busy', maxConcurrency: 1 }, 1)],
+        [
+          entry({ key: 'incapable', reportsCost: false }),
+          entry({ key: 'busy', maxConcurrency: 1 }, 1),
+        ],
         NO_LIMIT,
       );
 
@@ -490,7 +616,10 @@ describe('dispatch policy', () => {
     it('explains a queued decision by listing what each runner did wrong', () => {
       const decision = decideDispatch(
         { needs: ['cost-reporting'] },
-        [entry({ key: 'a', reportsCost: false }), entry({ key: 'b', reportsCost: false })],
+        [
+          entry({ key: 'a', reportsCost: false }),
+          entry({ key: 'b', reportsCost: false }),
+        ],
         NO_LIMIT,
       );
 
@@ -499,9 +628,9 @@ describe('dispatch policy', () => {
     });
 
     it('says so plainly when a work order declares no needs', () => {
-      expect(decideDispatch({ needs: [] }, [entry()], NO_LIMIT).reason).toContain(
-        'no specific capabilities',
-      );
+      expect(
+        decideDispatch({ needs: [] }, [entry()], NO_LIMIT).reason,
+      ).toContain('no specific capabilities');
     });
   });
 });

@@ -5,7 +5,8 @@ import { Injectable, Logger } from '@nestjs/common';
  * separately, so a single "remaining" number would be wrong the moment a
  * search runs: `search` is 30/minute where `core` is 5000/hour.
  */
-export type RateLimitResource = 'core' | 'search' | 'graphql' | 'integration_manifest';
+export type RateLimitResource =
+  'core' | 'search' | 'graphql' | 'integration_manifest';
 
 export interface RateLimitSnapshot {
   resource: RateLimitResource;

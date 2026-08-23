@@ -38,7 +38,10 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import NotificationsOffIcon from '@mui/icons-material/NotificationsOff';
 
-import { usePushNotifications, type PushUnsupportedReason } from '../../hooks/usePushNotifications';
+import {
+  usePushNotifications,
+  type PushUnsupportedReason,
+} from '../../hooks/usePushNotifications';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 
 /**
@@ -88,8 +91,9 @@ export function NotificationSettings() {
           Phone notifications
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Where Opifex reaches you when a run stalls, loops, or hits a ceiling. Each notification
-          carries what happened, why, what it affects, and what happens if you ignore it.
+          Where Opifex reaches you when a run stalls, loops, or hits a ceiling.
+          Each notification carries what happened, why, what it affects, and
+          what happens if you ignore it.
         </Typography>
 
         {error && (
@@ -99,9 +103,15 @@ export function NotificationSettings() {
         )}
 
         {unsupportedReason ? (
-          <Alert severity="warning">{UNSUPPORTED_MESSAGE[unsupportedReason]}</Alert>
+          <Alert severity="warning">
+            {UNSUPPORTED_MESSAGE[unsupportedReason]}
+          </Alert>
         ) : (
-          <Stack direction="row" spacing={2} sx={{ mb: 2, alignItems: 'center' }}>
+          <Stack
+            direction="row"
+            spacing={2}
+            sx={{ mb: 2, alignItems: 'center' }}
+          >
             <Button
               variant={isSubscribed ? 'outlined' : 'contained'}
               color={isSubscribed ? 'inherit' : 'primary'}
@@ -117,7 +127,9 @@ export function NotificationSettings() {
               disabled={isBusy}
               onClick={() => void (isSubscribed ? unsubscribe() : subscribe())}
             >
-              {isSubscribed ? 'Stop notifying this device' : 'Notify this device'}
+              {isSubscribed
+                ? 'Stop notifying this device'
+                : 'Notify this device'}
             </Button>
             {isSubscribed && (
               <Typography variant="body2" color="success.main">
@@ -132,8 +144,9 @@ export function NotificationSettings() {
           // is worth SAYING, though, because the day the phone is the thing
           // that breaks is the day the operator wishes they had known.
           <Alert severity="info" sx={{ mb: 2 }}>
-            No fallback path is configured. If push delivery fails, the escalation is recorded as
-            failed and stays visible in the cockpit — but nothing else will try to reach you. Set{' '}
+            No fallback path is configured. If push delivery fails, the
+            escalation is recorded as failed and stays visible in the cockpit —
+            but nothing else will try to reach you. Set{' '}
             <code>NOTIFY_FALLBACK_WEBHOOK_URL</code> to add a second path.
           </Alert>
         )}
@@ -144,7 +157,8 @@ export function NotificationSettings() {
 
         {subscriptions.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            No devices are subscribed. Every escalation will stop at the cockpit.
+            No devices are subscribed. Every escalation will stop at the
+            cockpit.
           </Typography>
         ) : (
           <List dense>
@@ -168,10 +182,17 @@ export function NotificationSettings() {
               >
                 <ListItemText
                   primary={
-                    <Box component="span" sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                    <Box
+                      component="span"
+                      sx={{ display: 'flex', gap: 1, alignItems: 'center' }}
+                    >
                       {subscription.userAgent ?? 'Unknown device'}
                       {subscription.endpoint === currentEndpoint && (
-                        <Chip size="small" label="This device" color="primary" />
+                        <Chip
+                          size="small"
+                          label="This device"
+                          color="primary"
+                        />
                       )}
                       {subscription.failureCount > 0 && (
                         <Chip

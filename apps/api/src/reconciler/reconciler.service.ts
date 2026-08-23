@@ -11,13 +11,21 @@ import { RepositoriesService } from '../repositories/repositories.service';
 import type { ReconcileAction } from './diff/actions.types';
 import { ReconcileLogService } from './log/reconcile-log.service';
 import { computeActions } from './diff/diff-engine';
-import { assertNoMirrorLabelsObserved, projectDesiredState } from './projection/desired-state';
+import {
+  assertNoMirrorLabelsObserved,
+  projectDesiredState,
+} from './projection/desired-state';
 import type {
   DesiredState,
   ObservedState,
   ObservedWorkOrder,
 } from './projection/desired-state.types';
-import type { TickFailure, TickRecord, TickOutcome, TickRejection } from './reconciler.types';
+import type {
+  TickFailure,
+  TickRecord,
+  TickOutcome,
+  TickRejection,
+} from './reconciler.types';
 import { TickLeaseService } from './tick-lease.service';
 import { WorkOrderProjectionService } from '../work-orders/work-order-projection.service';
 
@@ -72,7 +80,8 @@ export class ReconcilerService {
     private readonly log: ReconcileLogService,
     private readonly workOrders: WorkOrderProjectionService,
   ) {
-    this.rateLimitFloor = this.config.get<number>('github.rateLimitReserve') ?? 100;
+    this.rateLimitFloor =
+      this.config.get<number>('github.rateLimitReserve') ?? 100;
   }
 
   get lastTickRecord(): TickRecord | null {
@@ -128,7 +137,8 @@ export class ReconcilerService {
       return this.finish(startedAt, 'skipped-locked', nothingObserved());
     }
 
-    const status: TickOutcome = outcome.result.failures.length > 0 ? 'partial' : 'completed';
+    const status: TickOutcome =
+      outcome.result.failures.length > 0 ? 'partial' : 'completed';
     return this.finish(startedAt, status, outcome.result);
   }
 
@@ -157,7 +167,10 @@ export class ReconcilerService {
       // the budget partway, and continuing would spend the reserve that keeps
       // the operator's own interactive use working.
       if (!this.http.canSpend()) {
-        failures.push({ repository: name, reason: 'rate-limit reserve reached; not observed' });
+        failures.push({
+          repository: name,
+          reason: 'rate-limit reserve reached; not observed',
+        });
         continue;
       }
 
@@ -211,7 +224,11 @@ export class ReconcilerService {
         // mid-tick would make its conclusions describe a state that did not
         // exist when it observed. The new work order is picked up by the next
         // tick, which is what a reconciler recomputing from scratch means.
-        const projected = await this.projectWorkOrders(repository, state.issues, workOrders);
+        const projected = await this.projectWorkOrders(
+          repository,
+          state.issues,
+          workOrders,
+        );
         workOrdersCreated += projected.created;
         rejections.push(...projected.rejections);
 
@@ -238,7 +255,15 @@ export class ReconcilerService {
       }
     }
 
-    return { observed, failures, allFromCache, projections, actions, workOrdersCreated, rejections };
+    return {
+      observed,
+      failures,
+      allFromCache,
+      projections,
+      actions,
+      workOrdersCreated,
+      rejections,
+    };
   }
 
   /**
@@ -282,7 +307,8 @@ export class ReconcilerService {
   ): Promise<{ created: number; rejections: TickRejection[] }> {
     const nothing = { created: 0, rejections: [] as TickRejection[] };
 
-    if (!WorkOrderProjectionService.needsBaseCommit(issues, existingWorkOrders)) return nothing;
+    if (!WorkOrderProjectionService.needsBaseCommit(issues, existingWorkOrders))
+      return nothing;
 
     try {
       const baseCommit = await this.resolveHead(repository);
@@ -381,7 +407,9 @@ export class ReconcilerService {
     workOrders: ObservedWorkOrder[],
   ): Promise<Set<number>> {
     const quarantined = new Set(
-      workOrders.filter((w) => w.status === 'quarantined').map((w) => w.issueNumber),
+      workOrders
+        .filter((w) => w.status === 'quarantined')
+        .map((w) => w.issueNumber),
     );
 
     const candidates = issues.filter(
@@ -427,7 +455,9 @@ export class ReconcilerService {
    * plain data, and handing it Prisma models would couple it to the client and
    * make an offline fixture impossible to build.
    */
-  private async loadWorkOrders(repositoryId: string): Promise<ObservedWorkOrder[]> {
+  private async loadWorkOrders(
+    repositoryId: string,
+  ): Promise<ObservedWorkOrder[]> {
     const workOrders = await this.prisma.workOrder.findMany({
       where: { repositoryId },
       select: {
@@ -441,7 +471,12 @@ export class ReconcilerService {
           // order are history the projection does not act on.
           orderBy: { startedAt: 'desc' },
           take: 1,
-          select: { id: true, status: true, costUsd: true, pullRequestUrl: true },
+          select: {
+            id: true,
+            status: true,
+            costUsd: true,
+            pullRequestUrl: true,
+          },
         },
       },
     });
@@ -456,14 +491,20 @@ export class ReconcilerService {
         ? {
             id: workOrder.runs[0].id,
             status: workOrder.runs[0].status,
-            costUsd: workOrder.runs[0].costUsd ? Number(workOrder.runs[0].costUsd) : null,
+            costUsd: workOrder.runs[0].costUsd
+              ? Number(workOrder.runs[0].costUsd)
+              : null,
             pullRequestUrl: workOrder.runs[0].pullRequestUrl,
           }
         : null,
     }));
   }
 
-  private finish(startedAt: Date, outcome: TickOutcome, sweep: SweepResult): TickRecord {
+  private finish(
+    startedAt: Date,
+    outcome: TickOutcome,
+    sweep: SweepResult,
+  ): TickRecord {
     const {
       observed: repositoriesObserved,
       failures,
@@ -495,8 +536,12 @@ export class ReconcilerService {
       this.logger.log(
         `Tick completed in ${record.durationMs}ms: ${repositoriesObserved} repositories, ` +
           `${actions.length} actions computed (none executed)` +
-          (workOrdersCreated > 0 ? `, ${workOrdersCreated} work order(s) created` : '') +
-          (rejections.length > 0 ? `, ${rejections.length} spec rejection(s)` : '') +
+          (workOrdersCreated > 0
+            ? `, ${workOrdersCreated} work order(s) created`
+            : '') +
+          (rejections.length > 0
+            ? `, ${rejections.length} spec rejection(s)`
+            : '') +
           (allFromCache && repositoriesObserved > 0 ? ', all from cache' : ''),
       );
     } else if (outcome === 'partial' || outcome === 'failed') {

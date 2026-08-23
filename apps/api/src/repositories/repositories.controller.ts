@@ -11,7 +11,13 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { Auth } from '../auth/decorators/auth.decorator';
 import { ApiDataResponse } from '../common/decorators/api-data-response.decorator';
@@ -46,7 +52,12 @@ export class RepositoriesController {
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
   @ApiQuery({ name: 'observeEnabled', required: false, type: Boolean })
   @ApiQuery({ name: 'dispatchEnabled', required: false, type: Boolean })
-  @ApiQuery({ name: 'projectId', required: false, type: String, format: 'uuid' })
+  @ApiQuery({
+    name: 'projectId',
+    required: false,
+    type: String,
+    format: 'uuid',
+  })
   @ApiDataResponse(RepositoryResponseDto, {
     pagination: 'flat',
     description: 'Paginated repositories',
@@ -73,10 +84,19 @@ export class RepositoriesController {
       'Verifies the repository is reachable with the configured GitHub credential before accepting it. ' +
       'Dispatch is off unless explicitly enabled.',
   })
-  @ApiDataResponse(RepositoryResponseDto, { status: 201, description: 'Repository registered' })
-  @ApiResponse({ status: 400, description: 'Not reachable, archived, or invalid' })
+  @ApiDataResponse(RepositoryResponseDto, {
+    status: 201,
+    description: 'Repository registered',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Not reachable, archived, or invalid',
+  })
   @ApiResponse({ status: 409, description: 'Already registered' })
-  @ApiResponse({ status: 503, description: 'The GitHub credential is missing or expired' })
+  @ApiResponse({
+    status: 503,
+    description: 'The GitHub credential is missing or expired',
+  })
   async register(@Body() dto: RegisterRepositoryDto) {
     return this.repositories.register(dto);
   }
@@ -89,9 +109,14 @@ export class RepositoriesController {
       'Enabling dispatch re-verifies reachability. Omitted fields are left unchanged.',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
-  @ApiDataResponse(RepositoryResponseDto, { description: 'The updated repository' })
+  @ApiDataResponse(RepositoryResponseDto, {
+    description: 'The updated repository',
+  })
   @ApiResponse({ status: 404, description: 'Repository not found' })
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateRepositoryDto) {
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateRepositoryDto,
+  ) {
     return this.repositories.update(id, dto);
   }
 

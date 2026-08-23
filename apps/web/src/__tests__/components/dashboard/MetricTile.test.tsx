@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { screen } from '@testing-library/react';
 import { render } from '../../utils/test-utils';
-import { MetricTile, describeTrend } from '../../../components/dashboard/MetricTile';
+import {
+  MetricTile,
+  describeTrend,
+} from '../../../components/dashboard/MetricTile';
 import { METRIC_DEFINITIONS } from '../../../components/dashboard/metrics';
 
 const latency = METRIC_DEFINITIONS.detectionLatency;
@@ -34,7 +37,9 @@ describe('MetricTile — the honesty contract', () => {
   it('1b. still renders a genuine zero as a measurement', () => {
     // The mirror image of the rule above: absence must not look like zero, and
     // zero must not look like absence.
-    render(<MetricTile metric={latency} value={0} trend={null} state="ready" />);
+    render(
+      <MetricTile metric={latency} value={0} trend={null} state="ready" />,
+    );
 
     expect(screen.getByText('0s')).toBeInTheDocument();
     expect(screen.queryByText('—')).not.toBeInTheDocument();
@@ -42,13 +47,23 @@ describe('MetricTile — the honesty contract', () => {
 
   it('2. teaches what will be measured even with no data', () => {
     render(
-      <MetricTile metric={latency} value={null} trend={null} state="unwired" phase="Phase 3" />,
+      <MetricTile
+        metric={latency}
+        value={null}
+        trend={null}
+        state="unwired"
+        phase="Phase 3"
+      />,
     );
 
-    expect(screen.getByRole('heading', { name: latency.label })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: latency.label }),
+    ).toBeInTheDocument();
     expect(screen.getByText(latency.definition)).toBeInTheDocument();
     // The "Why" cell and the target, verbatim from VISION §10.
-    expect(screen.getByText(/The original complaint, quantified\./)).toBeInTheDocument();
+    expect(
+      screen.getByText(/The original complaint, quantified\./),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Target: seconds\./)).toBeInTheDocument();
   });
 
@@ -85,18 +100,28 @@ describe('MetricTile — the honesty contract', () => {
   });
 
   it('4b. draws no sparkline from fewer than two samples', () => {
-    render(<MetricTile metric={latency} value={12} trend={[12]} state="ready" />);
+    render(
+      <MetricTile metric={latency} value={12} trend={[12]} state="ready" />,
+    );
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
   it('4c. draws one once there are two real samples', () => {
-    render(<MetricTile metric={latency} value={12} trend={[30, 12]} state="ready" />);
+    render(
+      <MetricTile metric={latency} value={12} trend={[30, 12]} state="ready" />,
+    );
     expect(screen.getByRole('img')).toBeInTheDocument();
   });
 
   it('5. is visually recessive when unwired and solid when it has a reading', () => {
     const { container: unwired } = render(
-      <MetricTile metric={latency} value={null} trend={null} state="unwired" phase="Phase 3" />,
+      <MetricTile
+        metric={latency}
+        value={null}
+        trend={null}
+        state="unwired"
+        phase="Phase 3"
+      />,
     );
     const { container: ready } = render(
       <MetricTile metric={latency} value={12} trend={null} state="ready" />,
@@ -116,7 +141,13 @@ describe('MetricTile — the honesty contract', () => {
 
   it('6. is not hidden from screen readers, and wires its explanation up', () => {
     render(
-      <MetricTile metric={latency} value={null} trend={null} state="unwired" phase="Phase 3" />,
+      <MetricTile
+        metric={latency}
+        value={null}
+        trend={null}
+        state="unwired"
+        phase="Phase 3"
+      />,
     );
 
     const section = screen.getByRole('region', { name: latency.label });
@@ -124,14 +155,18 @@ describe('MetricTile — the honesty contract', () => {
 
     const describedBy = section.getAttribute('aria-describedby');
     expect(describedBy).toBeTruthy();
-    expect(document.getElementById(describedBy!)?.textContent).toContain(latency.help);
+    expect(document.getElementById(describedBy!)?.textContent).toContain(
+      latency.help,
+    );
   });
 
   it('applies the tabular-numeral class to the value', () => {
     // Without it a polled figure reflows its own column on every tick and the
     // stat row twitches, which reads as instability in the system being
     // watched rather than in the typography.
-    render(<MetricTile metric={latency} value={45} trend={null} state="ready" />);
+    render(
+      <MetricTile metric={latency} value={45} trend={null} state="ready" />,
+    );
     expect(screen.getByText('45s')).toHaveClass('opifex-num');
   });
 });

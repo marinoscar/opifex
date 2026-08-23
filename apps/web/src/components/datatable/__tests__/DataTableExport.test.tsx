@@ -36,8 +36,22 @@
  * depend on which rows happen to be mounted.
  */
 
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { Chip } from '@mui/material';
 import { render } from '../../../__tests__/utils/test-utils';
 import { DataTable } from '../DataTable';
@@ -101,7 +115,11 @@ function installLayoutStubs() {
       get: () => containerWidth,
     });
   }
-  for (const prop of ['clientHeight', 'offsetHeight', 'scrollHeight'] as const) {
+  for (const prop of [
+    'clientHeight',
+    'offsetHeight',
+    'scrollHeight',
+  ] as const) {
     Object.defineProperty(HTMLElement.prototype, prop, {
       configurable: true,
       get: () => VIEWPORT_HEIGHT,
@@ -147,7 +165,8 @@ function installLayoutStubs() {
                   : VIEWPORT_HEIGHT,
             },
           })) as unknown as ResizeObserverEntry[];
-          if (entries.length > 0) callback(entries, this as unknown as ResizeObserver);
+          if (entries.length > 0)
+            callback(entries, this as unknown as ResizeObserver);
         },
       };
       observers.add(this.entry);
@@ -166,7 +185,8 @@ function installLayoutStubs() {
     }
   }
 
-  global.ResizeObserver = ControllableResizeObserver as unknown as typeof ResizeObserver;
+  global.ResizeObserver =
+    ControllableResizeObserver as unknown as typeof ResizeObserver;
 
   window.matchMedia = vi.fn().mockImplementation((query: string) => {
     const max = /max-width:\s*([\d.]+)px/.exec(query);
@@ -219,12 +239,12 @@ function installDownloadStubs() {
   urlObject.revokeObjectURL = vi.fn();
 
   // jsdom would otherwise log "Not implemented: navigation" for the anchor.
-  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click(
-    this: HTMLAnchorElement,
-  ) {
-    const blob = pendingBlobs[pendingBlobs.length - 1];
-    captured.push({ blob, filename: this.download });
-  });
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(
+    function click(this: HTMLAnchorElement) {
+      const blob = pendingBlobs[pendingBlobs.length - 1];
+      captured.push({ blob, filename: this.download });
+    },
+  );
 }
 
 function restoreDownloadStubs() {
@@ -289,7 +309,13 @@ const JOBS: Job[] = [
 ];
 
 const COLUMNS: DataTableColumn<Job>[] = [
-  { id: 'type', label: 'Type', priority: 'primary', sortable: true, value: (r) => r.type },
+  {
+    id: 'type',
+    label: 'Type',
+    priority: 'primary',
+    sortable: true,
+    value: (r) => r.type,
+  },
   {
     id: 'status',
     label: 'Status',
@@ -306,7 +332,12 @@ const COLUMNS: DataTableColumn<Job>[] = [
     sortable: true,
     value: (r) => r.attempts,
   },
-  { id: 'lastError', label: 'Last error', priority: 'detail', value: (r) => r.lastError },
+  {
+    id: 'lastError',
+    label: 'Last error',
+    priority: 'detail',
+    value: (r) => r.lastError,
+  },
   // Never exportable: this is what #259/#260 will set on share tokens and PAT
   // material.
   {
@@ -363,17 +394,23 @@ describe('CSV serialization — escaping', () => {
   });
 
   it('quotes a field containing a comma', () => {
-    expect(escapeCsvField('San José, Costa Rica')).toBe('"San José, Costa Rica"');
+    expect(escapeCsvField('San José, Costa Rica')).toBe(
+      '"San José, Costa Rica"',
+    );
   });
 
   it('quotes a field containing a double quote, and doubles the quote', () => {
-    expect(escapeCsvField('rate limited, "429"')).toBe('"rate limited, ""429"""');
+    expect(escapeCsvField('rate limited, "429"')).toBe(
+      '"rate limited, ""429"""',
+    );
     expect(escapeCsvField('say "hi"')).toBe('"say ""hi"""');
   });
 
   it('quotes a field containing a newline or a carriage return', () => {
     expect(escapeCsvField('line one\nline two')).toBe('"line one\nline two"');
-    expect(escapeCsvField('line one\r\nline two')).toBe('"line one\r\nline two"');
+    expect(escapeCsvField('line one\r\nline two')).toBe(
+      '"line one\r\nline two"',
+    );
   });
 
   it('quotes leading/trailing whitespace so a parser cannot trim it away', () => {
@@ -385,7 +422,7 @@ describe('CSV serialization — formula injection', () => {
   // The four prefixes named in the issue, plus the two whitespace prefixes some
   // spreadsheets strip before deciding whether a cell is a formula.
   it.each([
-    ['=', '=cmd|\'/c calc\'!A1'],
+    ['=', "=cmd|'/c calc'!A1"],
     ['+', '+1+1'],
     ['-', '-2+3+cmd|calc'],
     ['@', '@SUM(A1:A9)'],
@@ -447,7 +484,9 @@ describe('CSV serialization — documents', () => {
 describe('export model — column selection', () => {
   it('defaults every column to exportable', () => {
     expect(isExportableColumn(COLUMNS[0])).toBe(true);
-    expect(isExportableColumn(COLUMNS.find((c) => c.id === 'token')!)).toBe(false);
+    expect(isExportableColumn(COLUMNS.find((c) => c.id === 'token')!)).toBe(
+      false,
+    );
   });
 
   it('drops `exportable: false` columns', () => {
@@ -461,7 +500,10 @@ describe('export model — column selection', () => {
 
   it('drops columns the user has hidden, and keeps declaration order', () => {
     const visible = new Set(['lastError', 'type', 'token']);
-    expect(exportColumns(COLUMNS, visible).map((c) => c.id)).toEqual(['type', 'lastError']);
+    expect(exportColumns(COLUMNS, visible).map((c) => c.id)).toEqual([
+      'type',
+      'lastError',
+    ]);
   });
 
   it('treats an omitted visibility set as "nothing is hidden"', () => {
@@ -475,7 +517,12 @@ describe('export model — matrix', () => {
     expect(header).toEqual(['Type', 'Status', 'Attempts', 'Last error']);
     // The cell renders <Chip label="PENDING" />; the CSV carries `pending`.
     expect(body[0]).toEqual(['face_detection', 'pending', 1, null]);
-    expect(body[1]).toEqual(['auto_tagging', 'failed', 3, 'rate limited, "429"']);
+    expect(body[1]).toEqual([
+      'auto_tagging',
+      'failed',
+      3,
+      'rate limited, "429"',
+    ]);
   });
 
   it('builds a complete file, BOM and quoting included', () => {
@@ -497,7 +544,9 @@ describe('export model — filename', () => {
   });
 
   it('dates the file so two snapshots never collide', () => {
-    expect(exportFilename('jobs', new Date('2026-08-05T10:00:00Z'))).toBe('jobs-2026-08-05.csv');
+    expect(exportFilename('jobs', new Date('2026-08-05T10:00:00Z'))).toBe(
+      'jobs-2026-08-05.csv',
+    );
   });
 });
 
@@ -508,12 +557,17 @@ describe('export model — filename', () => {
 describe('collectAllRows', () => {
   it('walks zero-based pages until a short page ends the set', async () => {
     const seen: number[] = [];
-    const fetchPage = vi.fn(async ({ page, pageSize }: { page: number; pageSize: number }) => {
-      seen.push(page);
-      return page < 2 ? manyJobs(pageSize) : manyJobs(3);
-    });
+    const fetchPage = vi.fn(
+      async ({ page, pageSize }: { page: number; pageSize: number }) => {
+        seen.push(page);
+        return page < 2 ? manyJobs(pageSize) : manyJobs(3);
+      },
+    );
 
-    const { rows, capped } = await collectAllRows<Job>({ fetchPage, pageSize: 10 });
+    const { rows, capped } = await collectAllRows<Job>({
+      fetchPage,
+      pageSize: 10,
+    });
 
     expect(seen).toEqual([0, 1, 2]);
     expect(rows).toHaveLength(23);
@@ -530,7 +584,9 @@ describe('collectAllRows', () => {
   });
 
   it('caps the walk at maxRows and reports it', async () => {
-    const fetchPage = vi.fn(async ({ pageSize }: { pageSize: number }) => manyJobs(pageSize));
+    const fetchPage = vi.fn(async ({ pageSize }: { pageSize: number }) =>
+      manyJobs(pageSize),
+    );
     const { rows, capped } = await collectAllRows<Job>({
       fetchPage,
       pageSize: 10,
@@ -546,8 +602,9 @@ describe('collectAllRows', () => {
 
   it('reports progress as the running total', async () => {
     const onProgress = vi.fn();
-    const fetchPage = vi.fn(async ({ page, pageSize }: { page: number; pageSize: number }) =>
-      page === 0 ? manyJobs(pageSize) : manyJobs(2),
+    const fetchPage = vi.fn(
+      async ({ page, pageSize }: { page: number; pageSize: number }) =>
+        page === 0 ? manyJobs(pageSize) : manyJobs(2),
     );
     await collectAllRows<Job>({ fetchPage, pageSize: 5, onProgress });
     expect(onProgress.mock.calls.map((call) => call[0])).toEqual([5, 7]);
@@ -561,7 +618,11 @@ describe('collectAllRows', () => {
     });
 
     await expect(
-      collectAllRows<Job>({ fetchPage, pageSize: 5, signal: controller.signal }),
+      collectAllRows<Job>({
+        fetchPage,
+        pageSize: 5,
+        signal: controller.signal,
+      }),
     ).rejects.toBeInstanceOf(ExportCancelledError);
   });
 });
@@ -586,25 +647,33 @@ describe('DataTable — the export control', () => {
 
   it('collapses into an overflow menu on a phone', () => {
     renderAtWidth(400);
-    expect(screen.queryByTestId('datatable-export-button')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-export-button'),
+    ).not.toBeInTheDocument();
 
     const overflow = screen.getByTestId('datatable-overflow-button');
     expect(overflow).toHaveAccessibleName('Table actions');
 
     fireEvent.click(overflow);
-    expect(screen.getByTestId('datatable-export-current-page')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('datatable-export-current-page'),
+    ).toBeInTheDocument();
   });
 
   it('is removed entirely by disableExport', () => {
     renderAtWidth(1400, { disableExport: true });
-    expect(screen.queryByTestId('datatable-export-button')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-export-button'),
+    ).not.toBeInTheDocument();
     // …and the rest of the view bar is untouched.
     expect(screen.getByTestId('datatable-columns-button')).toBeInTheDocument();
   });
 
   it('is removed on a phone too', () => {
     renderAtWidth(400, { disableExport: true });
-    expect(screen.queryByTestId('datatable-overflow-button')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-overflow-button'),
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId('datatable-view-button')).toBeInTheDocument();
   });
 
@@ -626,7 +695,9 @@ describe('DataTable — the export control', () => {
     fireEvent.click(screen.getByTestId('datatable-export-button'));
     // One click, one file — a one-item menu would be a click nobody needs.
     expect(captured).toHaveLength(1);
-    expect(screen.queryByTestId('datatable-export-menu')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-export-menu'),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -680,7 +751,9 @@ describe('DataTable — current-page export', () => {
     fireEvent.click(screen.getByTestId('datatable-columns-button'));
     fireEvent.click(screen.getByTestId('datatable-column-toggle-attempts'));
     // The menu is modal; close it before touching the bar underneath.
-    fireEvent.keyDown(screen.getByTestId('datatable-columns-menu'), { key: 'Escape' });
+    fireEvent.keyDown(screen.getByTestId('datatable-columns-menu'), {
+      key: 'Escape',
+    });
 
     fireEvent.click(screen.getByTestId('datatable-export-button'));
     const rows = await lastDownloadedRows();
@@ -720,7 +793,9 @@ describe('DataTable — current-page export', () => {
   it('names the file from an explicit csvExport.filename', async () => {
     renderAtWidth(1400, { csvExport: { filename: 'Admin Shares' } });
     fireEvent.click(screen.getByTestId('datatable-export-button'));
-    expect(captured[0].filename).toMatch(/^admin-shares-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(captured[0].filename).toMatch(
+      /^admin-shares-\d{4}-\d{2}-\d{2}\.csv$/,
+    );
   });
 });
 
@@ -732,12 +807,15 @@ describe('DataTable — all matching rows export', () => {
   it('offers the option only when a fetch callback is supplied', () => {
     renderAtWidth(1400);
     fireEvent.click(screen.getByTestId('datatable-export-button'));
-    expect(screen.queryByTestId('datatable-export-all-rows')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-export-all-rows'),
+    ).not.toBeInTheDocument();
   });
 
   it('replays the page’s callback page by page and exports everything', async () => {
-    const fetchAllRows = vi.fn(async ({ page, pageSize }: { page: number; pageSize: number }) =>
-      page === 0 ? manyJobs(pageSize) : manyJobs(4),
+    const fetchAllRows = vi.fn(
+      async ({ page, pageSize }: { page: number; pageSize: number }) =>
+        page === 0 ? manyJobs(pageSize) : manyJobs(4),
     );
 
     renderAtWidth(1400, { csvExport: { fetchAllRows, fetchPageSize: 10 } });
@@ -752,7 +830,9 @@ describe('DataTable — all matching rows export', () => {
   });
 
   it('stops at the row ceiling and says so instead of silently truncating', async () => {
-    const fetchAllRows = vi.fn(async ({ pageSize }: { pageSize: number }) => manyJobs(pageSize));
+    const fetchAllRows = vi.fn(async ({ pageSize }: { pageSize: number }) =>
+      manyJobs(pageSize),
+    );
 
     renderAtWidth(1400, {
       csvExport: { fetchAllRows, fetchPageSize: 10, maxRows: 25 },
@@ -784,24 +864,33 @@ describe('DataTable — all matching rows export', () => {
 
   it('shows progress and can be cancelled mid-walk', async () => {
     let release: (() => void) | null = null;
-    const fetchAllRows = vi.fn(async ({ page, pageSize }: { page: number; pageSize: number }) => {
-      if (page === 0) return manyJobs(pageSize);
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      return manyJobs(pageSize);
-    });
+    const fetchAllRows = vi.fn(
+      async ({ page, pageSize }: { page: number; pageSize: number }) => {
+        if (page === 0) return manyJobs(pageSize);
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return manyJobs(pageSize);
+      },
+    );
 
     renderAtWidth(1400, {
       csvExport: { fetchAllRows, fetchPageSize: 10 },
-      pagination: { page: 0, pageSize: 25, total: 400, onPaginationChange: vi.fn() },
+      pagination: {
+        page: 0,
+        pageSize: 25,
+        total: 400,
+        onPaginationChange: vi.fn(),
+      },
     });
     fireEvent.click(screen.getByTestId('datatable-export-button'));
     fireEvent.click(screen.getByTestId('datatable-export-all-rows'));
 
     const dialog = await screen.findByTestId('datatable-export-progress');
     await waitFor(() =>
-      expect(screen.getByTestId('datatable-export-progress-text')).toHaveTextContent('10 rows'),
+      expect(
+        screen.getByTestId('datatable-export-progress-text'),
+      ).toHaveTextContent('10 rows'),
     );
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
@@ -810,7 +899,9 @@ describe('DataTable — all matching rows export', () => {
     });
 
     await waitFor(() =>
-      expect(screen.queryByTestId('datatable-export-progress')).not.toBeInTheDocument(),
+      expect(
+        screen.queryByTestId('datatable-export-progress'),
+      ).not.toBeInTheDocument(),
     );
     // A cancelled export produces no file.
     expect(captured).toHaveLength(0);
@@ -823,7 +914,9 @@ describe('DataTable — all matching rows export', () => {
 
 describe('grid virtualization — the plan (pure)', () => {
   it('keeps auto-height for an ordinary page', () => {
-    expect(planGridVirtualization({ rowCount: 25, density: 'standard' })).toEqual({
+    expect(
+      planGridVirtualization({ rowCount: 25, density: 'standard' }),
+    ).toEqual({
       virtualized: false,
       autoHeight: true,
       height: undefined,
@@ -851,7 +944,9 @@ describe('grid virtualization — the plan (pure)', () => {
   });
 
   it('honours an explicit height at any row count', () => {
-    expect(planGridVirtualization({ rowCount: 3, height: 400, density: 'standard' })).toEqual({
+    expect(
+      planGridVirtualization({ rowCount: 3, height: 400, density: 'standard' }),
+    ).toEqual({
       virtualized: true,
       autoHeight: false,
       height: 400,
@@ -874,7 +969,12 @@ describe('DataTable — grid virtualization, rendered', () => {
 
   it('does not virtualize an ordinary page', () => {
     renderAtWidth(1400, {
-      pagination: { page: 0, pageSize: 25, total: 2, onPaginationChange: vi.fn() },
+      pagination: {
+        page: 0,
+        pageSize: 25,
+        total: 2,
+        onPaginationChange: vi.fn(),
+      },
     });
     const scroller = screen.getByTestId('datatable-scroll-container');
     expect(scroller).toHaveAttribute('data-virtualized', 'false');
@@ -885,7 +985,12 @@ describe('DataTable — grid virtualization, rendered', () => {
   it('virtualizes a large page and bounds the viewport', () => {
     renderAtWidth(1400, {
       rows: bigPage,
-      pagination: { page: 0, pageSize: 100, total: 600, onPaginationChange: vi.fn() },
+      pagination: {
+        page: 0,
+        pageSize: 100,
+        total: 600,
+        onPaginationChange: vi.fn(),
+      },
     });
     const scroller = screen.getByTestId('datatable-scroll-container');
     expect(scroller).toHaveAttribute('data-virtualized', 'true');
@@ -898,7 +1003,12 @@ describe('DataTable — grid virtualization, rendered', () => {
     const onSelectionChange = vi.fn();
     renderAtWidth(1400, {
       rows: bigPage,
-      pagination: { page: 0, pageSize: 100, total: 600, onPaginationChange: vi.fn() },
+      pagination: {
+        page: 0,
+        pageSize: 100,
+        total: 600,
+        onPaginationChange: vi.fn(),
+      },
       selection: { selectedIds: new Set<string>(), onSelectionChange },
     });
 
@@ -921,7 +1031,12 @@ describe('DataTable — grid virtualization, rendered', () => {
     const onSelectionChange = vi.fn();
     renderAtWidth(800, {
       rows: bigPage,
-      pagination: { page: 0, pageSize: 100, total: 600, onPaginationChange: vi.fn() },
+      pagination: {
+        page: 0,
+        pageSize: 100,
+        total: 600,
+        onPaginationChange: vi.fn(),
+      },
       selection: { selectedIds: new Set<string>(), onSelectionChange },
     });
 
@@ -936,13 +1051,20 @@ describe('DataTable — grid virtualization, rendered', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /select all rows/i }));
     const emitted = onSelectionChange.mock.calls[0][0] as Set<string>;
     expect(emitted.size).toBe(60);
-    expect(Array.from(emitted).some((id) => id.startsWith('__datatable_detail__'))).toBe(false);
+    expect(
+      Array.from(emitted).some((id) => id.startsWith('__datatable_detail__')),
+    ).toBe(false);
   });
 
   it('still exports every loaded row when the grid is virtualized', async () => {
     renderAtWidth(1400, {
       rows: bigPage,
-      pagination: { page: 0, pageSize: 100, total: 600, onPaginationChange: vi.fn() },
+      pagination: {
+        page: 0,
+        pageSize: 100,
+        total: 600,
+        onPaginationChange: vi.fn(),
+      },
     });
     fireEvent.click(screen.getByTestId('datatable-export-button'));
 
@@ -984,7 +1106,10 @@ describe('DataTable — card list render skipping, rendered', () => {
 
     expect(cards[0]).toHaveAttribute('data-skip-offscreen', 'false');
     expect(cards[1]).toHaveAttribute('data-skip-offscreen', 'true');
-    expect(cards[cards.length - 1]).toHaveAttribute('data-skip-offscreen', 'true');
+    expect(cards[cards.length - 1]).toHaveAttribute(
+      'data-skip-offscreen',
+      'true',
+    );
   });
 
   it('uses a MEASURED placeholder height, not a computed guess', async () => {
@@ -992,7 +1117,10 @@ describe('DataTable — card list render skipping, rendered', () => {
     await waitFor(() => {
       const card = screen.getAllByTestId('datatable-card')[1];
       // CARD_HEIGHT is what a real card in this list measures.
-      expect(card).toHaveAttribute('data-intrinsic-height', `auto ${CARD_HEIGHT}px`);
+      expect(card).toHaveAttribute(
+        'data-intrinsic-height',
+        `auto ${CARD_HEIGHT}px`,
+      );
     });
   });
 
@@ -1021,7 +1149,9 @@ describe('DataTable — card list render skipping, rendered', () => {
         label: 'Preview',
         priority: 'secondary',
         value: (r) => r.id,
-        render: (r) => <img src={`/thumb/${r.id}.jpg`} alt={`Preview of ${r.type}`} />,
+        render: (r) => (
+          <img src={`/thumb/${r.id}.jpg`} alt={`Preview of ${r.type}`} />
+        ),
       },
     ];
 
@@ -1045,13 +1175,17 @@ describe('DataTable — card list render skipping, rendered', () => {
         label: 'Preview',
         priority: 'secondary',
         value: (r) => r.id,
-        render: (r) => <img src={`/hero/${r.id}.jpg`} alt="Hero" loading="eager" />,
+        render: (r) => (
+          <img src={`/hero/${r.id}.jpg`} alt="Hero" loading="eager" />
+        ),
       },
     ];
 
     renderAtWidth(400, { rows: manyJobs(25), columns: eager });
     await waitFor(() =>
-      expect(document.querySelector('img[src^="/hero/"]')?.getAttribute('loading')).toBe('eager'),
+      expect(
+        document.querySelector('img[src^="/hero/"]')?.getAttribute('loading'),
+      ).toBe('eager'),
     );
   });
 });
@@ -1092,7 +1226,8 @@ describe('DataTable — export controls obey the touch rules (issue #243 guard)'
     renderAtWidth(1400, { csvExport: { fetchAllRows: vi.fn(async () => []) } });
     expect(
       Number.parseFloat(
-        getComputedStyle(screen.getByTestId('datatable-export-button')).minHeight || '0',
+        getComputedStyle(screen.getByTestId('datatable-export-button'))
+          .minHeight || '0',
       ),
     ).toBeGreaterThanOrEqual(44);
 
@@ -1101,18 +1236,18 @@ describe('DataTable — export controls obey the touch rules (issue #243 guard)'
       screen.getByTestId('datatable-export-current-page'),
       screen.getByTestId('datatable-export-all-rows'),
     ]) {
-      expect(Number.parseFloat(getComputedStyle(item).minHeight || '0')).toBeGreaterThanOrEqual(
-        44,
-      );
+      expect(
+        Number.parseFloat(getComputedStyle(item).minHeight || '0'),
+      ).toBeGreaterThanOrEqual(44);
     }
   });
 
   it('gives the phone overflow button a >=44px touch target', () => {
     renderAtWidth(400);
     const button = screen.getByTestId('datatable-overflow-button');
-    expect(Number.parseFloat(getComputedStyle(button).minHeight || '0')).toBeGreaterThanOrEqual(
-      44,
-    );
+    expect(
+      Number.parseFloat(getComputedStyle(button).minHeight || '0'),
+    ).toBeGreaterThanOrEqual(44);
   });
 
   it('keeps the view bar inside horizontal containment with export present', () => {

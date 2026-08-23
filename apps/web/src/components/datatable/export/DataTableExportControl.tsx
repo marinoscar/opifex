@@ -52,7 +52,11 @@ import DownloadIcon from '@mui/icons-material/Download';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import TableRowsIcon from '@mui/icons-material/TableRows';
 import StorageIcon from '@mui/icons-material/Storage';
-import type { DataTableColumn, DataTableExportConfig, DataTableLayout } from '../types';
+import type {
+  DataTableColumn,
+  DataTableExportConfig,
+  DataTableLayout,
+} from '../types';
 import {
   DATA_TABLE_EXPORT_MAX_ROWS,
   ExportCancelledError,
@@ -139,7 +143,8 @@ export function DataTableExportControl<Row>({
 
       // A clean, complete export needs no acknowledgement — the file is the
       // feedback. A capped one does: the user must know the CSV is a prefix.
-      if (capped) setProgress({ phase: 'done', fetched: all.length, capped: true });
+      if (capped)
+        setProgress({ phase: 'done', fetched: all.length, capped: true });
       else setProgress(null);
     } catch (error) {
       if (error instanceof ExportCancelledError || controller.signal.aborted) {
@@ -155,7 +160,14 @@ export function DataTableExportControl<Row>({
     } finally {
       abortRef.current = null;
     }
-  }, [fetchAllRows, columns, visibleColumnIds, maxRows, fetchPageSize, filename]);
+  }, [
+    fetchAllRows,
+    columns,
+    visibleColumnIds,
+    maxRows,
+    fetchPageSize,
+    filename,
+  ]);
 
   const cancelExport = () => {
     abortRef.current?.abort();
@@ -190,10 +202,15 @@ export function DataTableExportControl<Row>({
         variant="outlined"
         size="small"
         startIcon={<DownloadIcon />}
-        onClick={(event) => (directExport ? exportCurrentPage() : setAnchorEl(event.currentTarget))}
+        onClick={(event) =>
+          directExport ? exportCurrentPage() : setAnchorEl(event.currentTarget)
+        }
         {...(directExport
           ? {}
-          : { 'aria-haspopup': 'menu' as const, 'aria-expanded': Boolean(anchorEl) })}
+          : {
+              'aria-haspopup': 'menu' as const,
+              'aria-expanded': Boolean(anchorEl),
+            })}
         aria-label="Export CSV"
         data-testid="datatable-export-button"
         disabled={nothingToExport}
@@ -252,7 +269,9 @@ export function DataTableExportControl<Row>({
           current-page export is synchronous and needs no dialog. */}
       <Dialog
         open={progress !== null}
-        onClose={progress?.phase === 'running' ? undefined : () => setProgress(null)}
+        onClose={
+          progress?.phase === 'running' ? undefined : () => setProgress(null)
+        }
         aria-labelledby="datatable-export-progress-title"
         data-testid="datatable-export-progress"
         fullWidth
@@ -266,7 +285,10 @@ export function DataTableExportControl<Row>({
             <>
               <DialogContentText data-testid="datatable-export-progress-text">
                 {progress.fetched.toLocaleString()} rows fetched
-                {total ? ` of ${Math.min(total, maxRows).toLocaleString()}` : ''}…
+                {total
+                  ? ` of ${Math.min(total, maxRows).toLocaleString()}`
+                  : ''}
+                …
               </DialogContentText>
               <LinearProgress
                 sx={{ mt: 2 }}
@@ -277,7 +299,11 @@ export function DataTableExportControl<Row>({
                       variant: 'determinate' as const,
                       value: Math.min(
                         100,
-                        Math.round((progress.fetched / Math.max(1, Math.min(total, maxRows))) * 100),
+                        Math.round(
+                          (progress.fetched /
+                            Math.max(1, Math.min(total, maxRows))) *
+                            100,
+                        ),
                       ),
                     }
                   : { variant: 'indeterminate' as const })}
@@ -288,9 +314,9 @@ export function DataTableExportControl<Row>({
 
           {progress?.phase === 'done' && progress.capped && (
             <Alert severity="warning" data-testid="datatable-export-capped">
-              This export stopped at the {maxRows.toLocaleString()}-row limit. The file contains the
-              first {progress.fetched.toLocaleString()} matching rows — narrow the filters to export
-              the rest.
+              This export stopped at the {maxRows.toLocaleString()}-row limit.
+              The file contains the first {progress.fetched.toLocaleString()}{' '}
+              matching rows — narrow the filters to export the rest.
             </Alert>
           )}
 

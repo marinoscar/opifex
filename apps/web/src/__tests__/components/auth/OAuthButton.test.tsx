@@ -70,7 +70,9 @@ describe('OAuthButton', () => {
     it('should render Google icon', () => {
       render(<OAuthButton provider="google" onClick={mockOnClick} />);
 
-      const button = screen.getByRole('button', { name: /continue with google/i });
+      const button = screen.getByRole('button', {
+        name: /continue with google/i,
+      });
       const icon = button.querySelector('svg');
       expect(icon).toBeInTheDocument();
     });
@@ -78,7 +80,9 @@ describe('OAuthButton', () => {
     it('should render Microsoft icon', () => {
       render(<OAuthButton provider="microsoft" onClick={mockOnClick} />);
 
-      const button = screen.getByRole('button', { name: /continue with microsoft/i });
+      const button = screen.getByRole('button', {
+        name: /continue with microsoft/i,
+      });
       const icon = button.querySelector('svg');
       expect(icon).toBeInTheDocument();
     });
@@ -86,7 +90,9 @@ describe('OAuthButton', () => {
     it('should render GitHub icon', () => {
       render(<OAuthButton provider="github" onClick={mockOnClick} />);
 
-      const button = screen.getByRole('button', { name: /continue with github/i });
+      const button = screen.getByRole('button', {
+        name: /continue with github/i,
+      });
       const icon = button.querySelector('svg');
       expect(icon).toBeInTheDocument();
     });
@@ -106,7 +112,9 @@ describe('OAuthButton', () => {
 
       render(<OAuthButton provider="google" onClick={mockOnClick} />);
 
-      const button = screen.getByRole('button', { name: /continue with google/i });
+      const button = screen.getByRole('button', {
+        name: /continue with google/i,
+      });
       await user.click(button);
 
       expect(mockOnClick).toHaveBeenCalledTimes(1);
@@ -117,7 +125,9 @@ describe('OAuthButton', () => {
 
       render(<OAuthButton provider="microsoft" onClick={mockOnClick} />);
 
-      const button = screen.getByRole('button', { name: /continue with microsoft/i });
+      const button = screen.getByRole('button', {
+        name: /continue with microsoft/i,
+      });
       await user.click(button);
 
       expect(mockOnClick).toHaveBeenCalledTimes(1);
@@ -128,7 +138,9 @@ describe('OAuthButton', () => {
 
       render(<OAuthButton provider="github" onClick={mockOnClick} />);
 
-      const button = screen.getByRole('button', { name: /continue with github/i });
+      const button = screen.getByRole('button', {
+        name: /continue with github/i,
+      });
       await user.click(button);
 
       expect(mockOnClick).toHaveBeenCalledTimes(1);
@@ -150,7 +162,9 @@ describe('OAuthButton', () => {
 
       render(<OAuthButton provider="google" onClick={mockOnClick} />);
 
-      const button = screen.getByRole('button', { name: /continue with google/i });
+      const button = screen.getByRole('button', {
+        name: /continue with google/i,
+      });
       await user.click(button);
       await user.click(button);
       await user.click(button);
@@ -310,7 +324,9 @@ describe('OAuthButton', () => {
       render(<OAuthButton provider="MyCustomProvider" onClick={mockOnClick} />);
 
       // The component uses the original provider name in the fallback label
-      expect(screen.getByText('Continue with MyCustomProvider')).toBeInTheDocument();
+      expect(
+        screen.getByText('Continue with MyCustomProvider'),
+      ).toBeInTheDocument();
     });
   });
 
@@ -326,7 +342,9 @@ describe('OAuthButton', () => {
     it('should handle provider with special characters', () => {
       render(<OAuthButton provider="test-provider" onClick={mockOnClick} />);
 
-      expect(screen.getByText('Continue with test-provider')).toBeInTheDocument();
+      expect(
+        screen.getByText('Continue with test-provider'),
+      ).toBeInTheDocument();
     });
 
     it('should handle provider with spaces', () => {

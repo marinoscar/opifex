@@ -21,7 +21,15 @@ if (process.env.NODE_ENV !== 'production') {
     dotenv.config();
 
     // Also load from infra/compose/.env (canonical env location)
-    const composeEnv = path.resolve(__dirname, '..', '..', '..', 'infra', 'compose', '.env');
+    const composeEnv = path.resolve(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      'infra',
+      'compose',
+      '.env',
+    );
     dotenv.config({ path: composeEnv });
   } catch {
     // dotenv might not be available, that's OK
@@ -57,11 +65,19 @@ async function testConnection() {
 
   // Show configuration
   console.log('Environment Variables:');
-  console.log(`  POSTGRES_HOST: ${process.env.POSTGRES_HOST || 'localhost (default)'}`);
-  console.log(`  POSTGRES_PORT: ${process.env.POSTGRES_PORT || '5432 (default)'}`);
-  console.log(`  POSTGRES_USER: ${process.env.POSTGRES_USER || 'postgres (default)'}`);
+  console.log(
+    `  POSTGRES_HOST: ${process.env.POSTGRES_HOST || 'localhost (default)'}`,
+  );
+  console.log(
+    `  POSTGRES_PORT: ${process.env.POSTGRES_PORT || '5432 (default)'}`,
+  );
+  console.log(
+    `  POSTGRES_USER: ${process.env.POSTGRES_USER || 'postgres (default)'}`,
+  );
   console.log(`  POSTGRES_DB: ${process.env.POSTGRES_DB || 'appdb (default)'}`);
-  console.log(`  POSTGRES_SSL: ${process.env.POSTGRES_SSL || 'false (default)'}`);
+  console.log(
+    `  POSTGRES_SSL: ${process.env.POSTGRES_SSL || 'false (default)'}`,
+  );
   console.log('');
 
   // Construct connection URL

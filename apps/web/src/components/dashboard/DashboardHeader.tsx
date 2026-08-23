@@ -27,7 +27,14 @@
  * collision the rule exists to prevent.
  */
 
-import { Box, Chip, IconButton, Stack, Tooltip, Typography } from '@mui/material';
+import {
+  Box,
+  Chip,
+  IconButton,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CircularProgress from '@mui/material/CircularProgress';
 import { formatClockTime } from '../../utils/time';
@@ -75,7 +82,10 @@ export function DashboardHeader({
         return { label: 'Cannot reach the API', color: 'error' as const };
       case 'live':
       default:
-        return { label: clock ? `Live — updated ${clock}` : 'Live', color: 'success' as const };
+        return {
+          label: clock ? `Live — updated ${clock}` : 'Live',
+          color: 'success' as const,
+        };
     }
   })();
 
@@ -112,7 +122,11 @@ export function DashboardHeader({
                 aria-label="Refresh dashboard"
                 size="small"
               >
-                {isRefreshing ? <CircularProgress size={18} /> : <RefreshIcon />}
+                {isRefreshing ? (
+                  <CircularProgress size={18} />
+                ) : (
+                  <RefreshIcon />
+                )}
               </IconButton>
             </span>
           </Tooltip>

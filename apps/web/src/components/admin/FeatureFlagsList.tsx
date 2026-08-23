@@ -40,7 +40,11 @@ interface FeatureFlagsListProps {
   disabled?: boolean;
 }
 
-export function FeatureFlagsList({ flags, onSave, disabled }: FeatureFlagsListProps) {
+export function FeatureFlagsList({
+  flags,
+  onSave,
+  disabled,
+}: FeatureFlagsListProps) {
   const [localFlags, setLocalFlags] = useState<Record<string, boolean>>(flags);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newFlagName, setNewFlagName] = useState('');
@@ -60,7 +64,10 @@ export function FeatureFlagsList({ flags, onSave, disabled }: FeatureFlagsListPr
   };
 
   const handleAddFlag = () => {
-    if (newFlagName && !Object.prototype.hasOwnProperty.call(localFlags, newFlagName)) {
+    if (
+      newFlagName &&
+      !Object.prototype.hasOwnProperty.call(localFlags, newFlagName)
+    ) {
       setLocalFlags((prev) => ({ ...prev, [newFlagName]: false }));
       setNewFlagName('');
       setDialogOpen(false);
@@ -88,7 +95,7 @@ export function FeatureFlagsList({ flags, onSave, disabled }: FeatureFlagsListPr
     () => buildFeatureFlagColumns({ onToggle: handleToggle, disabled }),
     // `handleToggle` only ever calls `setLocalFlags` with an updater, so it
     // needs no dependency of its own.
-     
+
     [disabled],
   );
 
@@ -114,7 +121,7 @@ export function FeatureFlagsList({ flags, onSave, disabled }: FeatureFlagsListPr
           onClick: (row: FeatureFlagRow) => handleDelete(row.key),
         },
       ] satisfies DataTableRowAction<FeatureFlagRow>[],
-     
+
     [disabled],
   );
 
@@ -125,7 +132,11 @@ export function FeatureFlagsList({ flags, onSave, disabled }: FeatureFlagsListPr
         sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
       >
         <Typography variant="h6">Feature Flags</Typography>
-        <Button startIcon={<AddIcon />} onClick={() => setDialogOpen(true)} disabled={disabled}>
+        <Button
+          startIcon={<AddIcon />}
+          onClick={() => setDialogOpen(true)}
+          disabled={disabled}
+        >
           Add Flag
         </Button>
       </Stack>
@@ -139,7 +150,9 @@ export function FeatureFlagsList({ flags, onSave, disabled }: FeatureFlagsListPr
         rows={rows}
         rowId={(row) => row.key}
         emptyState={
-          <Typography color="text.secondary">No feature flags configured</Typography>
+          <Typography color="text.secondary">
+            No feature flags configured
+          </Typography>
         }
         rowActions={rowActions}
         csvExport={{ filename: 'feature-flags' }}

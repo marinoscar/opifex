@@ -79,7 +79,11 @@ describe('AuthController', () => {
       const mockReq = { cookies: {} } as any;
       const mockRes = { clearCookie: jest.fn() } as any;
 
-      const result = await controller.logout(requestUser as any, mockReq, mockRes);
+      const result = await controller.logout(
+        requestUser as any,
+        mockReq,
+        mockRes,
+      );
 
       expect(result).toBeUndefined();
       expect(mockAuthService.logout).toHaveBeenCalledWith('user-1', undefined);

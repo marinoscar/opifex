@@ -64,5 +64,8 @@ export function formatRelativeTime(
  */
 export function formatClockTime(value: Date | null | undefined): string | null {
   if (!value || Number.isNaN(value.getTime())) return null;
-  return value.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return value.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }

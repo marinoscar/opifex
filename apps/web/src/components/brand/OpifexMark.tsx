@@ -35,7 +35,10 @@
 
 import type { SVGProps } from 'react';
 
-export interface OpifexMarkProps extends Omit<SVGProps<SVGSVGElement>, 'children'> {
+export interface OpifexMarkProps extends Omit<
+  SVGProps<SVGSVGElement>,
+  'children'
+> {
   /** Edge length in px (the mark is square). Defaults to 24, its native size. */
   size?: number;
   /**
@@ -46,7 +49,11 @@ export interface OpifexMarkProps extends Omit<SVGProps<SVGSVGElement>, 'children
   title?: string | null;
 }
 
-export function OpifexMark({ size = 24, title = 'Opifex', ...props }: OpifexMarkProps) {
+export function OpifexMark({
+  size = 24,
+  title = 'Opifex',
+  ...props
+}: OpifexMarkProps) {
   const decorative = title === null;
 
   return (

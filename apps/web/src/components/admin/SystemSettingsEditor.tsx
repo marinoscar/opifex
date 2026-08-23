@@ -1,11 +1,5 @@
 import { useState, useEffect } from 'react';
-import {
-  Box,
-  Typography,
-  TextField,
-  Button,
-  Alert,
-} from '@mui/material';
+import { Box, Typography, TextField, Button, Alert } from '@mui/material';
 import { SystemSettings } from '../../types';
 
 interface SystemSettingsEditorProps {
@@ -80,7 +74,8 @@ export function SystemSettingsEditor({
       </Typography>
 
       <Alert severity="info" sx={{ mb: 2 }}>
-        Edit the raw JSON settings. Be careful - invalid values may cause issues.
+        Edit the raw JSON settings. Be careful - invalid values may cause
+        issues.
       </Alert>
 
       {error && (

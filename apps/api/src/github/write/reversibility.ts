@@ -186,7 +186,9 @@ export const WRITE_ACTIONS: Record<WriteAction, WriteActionDescriptor> = {
 };
 
 /** The pre-authorized carve-out, enumerated. Read by tests and the digest. */
-export const RECORD_WRITING_ACTIONS: readonly WriteAction[] = Object.values(WRITE_ACTIONS)
+export const RECORD_WRITING_ACTIONS: readonly WriteAction[] = Object.values(
+  WRITE_ACTIONS,
+)
   .filter((d) => d.approval === ApprovalRequirement.PreAuthorizedRecord)
   .map((d) => d.action);
 

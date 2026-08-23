@@ -6,7 +6,9 @@ import {
 
 const RAISED_AT = new Date('2026-08-22T10:00:04Z');
 
-function escalation(overrides: Partial<EscalationForNotification> = {}): EscalationForNotification {
+function escalation(
+  overrides: Partial<EscalationForNotification> = {},
+): EscalationForNotification {
   return {
     id: 'e1',
     kind: 'run_stalled',
@@ -30,7 +32,9 @@ function escalation(overrides: Partial<EscalationForNotification> = {}): Escalat
 describe('buildPayload', () => {
   describe("VISION §8's four fields", () => {
     it('says WHAT happened', () => {
-      expect(buildPayload(escalation(), 'r1', 'https://opifex.test').body).toContain('stalled');
+      expect(
+        buildPayload(escalation(), 'r1', 'https://opifex.test').body,
+      ).toContain('stalled');
     });
 
     it('says WHY, with the numbers the decision was made on', () => {
@@ -43,22 +47,33 @@ describe('buildPayload', () => {
     });
 
     it('says the BLAST RADIUS', () => {
-      expect(buildPayload(escalation(), 'r1', 'https://opifex.test').blastRadius).toContain(
-        'One run',
-      );
+      expect(
+        buildPayload(escalation(), 'r1', 'https://opifex.test').blastRadius,
+      ).toContain('One run');
     });
 
     it('says what happens IF IGNORED', () => {
       // The field that decides whether to get up.
-      expect(buildPayload(escalation(), 'r1', 'https://opifex.test').ifIgnored.length)
-        .toBeGreaterThan(0);
+      expect(
+        buildPayload(escalation(), 'r1', 'https://opifex.test').ifIgnored
+          .length,
+      ).toBeGreaterThan(0);
     });
 
     it('fills all four for every kind, never leaving one blank', () => {
       for (const kind of CHARACTERISED_KINDS) {
-        const payload = buildPayload(escalation({ kind }), 'r1', 'https://opifex.test');
+        const payload = buildPayload(
+          escalation({ kind }),
+          'r1',
+          'https://opifex.test',
+        );
 
-        for (const field of [payload.body, payload.why, payload.blastRadius, payload.ifIgnored]) {
+        for (const field of [
+          payload.body,
+          payload.why,
+          payload.blastRadius,
+          payload.ifIgnored,
+        ]) {
           expect(field.length).toBeGreaterThan(0);
         }
       }
@@ -70,8 +85,16 @@ describe('buildPayload', () => {
       // A stalled run is burning nothing; a looping one is spending money
       // right now. A notification that cannot tell them apart fails the only
       // test that matters at 2am.
-      const stalled = buildPayload(escalation({ kind: 'run_stalled' }), 'r1', 'u');
-      const looping = buildPayload(escalation({ kind: 'run_looping' }), 'r1', 'u');
+      const stalled = buildPayload(
+        escalation({ kind: 'run_stalled' }),
+        'r1',
+        'u',
+      );
+      const looping = buildPayload(
+        escalation({ kind: 'run_looping' }),
+        'r1',
+        'u',
+      );
 
       expect(stalled.ifIgnored).toContain('No spend');
       expect(looping.ifIgnored).toContain('Spend continues');
@@ -80,14 +103,18 @@ describe('buildPayload', () => {
     it('says a quarantine will never clear itself', () => {
       // VISION §8 makes a human the only way out, so "wait and see" is not an
       // option the operator should be left to discover on their own.
-      expect(buildPayload(escalation({ kind: 'quarantined' }), 'r1', 'u').ifIgnored).toContain(
-        'nothing clears this on its own',
-      );
+      expect(
+        buildPayload(escalation({ kind: 'quarantined' }), 'r1', 'u').ifIgnored,
+      ).toContain('nothing clears this on its own');
     });
 
     it('treats an uncharacterised kind as URGENT, not as harmless', () => {
       // An escalation nobody can characterise is worse than one that can be.
-      const payload = buildPayload(escalation({ kind: 'something_new' }), 'r1', 'u');
+      const payload = buildPayload(
+        escalation({ kind: 'something_new' }),
+        'r1',
+        'u',
+      );
 
       expect(payload.ifIgnored).toContain('Treat as urgent');
     });
@@ -97,7 +124,9 @@ describe('buildPayload', () => {
       // "Unknown" — degradation that survives review because it still works.
       const { EscalationKind } = await import('@prisma/client');
 
-      expect(Object.values(EscalationKind).sort()).toEqual([...CHARACTERISED_KINDS].sort());
+      expect(Object.values(EscalationKind).sort()).toEqual(
+        [...CHARACTERISED_KINDS].sort(),
+      );
     });
   });
 
@@ -127,11 +156,15 @@ describe('buildPayload', () => {
       // The only credential the receipt endpoint needs. A service worker has
       // no session, and storing a bearer token where one could read it would
       // be worse than this.
-      expect(buildPayload(escalation(), 'rcpt_abc', 'u').receiptId).toBe('rcpt_abc');
+      expect(buildPayload(escalation(), 'rcpt_abc', 'u').receiptId).toBe(
+        'rcpt_abc',
+      );
     });
 
     it('carries when it was raised, so a late notification says so', () => {
-      expect(buildPayload(escalation(), 'r1', 'u').raisedAt).toBe(RAISED_AT.toISOString());
+      expect(buildPayload(escalation(), 'r1', 'u').raisedAt).toBe(
+        RAISED_AT.toISOString(),
+      );
     });
   });
 

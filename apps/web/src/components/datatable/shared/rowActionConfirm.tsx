@@ -31,7 +31,9 @@ interface PendingConfirm<Row> {
 export function confirmCopy<Row>(action: DataTableRowAction<Row>, row: Row) {
   const options = typeof action.confirm === 'object' ? action.confirm : {};
   const description =
-    typeof options.description === 'function' ? options.description(row) : options.description;
+    typeof options.description === 'function'
+      ? options.description(row)
+      : options.description;
   return {
     title: options.title ?? `${action.label}?`,
     description:
@@ -67,7 +69,11 @@ export function useRowActionConfirm<Row>(): RowActionConfirm<Row> {
   const copy = pending ? confirmCopy(pending.action, pending.row) : null;
 
   const dialog = (
-    <Dialog open={Boolean(pending)} onClose={close} aria-labelledby="datatable-confirm-title">
+    <Dialog
+      open={Boolean(pending)}
+      onClose={close}
+      aria-labelledby="datatable-confirm-title"
+    >
       <DialogTitle id="datatable-confirm-title">{copy?.title}</DialogTitle>
       <DialogContent>
         <DialogContentText>{copy?.description}</DialogContentText>

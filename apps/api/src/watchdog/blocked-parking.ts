@@ -97,10 +97,9 @@ export function decideParking(
     }
     return {
       kind: 'waiting',
-      reason:
-        `blocked with no reset time; waiting ${Math.round(
-          (UNDATED_BLOCK_PATIENCE_MS - waitedMs) / 60_000,
-        )}m more before escalating`,
+      reason: `blocked with no reset time; waiting ${Math.round(
+        (UNDATED_BLOCK_PATIENCE_MS - waitedMs) / 60_000,
+      )}m more before escalating`,
     };
   }
 
@@ -124,8 +123,15 @@ export function decideParking(
  * quota has actually refilled guarantees an immediate second block, which is
  * the loop the jitter exists to prevent.
  */
-export function jitterFor(resetAt: Date, blockedSince: Date, random: () => number): number {
-  const blockDurationMs = Math.max(0, resetAt.getTime() - blockedSince.getTime());
+export function jitterFor(
+  resetAt: Date,
+  blockedSince: Date,
+  random: () => number,
+): number {
+  const blockDurationMs = Math.max(
+    0,
+    resetAt.getTime() - blockedSince.getTime(),
+  );
   const window = Math.min(
     MAX_JITTER_MS,
     Math.max(MIN_JITTER_MS, blockDurationMs * JITTER_FRACTION),
@@ -156,7 +162,12 @@ export function actionsForParking(
   switch (decision.kind) {
     case 'park':
       return [
-        { ...base, type: 'park', resumeAt: decision.resumeAt.toISOString(), reason: decision.reason },
+        {
+          ...base,
+          type: 'park',
+          resumeAt: decision.resumeAt.toISOString(),
+          reason: decision.reason,
+        },
       ];
     case 'resume':
       // The resume ACTION is computed here; the resume DISPATCH is wired when
@@ -169,7 +180,12 @@ export function actionsForParking(
       // problem with the run itself — and an operator triaging these needs to
       // tell those apart.
       return [
-        { ...base, type: 'escalate', escalationKind: 'system', reason: decision.reason },
+        {
+          ...base,
+          type: 'escalate',
+          escalationKind: 'system',
+          reason: decision.reason,
+        },
       ];
     case 'waiting':
       // The system is working. A blocked run waiting out its quota is Opifex

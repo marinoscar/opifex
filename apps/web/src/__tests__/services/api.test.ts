@@ -200,9 +200,13 @@ describe('ApiService', () => {
         }),
       );
 
-      await api.patch('/user-settings', {}, {
-        headers: { 'If-Match': '5' },
-      });
+      await api.patch(
+        '/user-settings',
+        {},
+        {
+          headers: { 'If-Match': '5' },
+        },
+      );
 
       expect(ifMatchHeader).toBe('5');
     });
@@ -692,7 +696,10 @@ describe('Cockpit API', () => {
     it('GETs the metrics summary and unwraps the envelope', async () => {
       const summary = {
         generatedAt: '2026-08-19T12:00:00.000Z',
-        window: { from: '2026-08-12T12:00:00.000Z', to: '2026-08-19T12:00:00.000Z' },
+        window: {
+          from: '2026-08-12T12:00:00.000Z',
+          to: '2026-08-19T12:00:00.000Z',
+        },
         metrics: {
           detectionLatency: { value: 45, trend: [90, 45] },
           deadTimePerDay: { value: 1.5, trend: [] },
@@ -704,7 +711,9 @@ describe('Cockpit API', () => {
       };
 
       server.use(
-        http.get('*/api/metrics/summary', () => HttpResponse.json({ data: summary })),
+        http.get('*/api/metrics/summary', () =>
+          HttpResponse.json({ data: summary }),
+        ),
       );
 
       const result = await getCockpitMetrics();
@@ -717,7 +726,9 @@ describe('Cockpit API', () => {
 
     it('forwards an abort signal', async () => {
       server.use(
-        http.get('*/api/metrics/summary', () => HttpResponse.json({ data: {} })),
+        http.get('*/api/metrics/summary', () =>
+          HttpResponse.json({ data: {} }),
+        ),
       );
 
       const controller = new AbortController();
@@ -850,7 +861,12 @@ describe('Cockpit API', () => {
         http.get('*/api/events', ({ request }) => {
           query = new URL(request.url).searchParams;
           return HttpResponse.json({
-            data: { items: [{ id: 'event-1' }], total: 1, page: 1, pageSize: 10 },
+            data: {
+              items: [{ id: 'event-1' }],
+              total: 1,
+              page: 1,
+              pageSize: 10,
+            },
           });
         }),
       );
@@ -871,7 +887,10 @@ describe('Cockpit API', () => {
       // rather than as an empty feed that reads like a quiet factory.
       server.use(
         http.get('*/api/metrics/summary', () =>
-          HttpResponse.json({ message: 'Not Found', code: 'NOT_FOUND' }, { status: 404 }),
+          HttpResponse.json(
+            { message: 'Not Found', code: 'NOT_FOUND' },
+            { status: 404 },
+          ),
         ),
       );
 

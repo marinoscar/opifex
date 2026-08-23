@@ -42,7 +42,7 @@ The credential is read in exactly one place — `github.token` in
 reconciler sweeping every watched repository can leave its own operator unable
 to browse GitHub from a shell. That is why `RateLimitService.canSpend()` takes
 a reserve and `GITHUB_RATE_LIMIT_RESERVE` defaults to 100: the reconciler stops
-scheduling with budget still in hand. This mitigation exists *because* of this
+scheduling with budget still in hand. This mitigation exists _because_ of this
 decision and would be unnecessary under an App.
 
 A PAT also expires on a fixed date and dies silently when it does — every

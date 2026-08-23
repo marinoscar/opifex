@@ -72,7 +72,9 @@ export function shouldVirtualizeCards(
  * laid out. That is what keeps the scrollbar honest as the user scrolls through
  * cards of genuinely different heights.
  */
-export function containIntrinsicSize(height: number | null | undefined): string {
+export function containIntrinsicSize(
+  height: number | null | undefined,
+): string {
   const px = Math.max(1, Math.round(height ?? CARD_FALLBACK_INTRINSIC_HEIGHT));
   return `auto ${px}px`;
 }
@@ -94,7 +96,9 @@ export function useMeasuredCardHeight(enabled: boolean): {
   const record = useCallback((next: number) => {
     if (!Number.isFinite(next) || next <= 0) return;
     setHeight((current) =>
-      current !== null && Math.abs(current - next) < MEASURE_EPSILON_PX ? current : next,
+      current !== null && Math.abs(current - next) < MEASURE_EPSILON_PX
+        ? current
+        : next,
     );
   }, []);
 
@@ -139,7 +143,8 @@ export function useLazyImages(
     if (!enabled || !root) return;
     for (const image of Array.from(root.querySelectorAll('img'))) {
       if (!image.hasAttribute('loading')) image.setAttribute('loading', 'lazy');
-      if (!image.hasAttribute('decoding')) image.setAttribute('decoding', 'async');
+      if (!image.hasAttribute('decoding'))
+        image.setAttribute('decoding', 'async');
     }
   });
 }

@@ -14,7 +14,10 @@ describe('ThemeSettings', () => {
   describe('Rendering', () => {
     it('should render the component', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       expect(screen.getByText(/appearance/i)).toBeInTheDocument();
@@ -22,27 +25,36 @@ describe('ThemeSettings', () => {
 
     it('should render heading', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       expect(
-        screen.getByRole('heading', { name: /appearance/i })
+        screen.getByRole('heading', { name: /appearance/i }),
       ).toBeInTheDocument();
     });
 
     it('should render description text', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       expect(
-        screen.getByText(/choose how the application looks to you/i)
+        screen.getByText(/choose how the application looks to you/i),
       ).toBeInTheDocument();
     });
 
     it('should render as a card', () => {
       const { container } = render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const card = container.querySelector('#theme');
@@ -53,7 +65,10 @@ describe('ThemeSettings', () => {
   describe('Theme Options', () => {
     it('should render all three theme options', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       expect(screen.getByLabelText(/light mode/i)).toBeInTheDocument();
@@ -63,7 +78,10 @@ describe('ThemeSettings', () => {
 
     it('should display Light option with text', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -72,7 +90,10 @@ describe('ThemeSettings', () => {
 
     it('should display Dark option with text', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const darkButton = screen.getByLabelText(/dark mode/i);
@@ -81,7 +102,10 @@ describe('ThemeSettings', () => {
 
     it('should display System option with text', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const systemButton = screen.getByLabelText(/system preference/i);
@@ -92,7 +116,10 @@ describe('ThemeSettings', () => {
   describe('Current Theme Selection', () => {
     it('should show light theme as selected', () => {
       render(
-        <ThemeSettings currentTheme="light" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="light"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -101,7 +128,7 @@ describe('ThemeSettings', () => {
 
     it('should show dark theme as selected', () => {
       render(
-        <ThemeSettings currentTheme="dark" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings currentTheme="dark" onThemeChange={mockOnThemeChange} />,
       );
 
       const darkButton = screen.getByLabelText(/dark mode/i);
@@ -110,7 +137,10 @@ describe('ThemeSettings', () => {
 
     it('should show system theme as selected', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const systemButton = screen.getByLabelText(/system preference/i);
@@ -119,7 +149,10 @@ describe('ThemeSettings', () => {
 
     it('should only have one option selected at a time', () => {
       render(
-        <ThemeSettings currentTheme="light" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="light"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -137,7 +170,10 @@ describe('ThemeSettings', () => {
       const user = userEvent.setup();
 
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -151,7 +187,10 @@ describe('ThemeSettings', () => {
       const user = userEvent.setup();
 
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const darkButton = screen.getByLabelText(/dark mode/i);
@@ -165,7 +204,10 @@ describe('ThemeSettings', () => {
       const user = userEvent.setup();
 
       render(
-        <ThemeSettings currentTheme="light" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="light"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const systemButton = screen.getByLabelText(/system preference/i);
@@ -179,7 +221,10 @@ describe('ThemeSettings', () => {
       const user = userEvent.setup();
 
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -197,7 +242,10 @@ describe('ThemeSettings', () => {
       const user = userEvent.setup();
 
       render(
-        <ThemeSettings currentTheme="light" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="light"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -213,7 +261,10 @@ describe('ThemeSettings', () => {
 
       // Start from system, click light
       const { unmount } = render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       await user.click(screen.getByLabelText(/light mode/i));
@@ -224,7 +275,10 @@ describe('ThemeSettings', () => {
 
       // Start from light, click dark
       const { unmount: unmount2 } = render(
-        <ThemeSettings currentTheme="light" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="light"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       await user.click(screen.getByLabelText(/dark mode/i));
@@ -235,7 +289,7 @@ describe('ThemeSettings', () => {
 
       // Start from dark, click system
       render(
-        <ThemeSettings currentTheme="dark" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings currentTheme="dark" onThemeChange={mockOnThemeChange} />,
       );
 
       await user.click(screen.getByLabelText(/system preference/i));
@@ -250,7 +304,7 @@ describe('ThemeSettings', () => {
           currentTheme="system"
           onThemeChange={mockOnThemeChange}
           disabled
-        />
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -268,7 +322,7 @@ describe('ThemeSettings', () => {
           currentTheme="system"
           onThemeChange={mockOnThemeChange}
           disabled={false}
-        />
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -282,7 +336,10 @@ describe('ThemeSettings', () => {
 
     it('should enable all buttons when disabled prop is omitted', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -300,7 +357,7 @@ describe('ThemeSettings', () => {
           currentTheme="system"
           onThemeChange={mockOnThemeChange}
           disabled
-        />
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -317,7 +374,7 @@ describe('ThemeSettings', () => {
           currentTheme="dark"
           onThemeChange={mockOnThemeChange}
           disabled
-        />
+        />,
       );
 
       const darkButton = screen.getByLabelText(/dark mode/i);
@@ -329,7 +386,10 @@ describe('ThemeSettings', () => {
   describe('Accessibility', () => {
     it('should have proper aria-label for theme selection group', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const toggleGroup = screen.getByRole('group', {
@@ -340,7 +400,10 @@ describe('ThemeSettings', () => {
 
     it('should have aria-label for light mode button', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       expect(screen.getByLabelText(/light mode/i)).toBeInTheDocument();
@@ -348,7 +411,10 @@ describe('ThemeSettings', () => {
 
     it('should have aria-label for dark mode button', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       expect(screen.getByLabelText(/dark mode/i)).toBeInTheDocument();
@@ -356,7 +422,10 @@ describe('ThemeSettings', () => {
 
     it('should have aria-label for system preference button', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       expect(screen.getByLabelText(/system preference/i)).toBeInTheDocument();
@@ -366,7 +435,10 @@ describe('ThemeSettings', () => {
       const user = userEvent.setup();
 
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -385,7 +457,10 @@ describe('ThemeSettings', () => {
       const user = userEvent.setup();
 
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -404,7 +479,10 @@ describe('ThemeSettings', () => {
   describe('Icons', () => {
     it('should render light mode icon', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       // MUI icons render as SVG elements
@@ -415,7 +493,10 @@ describe('ThemeSettings', () => {
 
     it('should render dark mode icon', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const darkButton = screen.getByLabelText(/dark mode/i);
@@ -425,7 +506,10 @@ describe('ThemeSettings', () => {
 
     it('should render system preference icon', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const systemButton = screen.getByLabelText(/system preference/i);
@@ -435,7 +519,10 @@ describe('ThemeSettings', () => {
 
     it('should render icons alongside text labels', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -457,7 +544,10 @@ describe('ThemeSettings', () => {
       const user = userEvent.setup();
 
       render(
-        <ThemeSettings currentTheme="light" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="light"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -476,7 +566,10 @@ describe('ThemeSettings', () => {
 
     it('should render buttons in correct order', () => {
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const buttons = screen
@@ -495,7 +588,10 @@ describe('ThemeSettings', () => {
       const user = userEvent.setup();
 
       render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -519,18 +615,21 @@ describe('ThemeSettings', () => {
 
     it('should handle theme prop changes from parent', () => {
       const { rerender } = render(
-        <ThemeSettings currentTheme="light" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="light"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       expect(screen.getByLabelText(/light mode/i)).toHaveClass('Mui-selected');
 
       rerender(
-        <ThemeSettings currentTheme="dark" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings currentTheme="dark" onThemeChange={mockOnThemeChange} />,
       );
 
       expect(screen.getByLabelText(/dark mode/i)).toHaveClass('Mui-selected');
       expect(screen.getByLabelText(/light mode/i)).not.toHaveClass(
-        'Mui-selected'
+        'Mui-selected',
       );
     });
 
@@ -540,7 +639,7 @@ describe('ThemeSettings', () => {
           currentTheme="system"
           onThemeChange={mockOnThemeChange}
           disabled={false}
-        />
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -551,7 +650,7 @@ describe('ThemeSettings', () => {
           currentTheme="system"
           onThemeChange={mockOnThemeChange}
           disabled
-        />
+        />,
       );
 
       expect(lightButton).toBeDisabled();
@@ -562,11 +661,14 @@ describe('ThemeSettings', () => {
       const newHandler = vi.fn();
 
       const { rerender } = render(
-        <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
+        <ThemeSettings
+          currentTheme="system"
+          onThemeChange={mockOnThemeChange}
+        />,
       );
 
       rerender(
-        <ThemeSettings currentTheme="system" onThemeChange={newHandler} />
+        <ThemeSettings currentTheme="system" onThemeChange={newHandler} />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);
@@ -590,11 +692,11 @@ describe('ThemeSettings', () => {
         <ThemeSettings
           currentTheme={currentTheme}
           onThemeChange={handleThemeChange}
-        />
+        />,
       );
 
       expect(screen.getByLabelText(/system preference/i)).toHaveClass(
-        'Mui-selected'
+        'Mui-selected',
       );
 
       await user.click(screen.getByLabelText(/light mode/i));
@@ -605,7 +707,7 @@ describe('ThemeSettings', () => {
         <ThemeSettings
           currentTheme={currentTheme}
           onThemeChange={handleThemeChange}
-        />
+        />,
       );
 
       expect(screen.getByLabelText(/light mode/i)).toHaveClass('Mui-selected');
@@ -617,7 +719,7 @@ describe('ThemeSettings', () => {
           currentTheme="system"
           onThemeChange={mockOnThemeChange}
           disabled
-        />
+        />,
       );
 
       const lightButton = screen.getByLabelText(/light mode/i);

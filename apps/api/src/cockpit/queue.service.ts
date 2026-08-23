@@ -4,7 +4,11 @@ import { DispatchService } from '../dispatch/dispatch.service';
 import type { DispatchDecision } from '../dispatch/dispatch-policy';
 import { PrismaService } from '../prisma/prisma.service';
 import type { RunnerNeed } from '../runners/runner.types';
-import { QUEUE_DEFAULT_LIMIT, type QueueEntry, type QueueEntryState } from './dto/queue.dto';
+import {
+  QUEUE_DEFAULT_LIMIT,
+  type QueueEntry,
+  type QueueEntryState,
+} from './dto/queue.dto';
 
 /**
  * What the factory is about to work on, and what is stopping it.
@@ -55,7 +59,10 @@ export class QueueService {
       // `position` a fact rather than a decoration: position 1 is the work
       // order the next tick will actually pick up. `queuedAt` nulls last puts
       // held rows after the queue they are not in.
-      orderBy: [{ queuedAt: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
+      orderBy: [
+        { queuedAt: { sort: 'asc', nulls: 'last' } },
+        { createdAt: 'asc' },
+      ],
       take: limit,
       select: {
         id: true,
@@ -87,7 +94,11 @@ export class QueueService {
 
     return rows.map((row, index) => {
       const decision = decisions.get(needsKey(row.needs));
-      const { state, outOfHeadroom } = this.stateOf(row.status, decision, remaining);
+      const { state, outOfHeadroom } = this.stateOf(
+        row.status,
+        decision,
+        remaining,
+      );
 
       return {
         id: row.id,
@@ -110,7 +121,13 @@ export class QueueService {
         // cannot jump the queue. `createdAt` is when it entered the queue in
         // every sense the operator cares about.
         enqueuedAt: (row.queuedAt ?? row.createdAt).toISOString(),
-        waitingOn: this.waitingOn(row.status, state, outOfHeadroom, row.holdReason, decision),
+        waitingOn: this.waitingOn(
+          row.status,
+          state,
+          outOfHeadroom,
+          row.holdReason,
+          decision,
+        ),
       };
     });
   }
@@ -139,7 +156,10 @@ export class QueueService {
     }
 
     const decided = await Promise.all(
-      [...distinct].map(async ([key, needs]) => [key, await this.dispatch.decide(needs)] as const),
+      [...distinct].map(
+        async ([key, needs]) =>
+          [key, await this.dispatch.decide(needs)] as const,
+      ),
     );
 
     return new Map(decided);
@@ -169,7 +189,9 @@ export class QueueService {
 
     const key = decision.runnerKey;
     if (!remaining.has(key)) {
-      const chosen = decision.candidates.find((candidate) => candidate.runnerKey === key);
+      const chosen = decision.candidates.find(
+        (candidate) => candidate.runnerKey === key,
+      );
       remaining.set(key, chosen?.headroom ?? 0);
     }
 
@@ -211,14 +233,19 @@ export class QueueService {
       // A `factory:hold` label carries no reason of its own — #155 records one
       // only for a quarantine — so name the mechanism rather than returning
       // null, which the panel renders as "nothing is blocking this".
-      return holdReason ?? 'Held by a factory:hold label; release it on the issue';
+      return (
+        holdReason ?? 'Held by a factory:hold label; release it on the issue'
+      );
     }
     if (state === 'ready') return null;
     if (outOfHeadroom) {
       const runner = decision?.runnerKey ?? 'the fleet';
       return `Waiting for a free slot on ${runner}; the work orders ahead of it take them all`;
     }
-    return decision?.reason ?? 'No dispatch decision is available for this work order';
+    return (
+      decision?.reason ??
+      'No dispatch decision is available for this work order'
+    );
   }
 }
 

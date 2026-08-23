@@ -9,7 +9,9 @@ const RUN_A = '018f2c31-7a4e-7c3b-9f21-4d5e6a7b8c9d';
 const RUN_B = '018f2c31-7a4e-7c3b-9f21-4d5e6a7b8cff';
 const STOPPED_AT = new Date('2026-08-22T10:00:00Z');
 
-function escalateAction(overrides: Partial<ReconcileAction> = {}): ReconcileAction {
+function escalateAction(
+  overrides: Partial<ReconcileAction> = {},
+): ReconcileAction {
   return {
     type: 'escalate',
     repository: 'marinoscar/opifex',
@@ -44,10 +46,17 @@ function fakePrisma() {
   const rows: Record<string, unknown>[] = [];
   let seq = 0;
 
-  const matches = (row: Record<string, unknown>, where: Record<string, any>): boolean => {
+  const matches = (
+    row: Record<string, unknown>,
+    where: Record<string, any>,
+  ): boolean => {
     if (where.runId !== undefined) {
       const expected = where.runId;
-      if (expected !== null && typeof expected === 'object' && 'in' in expected) {
+      if (
+        expected !== null &&
+        typeof expected === 'object' &&
+        'in' in expected
+      ) {
         if (!expected.in.includes(row.runId)) return false;
       } else if (row.runId !== expected) {
         return false;
@@ -56,7 +65,11 @@ function fakePrisma() {
     if (where.kind !== undefined && row.kind !== where.kind) return false;
     if (where.status !== undefined) {
       const expected = where.status;
-      if (typeof expected === 'object' && expected !== null && 'in' in expected) {
+      if (
+        typeof expected === 'object' &&
+        expected !== null &&
+        'in' in expected
+      ) {
         if (!expected.in.includes(row.status)) return false;
       } else if (row.status !== expected) {
         return false;
@@ -68,15 +81,18 @@ function fakePrisma() {
   return {
     rows,
     escalation: {
-      findFirst: async ({ where }: any) => rows.find((row) => matches(row, where)) ?? null,
-      findUnique: async ({ where }: any) => rows.find((row) => row.id === where.id) ?? null,
+      findFirst: async ({ where }: any) =>
+        rows.find((row) => matches(row, where)) ?? null,
+      findUnique: async ({ where }: any) =>
+        rows.find((row) => row.id === where.id) ?? null,
       findMany: async ({ where = {}, skip = 0, take = 50 }: any = {}) =>
         rows
           .filter((row) => matches(row, where))
           .slice()
           .reverse()
           .slice(skip, skip + take),
-      count: async ({ where = {} }: any = {}) => rows.filter((row) => matches(row, where)).length,
+      count: async ({ where = {} }: any = {}) =>
+        rows.filter((row) => matches(row, where)).length,
       create: async ({ data }: any) => {
         const row = {
           id: `escalation-${(seq += 1)}`,
@@ -110,7 +126,9 @@ function fakePrisma() {
         for (const [key, value] of Object.entries(data)) {
           // Prisma's atomic-number shorthand, which markDelivered uses.
           row[key] =
-            value && typeof value === 'object' && 'increment' in (value as object)
+            value &&
+            typeof value === 'object' &&
+            'increment' in (value as object)
               ? (row[key] ?? 0) + (value as { increment: number }).increment
               : value;
         }
@@ -222,7 +240,10 @@ describe('EscalationsService', () => {
 
     it('dedupes within a single batch, not just across ticks', async () => {
       // Two detectors can reach the same conclusion in one sweep.
-      const result = await service.raiseFrom([escalateAction(), escalateAction()]);
+      const result = await service.raiseFrom([
+        escalateAction(),
+        escalateAction(),
+      ]);
 
       expect(result).toEqual({ raised: 1, deduplicated: 1 });
     });
@@ -235,11 +256,17 @@ describe('EscalationsService', () => {
         escalateAction({ escalationKind: 'budget_exceeded' }),
       ]);
 
-      expect(prisma.rows.map((row) => row.kind)).toEqual(['run_looping', 'budget_exceeded']);
+      expect(prisma.rows.map((row) => row.kind)).toEqual([
+        'run_looping',
+        'budget_exceeded',
+      ]);
     });
 
     it('does not let one run suppress another', async () => {
-      await service.raiseFrom([escalateAction(), escalateAction({ runId: RUN_B })]);
+      await service.raiseFrom([
+        escalateAction(),
+        escalateAction({ runId: RUN_B }),
+      ]);
 
       expect(prisma.rows).toHaveLength(2);
     });
@@ -283,7 +310,9 @@ describe('EscalationsService', () => {
       await service.raiseFrom([escalateAction()]);
 
       const summary = prisma.rows[0].summary as string;
-      expect(summary).toBe('wo_opifex_312_a3f91c2_a1 stalled (marinoscar/opifex#312)');
+      expect(summary).toBe(
+        'wo_opifex_312_a3f91c2_a1 stalled (marinoscar/opifex#312)',
+      );
       expect(summary.length).toBeLessThanOrEqual(120);
       expect(summary).not.toContain('\n');
     });
@@ -310,7 +339,9 @@ describe('EscalationsService', () => {
     ])('says what happened for a %s escalation', async (kind, phrase) => {
       // Every kind gets its own wording. A single generic line would make the
       // notification useless for triage, which is the one thing it is for.
-      await service.raiseFrom([escalateAction({ escalationKind: kind as never })]);
+      await service.raiseFrom([
+        escalateAction({ escalationKind: kind as never }),
+      ]);
 
       expect(prisma.rows.at(-1)!.summary).toContain(phrase);
     });
@@ -338,9 +369,9 @@ describe('EscalationsService', () => {
     });
 
     it('404s on an escalation that does not exist', async () => {
-      await expect(service.acknowledge('escalation-404', 'user-1')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.acknowledge('escalation-404', 'user-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('lets the next occurrence raise again', async () => {
@@ -377,11 +408,17 @@ describe('EscalationsService', () => {
     });
 
     it('touches no other run', async () => {
-      await service.raiseFrom([escalateAction(), escalateAction({ runId: RUN_B })]);
+      await service.raiseFrom([
+        escalateAction(),
+        escalateAction({ runId: RUN_B }),
+      ]);
 
       await service.resolveStale([RUN_A]);
 
-      expect(prisma.rows.map((row) => row.status)).toEqual(['resolved', 'raised']);
+      expect(prisma.rows.map((row) => row.status)).toEqual([
+        'resolved',
+        'raised',
+      ]);
     });
 
     it('issues no query at all for an empty list', async () => {
@@ -424,7 +461,9 @@ describe('EscalationsService', () => {
     it('never stores a negative latency from a skewed runner clock', async () => {
       // A negative value in the histogram is not a small error: it drags the
       // aggregate below the truth and can make the target look met.
-      jest.useFakeTimers().setSystemTime(new Date(STOPPED_AT.getTime() - 30_000));
+      jest
+        .useFakeTimers()
+        .setSystemTime(new Date(STOPPED_AT.getTime() - 30_000));
 
       await service.raiseFrom([escalateAction()]);
       jest.useRealTimers();
@@ -436,7 +475,9 @@ describe('EscalationsService', () => {
       // Falling back to `raisedAt` would put a near-zero latency in the
       // histogram for every unmeasurable escalation — the one way to make
       // success metric 1 lie in the flattering direction.
-      await service.raiseFrom([escalateAction({ progressStoppedAt: undefined })]);
+      await service.raiseFrom([
+        escalateAction({ progressStoppedAt: undefined }),
+      ]);
 
       expect(prisma.rows[0].detectLatencyMs).toBeNull();
       expect(metrics.recordDetected).not.toHaveBeenCalled();
@@ -477,7 +518,9 @@ describe('EscalationsService', () => {
     it('measures stop-to-notified, not stop-to-detected', async () => {
       // The definition VISION §10 actually gives: "the elapsed time between a
       // run ceasing to make progress and a human being informed."
-      await service.markDelivered('escalation-1', 'push', { deliveredAt: DELIVERED_AT });
+      await service.markDelivered('escalation-1', 'push', {
+        deliveredAt: DELIVERED_AT,
+      });
 
       expect(prisma.rows[0].notifyLatencyMs).toBe(7_000);
     });
@@ -490,7 +533,9 @@ describe('EscalationsService', () => {
     });
 
     it('records the transport and its receipt', async () => {
-      await service.markDelivered('escalation-1', 'push', { receiptId: 'rcpt_1' });
+      await service.markDelivered('escalation-1', 'push', {
+        receiptId: 'rcpt_1',
+      });
 
       expect(prisma.rows[0]).toMatchObject({
         status: 'delivered',
@@ -503,7 +548,9 @@ describe('EscalationsService', () => {
     it('does not restart the clock on a redelivery', async () => {
       // The FIRST delivery is the one that informed the operator. A transport
       // that redelivers must not improve the metric by doing so.
-      await service.markDelivered('escalation-1', 'push', { deliveredAt: DELIVERED_AT });
+      await service.markDelivered('escalation-1', 'push', {
+        deliveredAt: DELIVERED_AT,
+      });
 
       await service.markDelivered('escalation-1', 'email', {
         deliveredAt: new Date(STOPPED_AT.getTime() + 4 * 60 * 60_000),
@@ -515,7 +562,9 @@ describe('EscalationsService', () => {
     });
 
     it('closes the trace with the same work order it opened', async () => {
-      await service.markDelivered('escalation-1', 'push', { deliveredAt: DELIVERED_AT });
+      await service.markDelivered('escalation-1', 'push', {
+        deliveredAt: DELIVERED_AT,
+      });
 
       expect(metrics.recordNotified).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -529,9 +578,9 @@ describe('EscalationsService', () => {
     });
 
     it('404s on an escalation that does not exist', async () => {
-      await expect(service.markDelivered('escalation-404', 'push')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.markDelivered('escalation-404', 'push'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -556,7 +605,11 @@ describe('EscalationsService', () => {
       // a perfect number on the cockpit for a system that has never worked.
       const summary = await service.latencySummary();
 
-      expect(summary.notified).toMatchObject({ count: 0, p50Ms: null, maxMs: null });
+      expect(summary.notified).toMatchObject({
+        count: 0,
+        p50Ms: null,
+        maxMs: null,
+      });
       expect(summary.detected).toMatchObject({ count: 0, p50Ms: null });
     });
 
@@ -566,7 +619,11 @@ describe('EscalationsService', () => {
 
       const summary = await service.latencySummary();
 
-      expect(summary.notified).toMatchObject({ count: 2, p50Ms: 7_000, maxMs: 9_000 });
+      expect(summary.notified).toMatchObject({
+        count: 2,
+        p50Ms: 7_000,
+        maxMs: 9_000,
+      });
     });
 
     it('keeps stop-to-noticed as a SEPARATE figure', async () => {
@@ -640,9 +697,16 @@ describe('EscalationsService', () => {
   describe('per-run queryability', () => {
     it('filters escalations to one run', async () => {
       // The aggregate says the fleet is slow; this says which run it was.
-      await service.raiseFrom([escalateAction(), escalateAction({ runId: RUN_B })]);
+      await service.raiseFrom([
+        escalateAction(),
+        escalateAction({ runId: RUN_B }),
+      ]);
 
-      const result = await service.list({ page: 1, pageSize: 10, runId: RUN_B });
+      const result = await service.list({
+        page: 1,
+        pageSize: 10,
+        runId: RUN_B,
+      });
 
       expect(result.items.map((item) => item.runId)).toEqual([RUN_B]);
     });
@@ -675,7 +739,11 @@ describe('EscalationsService', () => {
     it('filters to what is still outstanding', async () => {
       await service.acknowledge('escalation-1', 'user-1');
 
-      const result = await service.list({ page: 1, pageSize: 10, unresolvedOnly: true });
+      const result = await service.list({
+        page: 1,
+        pageSize: 10,
+        unresolvedOnly: true,
+      });
 
       expect(result.items.map((item) => item.id)).toEqual(['escalation-2']);
     });
@@ -683,7 +751,11 @@ describe('EscalationsService', () => {
     it('filters by an explicit status', async () => {
       await service.acknowledge('escalation-1', 'user-1');
 
-      const result = await service.list({ page: 1, pageSize: 10, status: 'acknowledged' });
+      const result = await service.list({
+        page: 1,
+        pageSize: 10,
+        status: 'acknowledged',
+      });
 
       expect(result.items.map((item) => item.id)).toEqual(['escalation-1']);
     });

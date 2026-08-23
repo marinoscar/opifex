@@ -31,7 +31,9 @@ describe('detectLoop', () => {
     );
 
     it('names why it is unavailable', () => {
-      expect(detectLoop('none', []).reason).toContain('per-tool progress events');
+      expect(detectLoop('none', []).reason).toContain(
+        'per-tool progress events',
+      );
     });
 
     it('is available for a full-fidelity runner', () => {
@@ -41,7 +43,10 @@ describe('detectLoop', () => {
 
   describe('detecting a loop', () => {
     it('fires on the threshold number of consecutive repeats', () => {
-      const verdict = detectLoop('full', repeated('Bash:sha256:abc', DEFAULT_LOOP_REPEATS));
+      const verdict = detectLoop(
+        'full',
+        repeated('Bash:sha256:abc', DEFAULT_LOOP_REPEATS),
+      );
 
       expect(verdict.looping).toBe(true);
       expect(verdict.repeats).toBe(DEFAULT_LOOP_REPEATS);
@@ -58,14 +63,21 @@ describe('detectLoop', () => {
     });
 
     it('does not fire one repeat below the threshold', () => {
-      const verdict = detectLoop('full', repeated('Bash:x', DEFAULT_LOOP_REPEATS - 1));
+      const verdict = detectLoop(
+        'full',
+        repeated('Bash:x', DEFAULT_LOOP_REPEATS - 1),
+      );
 
       expect(verdict.looping).toBe(false);
     });
 
     it('is tunable', () => {
-      expect(detectLoop('full', repeated('Bash:x', 3), { repeats: 3 }).looping).toBe(true);
-      expect(detectLoop('full', repeated('Bash:x', 3), { repeats: 4 }).looping).toBe(false);
+      expect(
+        detectLoop('full', repeated('Bash:x', 3), { repeats: 3 }).looping,
+      ).toBe(true);
+      expect(
+        detectLoop('full', repeated('Bash:x', 3), { repeats: 4 }).looping,
+      ).toBe(false);
     });
   });
 
@@ -89,7 +101,10 @@ describe('detectLoop', () => {
 
     it('spares a three-step cycle', () => {
       const cycle = signatures(
-        ...Array.from({ length: 30 }, (_, i) => ['Read:a', 'Edit:a', 'Bash:test'][i % 3]),
+        ...Array.from(
+          { length: 30 },
+          (_, i) => ['Read:a', 'Edit:a', 'Bash:test'][i % 3],
+        ),
       );
 
       expect(detectLoop('full', cycle).looping).toBe(false);
@@ -98,7 +113,10 @@ describe('detectLoop', () => {
     it('spares a run that repeated a signature and then MOVED ON', () => {
       // A loop that has since broken is not a loop. Killing a run for a
       // pattern it already escaped destroys work for nothing.
-      const observations = [...repeated('Bash:stuck', 10), ...signatures('Edit:progress.ts')];
+      const observations = [
+        ...repeated('Bash:stuck', 10),
+        ...signatures('Edit:progress.ts'),
+      ];
 
       expect(detectLoop('full', observations).looping).toBe(false);
     });
@@ -122,7 +140,10 @@ describe('detectLoop', () => {
     it('only examines recent events', () => {
       // An unbounded scan grows with the run, and a signature repeated an hour
       // ago is not evidence about what the run is doing now.
-      const observations = [...repeated('Bash:old', 20), ...signatures('Edit:a', 'Edit:b')];
+      const observations = [
+        ...repeated('Bash:old', 20),
+        ...signatures('Edit:a', 'Edit:b'),
+      ];
 
       const verdict = detectLoop('full', observations, { window: 2 });
 
@@ -131,9 +152,14 @@ describe('detectLoop', () => {
     });
 
     it('detects a loop inside the window', () => {
-      const observations = [...signatures('Edit:a'), ...repeated('Bash:stuck', 10)];
+      const observations = [
+        ...signatures('Edit:a'),
+        ...repeated('Bash:stuck', 10),
+      ];
 
-      expect(detectLoop('full', observations, { window: 10 }).looping).toBe(true);
+      expect(detectLoop('full', observations, { window: 10 }).looping).toBe(
+        true,
+      );
     });
   });
 
@@ -154,7 +180,9 @@ describe('detectLoop', () => {
     it('is deterministic', () => {
       const observations = repeated('Bash:x', 8);
 
-      expect(detectLoop('full', observations)).toEqual(detectLoop('full', observations));
+      expect(detectLoop('full', observations)).toEqual(
+        detectLoop('full', observations),
+      );
     });
 
     it('does not mutate its input', () => {
@@ -178,26 +206,35 @@ describe('detectLoop', () => {
       }
     });
     describe('when the run stopped making real progress (#59)', () => {
-    it('reports the FIRST repeat of the streak, not the newest event', () => {
-      // A looping run is not silent — events keep arriving — so measuring
-      // detection latency from its last event would report a few seconds for
-      // a run that has been going nowhere for an hour.
-      // Distinct timestamps throughout, so returning the event BEFORE the
-      // streak would fail rather than coincide.
-      const observations = signatures('Bash:setup', ...Array(8).fill('Bash:x'));
+      it('reports the FIRST repeat of the streak, not the newest event', () => {
+        // A looping run is not silent — events keep arriving — so measuring
+        // detection latency from its last event would report a few seconds for
+        // a run that has been going nowhere for an hour.
+        // Distinct timestamps throughout, so returning the event BEFORE the
+        // streak would fail rather than coincide.
+        const observations = signatures(
+          'Bash:setup',
+          ...Array(8).fill('Bash:x'),
+        );
 
-      const verdict = detectLoop('full', observations);
+        const verdict = detectLoop('full', observations);
 
-      expect(verdict.startedRepeatingAt).toEqual(observations[1].occurredAt);
-      expect(verdict.startedRepeatingAt).not.toEqual(observations[0].occurredAt);
-    });
+        expect(verdict.startedRepeatingAt).toEqual(observations[1].occurredAt);
+        expect(verdict.startedRepeatingAt).not.toEqual(
+          observations[0].occurredAt,
+        );
+      });
 
-    it('reports nothing when there is no loop to date', () => {
-      // Including when the check could not run at all: a time for a streak
-      // that was never established would be an invented measurement.
-      expect(detectLoop('full', repeated('Bash:x', 2)).startedRepeatingAt).toBeNull();
-      expect(detectLoop('none', repeated('Bash:x', 50)).startedRepeatingAt).toBeNull();
+      it('reports nothing when there is no loop to date', () => {
+        // Including when the check could not run at all: a time for a streak
+        // that was never established would be an invented measurement.
+        expect(
+          detectLoop('full', repeated('Bash:x', 2)).startedRepeatingAt,
+        ).toBeNull();
+        expect(
+          detectLoop('none', repeated('Bash:x', 50)).startedRepeatingAt,
+        ).toBeNull();
+      });
     });
   });
-});
 });

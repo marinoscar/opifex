@@ -32,12 +32,14 @@ describe('TransformInterceptor', () => {
       const testData = { id: 1, name: 'test' };
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result).toHaveProperty('data');
-        expect(result).toHaveProperty('meta');
-        expect(result.data).toEqual(testData);
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result).toHaveProperty('data');
+          expect(result).toHaveProperty('meta');
+          expect(result.data).toEqual(testData);
+          done();
+        });
     });
 
     it('should add timestamp to meta', (done) => {
@@ -47,19 +49,21 @@ describe('TransformInterceptor', () => {
 
       const beforeTime = new Date().toISOString();
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.meta).toBeDefined();
-        expect(result.meta!.timestamp).toBeDefined();
-        expect(typeof result.meta!.timestamp).toBe('string');
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.meta).toBeDefined();
+          expect(result.meta!.timestamp).toBeDefined();
+          expect(typeof result.meta!.timestamp).toBe('string');
 
-        // Verify timestamp is valid ISO string
-        expect(() => new Date(result.meta!.timestamp)).not.toThrow();
+          // Verify timestamp is valid ISO string
+          expect(() => new Date(result.meta!.timestamp)).not.toThrow();
 
-        const afterTime = new Date().toISOString();
-        expect(result.meta!.timestamp >= beforeTime).toBe(true);
-        expect(result.meta!.timestamp <= afterTime).toBe(true);
-        done();
-      });
+          const afterTime = new Date().toISOString();
+          expect(result.meta!.timestamp >= beforeTime).toBe(true);
+          expect(result.meta!.timestamp <= afterTime).toBe(true);
+          done();
+        });
     });
 
     it('should preserve original response data unchanged', (done) => {
@@ -74,13 +78,15 @@ describe('TransformInterceptor', () => {
       };
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toEqual(testData);
-        expect(result.data.id).toBe(123);
-        expect(result.data.nested.field).toBe('value');
-        expect(result.data.nested.array).toEqual([1, 2, 3]);
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toEqual(testData);
+          expect(result.data.id).toBe(123);
+          expect(result.data.nested.field).toBe('value');
+          expect(result.data.nested.array).toEqual([1, 2, 3]);
+          done();
+        });
     });
   });
 
@@ -89,57 +95,67 @@ describe('TransformInterceptor', () => {
       const context = createMockContext();
       const callHandler = createMockCallHandler(null);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result).toHaveProperty('data');
-        expect(result.data).toBeNull();
-        expect(result.meta).toBeDefined();
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result).toHaveProperty('data');
+          expect(result.data).toBeNull();
+          expect(result.meta).toBeDefined();
+          done();
+        });
     });
 
     it('should handle undefined responses', (done) => {
       const context = createMockContext();
       const callHandler = createMockCallHandler(undefined);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result).toHaveProperty('data');
-        expect(result.data).toBeUndefined();
-        expect(result.meta).toBeDefined();
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result).toHaveProperty('data');
+          expect(result.data).toBeUndefined();
+          expect(result.meta).toBeDefined();
+          done();
+        });
     });
 
     it('should handle empty string responses', (done) => {
       const context = createMockContext();
       const callHandler = createMockCallHandler('');
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toBe('');
-        expect(result.meta).toBeDefined();
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toBe('');
+          expect(result.meta).toBeDefined();
+          done();
+        });
     });
 
     it('should handle zero number responses', (done) => {
       const context = createMockContext();
       const callHandler = createMockCallHandler(0);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toBe(0);
-        expect(result.meta).toBeDefined();
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toBe(0);
+          expect(result.meta).toBeDefined();
+          done();
+        });
     });
 
     it('should handle false boolean responses', (done) => {
       const context = createMockContext();
       const callHandler = createMockCallHandler(false);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toBe(false);
-        expect(result.meta).toBeDefined();
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toBe(false);
+          expect(result.meta).toBeDefined();
+          done();
+        });
     });
   });
 
@@ -148,12 +164,14 @@ describe('TransformInterceptor', () => {
       const context = createMockContext();
       const callHandler = createMockCallHandler([]);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toEqual([]);
-        expect(Array.isArray(result.data)).toBe(true);
-        expect(result.meta).toBeDefined();
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toEqual([]);
+          expect(Array.isArray(result.data)).toBe(true);
+          expect(result.meta).toBeDefined();
+          done();
+        });
     });
 
     it('should handle array with primitive values', (done) => {
@@ -161,11 +179,13 @@ describe('TransformInterceptor', () => {
       const testData = [1, 2, 3, 4, 5];
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toEqual(testData);
-        expect(Array.isArray(result.data)).toBe(true);
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toEqual(testData);
+          expect(Array.isArray(result.data)).toBe(true);
+          done();
+        });
     });
 
     it('should handle array with objects', (done) => {
@@ -176,23 +196,31 @@ describe('TransformInterceptor', () => {
       ];
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toEqual(testData);
-        expect(result.data[0].name).toBe('Alice');
-        expect(result.data[1].name).toBe('Bob');
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toEqual(testData);
+          expect(result.data[0].name).toBe('Alice');
+          expect(result.data[1].name).toBe('Bob');
+          done();
+        });
     });
 
     it('should handle nested arrays', (done) => {
       const context = createMockContext();
-      const testData = [[1, 2], [3, 4], [5, 6]];
+      const testData = [
+        [1, 2],
+        [3, 4],
+        [5, 6],
+      ];
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toEqual(testData);
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toEqual(testData);
+          done();
+        });
     });
   });
 
@@ -212,11 +240,13 @@ describe('TransformInterceptor', () => {
       };
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toEqual(testData);
-        expect(result.data.level1.level2.level3.level4.value).toBe('deep');
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toEqual(testData);
+          expect(result.data.level1.level2.level3.level4.value).toBe('deep');
+          done();
+        });
     });
 
     it('should handle objects with mixed types', (done) => {
@@ -231,10 +261,12 @@ describe('TransformInterceptor', () => {
       };
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toEqual(testData);
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toEqual(testData);
+          done();
+        });
     });
 
     it('should handle circular reference safety (no infinite loop)', (done) => {
@@ -243,10 +275,12 @@ describe('TransformInterceptor', () => {
       const callHandler = createMockCallHandler(testData);
 
       // This should complete without hanging
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toEqual(testData);
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toEqual(testData);
+          done();
+        });
     });
   });
 
@@ -259,12 +293,14 @@ describe('TransformInterceptor', () => {
       };
       const callHandler = createMockCallHandler(alreadyWrapped);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result).toEqual(alreadyWrapped);
-        // Should not have nested data.data
-        expect(result.data).not.toHaveProperty('data');
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result).toEqual(alreadyWrapped);
+          // Should not have nested data.data
+          expect(result.data).not.toHaveProperty('data');
+          done();
+        });
     });
 
     it('should return as-is when response has data property', (done) => {
@@ -278,12 +314,14 @@ describe('TransformInterceptor', () => {
       };
       const callHandler = createMockCallHandler(customResponse);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result).toBe(customResponse);
-        expect(result.data).toEqual([1, 2, 3]);
-        expect(result.meta!.total).toBe(3);
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result).toBe(customResponse);
+          expect(result.data).toEqual([1, 2, 3]);
+          expect(result.meta!.total).toBe(3);
+          done();
+        });
     });
 
     it('should handle response with data property but no meta', (done) => {
@@ -293,10 +331,12 @@ describe('TransformInterceptor', () => {
       };
       const callHandler = createMockCallHandler(partialWrapped);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result).toEqual(partialWrapped);
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result).toEqual(partialWrapped);
+          done();
+        });
     });
   });
 
@@ -306,25 +346,31 @@ describe('TransformInterceptor', () => {
       const testData = { timestamp: new Date('2024-01-01') };
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data.timestamp).toBeInstanceOf(Date);
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data.timestamp).toBeInstanceOf(Date);
+          done();
+        });
     });
 
     it('should handle responses with functions (though unusual)', (done) => {
       const context = createMockContext();
       const testData = {
         value: 'test',
-        method: function() { return 'function'; },
+        method: function () {
+          return 'function';
+        },
       };
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data.value).toBe('test');
-        expect(typeof result.data.method).toBe('function');
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data.value).toBe('test');
+          expect(typeof result.data.method).toBe('function');
+          done();
+        });
     });
 
     it('should handle Map objects', (done) => {
@@ -332,10 +378,12 @@ describe('TransformInterceptor', () => {
       const testData = new Map([['key', 'value']]);
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toBeInstanceOf(Map);
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toBeInstanceOf(Map);
+          done();
+        });
     });
 
     it('should handle Set objects', (done) => {
@@ -343,10 +391,12 @@ describe('TransformInterceptor', () => {
       const testData = new Set([1, 2, 3]);
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toBeInstanceOf(Set);
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toBeInstanceOf(Set);
+          done();
+        });
     });
   });
 
@@ -356,11 +406,13 @@ describe('TransformInterceptor', () => {
       const testData = 'plain text response';
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toBe(testData);
-        expect(result.meta).toBeDefined();
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toBe(testData);
+          expect(result.meta).toBeDefined();
+          done();
+        });
     });
 
     it('should wrap number responses', (done) => {
@@ -368,11 +420,13 @@ describe('TransformInterceptor', () => {
       const testData = 42;
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toBe(42);
-        expect(result.meta).toBeDefined();
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toBe(42);
+          expect(result.meta).toBeDefined();
+          done();
+        });
     });
 
     it('should wrap boolean responses', (done) => {
@@ -380,11 +434,13 @@ describe('TransformInterceptor', () => {
       const testData = true;
       const callHandler = createMockCallHandler(testData);
 
-      interceptor.intercept(context, callHandler).subscribe((result: ApiResponse<any>) => {
-        expect(result.data).toBe(true);
-        expect(result.meta).toBeDefined();
-        done();
-      });
+      interceptor
+        .intercept(context, callHandler)
+        .subscribe((result: ApiResponse<any>) => {
+          expect(result.data).toBe(true);
+          expect(result.meta).toBeDefined();
+          done();
+        });
     });
   });
 

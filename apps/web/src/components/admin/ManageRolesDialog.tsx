@@ -51,7 +51,11 @@ export interface ManageRolesDialogProps {
 
 const EMPTY_ROLES_MESSAGE = 'User must have at least one role';
 
-export function ManageRolesDialog({ user, onClose, onSave }: ManageRolesDialogProps) {
+export function ManageRolesDialog({
+  user,
+  onClose,
+  onSave,
+}: ManageRolesDialogProps) {
   const [selected, setSelected] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +73,9 @@ export function ManageRolesDialog({ user, onClose, onSave }: ManageRolesDialogPr
 
   const toggle = (role: string) => {
     setSelected((current) =>
-      current.includes(role) ? current.filter((r) => r !== role) : [...current, role],
+      current.includes(role)
+        ? current.filter((r) => r !== role)
+        : [...current, role],
     );
   };
 
@@ -91,7 +97,12 @@ export function ManageRolesDialog({ user, onClose, onSave }: ManageRolesDialogPr
   };
 
   return (
-    <Dialog open={Boolean(user)} onClose={saving ? undefined : onClose} maxWidth="xs" fullWidth>
+    <Dialog
+      open={Boolean(user)}
+      onClose={saving ? undefined : onClose}
+      maxWidth="xs"
+      fullWidth
+    >
       <DialogTitle>Manage roles</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
@@ -134,7 +145,11 @@ export function ManageRolesDialog({ user, onClose, onSave }: ManageRolesDialogPr
         <Button onClick={onClose} disabled={saving}>
           Cancel
         </Button>
-        <Button variant="contained" onClick={handleSave} disabled={isEmpty || saving}>
+        <Button
+          variant="contained"
+          onClick={handleSave}
+          disabled={isEmpty || saving}
+        >
           {saving ? 'Saving…' : 'Save roles'}
         </Button>
       </DialogActions>

@@ -55,11 +55,7 @@ export function buildOpenApiConfig(version: string = resolveApiVersion()) {
     // so a schema-validating consumer (and Spectral) rightly fails on them.
     // Scalar renders 3.1 natively.
     .setOpenAPIVersion('3.1.0')
-    .setContact(
-      'OPIFEX',
-      'https://github.com/marinoscar/opifex',
-      '',
-    )
+    .setContact('OPIFEX', 'https://github.com/marinoscar/opifex', '')
     .setExternalDoc(
       'Architecture and operations documentation',
       'https://github.com/marinoscar/opifex/tree/main/docs',
@@ -140,7 +136,9 @@ export function createOpenApiDocument(app: INestApplication): OpenAPIObject {
  * The post-processing passes, split out from `createOpenApiDocument` so they can
  * be exercised against a hand-built document without booting an application.
  */
-export function enrichOpenApiDocument<T extends MutableDocument>(document: T): T {
+export function enrichOpenApiDocument<T extends MutableDocument>(
+  document: T,
+): T {
   applyRbacDocs(document);
   applyAlternativeAuthSchemes(document);
   // Order matters: the envelope pass targets 2xx JSON responses only, and the
@@ -165,7 +163,10 @@ export function enrichOpenApiDocument<T extends MutableDocument>(document: T): T
  * while dropping the noise a generator would otherwise bake into every method
  * name. Uniqueness is asserted in `test/openapi/openapi-document.spec.ts`.
  */
-export function buildOperationId(controllerKey: string, methodKey: string): string {
+export function buildOperationId(
+  controllerKey: string,
+  methodKey: string,
+): string {
   const namespace = controllerKey.replace(/Controller$/, '');
   const lowerFirst = namespace.charAt(0).toLowerCase() + namespace.slice(1);
   return `${lowerFirst}_${methodKey}`;
@@ -246,7 +247,9 @@ function applyDefaultErrorResponse(document: MutableDocument): void {
         'Error. Every failure is rendered by the shared exception filter into this envelope; ' +
         'endpoint-specific data appears under `details`.',
       content: {
-        'application/json': { schema: { $ref: '#/components/schemas/ErrorDto' } },
+        'application/json': {
+          schema: { $ref: '#/components/schemas/ErrorDto' },
+        },
       },
     };
   });

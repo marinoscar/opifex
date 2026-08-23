@@ -172,7 +172,9 @@ describe('UserMenu', () => {
       await user.click(screen.getByRole('button'));
 
       await waitFor(() => {
-        expect(screen.getByRole('menuitem', { name: /settings/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('menuitem', { name: /settings/i }),
+        ).toBeInTheDocument();
       });
     });
 
@@ -184,7 +186,9 @@ describe('UserMenu', () => {
       await user.click(screen.getByRole('button'));
 
       await waitFor(() => {
-        expect(screen.getByRole('menuitem', { name: /logout/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('menuitem', { name: /logout/i }),
+        ).toBeInTheDocument();
       });
     });
 
@@ -216,8 +220,12 @@ describe('UserMenu', () => {
       await waitFor(() => {
         expect(screen.getByRole('menu')).toBeInTheDocument();
       });
-      expect(screen.queryByRole('menuitem', { name: 'System Settings' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('menuitem', { name: 'User Management' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('menuitem', { name: 'System Settings' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('menuitem', { name: 'User Management' }),
+      ).not.toBeInTheDocument();
     });
 
     it('should NOT show system settings for non-admin users', async () => {
@@ -231,7 +239,9 @@ describe('UserMenu', () => {
         expect(screen.getByRole('menu')).toBeInTheDocument();
       });
 
-      expect(screen.queryByRole('menuitem', { name: /system settings/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('menuitem', { name: /system settings/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -244,7 +254,9 @@ describe('UserMenu', () => {
       await user.click(screen.getByRole('button'));
 
       await waitFor(() => {
-        expect(screen.getByRole('menuitem', { name: /settings/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('menuitem', { name: /settings/i }),
+        ).toBeInTheDocument();
       });
 
       const settingsItem = screen.getByRole('menuitem', { name: /settings/i });
@@ -266,7 +278,9 @@ describe('UserMenu', () => {
       await user.click(screen.getByRole('button'));
 
       await waitFor(() => {
-        expect(screen.getByRole('menuitem', { name: /logout/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('menuitem', { name: /logout/i }),
+        ).toBeInTheDocument();
       });
 
       const logoutItem = screen.getByRole('menuitem', { name: /logout/i });
@@ -288,7 +302,9 @@ describe('UserMenu', () => {
       await user.click(screen.getByRole('button'));
 
       await waitFor(() => {
-        const settingsItem = screen.getByRole('menuitem', { name: /settings/i });
+        const settingsItem = screen.getByRole('menuitem', {
+          name: /settings/i,
+        });
         expect(settingsItem).toBeInTheDocument();
       });
     });
@@ -382,20 +398,26 @@ describe('UserMenu', () => {
     it('offers exactly the account section, whatever the user holds', async () => {
       // A FIXED SHAPE — identity header, User Settings, Logout — for every
       // permission set. An avatar menu is about the account, not the app.
-      const accountLabels = DESTINATIONS.filter((d) => d.section === 'account').map(
-        (d) => d.label,
-      );
+      const accountLabels = DESTINATIONS.filter(
+        (d) => d.section === 'account',
+      ).map((d) => d.label);
 
       for (const granted of [[], ['users:read', 'system_settings:read']]) {
         setPermissions(granted, granted.length > 0);
-        const { unmount } = render(<UserMenu />, { wrapperOptions: { user: mockAdminUser } });
+        const { unmount } = render(<UserMenu />, {
+          wrapperOptions: { user: mockAdminUser },
+        });
         await openMenu();
 
         for (const label of accountLabels) {
-          expect(screen.getByRole('menuitem', { name: label })).toBeInTheDocument();
+          expect(
+            screen.getByRole('menuitem', { name: label }),
+          ).toBeInTheDocument();
         }
         // The account destinations plus Logout, and nothing invented locally.
-        expect(screen.getAllByRole('menuitem')).toHaveLength(accountLabels.length + 1);
+        expect(screen.getAllByRole('menuitem')).toHaveLength(
+          accountLabels.length + 1,
+        );
 
         unmount();
       }
@@ -407,7 +429,9 @@ describe('UserMenu', () => {
       render(<UserMenu />, { wrapperOptions: { user: mockAdminUser } });
       await openMenu();
 
-      for (const destination of DESTINATIONS.filter((d) => d.section !== 'account')) {
+      for (const destination of DESTINATIONS.filter(
+        (d) => d.section !== 'account',
+      )) {
         expect(
           screen.queryByRole('menuitem', { name: destination.label }),
           `${destination.key} should not be in the avatar menu`,
@@ -422,7 +446,9 @@ describe('UserMenu', () => {
       await openMenu();
 
       const settings = DESTINATIONS.find((d) => d.key === 'settings')!;
-      expect(screen.getByRole('menuitem', { name: settings.label })).toBeInTheDocument();
+      expect(
+        screen.getByRole('menuitem', { name: settings.label }),
+      ).toBeInTheDocument();
     });
   });
 });

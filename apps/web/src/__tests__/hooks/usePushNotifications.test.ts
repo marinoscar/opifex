@@ -17,7 +17,8 @@ vi.mock('../../services/api', () => ({
 }));
 
 const CONFIG: NotificationConfig = {
-  vapidPublicKey: 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkFZwuiKmpBpMWvcxYVbGGmkTBBUuRQGSlxAOKmR1IQ',
+  vapidPublicKey:
+    'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkFZwuiKmpBpMWvcxYVbGGmkTBBUuRQGSlxAOKmR1IQ',
   pushConfigured: true,
   fallbackConfigured: false,
 };
@@ -61,10 +62,17 @@ function stubBrowser(options: { existingEndpoint?: string | null } = {}) {
     serviceWorker,
     userAgent: 'TestBrowser/1.0',
   });
-  vi.stubGlobal('Notification', { requestPermission: vi.fn().mockResolvedValue('granted') });
-  Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
-  (window as unknown as Record<string, unknown>).PushManager = function PushManager() {};
-  (window as unknown as Record<string, unknown>).Notification = globalThis.Notification;
+  vi.stubGlobal('Notification', {
+    requestPermission: vi.fn().mockResolvedValue('granted'),
+  });
+  Object.defineProperty(window, 'isSecureContext', {
+    value: true,
+    configurable: true,
+  });
+  (window as unknown as Record<string, unknown>).PushManager =
+    function PushManager() {};
+  (window as unknown as Record<string, unknown>).Notification =
+    globalThis.Notification;
 
   return { serviceWorker, registration, subscription };
 }
@@ -72,7 +80,10 @@ function stubBrowser(options: { existingEndpoint?: string | null } = {}) {
 describe('usePushNotifications', () => {
   beforeEach(() => {
     vi.mocked(api.getNotificationConfig).mockResolvedValue(CONFIG);
-    vi.mocked(api.getPushSubscriptions).mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(api.getPushSubscriptions).mockResolvedValue({
+      items: [],
+      total: 0,
+    });
     vi.mocked(api.createPushSubscription).mockResolvedValue(DEVICE);
     vi.mocked(api.deletePushSubscription).mockResolvedValue(undefined);
   });
@@ -88,7 +99,10 @@ describe('usePushNotifications', () => {
       // sends them to buy a different phone. Report the first thing they
       // would actually have to fix.
       stubBrowser();
-      Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true });
+      Object.defineProperty(window, 'isSecureContext', {
+        value: false,
+        configurable: true,
+      });
 
       const { result } = renderHook(() => usePushNotifications());
 
@@ -97,7 +111,10 @@ describe('usePushNotifications', () => {
     });
 
     it('reports a browser with no Push API', async () => {
-      Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
+      Object.defineProperty(window, 'isSecureContext', {
+        value: true,
+        configurable: true,
+      });
       vi.stubGlobal('navigator', { userAgent: 'Old/1.0' });
       delete (window as unknown as Record<string, unknown>).PushManager;
 
@@ -119,7 +136,9 @@ describe('usePushNotifications', () => {
 
       const { result } = renderHook(() => usePushNotifications());
 
-      await waitFor(() => expect(result.current.unsupportedReason).toBe('server'));
+      await waitFor(() =>
+        expect(result.current.unsupportedReason).toBe('server'),
+      );
     });
 
     it('reports a denied permission, which only the user can undo', async () => {
@@ -190,7 +209,8 @@ describe('usePushNotifications', () => {
       const { serviceWorker, registration } = stubBrowser();
       let ready = false;
       Object.defineProperty(serviceWorker, 'ready', {
-        get: () => Promise.resolve(registration).then((r) => ((ready = true), r)),
+        get: () =>
+          Promise.resolve(registration).then((r) => ((ready = true), r)),
       });
 
       const { result } = renderHook(() => usePushNotifications());
@@ -222,7 +242,9 @@ describe('usePushNotifications', () => {
       // because a different phone is would be the worst possible lie here.
       stubBrowser({ existingEndpoint: null });
       vi.mocked(api.getPushSubscriptions).mockResolvedValue({
-        items: [{ ...DEVICE, endpoint: 'https://push.example/someone-elses-phone' }],
+        items: [
+          { ...DEVICE, endpoint: 'https://push.example/someone-elses-phone' },
+        ],
         total: 1,
       });
 
@@ -235,7 +257,9 @@ describe('usePushNotifications', () => {
 
     it('surfaces a failure instead of looking like it worked', async () => {
       stubBrowser();
-      vi.mocked(api.createPushSubscription).mockRejectedValue(new Error('Server said no'));
+      vi.mocked(api.createPushSubscription).mockRejectedValue(
+        new Error('Server said no'),
+      );
 
       const { result } = renderHook(() => usePushNotifications());
       await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -254,8 +278,13 @@ describe('usePushNotifications', () => {
       // pushing to a dead endpoint until the push service reported it gone —
       // a stretch of time in which every escalation counts a failure that is
       // nobody's fault.
-      const { subscription } = stubBrowser({ existingEndpoint: 'https://push.example/abc' });
-      vi.mocked(api.getPushSubscriptions).mockResolvedValue({ items: [DEVICE], total: 1 });
+      const { subscription } = stubBrowser({
+        existingEndpoint: 'https://push.example/abc',
+      });
+      vi.mocked(api.getPushSubscriptions).mockResolvedValue({
+        items: [DEVICE],
+        total: 1,
+      });
 
       const { result } = renderHook(() => usePushNotifications());
       await waitFor(() => expect(result.current.isSubscribed).toBe(true));
@@ -273,7 +302,10 @@ describe('usePushNotifications', () => {
   describe('removing another device', () => {
     it('deletes it and refreshes the list', async () => {
       stubBrowser();
-      vi.mocked(api.getPushSubscriptions).mockResolvedValue({ items: [DEVICE], total: 1 });
+      vi.mocked(api.getPushSubscriptions).mockResolvedValue({
+        items: [DEVICE],
+        total: 1,
+      });
 
       const { result } = renderHook(() => usePushNotifications());
       await waitFor(() => expect(result.current.isLoading).toBe(false));

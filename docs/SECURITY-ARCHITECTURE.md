@@ -5,6 +5,7 @@
 This document provides a comprehensive overview of the security architecture for OPIFEX. The system implements defense-in-depth security through multiple layers: OAuth 2.0 authentication with Google, JWT-based session management with token rotation, email allowlist access control, Role-Based Access Control (RBAC), and comprehensive audit logging.
 
 **Key Security Technologies:**
+
 - **Authentication**: OAuth 2.0 / OpenID Connect (Google)
 - **Access Control**: Email allowlist restricts access to pre-authorized users
 - **Session Management**: JWT access tokens + HttpOnly refresh tokens with rotation
@@ -51,10 +52,12 @@ sequenceDiagram
 ```
 
 **OAuth Endpoints:**
+
 - `GET /api/auth/google` - Initiates OAuth flow, redirects to Google
 - `GET /api/auth/google/callback` - Handles OAuth callback, provisions user, returns tokens
 
 **User Provisioning Logic:**
+
 1. **Allowlist check**: Verify email is in `allowed_emails` table (or matches `INITIAL_ADMIN_EMAIL`)
 2. If not in allowlist, reject login with "Email not authorized" error
 3. Check if user identity exists (provider + subject)
@@ -70,6 +73,7 @@ sequenceDiagram
 9. Generate JWT tokens
 
 **Allowlist Security:**
+
 - Only admins can add/remove emails from the allowlist
 - The `INITIAL_ADMIN_EMAIL` bypasses allowlist check (bootstrap access)
 - Allowlist entries that have been claimed cannot be removed (prevents accidentally removing existing user access)
@@ -78,6 +82,7 @@ sequenceDiagram
 ### JWT Token Structure
 
 **Access Token Payload:**
+
 ```json
 {
   "sub": "user-uuid",
@@ -89,11 +94,13 @@ sequenceDiagram
 ```
 
 **Token Signing:**
+
 - Algorithm: HS256 (HMAC with SHA-256)
 - Secret: `JWT_SECRET` environment variable (minimum 32 characters)
 - Signature validates token integrity and authenticity
 
 **Token Validation Process:**
+
 ```mermaid
 flowchart TD
     A[Incoming Request] --> B{Has Authorization Header?}
@@ -112,6 +119,7 @@ flowchart TD
 ```
 
 **Access Token Validation (JWT Strategy):**
+
 - Verify signature using `JWT_SECRET`
 - Check expiration (`exp` claim)
 - Extract user ID from `sub` claim
@@ -125,19 +133,20 @@ flowchart TD
 
 ### Access Tokens vs Refresh Tokens
 
-| Aspect | Access Token | Refresh Token |
-|--------|--------------|---------------|
-| **Type** | JWT (signed JSON) | Random 32-byte hex string |
-| **Storage (Client)** | Memory only (never localStorage) | HttpOnly cookie |
-| **Storage (Server)** | None (stateless) | SHA256 hash in `refresh_tokens` table |
-| **Lifetime** | 15 minutes (default) | 14 days (default) |
-| **Purpose** | Authorize API requests | Obtain new access tokens |
-| **Exposed to JS** | Yes (needed for Authorization header) | No (HttpOnly prevents access) |
-| **Revocable** | No (stateless, valid until expiry) | Yes (database record can be revoked) |
-| **Rotation** | New token on each refresh | New token on each refresh (old one revoked) |
-| **Attack Surface** | XSS (if stored in localStorage) | CSRF (mitigated by SameSite) |
+| Aspect               | Access Token                          | Refresh Token                               |
+| -------------------- | ------------------------------------- | ------------------------------------------- |
+| **Type**             | JWT (signed JSON)                     | Random 32-byte hex string                   |
+| **Storage (Client)** | Memory only (never localStorage)      | HttpOnly cookie                             |
+| **Storage (Server)** | None (stateless)                      | SHA256 hash in `refresh_tokens` table       |
+| **Lifetime**         | 15 minutes (default)                  | 14 days (default)                           |
+| **Purpose**          | Authorize API requests                | Obtain new access tokens                    |
+| **Exposed to JS**    | Yes (needed for Authorization header) | No (HttpOnly prevents access)               |
+| **Revocable**        | No (stateless, valid until expiry)    | Yes (database record can be revoked)        |
+| **Rotation**         | New token on each refresh             | New token on each refresh (old one revoked) |
+| **Attack Surface**   | XSS (if stored in localStorage)       | CSRF (mitigated by SameSite)                |
 
 **Why This Design:**
+
 - **Short-lived access tokens** minimize damage from token theft (15 min window)
 - **HttpOnly cookies** protect refresh tokens from XSS attacks
 - **Token rotation** limits refresh token reuse and enables reuse detection
@@ -182,6 +191,7 @@ sequenceDiagram
 ```
 
 **Rotation Benefits:**
+
 1. **Reuse Detection**: If a revoked token is used, all tokens are invalidated (indicates theft)
 2. **Limit Exposure**: Each token is single-use, limiting replay attack window
 3. **Audit Trail**: Each refresh creates a database record for security monitoring
@@ -191,11 +201,13 @@ sequenceDiagram
 The system implements refresh token reuse detection to identify potential token theft:
 
 **Attack Scenario:**
+
 1. Attacker steals refresh token from victim
 2. Victim uses token normally (rotates to new token)
 3. Attacker attempts to use old (revoked) token
 
 **Detection & Response:**
+
 ```typescript
 // Check if token is revoked
 if (storedToken.revokedAt) {
@@ -207,6 +219,7 @@ if (storedToken.revokedAt) {
 ```
 
 When a revoked token is used, the system:
+
 1. **Revokes all refresh tokens** for that user across all devices
 2. **Logs a security warning** for monitoring and alerting
 3. **Forces re-authentication** on all sessions
@@ -219,23 +232,24 @@ Refresh tokens are stored in HttpOnly cookies with strict security settings:
 
 ```typescript
 const COOKIE_OPTIONS = {
-  httpOnly: true,                          // Prevents JavaScript access
+  httpOnly: true, // Prevents JavaScript access
   secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-  sameSite: 'lax' as const,               // CSRF protection
-  path: '/api/auth',                      // Limit scope to auth endpoints
-  maxAge: 14 * 24 * 60 * 60 * 1000,      // 14 days in milliseconds
+  sameSite: 'lax' as const, // CSRF protection
+  path: '/api/auth', // Limit scope to auth endpoints
+  maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days in milliseconds
 };
 ```
 
-| Setting | Value | Purpose |
-|---------|-------|---------|
-| `httpOnly` | `true` | Prevents XSS attacks - JavaScript cannot read cookie |
-| `secure` | `true` (prod) | Requires HTTPS - prevents MITM attacks |
-| `sameSite` | `lax` | CSRF protection - blocks cross-site POST requests |
-| `path` | `/api/auth` | Minimizes cookie scope - only sent to auth endpoints |
-| `maxAge` | 14 days | Auto-expires after 14 days |
+| Setting    | Value         | Purpose                                              |
+| ---------- | ------------- | ---------------------------------------------------- |
+| `httpOnly` | `true`        | Prevents XSS attacks - JavaScript cannot read cookie |
+| `secure`   | `true` (prod) | Requires HTTPS - prevents MITM attacks               |
+| `sameSite` | `lax`         | CSRF protection - blocks cross-site POST requests    |
+| `path`     | `/api/auth`   | Minimizes cookie scope - only sent to auth endpoints |
+| `maxAge`   | 14 days       | Auto-expires after 14 days                           |
 
 **SameSite Policy Explanation:**
+
 - `lax`: Cookie sent on same-site requests and top-level navigation (safe GET)
 - Blocks cookie on cross-site POST/PUT/DELETE (prevents CSRF on token refresh)
 - Allows OAuth redirect callbacks (same-site navigation)
@@ -253,6 +267,7 @@ async handleCron() {
 ```
 
 **Cleanup Logic:**
+
 - Runs daily at 3:00 AM
 - Deletes tokens where:
   - `expiresAt < NOW()` (expired)
@@ -306,24 +321,26 @@ erDiagram
 
 ### Permissions Matrix
 
-| Permission | Description | Admin | Contributor | Viewer |
-|------------|-------------|-------|-------------|--------|
-| `system_settings:read` | View system-wide settings | ✅ | ❌ | ❌ |
-| `system_settings:write` | Modify system-wide settings | ✅ | ❌ | ❌ |
-| `users:read` | View user list and details | ✅ | ❌ | ❌ |
-| `users:write` | Modify user accounts (activate/deactivate, assign roles) | ✅ | ❌ | ❌ |
-| `rbac:manage` | Assign roles to users | ✅ | ❌ | ❌ |
-| `allowlist:read` | View allowlisted email addresses | ✅ | ❌ | ❌ |
-| `allowlist:write` | Add/remove emails from allowlist | ✅ | ❌ | ❌ |
-| `user_settings:read` | View own user settings | ✅ | ✅ | ✅ |
-| `user_settings:write` | Modify own user settings | ✅ | ✅ | ✅ |
+| Permission              | Description                                              | Admin | Contributor | Viewer |
+| ----------------------- | -------------------------------------------------------- | ----- | ----------- | ------ |
+| `system_settings:read`  | View system-wide settings                                | ✅    | ❌          | ❌     |
+| `system_settings:write` | Modify system-wide settings                              | ✅    | ❌          | ❌     |
+| `users:read`            | View user list and details                               | ✅    | ❌          | ❌     |
+| `users:write`           | Modify user accounts (activate/deactivate, assign roles) | ✅    | ❌          | ❌     |
+| `rbac:manage`           | Assign roles to users                                    | ✅    | ❌          | ❌     |
+| `allowlist:read`        | View allowlisted email addresses                         | ✅    | ❌          | ❌     |
+| `allowlist:write`       | Add/remove emails from allowlist                         | ✅    | ❌          | ❌     |
+| `user_settings:read`    | View own user settings                                   | ✅    | ✅          | ✅     |
+| `user_settings:write`   | Modify own user settings                                 | ✅    | ✅          | ✅     |
 
 **Role Descriptions:**
+
 - **Admin**: Full system access - manage users, roles, and all settings
 - **Contributor**: Standard user capabilities - manage own settings (ready for future feature expansion)
 - **Viewer**: Read-only access - minimal privileges, manage own settings (default role for new users)
 
 **Default Role Assignment:**
+
 - New users are assigned the `viewer` role automatically
 - First user matching `INITIAL_ADMIN_EMAIL` receives `admin` role (bootstrap)
 - Additional roles can be assigned by admins via `/api/users/{id}` endpoint
@@ -385,6 +402,7 @@ flowchart TD
    - Example: `@Permissions('users:read', 'users:write')` - user needs BOTH
 
 **Why OR for Roles but AND for Permissions?**
+
 - **Roles** are broad categories - "any admin or contributor can access"
 - **Permissions** are specific capabilities - "needs both read AND write"
 - This provides flexibility: `@Auth({ roles: ['admin'], permissions: ['system_settings:write'] })`
@@ -392,6 +410,7 @@ flowchart TD
 ### Using Authorization Decorators
 
 **Combined `@Auth()` Decorator (Recommended):**
+
 ```typescript
 import { Auth } from './auth/decorators';
 import { ROLES, PERMISSIONS } from './common/constants/roles.constants';
@@ -421,6 +440,7 @@ async updateUser() { }
 ```
 
 **Individual Decorators:**
+
 ```typescript
 import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard, RolesGuard } from './auth/guards';
@@ -433,6 +453,7 @@ async getDashboard() { }
 ```
 
 **Public Endpoints:**
+
 ```typescript
 import { Public } from './auth/decorators';
 
@@ -452,6 +473,7 @@ async getProviders() {
 The application implements an **email allowlist** as an additional security layer to restrict access to pre-authorized users only. This feature prevents unauthorized users from gaining access even if they successfully authenticate via OAuth.
 
 **Security Benefits:**
+
 - Prevents open registration - only invited users can access the application
 - Provides administrative control over who can login
 - Tracks when allowlist entries are claimed (first login)
@@ -492,16 +514,17 @@ model AllowedEmail {
 ```
 
 **Key Fields:**
+
 - `email` - Unique constraint ensures no duplicates
 - `claimedById` - Unique constraint (one user per allowlist entry)
 - `claimedAt` - Null = pending, populated = claimed
 
 ### Status Types
 
-| Status | Description | claimedById | claimedAt |
-|--------|-------------|-------------|-----------|
-| **Pending** | Email added but user hasn't logged in yet | `null` | `null` |
-| **Claimed** | User has successfully logged in | User ID | Timestamp |
+| Status      | Description                               | claimedById | claimedAt |
+| ----------- | ----------------------------------------- | ----------- | --------- |
+| **Pending** | Email added but user hasn't logged in yet | `null`      | `null`    |
+| **Claimed** | User has successfully logged in           | User ID     | Timestamp |
 
 ### Admin Operations
 
@@ -512,6 +535,7 @@ model AllowedEmail {
 **Permission Required:** `allowlist:write` (Admin only)
 
 **Request:**
+
 ```json
 {
   "email": "newuser@example.com",
@@ -520,6 +544,7 @@ model AllowedEmail {
 ```
 
 **Business Logic:**
+
 1. Validate email format
 2. Check for duplicates (return 409 if exists)
 3. Create allowlist entry with `addedById` = current admin
@@ -536,12 +561,14 @@ model AllowedEmail {
 **Permission Required:** `allowlist:write` (Admin only)
 
 **Validation:**
+
 - ✅ Can remove if `claimedById` is `null` (pending entry)
 - ❌ Cannot remove if `claimedById` is populated (claimed entry)
 
 **Rationale:** Prevents admins from accidentally removing access for existing users. To revoke access for existing users, use the user deactivation feature instead (`PATCH /api/users/:id` with `isActive: false`).
 
 **Business Logic:**
+
 1. Check if entry is claimed
 2. If claimed, return 400 Bad Request with error message
 3. If pending, delete entry
@@ -556,12 +583,14 @@ model AllowedEmail {
 **Permission Required:** `allowlist:read` (Admin only)
 
 **Query Parameters:**
+
 - `status` - Filter by: `all`, `pending`, `claimed`
 - `search` - Search by email
 - `sortBy` - Sort by: `email`, `addedAt`, `claimedAt`
 - `sortOrder` - Order: `asc`, `desc`
 
 **Response Includes:**
+
 - Email address
 - Status (pending/claimed)
 - Admin who added it
@@ -575,6 +604,7 @@ model AllowedEmail {
 The `INITIAL_ADMIN_EMAIL` environment variable provides a special bypass to enable the first admin to login without being pre-added to the allowlist.
 
 **Bootstrap Logic:**
+
 ```typescript
 async validateOAuthUser(profile: OAuthProfile) {
   const email = profile.email;
@@ -596,6 +626,7 @@ async validateOAuthUser(profile: OAuthProfile) {
 ```
 
 **Why This is Secure:**
+
 - The admin must have access to the `.env` file (server access)
 - Only one email bypasses the check
 - After initial admin logs in, they can add other users to the allowlist
@@ -616,26 +647,29 @@ When a user with a allowlisted email successfully authenticates:
 
 All allowlist operations are logged to the `audit_events` table:
 
-| Action | Actor | Target | Description |
-|--------|-------|--------|-------------|
-| `allowlist.added` | Admin User ID | Allowlist Entry ID | Admin added email to allowlist |
-| `allowlist.removed` | Admin User ID | Allowlist Entry ID | Admin removed pending entry |
-| `allowlist.claimed` | User ID | Allowlist Entry ID | User claimed allowlist entry on first login |
+| Action              | Actor         | Target             | Description                                 |
+| ------------------- | ------------- | ------------------ | ------------------------------------------- |
+| `allowlist.added`   | Admin User ID | Allowlist Entry ID | Admin added email to allowlist              |
+| `allowlist.removed` | Admin User ID | Allowlist Entry ID | Admin removed pending entry                 |
+| `allowlist.claimed` | User ID       | Allowlist Entry ID | User claimed allowlist entry on first login |
 
 ### Security Considerations
 
 **Protection Against:**
+
 - ✅ Unauthorized access - Only allowlisted emails can login
 - ✅ Open registration - No public signup, invitation-only
 - ✅ Accidental removal - Cannot delete claimed entries
 
 **Edge Cases Handled:**
+
 - Email case-insensitivity (normalized to lowercase)
 - Duplicate email prevention (unique constraint)
 - Race condition on claim (unique constraint on claimedById)
 - Orphaned allowlist entries (admin can clean up pending entries)
 
 **Best Practices:**
+
 - Add users to allowlist before sharing OAuth link
 - Use notes field to track why user was allowlisted
 - Regularly audit claimed vs pending entries
@@ -725,6 +759,7 @@ sequenceDiagram
 ```
 
 **Security Checkpoints:**
+
 1. **Nginx Layer**: Security headers, rate limiting (if configured)
 2. **JWT Validation**: Signature, expiration, user exists and active
 3. **Role Check**: User has required role (if specified)
@@ -732,9 +767,10 @@ sequenceDiagram
 5. **Business Logic**: Controller executes with verified user context
 
 **Request Object After Guards:**
+
 ```typescript
 interface FastifyRequest {
-  user: AuthenticatedUser;  // Full user object with relations
+  user: AuthenticatedUser; // Full user object with relations
   requestUser: RequestUser; // Simplified user object
 }
 
@@ -746,7 +782,7 @@ interface AuthenticatedUser {
     role: {
       name: string;
       rolePermissions: Array<{
-        permission: { name: string; }
+        permission: { name: string };
       }>;
     };
   }>;
@@ -755,8 +791,8 @@ interface AuthenticatedUser {
 interface RequestUser {
   id: string;
   email: string;
-  roles: string[];        // ['admin', 'viewer']
-  permissions: string[];  // ['users:read', 'users:write', ...]
+  roles: string[]; // ['admin', 'viewer']
+  permissions: string[]; // ['users:read', 'users:write', ...]
 }
 ```
 
@@ -853,23 +889,24 @@ erDiagram
 
 **Table Descriptions:**
 
-| Table | Purpose | Security Features |
-|-------|---------|-------------------|
-| `users` | Core user accounts | `isActive` flag for soft deletion, prevents auth |
-| `user_identities` | OAuth provider links | `provider + providerSubject` unique constraint |
-| `roles` | Role definitions | Seeded at deployment, rarely modified |
-| `permissions` | Permission definitions | Seeded at deployment, rarely modified |
-| `role_permissions` | Role-to-permission mapping | Defines RBAC matrix |
-| `user_roles` | User role assignments | Modified by admins via API, cascade delete |
-| `refresh_tokens` | Active refresh tokens | SHA256 hashed, includes revocation timestamp |
-| `allowed_emails` | Email allowlist | Restricts access, tracks claim status, prevents removal if claimed |
-| `audit_events` | Security audit log | Immutable log of all security events |
+| Table              | Purpose                    | Security Features                                                  |
+| ------------------ | -------------------------- | ------------------------------------------------------------------ |
+| `users`            | Core user accounts         | `isActive` flag for soft deletion, prevents auth                   |
+| `user_identities`  | OAuth provider links       | `provider + providerSubject` unique constraint                     |
+| `roles`            | Role definitions           | Seeded at deployment, rarely modified                              |
+| `permissions`      | Permission definitions     | Seeded at deployment, rarely modified                              |
+| `role_permissions` | Role-to-permission mapping | Defines RBAC matrix                                                |
+| `user_roles`       | User role assignments      | Modified by admins via API, cascade delete                         |
+| `refresh_tokens`   | Active refresh tokens      | SHA256 hashed, includes revocation timestamp                       |
+| `allowed_emails`   | Email allowlist            | Restricts access, tracks claim status, prevents removal if claimed |
+| `audit_events`     | Security audit log         | Immutable log of all security events                               |
 
 ### Audit Logging
 
 The `audit_events` table provides a comprehensive audit trail for compliance and security monitoring.
 
 **Audited Events:**
+
 - User account creation
 - User role assignments/changes
 - User activation/deactivation
@@ -880,19 +917,21 @@ The `audit_events` table provides a comprehensive audit trail for compliance and
 - Authentication events (login, logout, token refresh)
 
 **Audit Event Structure:**
+
 ```typescript
 interface AuditEvent {
   id: string;
-  actorUserId: string | null;  // null for system actions
-  action: string;               // e.g., 'user.role_assigned'
-  targetType: string;           // e.g., 'user', 'system_settings'
-  targetId: string;             // ID of affected resource
-  meta: Record<string, any>;    // Additional context (changes, IP, etc.)
+  actorUserId: string | null; // null for system actions
+  action: string; // e.g., 'user.role_assigned'
+  targetType: string; // e.g., 'user', 'system_settings'
+  targetId: string; // ID of affected resource
+  meta: Record<string, any>; // Additional context (changes, IP, etc.)
   createdAt: Date;
 }
 ```
 
 **Example Audit Entries:**
+
 ```json
 [
   {
@@ -920,6 +959,7 @@ interface AuditEvent {
 ```
 
 **Indexed Fields** (for query performance):
+
 - `actorUserId` - Find all actions by a user
 - `targetType + targetId` - Find all events for a resource
 - `createdAt` - Time-based queries and retention policies
@@ -935,26 +975,33 @@ The storage system implements multiple layers of security to protect uploaded fi
 All file uploads are validated before acceptance:
 
 **MIME Type Validation:**
+
 - Configurable allowlist of permitted file types
 - Default: Common document and image formats
 - Server-side validation (client-declared MIME type verified)
 - Prevents upload of executable files and scripts
 
 **File Size Limits:**
+
 - Configurable maximum file size (default: 10GB)
 - Enforced at both simple upload and multipart initialization
 - Prevents storage abuse and DoS attacks
 - Size validation before S3 upload begins
 
 **Content Type Verification:**
+
 - Validates that file content matches declared MIME type
 - Uses magic number detection for common file types
 - Prevents MIME type spoofing attacks
 
 **Example Configuration:**
+
 ```typescript
-STORAGE_MAX_FILE_SIZE=10737418240      // 10GB in bytes
-STORAGE_ALLOWED_MIME_TYPES=application/pdf,image/jpeg,image/png,application/zip
+STORAGE_MAX_FILE_SIZE = 10737418240; // 10GB in bytes
+((STORAGE_ALLOWED_MIME_TYPES = application / pdf),
+  image / jpeg,
+  image / png,
+  application / zip);
 ```
 
 ### Access Control
@@ -962,27 +1009,31 @@ STORAGE_ALLOWED_MIME_TYPES=application/pdf,image/jpeg,image/png,application/zip
 The storage system enforces strict ownership and permission-based access:
 
 **Owner-Only Access (Default):**
+
 - Users can only access their own uploaded files
 - Object queries filtered by `owner_id = current_user.id`
 - Download URLs only generated for owned objects
 - Delete operations restricted to owner
 
 **Admin Override:**
+
 - Users with `storage:delete_any` permission can access all objects
 - Useful for moderation and content management
 - All admin operations logged to audit trail
 
 **Permission Model:**
-| Permission | Description | Granted To |
-|------------|-------------|------------|
-| `storage:read` | View own storage objects | All authenticated users |
-| `storage:write` | Upload and update own objects | All authenticated users |
-| `storage:delete` | Delete own storage objects | All authenticated users |
-| `storage:read_any` | View all storage objects | Admin |
-| `storage:write_any` | Update any storage object | Admin |
-| `storage:delete_any` | Delete any storage object | Admin |
+
+| Permission           | Description                   | Granted To              |
+| -------------------- | ----------------------------- | ----------------------- |
+| `storage:read`       | View own storage objects      | All authenticated users |
+| `storage:write`      | Upload and update own objects | All authenticated users |
+| `storage:delete`     | Delete own storage objects    | All authenticated users |
+| `storage:read_any`   | View all storage objects      | Admin                   |
+| `storage:write_any`  | Update any storage object     | Admin                   |
+| `storage:delete_any` | Delete any storage object     | Admin                   |
 
 **Ownership Validation Example:**
+
 ```typescript
 // Controller method enforces ownership
 async getObject(objectId: string, userId: string) {
@@ -1002,6 +1053,7 @@ async getObject(objectId: string, userId: string) {
 The storage system uses time-limited presigned URLs for secure file access:
 
 **Download URLs:**
+
 - Generated via S3 presigned GET URLs
 - Default expiration: 1 hour (3600 seconds)
 - Configurable per-request via `expiresIn` parameter
@@ -1009,18 +1061,21 @@ The storage system uses time-limited presigned URLs for secure file access:
 - No AWS credentials exposed to client
 
 **Upload URLs (Multipart):**
+
 - Generated via S3 presigned PUT URLs for each part
 - Short expiration: 15 minutes per part
 - One-time use: URL invalidated after part upload
 - Direct-to-S3 upload (bypasses application server for performance)
 
 **Security Properties:**
+
 - URLs cryptographically signed by AWS credentials
 - Tampering detected via signature validation
 - Time-based expiration prevents long-lived access
 - Scoped to specific S3 operation (GET or PUT)
 
 **Example Presigned URL Generation:**
+
 ```typescript
 async generateDownloadUrl(objectId: string, expiresIn = 3600): Promise<string> {
   const object = await this.findById(objectId);
@@ -1037,21 +1092,24 @@ async generateDownloadUrl(objectId: string, expiresIn = 3600): Promise<string> {
 **Recommended S3 Bucket Security Settings:**
 
 **IAM Roles (Production):**
+
 - Use EC2/ECS IAM roles instead of static credentials
 - Principle of least privilege: grant only required S3 permissions
 - Rotate credentials if using access keys
 
 **Server-Side Encryption:**
+
 ```typescript
 // Enable SSE-S3 (AWS-managed keys)
-ServerSideEncryption: 'AES256'
+ServerSideEncryption: 'AES256';
 
 // Or SSE-KMS (customer-managed keys)
-ServerSideEncryption: 'aws:kms'
-KMSKeyId: 'arn:aws:kms:region:account:key/key-id'
+ServerSideEncryption: 'aws:kms';
+KMSKeyId: 'arn:aws:kms:region:account:key/key-id';
 ```
 
 **Block Public Access:**
+
 ```json
 {
   "BlockPublicAcls": true,
@@ -1062,15 +1120,18 @@ KMSKeyId: 'arn:aws:kms:region:account:key/key-id'
 ```
 
 **Access Logging:**
+
 - Enable S3 access logs for audit trail
 - Log bucket: separate from application bucket
 - Review logs for suspicious access patterns
 
 **Versioning:**
+
 - Enable versioning for accidental deletion protection
 - Configure lifecycle policy to archive old versions
 
 **CORS Configuration:**
+
 ```json
 {
   "CORSRules": [
@@ -1085,6 +1146,7 @@ KMSKeyId: 'arn:aws:kms:region:account:key/key-id'
 ```
 
 **Bucket Policy Example:**
+
 ```json
 {
   "Version": "2012-10-17",
@@ -1108,16 +1170,17 @@ All storage operations are logged to the `audit_events` table for security monit
 
 **Logged Events:**
 
-| Event | Action | Description |
-|-------|--------|-------------|
-| Upload Started | `storage:upload:init` | Multipart upload initialized |
-| Upload Completed | `storage:upload:complete` | File upload finalized successfully |
-| Upload Aborted | `storage:upload:abort` | Upload cancelled by user or system |
-| Object Downloaded | `storage:object:download` | Download URL generated |
-| Object Deleted | `storage:object:delete` | Object and file removed |
-| Metadata Updated | `storage:object:metadata:update` | Custom metadata modified |
+| Event             | Action                           | Description                        |
+| ----------------- | -------------------------------- | ---------------------------------- |
+| Upload Started    | `storage:upload:init`            | Multipart upload initialized       |
+| Upload Completed  | `storage:upload:complete`        | File upload finalized successfully |
+| Upload Aborted    | `storage:upload:abort`           | Upload cancelled by user or system |
+| Object Downloaded | `storage:object:download`        | Download URL generated             |
+| Object Deleted    | `storage:object:delete`          | Object and file removed            |
+| Metadata Updated  | `storage:object:metadata:update` | Custom metadata modified           |
 
 **Audit Event Structure:**
+
 ```typescript
 {
   actorUserId: 'user-uuid',
@@ -1137,6 +1200,7 @@ All storage operations are logged to the `audit_events` table for security monit
 ```
 
 **Monitoring Queries:**
+
 ```sql
 -- Large file uploads
 SELECT * FROM audit_events
@@ -1156,6 +1220,7 @@ HAVING COUNT(*) > 10;
 ### Security Best Practices
 
 **Do's:**
+
 - ✅ Use IAM roles instead of access keys in production
 - ✅ Enable S3 server-side encryption
 - ✅ Set short expiration times on presigned URLs
@@ -1167,6 +1232,7 @@ HAVING COUNT(*) > 10;
 - ✅ Implement virus scanning for user uploads (recommended)
 
 **Don'ts:**
+
 - ❌ Never commit AWS credentials to source control
 - ❌ Never allow unrestricted file uploads
 - ❌ Never rely on client-side MIME type validation
@@ -1191,14 +1257,15 @@ add_header X-XSS-Protection "1; mode=block" always;
 add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 ```
 
-| Header | Value | Purpose |
-|--------|-------|---------|
-| `X-Frame-Options` | `SAMEORIGIN` | Prevents clickjacking - only allow framing from same origin |
-| `X-Content-Type-Options` | `nosniff` | Prevents MIME sniffing - force declared content type |
-| `X-XSS-Protection` | `1; mode=block` | Legacy XSS protection for older browsers |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | Limit referrer info sent to external sites |
+| Header                   | Value                             | Purpose                                                     |
+| ------------------------ | --------------------------------- | ----------------------------------------------------------- |
+| `X-Frame-Options`        | `SAMEORIGIN`                      | Prevents clickjacking - only allow framing from same origin |
+| `X-Content-Type-Options` | `nosniff`                         | Prevents MIME sniffing - force declared content type        |
+| `X-XSS-Protection`       | `1; mode=block`                   | Legacy XSS protection for older browsers                    |
+| `Referrer-Policy`        | `strict-origin-when-cross-origin` | Limit referrer info sent to external sites                  |
 
 **Additional Headers (Recommended for Production):**
+
 ```nginx
 # Add these for enhanced security
 add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;  # HTTPS only
@@ -1215,17 +1282,19 @@ The application uses same-origin architecture (frontend and API served from same
 - API reference: `http://localhost:3535/api/docs`
 
 **Benefits of Same-Origin:**
+
 - No CORS configuration needed
 - Cookies work without `withCredentials`
 - Simplified security model
 - No preflight requests
 
 **If CORS is Needed (e.g., mobile app, separate domains):**
+
 ```typescript
 // In main.ts
 app.enableCors({
   origin: process.env.ALLOWED_ORIGINS?.split(',') || 'http://localhost:3000',
-  credentials: true,  // Allow cookies
+  credentials: true, // Allow cookies
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Authorization', 'Content-Type'],
 });
@@ -1235,15 +1304,16 @@ app.enableCors({
 
 **Critical Secrets (Must Protect):**
 
-| Variable | Purpose | Security Requirement |
-|----------|---------|---------------------|
-| `JWT_SECRET` | Signs JWT tokens | Min 32 chars, random, never commit |
-| `COOKIE_SECRET` | Signs session cookies | Min 32 chars, random, never commit |
-| `GOOGLE_CLIENT_SECRET` | OAuth with Google | From Google Console, never commit |
-| `DATABASE_URL` | Database connection | Contains credentials, never commit |
-| `POSTGRES_PASSWORD` | Database password | Strong password, never commit |
+| Variable               | Purpose               | Security Requirement               |
+| ---------------------- | --------------------- | ---------------------------------- |
+| `JWT_SECRET`           | Signs JWT tokens      | Min 32 chars, random, never commit |
+| `COOKIE_SECRET`        | Signs session cookies | Min 32 chars, random, never commit |
+| `GOOGLE_CLIENT_SECRET` | OAuth with Google     | From Google Console, never commit  |
+| `DATABASE_URL`         | Database connection   | Contains credentials, never commit |
+| `POSTGRES_PASSWORD`    | Database password     | Strong password, never commit      |
 
 **Generate Secrets:**
+
 ```bash
 # Generate strong secrets (32+ characters)
 openssl rand -base64 32
@@ -1253,6 +1323,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
 **Environment File Security:**
+
 ```bash
 # Never commit .env files
 echo ".env" >> .gitignore
@@ -1265,6 +1336,7 @@ cp .env.example .env
 ```
 
 **Production Secret Management:**
+
 - Use secret management services (AWS Secrets Manager, Azure Key Vault, HashiCorp Vault)
 - Inject secrets as environment variables at runtime
 - Rotate secrets regularly (JWT_SECRET, GOOGLE_CLIENT_SECRET)
@@ -1274,26 +1346,27 @@ cp .env.example .env
 
 ## 9. Attack Mitigation Matrix
 
-| Attack Vector | Mitigation Strategy | Implementation |
-|--------------|---------------------|----------------|
-| **SQL Injection** | Parameterized queries | Prisma ORM (prepared statements by default) |
-| **XSS (Cross-Site Scripting)** | Output encoding, CSP headers | React automatic escaping, `X-XSS-Protection` header |
-| **CSRF (Cross-Site Request Forgery)** | SameSite cookies, same-origin | `SameSite=lax` on refresh token cookie |
-| **Token Theft (XSS)** | HttpOnly cookies for refresh tokens | Access token in memory only, refresh in HttpOnly cookie |
-| **Token Theft (MITM)** | HTTPS only, Secure cookies | `secure: true` in production, HSTS header |
-| **Brute Force (Password)** | No passwords (OAuth only) | Google OAuth, no password storage |
-| **Session Hijacking** | Short-lived tokens, rotation | 15-min access tokens, refresh rotation on use |
-| **Token Reuse Attack** | Reuse detection, revoke all | Revoke all user tokens when revoked token used |
-| **Privilege Escalation** | RBAC enforcement, server-side validation | Roles/Permissions guards, database-driven RBAC |
-| **Account Enumeration** | Generic error messages | "Invalid credentials" for all auth failures |
-| **Clickjacking** | Frame-busting headers | `X-Frame-Options: SAMEORIGIN` |
-| **MIME Sniffing** | Content-Type enforcement | `X-Content-Type-Options: nosniff` |
-| **Insecure Direct Object Reference** | Authorization checks | Guards verify user permissions before data access |
-| **Mass Assignment** | DTO validation | Class-validator on all DTOs, whitelist only |
-| **Information Disclosure** | Generic errors, no stack traces | Production error handler, sanitized responses |
-| **Denial of Service** | Rate limiting (recommended) | Can add rate limiter to Nginx or NestJS |
+| Attack Vector                         | Mitigation Strategy                      | Implementation                                          |
+| ------------------------------------- | ---------------------------------------- | ------------------------------------------------------- |
+| **SQL Injection**                     | Parameterized queries                    | Prisma ORM (prepared statements by default)             |
+| **XSS (Cross-Site Scripting)**        | Output encoding, CSP headers             | React automatic escaping, `X-XSS-Protection` header     |
+| **CSRF (Cross-Site Request Forgery)** | SameSite cookies, same-origin            | `SameSite=lax` on refresh token cookie                  |
+| **Token Theft (XSS)**                 | HttpOnly cookies for refresh tokens      | Access token in memory only, refresh in HttpOnly cookie |
+| **Token Theft (MITM)**                | HTTPS only, Secure cookies               | `secure: true` in production, HSTS header               |
+| **Brute Force (Password)**            | No passwords (OAuth only)                | Google OAuth, no password storage                       |
+| **Session Hijacking**                 | Short-lived tokens, rotation             | 15-min access tokens, refresh rotation on use           |
+| **Token Reuse Attack**                | Reuse detection, revoke all              | Revoke all user tokens when revoked token used          |
+| **Privilege Escalation**              | RBAC enforcement, server-side validation | Roles/Permissions guards, database-driven RBAC          |
+| **Account Enumeration**               | Generic error messages                   | "Invalid credentials" for all auth failures             |
+| **Clickjacking**                      | Frame-busting headers                    | `X-Frame-Options: SAMEORIGIN`                           |
+| **MIME Sniffing**                     | Content-Type enforcement                 | `X-Content-Type-Options: nosniff`                       |
+| **Insecure Direct Object Reference**  | Authorization checks                     | Guards verify user permissions before data access       |
+| **Mass Assignment**                   | DTO validation                           | Class-validator on all DTOs, whitelist only             |
+| **Information Disclosure**            | Generic errors, no stack traces          | Production error handler, sanitized responses           |
+| **Denial of Service**                 | Rate limiting (recommended)              | Can add rate limiter to Nginx or NestJS                 |
 
 **Not Yet Implemented (Consider for Production):**
+
 - **Rate Limiting**: Add `@nestjs/throttler` or Nginx rate limiting
 - **Input Validation**: Add class-validator decorators to all DTOs
 - **API Key Rotation**: Rotate Google OAuth credentials periodically
@@ -1307,6 +1380,7 @@ cp .env.example .env
 ### Environment Variables
 
 **Authentication & JWT:**
+
 ```bash
 # JWT Configuration
 JWT_SECRET=your-super-secret-key-min-32-characters-long
@@ -1318,6 +1392,7 @@ COOKIE_SECRET=your-cookie-secret-key-min-32-characters-long
 ```
 
 **OAuth Providers:**
+
 ```bash
 # Google OAuth (Required)
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
@@ -1331,6 +1406,7 @@ MICROSOFT_CALLBACK_URL=http://localhost:3535/api/auth/microsoft/callback
 ```
 
 **Database:**
+
 ```bash
 DATABASE_URL=postgresql://postgres:postgres@db:5432/appdb
 POSTGRES_USER=postgres
@@ -1339,12 +1415,14 @@ POSTGRES_DB=appdb
 ```
 
 **Admin Bootstrap:**
+
 ```bash
 # First user with this email becomes admin
 INITIAL_ADMIN_EMAIL=admin@example.com
 ```
 
 **Application:**
+
 ```bash
 NODE_ENV=development              # development | production
 PORT=3000                         # API server port
@@ -1354,6 +1432,7 @@ APP_URL=http://localhost:3535     # Base URL (for OAuth redirects)
 ### Recommended Security Settings
 
 **Development:**
+
 ```bash
 JWT_ACCESS_TTL_MINUTES=60         # Longer for convenience
 JWT_REFRESH_TTL_DAYS=14
@@ -1361,6 +1440,7 @@ NODE_ENV=development
 ```
 
 **Production:**
+
 ```bash
 JWT_ACCESS_TTL_MINUTES=15         # Short-lived for security
 JWT_REFRESH_TTL_DAYS=7            # Shorter refresh window
@@ -1369,6 +1449,7 @@ APP_URL=https://yourdomain.com    # HTTPS required
 ```
 
 **High-Security Environment:**
+
 ```bash
 JWT_ACCESS_TTL_MINUTES=5          # Very short access tokens
 JWT_REFRESH_TTL_DAYS=1            # Require daily re-authentication
@@ -1386,6 +1467,7 @@ This application uses NestJS with **Fastify adapter** instead of Express. Passpo
 ### The Problem
 
 Passport OAuth strategies perform these operations:
+
 1. Redirect user to OAuth provider (Google)
 2. Handle callback from provider
 3. Extract user profile from provider response
@@ -1394,6 +1476,7 @@ Passport OAuth strategies perform these operations:
 Passport expects to work with Node.js `http.IncomingMessage` and `http.ServerResponse` objects directly, but Fastify wraps these in its own `FastifyRequest` and `FastifyReply` objects with different APIs.
 
 **Key Differences:**
+
 - Express/Node.js: `res.status(200).json(data)`, `res.redirect(url)`
 - Fastify: `res.code(200).send(data)`, `res.redirect(url)`
 
@@ -1412,13 +1495,13 @@ export class GoogleOAuthGuard extends AuthGuard('google') {
   // Provide raw Node.js request to Passport
   getRequest(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest();
-    return request.raw || request;  // request.raw is the underlying http.IncomingMessage
+    return request.raw || request; // request.raw is the underlying http.IncomingMessage
   }
 
   // Provide raw Node.js response to Passport
   getResponse(context: ExecutionContext) {
     const response = context.switchToHttp().getResponse();
-    return response.raw || response;  // response.raw is the underlying http.ServerResponse
+    return response.raw || response; // response.raw is the underlying http.ServerResponse
   }
 
   // After Passport authentication, copy user to Fastify request
@@ -1487,15 +1570,19 @@ try {
   const appUrl = this.configService.get<string>('appUrl');
 
   // Sanitize: remove newlines, URL encode, limit length
-  const errorMessage = error instanceof Error
-    ? encodeURIComponent(error.message.replace(/[\r\n]/g, ' ').substring(0, 100))
-    : 'authentication_failed';
+  const errorMessage =
+    error instanceof Error
+      ? encodeURIComponent(
+          error.message.replace(/[\r\n]/g, ' ').substring(0, 100),
+        )
+      : 'authentication_failed';
 
   return res.redirect(`${appUrl}/auth/callback?error=${errorMessage}`);
 }
 ```
 
 **Sanitization Steps:**
+
 1. Extract error message safely (check `instanceof Error`)
 2. Replace newlines with spaces: `replace(/[\r\n]/g, ' ')`
 3. Limit length: `substring(0, 100)`
@@ -1526,12 +1613,12 @@ The application provides a test authentication bypass mechanism that enables aut
 
 ### Security Layers
 
-| Layer | Protection | Implementation |
-|-------|------------|----------------|
-| **Build-time** | Frontend route excluded from production bundle | `import.meta.env.PROD` check in App.tsx |
-| **Module-level** | Backend module not imported in production | Conditional import in `app.module.ts` |
-| **Runtime guard** | Request rejected in production | `TestEnvironmentGuard` validates `NODE_ENV` |
-| **Bootstrap validation** | App fails to start if misconfigured | Error thrown if `TEST_AUTH_ENABLED=true` in production |
+| Layer                    | Protection                                     | Implementation                                         |
+| ------------------------ | ---------------------------------------------- | ------------------------------------------------------ |
+| **Build-time**           | Frontend route excluded from production bundle | `import.meta.env.PROD` check in App.tsx                |
+| **Module-level**         | Backend module not imported in production      | Conditional import in `app.module.ts`                  |
+| **Runtime guard**        | Request rejected in production                 | `TestEnvironmentGuard` validates `NODE_ENV`            |
+| **Bootstrap validation** | App fails to start if misconfigured            | Error thrown if `TEST_AUTH_ENABLED=true` in production |
 
 ### How It Works
 
@@ -1548,6 +1635,7 @@ The application provides a test authentication bypass mechanism that enables aut
 **Endpoint:** `POST /api/auth/test/login` (Non-production only)
 
 **Request:**
+
 ```json
 {
   "email": "test@test.local",
@@ -1557,6 +1645,7 @@ The application provides a test authentication bypass mechanism that enables aut
 ```
 
 **Response:** HTTP 302 redirect to `/auth/callback?token=<accessToken>&expiresIn=900`
+
 - Sets HttpOnly refresh token cookie (same as OAuth)
 
 ### Security Considerations
@@ -1574,6 +1663,7 @@ The application provides a test authentication bypass mechanism that enables aut
 ### Key Security Files
 
 **Authentication & Authorization:**
+
 ```
 apps/api/src/auth/
 ├── auth.controller.ts              # Auth endpoints (login, logout, refresh)
@@ -1600,6 +1690,7 @@ apps/api/src/auth/
 ```
 
 **Allowlist Access Control:**
+
 ```
 apps/api/src/allowlist/
 ├── allowlist.controller.ts         # Allowlist endpoints (list, add, remove)
@@ -1611,6 +1702,7 @@ apps/api/src/allowlist/
 ```
 
 **Database & RBAC:**
+
 ```
 apps/api/prisma/
 ├── schema.prisma                   # Database schema (security tables, allowlist)
@@ -1619,6 +1711,7 @@ apps/api/prisma/
 ```
 
 **Configuration:**
+
 ```
 apps/api/src/
 ├── main.ts                         # Application bootstrap (global guards)
@@ -1630,6 +1723,7 @@ apps/api/src/
 ```
 
 **Infrastructure:**
+
 ```
 infra/
 ├── nginx/
@@ -1641,6 +1735,7 @@ infra/
 ```
 
 **Frontend (Security-Related):**
+
 ```
 apps/web/src/
 ├── contexts/
@@ -1658,6 +1753,7 @@ apps/web/src/
 ### For Developers
 
 **Do's:**
+
 - ✅ Always use `@Auth()` decorator on protected endpoints
 - ✅ Validate all input with DTOs and class-validator
 - ✅ Use Prisma for database queries (prevents SQL injection)
@@ -1670,6 +1766,7 @@ apps/web/src/
 - ✅ Use user deactivation (`isActive: false`) instead of allowlist removal to revoke access
 
 **Don'ts:**
+
 - ❌ Never commit `.env` files to Git
 - ❌ Never store passwords in plain text
 - ❌ Never trust client-side authorization (always verify server-side)
@@ -1681,6 +1778,7 @@ apps/web/src/
 ### Security Checklist
 
 **Pre-Deployment:**
+
 - [ ] All secrets generated with `openssl rand -base64 32`
 - [ ] `NODE_ENV=production` set
 - [ ] HTTPS enabled and enforced
@@ -1695,6 +1793,7 @@ apps/web/src/
 - [ ] Error handler sanitizes responses (no stack traces)
 
 **Monitoring:**
+
 - [ ] Set up alerts for `refresh token reuse detected` logs
 - [ ] Monitor audit events for suspicious patterns
 - [ ] Track authentication failure rates
@@ -1708,6 +1807,7 @@ apps/web/src/
 ## Conclusion
 
 This security architecture provides defense-in-depth through multiple layers:
+
 1. **Authentication**: OAuth 2.0 eliminates password risks
 2. **Session Management**: Short-lived access tokens + rotated refresh tokens
 3. **Authorization**: Fine-grained RBAC with roles and permissions

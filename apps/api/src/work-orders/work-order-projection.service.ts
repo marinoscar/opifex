@@ -118,7 +118,9 @@ export class WorkOrderProjectionService {
     issues: NormalizedIssue[],
     existingWorkOrders: ExistingWorkOrder[],
   ): boolean {
-    const known = new Set(existingWorkOrders.map((workOrder) => workOrder.issueNumber));
+    const known = new Set(
+      existingWorkOrders.map((workOrder) => workOrder.issueNumber),
+    );
 
     return issues.some(
       (issue) =>
@@ -147,7 +149,10 @@ export class WorkOrderProjectionService {
     };
 
     const known = new Map(
-      input.existingWorkOrders.map((workOrder) => [workOrder.issueNumber, workOrder]),
+      input.existingWorkOrders.map((workOrder) => [
+        workOrder.issueNumber,
+        workOrder,
+      ]),
     );
 
     for (const issue of input.issues) {
@@ -218,7 +223,10 @@ export class WorkOrderProjectionService {
 
     const projected = projectIssue({
       issue,
-      repository: { owner: input.repository.owner, name: input.repository.name },
+      repository: {
+        owner: input.repository.owner,
+        name: input.repository.name,
+      },
       baseCommit: input.baseCommit,
       budgetCeilingUsd: input.repository.budgetCeilingUsd,
       wallClockTimeoutMinutes: input.repository.wallClockTimeoutMinutes ?? null,
@@ -238,7 +246,11 @@ export class WorkOrderProjectionService {
       return;
     }
 
-    const written = await this.persist(input.repository.id, projected.workOrder, projected.held);
+    const written = await this.persist(
+      input.repository.id,
+      projected.workOrder,
+      projected.held,
+    );
     if (written) {
       result.created.push(projected.workOrder);
       if (projected.held) result.heldOnCreate += 1;
@@ -344,7 +356,9 @@ export class WorkOrderProjectionService {
       // real guard — the read above is only an optimisation — so losing the
       // race is the correct outcome rather than an error.
       if (isUniqueViolation(error)) {
-        this.logger.debug(`${workOrder.identity} was created concurrently; keeping the winner`);
+        this.logger.debug(
+          `${workOrder.identity} was created concurrently; keeping the winner`,
+        );
         return false;
       }
       throw error;

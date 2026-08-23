@@ -3,7 +3,11 @@ import { join } from 'node:path';
 
 import { RunEventValidator } from '../run-events/run-event-validator';
 import { FakeRunner } from './fake-runner';
-import { RUNNER_SEAM_METHODS, type Runner, type WorkOrderSpec } from './runner.types';
+import {
+  RUNNER_SEAM_METHODS,
+  type Runner,
+  type WorkOrderSpec,
+} from './runner.types';
 
 const SEAM_SOURCE = readFileSync(join(__dirname, 'runner.types.ts'), 'utf8');
 
@@ -62,17 +66,26 @@ describe('the runner seam', () => {
   });
 
   describe('no vendor leaks into the signatures', () => {
-    it.each(['claude', 'anthropic', 'openai', 'gpt', 'copilot', 'cursor', 'aider', 'devin'])(
-      'never names %s outside a comment',
-      (vendor) => {
-        // #60's second acceptance criterion. Checked against the source with
-        // comments stripped, because the file legitimately DISCUSSES
-        // claude-code-local in prose while never typing it.
-        const code = SEAM_SOURCE.replace(/\/\*\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    it.each([
+      'claude',
+      'anthropic',
+      'openai',
+      'gpt',
+      'copilot',
+      'cursor',
+      'aider',
+      'devin',
+    ])('never names %s outside a comment', (vendor) => {
+      // #60's second acceptance criterion. Checked against the source with
+      // comments stripped, because the file legitimately DISCUSSES
+      // claude-code-local in prose while never typing it.
+      const code = SEAM_SOURCE.replace(/\/\*\*[\s\S]*?\*\//g, '').replace(
+        /\/\/.*$/gm,
+        '',
+      );
 
-        expect(code.toLowerCase()).not.toContain(vendor);
-      },
-    );
+      expect(code.toLowerCase()).not.toContain(vendor);
+    });
 
     it('expresses vendor resumption as a capability flag, never a method', () => {
       // #60: "Vendor-specific resumption is expressible as a capability flag,
@@ -155,7 +168,11 @@ describe('the runner seam', () => {
 
     it('cancels a handle it has never seen without throwing', async () => {
       await expect(
-        runner.cancel({ runnerKey: 'fake-runner', externalId: 'x', workOrderIdentity: 'nope' }),
+        runner.cancel({
+          runnerKey: 'fake-runner',
+          externalId: 'x',
+          workOrderIdentity: 'nope',
+        }),
       ).resolves.toBeUndefined();
     });
 
@@ -193,7 +210,10 @@ describe('the runner seam', () => {
       // against it a liar.
       const runner = new FakeRunner();
       const handle = await runner.submit(workOrder());
-      runner.block(workOrder().identity, new Date('2026-08-22T18:00:00Z').toISOString());
+      runner.block(
+        workOrder().identity,
+        new Date('2026-08-22T18:00:00Z').toISOString(),
+      );
       runner.emit(workOrder().identity, {
         type: 'run.progress',
         tool: { name: 'Bash', signature: 'sha256:abc' },
@@ -220,7 +240,9 @@ describe('the runner seam', () => {
       const handle = await runner.submit(workOrder());
 
       const { events } = await runner.poll(handle);
-      expect(events.every((event) => event.source === 'runner-reported')).toBe(true);
+      expect(events.every((event) => event.source === 'runner-reported')).toBe(
+        true,
+      );
     });
 
     it('stamps the CONTROL PLANE run id, not its own external id', async () => {
@@ -279,14 +301,20 @@ describe('the runner seam', () => {
     it('never claims to be stable', async () => {
       // Routing that would hand real work to a runner that executes nothing
       // should have to opt in loudly.
-      expect((await new FakeRunner().capabilities()).stabilityTier).toBe('experimental');
+      expect((await new FakeRunner().capabilities()).stabilityTier).toBe(
+        'experimental',
+      );
     });
 
     it('lets a test declare a different runner without touching the seam', async () => {
       // The pressure valve #60 predicts: anything vendor-specific belongs in
       // the manifest as a declaration, not in the seam as a method.
       const partial = new FakeRunner({
-        capabilities: { streamingFidelity: 'none', reportsCost: false, resumable: true },
+        capabilities: {
+          streamingFidelity: 'none',
+          reportsCost: false,
+          resumable: true,
+        },
       });
 
       expect(await partial.capabilities()).toMatchObject({
@@ -318,7 +346,9 @@ describe('the runner seam', () => {
       const declared = SEAM_SOURCE.match(new RegExp(`${field}: ([^;]+);`))![1];
 
       for (const value of Object.values(
-        (prisma as unknown as Record<string, Record<string, string>>)[prismaEnum],
+        (prisma as unknown as Record<string, Record<string, string>>)[
+          prismaEnum
+        ],
       )) {
         expect(declared).toContain(`'${value}'`);
       }
@@ -327,4 +357,13 @@ describe('the runner seam', () => {
 });
 
 /** The double's steering helpers, which are deliberately not the seam. */
-const STEERING = ['emit', 'finish', 'block', 'delivered', 'has', 'key', 'require', 'event'];
+const STEERING = [
+  'emit',
+  'finish',
+  'block',
+  'delivered',
+  'has',
+  'key',
+  'require',
+  'event',
+];

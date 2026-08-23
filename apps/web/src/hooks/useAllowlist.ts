@@ -58,7 +58,8 @@ export function useAllowlist(): UseAllowlistResult {
           setTotalPages(response.totalPages);
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to fetch allowlist';
+        const message =
+          err instanceof Error ? err.message : 'Failed to fetch allowlist';
         if (isMounted()) {
           setError(message);
           setEntries([]);
@@ -78,7 +79,8 @@ export function useAllowlist(): UseAllowlistResult {
         // Refresh the list
         await fetchAllowlist({ page, pageSize });
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to add email';
+        const message =
+          err instanceof Error ? err.message : 'Failed to add email';
         if (isMounted()) setError(message);
         throw err;
       }
@@ -94,7 +96,8 @@ export function useAllowlist(): UseAllowlistResult {
         // Refresh the list
         await fetchAllowlist({ page, pageSize });
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to remove email';
+        const message =
+          err instanceof Error ? err.message : 'Failed to remove email';
         if (isMounted()) setError(message);
         throw err;
       }

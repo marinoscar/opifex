@@ -82,4 +82,3 @@ networks:
   devnet:
     external: true
     name: devnet
-

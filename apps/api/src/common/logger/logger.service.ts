@@ -37,10 +37,7 @@ export class LoggerService {
 
   error(message: string, error?: Error | unknown, context?: object) {
     if (error instanceof Error) {
-      this.logger.error(
-        { ...context, err: error },
-        message,
-      );
+      this.logger.error({ ...context, err: error }, message);
     } else {
       this.logger.error({ ...context, error }, message);
     }
@@ -48,10 +45,7 @@ export class LoggerService {
 
   fatal(message: string, error?: Error | unknown, context?: object) {
     if (error instanceof Error) {
-      this.logger.fatal(
-        { ...context, err: error },
-        message,
-      );
+      this.logger.fatal({ ...context, err: error }, message);
     } else {
       this.logger.fatal({ ...context, error }, message);
     }

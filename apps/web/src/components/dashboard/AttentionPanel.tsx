@@ -61,7 +61,12 @@ export function AttentionPanel() {
           title="Nothing needs attention."
           detail="Every run is either progressing or parked with a reset time. Blocked runs resume on their own and are deliberately not listed here."
           action={
-            <Button component={RouterLink} to="/runs" size="small" variant="outlined">
+            <Button
+              component={RouterLink}
+              to="/runs"
+              size="small"
+              variant="outlined"
+            >
               View all runs
             </Button>
           }
@@ -72,7 +77,9 @@ export function AttentionPanel() {
           items" and can skip it, which on the panel most likely to be read
           under time pressure is worth the two extra elements. */}
       <Box component="ul" sx={{ m: 0, p: 0 }}>
-        {data?.map((run) => <AttentionRow key={run.id} run={run} now={now} />)}
+        {data?.map((run) => (
+          <AttentionRow key={run.id} run={run} now={now} />
+        ))}
       </Box>
     </PanelCard>
   );

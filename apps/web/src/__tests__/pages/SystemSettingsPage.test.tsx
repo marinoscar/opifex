@@ -27,7 +27,8 @@ describe('SystemSettingsPage', () => {
     mockUsePermissions.mockReturnValue({
       permissions: new Set(['system_settings:read', 'system_settings:write']),
       roles: new Set(['admin']),
-      hasPermission: (perm: string) => perm === 'system_settings:read' || perm === 'system_settings:write',
+      hasPermission: (perm: string) =>
+        perm === 'system_settings:read' || perm === 'system_settings:write',
       hasAnyPermission: vi.fn(),
       hasAllPermissions: vi.fn(),
       hasRole: vi.fn(),
@@ -162,7 +163,9 @@ describe('SystemSettingsPage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText(/failed to load system settings/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/failed to load system settings/i),
+        ).toBeInTheDocument();
       });
     });
   });
@@ -174,9 +177,15 @@ describe('SystemSettingsPage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('tab', { name: /ui settings/i })).toBeInTheDocument();
-        expect(screen.getByRole('tab', { name: /feature flags/i })).toBeInTheDocument();
-        expect(screen.getByRole('tab', { name: /advanced.*json/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('tab', { name: /ui settings/i }),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByRole('tab', { name: /feature flags/i }),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByRole('tab', { name: /advanced.*json/i }),
+        ).toBeInTheDocument();
       });
     });
 
@@ -188,10 +197,14 @@ describe('SystemSettingsPage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('tab', { name: /feature flags/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('tab', { name: /feature flags/i }),
+        ).toBeInTheDocument();
       });
 
-      const featureFlagsTab = screen.getByRole('tab', { name: /feature flags/i });
+      const featureFlagsTab = screen.getByRole('tab', {
+        name: /feature flags/i,
+      });
       await user.click(featureFlagsTab);
 
       expect(featureFlagsTab).toHaveAttribute('aria-selected', 'true');
@@ -211,7 +224,6 @@ describe('SystemSettingsPage', () => {
       // UI Settings should be the default tab
     });
   });
-
 
   describe('Feature Flags Tab', () => {
     it('should display feature flags', async () => {
@@ -241,7 +253,9 @@ describe('SystemSettingsPage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('tab', { name: /feature flags/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('tab', { name: /feature flags/i }),
+        ).toBeInTheDocument();
       });
 
       await user.click(screen.getByRole('tab', { name: /feature flags/i }));
@@ -340,7 +354,9 @@ describe('SystemSettingsPage', () => {
     });
 
     it('should show error message when save fails', async () => {
-      const updateSettings = vi.fn().mockRejectedValue(new Error('Save failed'));
+      const updateSettings = vi
+        .fn()
+        .mockRejectedValue(new Error('Save failed'));
 
       mockUseSystemSettings.mockReturnValue({
         settings: {

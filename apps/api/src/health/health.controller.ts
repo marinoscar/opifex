@@ -20,7 +20,8 @@ export class HealthController {
   @Public()
   @ApiOperation({
     summary: 'Liveness probe',
-    description: 'Checks if the application process is running. Used by orchestrators to detect hung processes.',
+    description:
+      'Checks if the application process is running. Used by orchestrators to detect hung processes.',
   })
   @ApiResponse({
     status: 200,
@@ -45,7 +46,8 @@ export class HealthController {
   @HealthCheck()
   @ApiOperation({
     summary: 'Readiness probe',
-    description: 'Checks if the application is ready to receive traffic. Includes database connectivity check.',
+    description:
+      'Checks if the application is ready to receive traffic. Includes database connectivity check.',
   })
   @ApiResponse({
     status: 200,

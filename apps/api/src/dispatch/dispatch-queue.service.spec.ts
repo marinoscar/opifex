@@ -1,6 +1,9 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { generateWorkOrder } from '../work-orders/work-order-generator';
-import { DISPATCH_BATCH_SIZE, DispatchQueueService } from './dispatch-queue.service';
+import {
+  DISPATCH_BATCH_SIZE,
+  DispatchQueueService,
+} from './dispatch-queue.service';
 import { RunExecutorService } from './run-executor.service';
 
 /**
@@ -53,7 +56,11 @@ describe('DispatchQueueService', () => {
       needs: w.needs,
       budgetCeilingUsd: w.budgetCeilingUsd,
       wallClockTimeoutMinutes: w.wallClockTimeoutMinutes,
-      repository: { owner: 'marinoscar', name: 'opifex', dispatchEnabled: true },
+      repository: {
+        owner: 'marinoscar',
+        name: 'opifex',
+        dispatchEnabled: true,
+      },
       ...overrides,
     };
   }
@@ -128,7 +135,9 @@ describe('DispatchQueueService', () => {
       const input = dispatchWorkOrder.mock.calls[0][0];
       expect(input.workOrderId).toBe('wo-uuid');
       expect(input.workOrder.identity).toBe('wo_opifex_312_a3f91c2_a1');
-      expect(input.workOrder.taskSpec).toContain('permit search prompt builder');
+      expect(input.workOrder.taskSpec).toContain(
+        'permit search prompt builder',
+      );
     });
 
     it('counts a dispatch', async () => {
@@ -185,7 +194,13 @@ describe('DispatchQueueService', () => {
   describe('a repository with dispatch disabled', () => {
     it('is never handed to the executor', async () => {
       findMany.mockResolvedValue([
-        row({ repository: { owner: 'marinoscar', name: 'opifex', dispatchEnabled: false } }),
+        row({
+          repository: {
+            owner: 'marinoscar',
+            name: 'opifex',
+            dispatchEnabled: false,
+          },
+        }),
       ]);
 
       const result = await service.drain();
@@ -198,7 +213,11 @@ describe('DispatchQueueService', () => {
       findMany.mockResolvedValue([
         row({
           id: 'off',
-          repository: { owner: 'marinoscar', name: 'other', dispatchEnabled: false },
+          repository: {
+            owner: 'marinoscar',
+            name: 'other',
+            dispatchEnabled: false,
+          },
         }),
         row({ id: 'on' }),
       ]);
@@ -216,7 +235,9 @@ describe('DispatchQueueService', () => {
       // A row whose stored identity its own coordinates do not derive is a
       // data-integrity problem no amount of retrying fixes. Left queued it
       // would be reconsidered every 60 seconds until somebody noticed.
-      findMany.mockResolvedValue([row({ identity: 'wo_something-else_312_a3f91c2_a1' })]);
+      findMany.mockResolvedValue([
+        row({ identity: 'wo_something-else_312_a3f91c2_a1' }),
+      ]);
 
       const result = await service.drain();
 
@@ -234,7 +255,9 @@ describe('DispatchQueueService', () => {
       // `attentionReason` lives on Run and does not exist here — and Prisma's
       // generated `data` argument accepts an unknown field WITHOUT a type
       // error, so the first version of this compiled and would have thrown.
-      findMany.mockResolvedValue([row({ identity: 'wo_something-else_312_a3f91c2_a1' })]);
+      findMany.mockResolvedValue([
+        row({ identity: 'wo_something-else_312_a3f91c2_a1' }),
+      ]);
 
       await service.drain();
 

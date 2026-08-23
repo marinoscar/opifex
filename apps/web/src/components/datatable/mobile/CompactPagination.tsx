@@ -24,14 +24,20 @@ export interface CompactPaginationProps {
   loadedRows: number;
 }
 
-export function CompactPagination({ pagination, loadedRows }: CompactPaginationProps) {
+export function CompactPagination({
+  pagination,
+  loadedRows,
+}: CompactPaginationProps) {
   const { page, pageSize, total, onPaginationChange } = pagination;
 
   const pageCount = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
   const first = total === 0 ? 0 : page * pageSize + 1;
   // Trust the row count we actually have over arithmetic on a possibly-stale
   // `total` — a short final page must not claim rows it never rendered.
-  const last = total === 0 ? 0 : page * pageSize + Math.min(loadedRows || pageSize, pageSize);
+  const last =
+    total === 0
+      ? 0
+      : page * pageSize + Math.min(loadedRows || pageSize, pageSize);
 
   const atStart = page <= 0;
   const atEnd = page >= pageCount - 1;

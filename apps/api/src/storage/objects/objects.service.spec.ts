@@ -11,7 +11,10 @@ import { Readable } from 'node:stream';
 import { ObjectsService } from './objects.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { STORAGE_PROVIDER } from '../providers/storage-provider.interface';
-import { createMockPrismaService, MockPrismaService } from '../../../test/mocks/prisma.mock';
+import {
+  createMockPrismaService,
+  MockPrismaService,
+} from '../../../test/mocks/prisma.mock';
 import { createMockStorageProvider } from '../../../test/mocks/storage-provider.mock';
 import { OBJECT_UPLOADED_EVENT } from '../processing/events/object-uploaded.event';
 
@@ -159,7 +162,9 @@ describe('ObjectsService', () => {
       expect(mockPrisma.storageObject.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            storageKey: expect.stringMatching(/^uploads\/\d+\/[a-f0-9-]+\.pdf$/),
+            storageKey: expect.stringMatching(
+              /^uploads\/\d+\/[a-f0-9-]+\.pdf$/,
+            ),
           }),
         }),
       );
@@ -227,7 +232,10 @@ describe('ObjectsService', () => {
       } as any);
       mockConfig.get.mockReturnValue(10485760); // 10MB part size
 
-      const result = await service.getUploadStatus(mockStorageObject.id, testUserId);
+      const result = await service.getUploadStatus(
+        mockStorageObject.id,
+        testUserId,
+      );
 
       expect(result.objectId).toBe(mockStorageObject.id);
       expect(result.status).toBe('pending');
@@ -639,7 +647,9 @@ describe('ObjectsService', () => {
         sortOrder: 'desc' as const,
       };
 
-      mockPrisma.storageObject.findMany.mockResolvedValue([mockStorageObject] as any);
+      mockPrisma.storageObject.findMany.mockResolvedValue([
+        mockStorageObject,
+      ] as any);
       mockPrisma.storageObject.count.mockResolvedValue(1);
 
       await service.list(query, testUserId);
@@ -676,7 +686,9 @@ describe('ObjectsService', () => {
 
   describe('getById', () => {
     it('should return object metadata', async () => {
-      mockPrisma.storageObject.findUnique.mockResolvedValue(mockStorageObject as any);
+      mockPrisma.storageObject.findUnique.mockResolvedValue(
+        mockStorageObject as any,
+      );
 
       const result = await service.getById(mockStorageObject.id, testUserId);
 
@@ -715,7 +727,10 @@ describe('ObjectsService', () => {
         'https://signed-url.com/download',
       );
 
-      const result = await service.getDownloadUrl(mockStorageObject.id, testUserId);
+      const result = await service.getDownloadUrl(
+        mockStorageObject.id,
+        testUserId,
+      );
 
       expect(result.url).toBe('https://signed-url.com/download');
       expect(result.expiresIn).toBe(3600);
@@ -742,7 +757,9 @@ describe('ObjectsService', () => {
 
   describe('delete', () => {
     it('should delete from storage and database', async () => {
-      mockPrisma.storageObject.findUnique.mockResolvedValue(mockStorageObject as any);
+      mockPrisma.storageObject.findUnique.mockResolvedValue(
+        mockStorageObject as any,
+      );
       mockStorageProvider.delete.mockResolvedValue(undefined);
       mockPrisma.storageObject.delete.mockResolvedValue({} as any);
       mockPrisma.auditEvent.create.mockResolvedValue({} as any);
@@ -758,7 +775,9 @@ describe('ObjectsService', () => {
     });
 
     it('should create audit event', async () => {
-      mockPrisma.storageObject.findUnique.mockResolvedValue(mockStorageObject as any);
+      mockPrisma.storageObject.findUnique.mockResolvedValue(
+        mockStorageObject as any,
+      );
       mockStorageProvider.delete.mockResolvedValue(undefined);
       mockPrisma.storageObject.delete.mockResolvedValue({} as any);
       mockPrisma.auditEvent.create.mockResolvedValue({} as any);
@@ -808,7 +827,9 @@ describe('ObjectsService', () => {
     it('should create audit event', async () => {
       const newMetadata = { key: 'value' };
 
-      mockPrisma.storageObject.findUnique.mockResolvedValue(mockStorageObject as any);
+      mockPrisma.storageObject.findUnique.mockResolvedValue(
+        mockStorageObject as any,
+      );
       mockPrisma.storageObject.update.mockResolvedValue({
         ...mockStorageObject,
         metadata: newMetadata,

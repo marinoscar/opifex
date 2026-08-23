@@ -10,7 +10,10 @@ interface ActivationSuccessProps {
   message: string;
 }
 
-export function ActivationSuccess({ success, message }: ActivationSuccessProps) {
+export function ActivationSuccess({
+  success,
+  message,
+}: ActivationSuccessProps) {
   const navigate = useNavigate();
 
   return (
@@ -43,7 +46,10 @@ export function ActivationSuccess({ success, message }: ActivationSuccessProps) 
         {success ? 'Device Authorized!' : 'Device Access Denied'}
       </Typography>
 
-      <Alert severity={success ? 'success' : 'info'} sx={{ mb: 3, textAlign: 'left' }}>
+      <Alert
+        severity={success ? 'success' : 'info'}
+        sx={{ mb: 3, textAlign: 'left' }}
+      >
         {message}
       </Alert>
 

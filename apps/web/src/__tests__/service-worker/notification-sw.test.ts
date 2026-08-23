@@ -13,14 +13,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const SOURCE = readFileSync(resolve(__dirname, '../../../public/notification-sw.js'), 'utf8');
+const SOURCE = readFileSync(
+  resolve(__dirname, '../../../public/notification-sw.js'),
+  'utf8',
+);
 
 type Listener = (event: Record<string, unknown>) => void;
 
 function loadWorker() {
   const listeners = new Map<string, Listener>();
 
-  const registration = { showNotification: vi.fn().mockResolvedValue(undefined) };
+  const registration = {
+    showNotification: vi.fn().mockResolvedValue(undefined),
+  };
   const clients = {
     claim: vi.fn().mockResolvedValue(undefined),
     matchAll: vi.fn().mockResolvedValue([]),
@@ -28,15 +33,17 @@ function loadWorker() {
   };
 
   const self = {
-    addEventListener: (type: string, listener: Listener) => listeners.set(type, listener),
+    addEventListener: (type: string, listener: Listener) =>
+      listeners.set(type, listener),
     skipWaiting: vi.fn(),
     registration,
     clients,
   };
 
-  const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(new Response(null, { status: 200 }));
 
-   
   new Function('self', 'fetch', SOURCE)(self, fetchMock);
 
   return { listeners, registration, clients, self, fetchMock };
@@ -82,7 +89,12 @@ describe('notification service worker', () => {
       await settled();
 
       const [, options] = worker.registration.showNotification.mock.calls[0];
-      for (const field of [PAYLOAD.body, PAYLOAD.why, PAYLOAD.blastRadius, PAYLOAD.ifIgnored]) {
+      for (const field of [
+        PAYLOAD.body,
+        PAYLOAD.why,
+        PAYLOAD.blastRadius,
+        PAYLOAD.ifIgnored,
+      ]) {
         expect(options.body).toContain(field);
       }
     });
@@ -93,7 +105,8 @@ describe('notification service worker', () => {
       worker.listeners.get('push')!(event);
       await settled();
 
-      const [title, options] = worker.registration.showNotification.mock.calls[0];
+      const [title, options] =
+        worker.registration.showNotification.mock.calls[0];
       expect(title).toBe('Run stalled');
       expect(options.body.startsWith(PAYLOAD.body)).toBe(true);
     });
@@ -106,7 +119,10 @@ describe('notification service worker', () => {
       worker.listeners.get('push')!(event);
       await settled();
 
-      expect(worker.registration.showNotification.mock.calls[0][1].requireInteraction).toBe(true);
+      expect(
+        worker.registration.showNotification.mock.calls[0][1]
+          .requireInteraction,
+      ).toBe(true);
     });
 
     it('tags by escalation, so twelve pushes about one stall collapse', async () => {
@@ -115,7 +131,9 @@ describe('notification service worker', () => {
       worker.listeners.get('push')!(event);
       await settled();
 
-      expect(worker.registration.showNotification.mock.calls[0][1].tag).toBe('esc-1');
+      expect(worker.registration.showNotification.mock.calls[0][1].tag).toBe(
+        'esc-1',
+      );
     });
 
     it('shows SOMETHING even for a payload it cannot parse', async () => {
@@ -185,7 +203,10 @@ describe('notification service worker', () => {
     });
 
     it('sends nothing when there is no token to send', async () => {
-      const { event, settled } = pushEvent({ ...PAYLOAD, receiptId: undefined });
+      const { event, settled } = pushEvent({
+        ...PAYLOAD,
+        receiptId: undefined,
+      });
 
       worker.listeners.get('push')!(event);
       await settled();
@@ -245,7 +266,9 @@ describe('notification service worker', () => {
 
     it('claims open clients on activate', async () => {
       const pending: Promise<unknown>[] = [];
-      worker.listeners.get('activate')!({ waitUntil: (p: Promise<unknown>) => pending.push(p) });
+      worker.listeners.get('activate')!({
+        waitUntil: (p: Promise<unknown>) => pending.push(p),
+      });
       await Promise.all(pending);
 
       expect(worker.clients.claim).toHaveBeenCalled();

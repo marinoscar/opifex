@@ -63,7 +63,9 @@ export const workOrderListItemSchema = z.object({
   runCount: z.number().int(),
 });
 
-export class WorkOrderListItemDto extends createZodDto(workOrderListItemSchema) {}
+export class WorkOrderListItemDto extends createZodDto(
+  workOrderListItemSchema,
+) {}
 
 /**
  * The authorized document, exactly as `schemas/work-order.schema.json` defines

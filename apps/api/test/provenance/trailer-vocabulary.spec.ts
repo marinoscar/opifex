@@ -13,7 +13,10 @@ import { workOrderIdentity } from '../../src/work-orders/work-order-identity';
  * somebody builds the checker from it, the checker rejects valid commits, and
  * then the checker gets disabled rather than the document fixed.
  */
-const PROVENANCE = readFileSync(join(__dirname, '../../../../docs/PROVENANCE.md'), 'utf8');
+const PROVENANCE = readFileSync(
+  join(__dirname, '../../../../docs/PROVENANCE.md'),
+  'utf8',
+);
 
 /** Pull a documented pattern out of its table row by trailer name. */
 function documentedPattern(trailer: string): RegExp {
@@ -26,7 +29,14 @@ function documentedPattern(trailer: string): RegExp {
 
 describe('the documented trailer vocabulary', () => {
   it('documents a pattern for every trailer it defines', () => {
-    for (const trailer of ['Work-Order', 'Issue', 'Decision', 'Runner', 'Run-Id', 'Attempt']) {
+    for (const trailer of [
+      'Work-Order',
+      'Issue',
+      'Decision',
+      'Runner',
+      'Run-Id',
+      'Attempt',
+    ]) {
       expect(() => documentedPattern(trailer)).not.toThrow();
     }
   });
@@ -76,9 +86,12 @@ describe('the documented trailer vocabulary', () => {
       expect('#312').toMatch(pattern);
     });
 
-    it.each(['312', 'issue #312', '#', '#0312abc'])('rejects %s', (candidate) => {
-      expect(candidate).not.toMatch(pattern);
-    });
+    it.each(['312', 'issue #312', '#', '#0312abc'])(
+      'rejects %s',
+      (candidate) => {
+        expect(candidate).not.toMatch(pattern);
+      },
+    );
   });
 
   describe('Decision:', () => {
@@ -90,9 +103,12 @@ describe('the documented trailer vocabulary', () => {
       }
     });
 
-    it.each(['ADR-1', 'ADR-00042', 'adr-0001', '0001'])('rejects %s', (candidate) => {
-      expect(candidate).not.toMatch(pattern);
-    });
+    it.each(['ADR-1', 'ADR-00042', 'adr-0001', '0001'])(
+      'rejects %s',
+      (candidate) => {
+        expect(candidate).not.toMatch(pattern);
+      },
+    );
   });
 
   describe('Runner:', () => {
@@ -106,9 +122,12 @@ describe('the documented trailer vocabulary', () => {
       expect('fake-runner@0.0.0').toMatch(pattern);
     });
 
-    it.each(['claude-code-local', '@2.1.223', 'Claude-Code@1.0'])('rejects %s', (candidate) => {
-      expect(candidate).not.toMatch(pattern);
-    });
+    it.each(['claude-code-local', '@2.1.223', 'Claude-Code@1.0'])(
+      'rejects %s',
+      (candidate) => {
+        expect(candidate).not.toMatch(pattern);
+      },
+    );
   });
 
   describe('Run-Id:', () => {
@@ -176,7 +195,9 @@ describe('the documented trailer vocabulary', () => {
       // Whitespace-collapsed: the sentence wraps in the source, and a test
       // that breaks on reflowing a paragraph teaches people to stop editing
       // the document.
-      expect(PROVENANCE.replace(/\s+/g, ' ')).toContain('`Work-Order:` is authoritative');
+      expect(PROVENANCE.replace(/\s+/g, ' ')).toContain(
+        '`Work-Order:` is authoritative',
+      );
     });
 
     it('names squash merges as the likely hole', () => {

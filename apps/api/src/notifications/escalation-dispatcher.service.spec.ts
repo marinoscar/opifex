@@ -3,7 +3,10 @@ import { ConfigService } from '@nestjs/config';
 
 import type { EscalationsService } from '../escalations/escalations.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { EscalationDispatcher, MAX_DELIVERY_ATTEMPTS } from './escalation-dispatcher.service';
+import {
+  EscalationDispatcher,
+  MAX_DELIVERY_ATTEMPTS,
+} from './escalation-dispatcher.service';
 import type { FallbackWebhookTransport } from './fallback-webhook.transport';
 import type { PushSubscriptionsService } from './push-subscriptions.service';
 import type { WebPushTransport } from './web-push.transport';
@@ -58,9 +61,11 @@ function fakePrisma(rows: Record<string, unknown>[]) {
             }
           }
           if (where.deliveryAttempts?.lt !== undefined) {
-            if ((row.deliveryAttempts as number) >= where.deliveryAttempts.lt) return false;
+            if ((row.deliveryAttempts as number) >= where.deliveryAttempts.lt)
+              return false;
           }
-          if (where.deliveredAt === null && row.deliveredAt !== null) return false;
+          if (where.deliveredAt === null && row.deliveredAt !== null)
+            return false;
           if (where.dispatchedAt?.lt) {
             const at = row.dispatchedAt as Date | null;
             if (!at || at >= where.dispatchedAt.lt) return false;
@@ -73,7 +78,9 @@ function fakePrisma(rows: Record<string, unknown>[]) {
         const row = rows.find((candidate) => candidate.id === where.id) as any;
         for (const [key, value] of Object.entries(data)) {
           row[key] =
-            value && typeof value === 'object' && 'increment' in (value as object)
+            value &&
+            typeof value === 'object' &&
+            'increment' in (value as object)
               ? (row[key] ?? 0) + (value as { increment: number }).increment
               : value;
         }
@@ -108,8 +115,12 @@ describe('EscalationDispatcher', () => {
         notifications: { receiptTimeoutMs: RECEIPT_TIMEOUT_MS },
       }),
     );
-    jest.spyOn(dispatcher['logger'], 'error').mockImplementation(() => undefined);
-    jest.spyOn(dispatcher['logger'], 'warn').mockImplementation(() => undefined);
+    jest
+      .spyOn(dispatcher['logger'], 'error')
+      .mockImplementation(() => undefined);
+    jest
+      .spyOn(dispatcher['logger'], 'warn')
+      .mockImplementation(() => undefined);
     jest.spyOn(dispatcher['logger'], 'log').mockImplementation(() => undefined);
     return dispatcher;
   }
@@ -124,9 +135,12 @@ describe('EscalationDispatcher', () => {
     push = {
       name: 'push',
       isConfigured: jest.fn().mockReturnValue(true),
-      send: jest
-        .fn()
-        .mockResolvedValue({ targetId: DEVICE.id, accepted: true, gone: false, statusCode: 201 }),
+      send: jest.fn().mockResolvedValue({
+        targetId: DEVICE.id,
+        accepted: true,
+        gone: false,
+        statusCode: 201,
+      }),
     };
     fallback = {
       name: 'webhook',
@@ -177,7 +191,10 @@ describe('EscalationDispatcher', () => {
     it('turns dispatched into delivered', async () => {
       await dispatcher.dispatchPending(NOW);
 
-      const result = await dispatcher.recordReceipt(prisma.rows[0].receiptId as string, NOW);
+      const result = await dispatcher.recordReceipt(
+        prisma.rows[0].receiptId as string,
+        NOW,
+      );
 
       expect(result).toEqual({ escalationId: 'esc-1', recorded: true });
       expect(escalations.markDelivered).toHaveBeenCalledWith('esc-1', 'push', {
@@ -194,21 +211,30 @@ describe('EscalationDispatcher', () => {
       await dispatcher.recordReceipt(receiptId, NOW);
       prisma.rows[0].deliveredAt = NOW;
 
-      const second = await dispatcher.recordReceipt(receiptId, new Date(NOW.getTime() + 60_000));
+      const second = await dispatcher.recordReceipt(
+        receiptId,
+        new Date(NOW.getTime() + 60_000),
+      );
 
       expect(second.recorded).toBe(false);
       expect(escalations.markDelivered).toHaveBeenCalledTimes(1);
     });
 
     it('404s an unknown token', async () => {
-      await expect(dispatcher.recordReceipt('nope')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(dispatcher.recordReceipt('nope')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('gives the same answer for a wrong token as for an expired one', async () => {
       // A receipt endpoint that distinguished them would be an oracle for
       // guessing tokens, and it is a public endpoint by necessity.
-      const unknown = await dispatcher.recordReceipt('a'.repeat(64)).catch((e) => e.message);
-      const alsoUnknown = await dispatcher.recordReceipt('b'.repeat(64)).catch((e) => e.message);
+      const unknown = await dispatcher
+        .recordReceipt('a'.repeat(64))
+        .catch((e) => e.message);
+      const alsoUnknown = await dispatcher
+        .recordReceipt('b'.repeat(64))
+        .catch((e) => e.message);
 
       expect(unknown).toBe(alsoUnknown);
     });
@@ -248,13 +274,17 @@ describe('EscalationDispatcher', () => {
 
       await dispatcher.dispatchPending(NOW);
 
-      expect(prisma.rows[0].failureReason).toContain('No devices are subscribed');
+      expect(prisma.rows[0].failureReason).toContain(
+        'No devices are subscribed',
+      );
     });
 
     it("keeps the push service's own words when devices rejected it", async () => {
       await dispatcher.dispatchPending(NOW);
 
-      expect(prisma.rows[0].failureReason).toContain('500: Internal Server Error');
+      expect(prisma.rows[0].failureReason).toContain(
+        '500: Internal Server Error',
+      );
     });
   });
 
@@ -267,7 +297,11 @@ describe('EscalationDispatcher', () => {
         error: 'no',
       });
       fallback.isConfigured.mockReturnValue(true);
-      fallback.send.mockResolvedValue({ targetId: 'fallback-webhook', accepted: true, gone: false });
+      fallback.send.mockResolvedValue({
+        targetId: 'fallback-webhook',
+        accepted: true,
+        gone: false,
+      });
     });
 
     it('sends through the fallback when Web Push would not', async () => {
@@ -277,7 +311,10 @@ describe('EscalationDispatcher', () => {
       const result = await dispatcher.dispatchPending(NOW);
 
       expect(result.rerouted).toBe(1);
-      expect(prisma.rows[0]).toMatchObject({ status: 'dispatched', transport: 'webhook' });
+      expect(prisma.rows[0]).toMatchObject({
+        status: 'dispatched',
+        transport: 'webhook',
+      });
     });
 
     it('still records WHY the fallback was needed', async () => {
@@ -285,11 +322,17 @@ describe('EscalationDispatcher', () => {
       // operator's phone is not working.
       await dispatcher.dispatchPending(NOW);
 
-      expect(prisma.rows[0].failureReason).toContain('Web Push did not deliver');
+      expect(prisma.rows[0].failureReason).toContain(
+        'Web Push did not deliver',
+      );
     });
 
     it('falls through to failed when the fallback also refuses', async () => {
-      fallback.send.mockResolvedValue({ targetId: 'fallback-webhook', accepted: false, gone: false });
+      fallback.send.mockResolvedValue({
+        targetId: 'fallback-webhook',
+        accepted: false,
+        gone: false,
+      });
 
       const result = await dispatcher.dispatchPending(NOW);
 
@@ -328,15 +371,27 @@ describe('EscalationDispatcher', () => {
     });
 
     it('does not prune on a transient failure', async () => {
-      push.send.mockResolvedValue({ targetId: DEVICE.id, accepted: false, gone: false, statusCode: 429 });
+      push.send.mockResolvedValue({
+        targetId: DEVICE.id,
+        accepted: false,
+        gone: false,
+        statusCode: 429,
+      });
 
       await dispatcher.dispatchPending(NOW);
 
-      expect(subscriptions.recordFailure).toHaveBeenCalledWith(DEVICE.id, false);
+      expect(subscriptions.recordFailure).toHaveBeenCalledWith(
+        DEVICE.id,
+        false,
+      );
     });
 
     it('sends to every registered device, not just the first', async () => {
-      const second = { ...DEVICE, id: 'sub-2', endpoint: 'https://push.example/def' };
+      const second = {
+        ...DEVICE,
+        id: 'sub-2',
+        endpoint: 'https://push.example/def',
+      };
       subscriptions.targets.mockResolvedValue([DEVICE, second]);
 
       await dispatcher.dispatchPending(NOW);
@@ -348,8 +403,16 @@ describe('EscalationDispatcher', () => {
       const second = { ...DEVICE, id: 'sub-2' };
       subscriptions.targets.mockResolvedValue([DEVICE, second]);
       push.send
-        .mockResolvedValueOnce({ targetId: DEVICE.id, accepted: false, gone: true })
-        .mockResolvedValueOnce({ targetId: 'sub-2', accepted: true, gone: false });
+        .mockResolvedValueOnce({
+          targetId: DEVICE.id,
+          accepted: false,
+          gone: true,
+        })
+        .mockResolvedValueOnce({
+          targetId: 'sub-2',
+          accepted: true,
+          gone: false,
+        });
 
       await dispatcher.dispatchPending(NOW);
 
@@ -451,7 +514,13 @@ describe('EscalationDispatcher', () => {
       // `dispatched` means a push service took it. Sending again would put
       // two notifications on the phone for one stall; sweepOverdue is what
       // deals with a dispatch that never arrived.
-      build([escalationRow({ status: 'dispatched', dispatchedAt: NOW, receiptId: 'r1' })]);
+      build([
+        escalationRow({
+          status: 'dispatched',
+          dispatchedAt: NOW,
+          receiptId: 'r1',
+        }),
+      ]);
 
       await dispatcher.dispatchPending(NOW);
 
@@ -486,11 +555,18 @@ describe('EscalationDispatcher', () => {
 
     it('delivers on a retry once the transport recovers', async () => {
       build([escalationRow({ status: 'failed', deliveryAttempts: 2 })]);
-      push.send.mockResolvedValue({ targetId: DEVICE.id, accepted: true, gone: false });
+      push.send.mockResolvedValue({
+        targetId: DEVICE.id,
+        accepted: true,
+        gone: false,
+      });
 
       await dispatcher.dispatchPending(NOW);
 
-      expect(prisma.rows[0]).toMatchObject({ status: 'dispatched', transport: 'push' });
+      expect(prisma.rows[0]).toMatchObject({
+        status: 'dispatched',
+        transport: 'push',
+      });
     });
 
     it('counts a first attempt as a first attempt, not a retry', async () => {
@@ -500,7 +576,12 @@ describe('EscalationDispatcher', () => {
     });
 
     it('gives up at the cap rather than retrying forever', async () => {
-      build([escalationRow({ status: 'failed', deliveryAttempts: MAX_DELIVERY_ATTEMPTS })]);
+      build([
+        escalationRow({
+          status: 'failed',
+          deliveryAttempts: MAX_DELIVERY_ATTEMPTS,
+        }),
+      ]);
 
       const result = await dispatcher.dispatchPending(NOW);
 
@@ -511,7 +592,12 @@ describe('EscalationDispatcher', () => {
     it('reports the attempt that hits the cap as abandoned', async () => {
       // Two different situations and two different log lines: one will be
       // tried again shortly, one never will.
-      build([escalationRow({ status: 'failed', deliveryAttempts: MAX_DELIVERY_ATTEMPTS - 1 })]);
+      build([
+        escalationRow({
+          status: 'failed',
+          deliveryAttempts: MAX_DELIVERY_ATTEMPTS - 1,
+        }),
+      ]);
 
       const result = await dispatcher.dispatchPending(NOW);
 
@@ -530,7 +616,12 @@ describe('EscalationDispatcher', () => {
     it('leaves the row failed after the cap, which is the honest end state', async () => {
       // Nobody was told. GET /escalations/latency counts it under
       // awaitingNotification and the cockpit shows it.
-      build([escalationRow({ status: 'failed', deliveryAttempts: MAX_DELIVERY_ATTEMPTS - 1 })]);
+      build([
+        escalationRow({
+          status: 'failed',
+          deliveryAttempts: MAX_DELIVERY_ATTEMPTS - 1,
+        }),
+      ]);
 
       await dispatcher.dispatchPending(NOW);
 

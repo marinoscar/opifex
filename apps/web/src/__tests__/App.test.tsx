@@ -103,7 +103,9 @@ describe('App', () => {
           ).toBeInTheDocument(),
         { timeout: 5000 },
       );
-      expect(screen.queryByRole('heading', { name: /system settings/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: /system settings/i }),
+      ).not.toBeInTheDocument();
     });
 
     it('redirects a user without users:read away from /admin/users', async () => {
@@ -122,7 +124,9 @@ describe('App', () => {
           ).toBeInTheDocument(),
         { timeout: 5000 },
       );
-      expect(screen.queryByRole('heading', { name: /user management/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: /user management/i }),
+      ).not.toBeInTheDocument();
     });
 
     it('lets a user holding system_settings:read reach /admin/settings', async () => {
@@ -136,7 +140,9 @@ describe('App', () => {
 
       await waitFor(
         () =>
-          expect(screen.getByRole('heading', { name: /system settings/i })).toBeInTheDocument(),
+          expect(
+            screen.getByRole('heading', { name: /system settings/i }),
+          ).toBeInTheDocument(),
         { timeout: 5000 },
       );
     });
@@ -155,13 +161,18 @@ describe('App', () => {
 
       await waitFor(
         () =>
-          expect(screen.getByRole('heading', { name: /system settings/i })).toBeInTheDocument(),
+          expect(
+            screen.getByRole('heading', { name: /system settings/i }),
+          ).toBeInTheDocument(),
         { timeout: 5000 },
       );
     });
 
     it('admits an admin holding users:read to /admin/users', async () => {
-      signInAs(['user_settings:read', 'users:read', 'allowlist:read'], ['admin']);
+      signInAs(
+        ['user_settings:read', 'users:read', 'allowlist:read'],
+        ['admin'],
+      );
 
       render(
         <MemoryRouter initialEntries={['/admin/users']}>
@@ -171,7 +182,9 @@ describe('App', () => {
 
       await waitFor(
         () =>
-          expect(screen.getByRole('heading', { name: /user management/i })).toBeInTheDocument(),
+          expect(
+            screen.getByRole('heading', { name: /user management/i }),
+          ).toBeInTheDocument(),
         { timeout: 5000 },
       );
     });
@@ -195,7 +208,10 @@ describe('App', () => {
         );
 
         await waitFor(
-          () => expect(screen.getByRole('heading', { level: 1, name: heading })).toBeInTheDocument(),
+          () =>
+            expect(
+              screen.getByRole('heading', { level: 1, name: heading }),
+            ).toBeInTheDocument(),
           { timeout: 5000 },
         );
 
@@ -261,8 +277,14 @@ describe('App', () => {
       // Moving the catch-all inside `ProtectedRoute` loses nothing: the guard
       // already preserves the attempted location in `state.from`.
       server.use(
-        http.get(`${API_BASE}/auth/me`, () => new HttpResponse(null, { status: 401 })),
-        http.post(`${API_BASE}/auth/refresh`, () => new HttpResponse(null, { status: 401 })),
+        http.get(
+          `${API_BASE}/auth/me`,
+          () => new HttpResponse(null, { status: 401 }),
+        ),
+        http.post(
+          `${API_BASE}/auth/refresh`,
+          () => new HttpResponse(null, { status: 401 }),
+        ),
       );
 
       render(
@@ -272,11 +294,13 @@ describe('App', () => {
       );
 
       await waitFor(
-        () => expect(screen.getByRole('heading', { name: /welcome/i })).toBeInTheDocument(),
+        () =>
+          expect(
+            screen.getByRole('heading', { name: /welcome/i }),
+          ).toBeInTheDocument(),
         { timeout: 5000 },
       );
       expect(screen.queryByText(/page not found/i)).not.toBeInTheDocument();
     });
-
   });
 });

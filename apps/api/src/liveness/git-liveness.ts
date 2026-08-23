@@ -34,7 +34,9 @@ import type { GitLivenessResult, GitObservation } from './git-liveness.types';
  * signal arrives on a poll interval, so judging it on the seconds-scale
  * threshold a streaming runner earns would kill healthy runs constantly.
  */
-export function deriveGitLiveness(observation: GitObservation): GitLivenessResult {
+export function deriveGitLiveness(
+  observation: GitObservation,
+): GitLivenessResult {
   const { run } = observation;
   const events: RunEventPayload[] = [];
 
@@ -176,7 +178,9 @@ function isAtOrBefore(
   newestFirst: { sha: string }[],
 ): boolean {
   const index = newestFirst.findIndex((c) => isSameCommit(c.sha, sha));
-  const headIndex = newestFirst.findIndex((c) => isSameCommit(c.sha, lastKnownHead));
+  const headIndex = newestFirst.findIndex((c) =>
+    isSameCommit(c.sha, lastKnownHead),
+  );
 
   // A last-known head that is no longer in the list means the branch was
   // rewritten. Treat every commit as new: re-emitting is recoverable, while

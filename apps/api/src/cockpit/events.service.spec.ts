@@ -124,7 +124,9 @@ describe('EventsService', () => {
       // The property that makes the two directions consistent. If they
       // disagreed, an operator clicking a row's own type to filter by it would
       // get nothing back.
-      findMany.mockResolvedValue([row({ type: 'run_blocked', source: 'control_plane' })]);
+      findMany.mockResolvedValue([
+        row({ type: 'run_blocked', source: 'control_plane' }),
+      ]);
       const { items } = await service.feed({});
 
       await service.feed({ type: items[0].type, source: items[0].source });
@@ -167,7 +169,9 @@ describe('EventsService', () => {
     it('counts against the SAME filter it queried with', async () => {
       await service.feed({ type: 'run.failed' });
 
-      expect(count.mock.calls[0][0].where).toEqual(findMany.mock.calls[0][0].where);
+      expect(count.mock.calls[0][0].where).toEqual(
+        findMany.mock.calls[0][0].where,
+      );
     });
 
     it('returns an empty page rather than failing on a quiet factory', async () => {

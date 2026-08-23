@@ -118,7 +118,9 @@ export const MAX_POLL_BACKOFF_MS = 5 * 60 * 1000;
 
 /** `true` when the document is currently visible (or when there is no document). */
 function isDocumentVisible(): boolean {
-  return typeof document === 'undefined' || document.visibilityState === 'visible';
+  return (
+    typeof document === 'undefined' || document.visibilityState === 'visible'
+  );
 }
 
 /** An aborted request is not a failure; it is a request we cancelled. */
@@ -187,7 +189,8 @@ export function usePolledResource<T>({
         setLastUpdatedAt(new Date());
         setFailureCount(0);
       } catch (err) {
-        if (controller.signal.aborted || isAbortError(err) || !isMounted()) return;
+        if (controller.signal.aborted || isAbortError(err) || !isMounted())
+          return;
         // NOTE what is deliberately absent: no `setData(null)`. Stale data
         // plus a visible error beats a blank panel plus an error, every time.
         setError(err instanceof Error ? err.message : 'Failed to load');
@@ -218,7 +221,8 @@ export function usePolledResource<T>({
   useEffect(() => {
     const onVisibilityChange = () => setIsVisible(isDocumentVisible());
     document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+    return () =>
+      document.removeEventListener('visibilitychange', onVisibilityChange);
   }, []);
 
   /**

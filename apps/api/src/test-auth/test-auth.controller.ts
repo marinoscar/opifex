@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Post,
-  Body,
-  UseGuards,
-  Res,
-  Logger,
-} from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Res, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { FastifyReply } from 'fastify';
@@ -70,7 +63,9 @@ export class TestAuthController {
     redirectUrl.searchParams.set('token', result.accessToken);
     redirectUrl.searchParams.set('expiresIn', result.expiresIn.toString());
 
-    this.logger.log(`Test login successful, redirecting to: ${redirectUrl.toString()}`);
+    this.logger.log(
+      `Test login successful, redirecting to: ${redirectUrl.toString()}`,
+    );
     return res.status(302).redirect(redirectUrl.toString());
   }
 }

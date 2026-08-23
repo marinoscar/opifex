@@ -9,12 +9,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 
 import { PatService } from './pat.service';
 import { Auth } from '../auth/decorators/auth.decorator';
@@ -51,9 +46,11 @@ export class PatController {
     description: 'List of PATs (raw tokens are never returned in list)',
     type: [PatListItemDto],
   })
-  async listTokens(@CurrentUser('id') userId: string): Promise<PatListItemDto[]> {
+  async listTokens(
+    @CurrentUser('id') userId: string,
+  ): Promise<PatListItemDto[]> {
     const tokens = await this.patService.listTokens(userId);
-    return tokens.map((t: typeof tokens[number]) => ({
+    return tokens.map((t: (typeof tokens)[number]) => ({
       id: t.id,
       name: t.name,
       tokenPrefix: t.tokenPrefix,
@@ -72,7 +69,10 @@ export class PatController {
   @ApiOperation({ summary: 'Revoke a Personal Access Token' })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: 204, description: 'Token revoked successfully' })
-  @ApiResponse({ status: 404, description: 'Token not found or already revoked' })
+  @ApiResponse({
+    status: 404,
+    description: 'Token not found or already revoked',
+  })
   async revokeToken(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,

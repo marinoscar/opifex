@@ -43,7 +43,11 @@ P1
 `;
 
   /** A label in the shape the read adapter actually produces. */
-  const label = (name: string) => ({ name, color: 'ededed', description: null });
+  const label = (name: string) => ({
+    name,
+    color: 'ededed',
+    description: null,
+  });
 
   function issue(overrides: Partial<NormalizedIssue> = {}): NormalizedIssue {
     return {
@@ -60,7 +64,12 @@ P1
   }
 
   const project = (overrides: Partial<ProjectIssueInput> = {}) =>
-    projectIssue({ issue: issue(), repository: REPO, baseCommit: BASE, ...overrides });
+    projectIssue({
+      issue: issue(),
+      repository: REPO,
+      baseCommit: BASE,
+      ...overrides,
+    });
 
   describe('an eligible issue', () => {
     it('becomes a work order', () => {
@@ -78,7 +87,9 @@ P1
       const result = project();
       if (!result.eligible) throw new Error('expected eligible');
 
-      expect(result.workOrder.taskSpec).toContain('permit search prompt builder');
+      expect(result.workOrder.taskSpec).toContain(
+        'permit search prompt builder',
+      );
       expect(result.workOrder.taskSpec).not.toContain('is not possible today');
     });
 
@@ -125,7 +136,10 @@ P1
     it('copies the repository ceilings in rather than referencing them', () => {
       // Changing a repository's budget must not retroactively change what an
       // in-flight run was authorised to spend.
-      const result = project({ budgetCeilingUsd: 12.5, wallClockTimeoutMinutes: 45 });
+      const result = project({
+        budgetCeilingUsd: 12.5,
+        wallClockTimeoutMinutes: 45,
+      });
       if (!result.eligible) throw new Error('expected eligible');
 
       expect(result.workOrder.budgetCeilingUsd).toBe(12.5);
@@ -147,7 +161,10 @@ P1
     it('ignores a component NAME, which is a label and not a path', () => {
       // Turning `api` into a glob would confine a run to a directory nobody
       // chose — worse than not constraining it at all.
-      const prose = BODY.replace('`apps/api/**` and `apps/web/src/chat/**`', '`api`, `web`');
+      const prose = BODY.replace(
+        '`apps/api/**` and `apps/web/src/chat/**`',
+        '`api`, `web`',
+      );
       const result = project({ issue: issue({ body: prose }) });
       if (!result.eligible) throw new Error('expected eligible');
 
@@ -171,7 +188,10 @@ P1
     it('collects ADR references from anywhere in the body', () => {
       // A false negative loses the link between a decision and the work that
       // rests on it, so this scans the whole body rather than one section.
-      const withAdr = BODY.replace('P1', 'P1\n\nThis follows ADR-0042 and ADR-0006.');
+      const withAdr = BODY.replace(
+        'P1',
+        'P1\n\nThis follows ADR-0042 and ADR-0006.',
+      );
       const result = project({ issue: issue({ body: withAdr }) });
       if (!result.eligible) throw new Error('expected eligible');
 
@@ -194,7 +214,10 @@ P1
       // the design says never to.
       const result = project({
         issue: issue({
-          labels: [label('feature'), label(`${NEEDS_LABEL_PREFIX}own-infrastructure`)],
+          labels: [
+            label('feature'),
+            label(`${NEEDS_LABEL_PREFIX}own-infrastructure`),
+          ],
         }),
       });
       if (!result.eligible) throw new Error('expected eligible');
@@ -254,14 +277,23 @@ P1
       // spends money; treating a backlog as work turns it into a bill.
       const result = project({ issue: issue({ inputLabels: [] }) });
 
-      expect(result).toMatchObject({ eligible: false, reason: 'not-marked-ready' });
+      expect(result).toMatchObject({
+        eligible: false,
+        reason: 'not-marked-ready',
+      });
     });
 
     it('skips an issue with no proposed solution', () => {
-      const noSolution = BODY.replace(/## Proposed solution[\s\S]*?(?=## Acceptance)/, '');
+      const noSolution = BODY.replace(
+        /## Proposed solution[\s\S]*?(?=## Acceptance)/,
+        '',
+      );
       const result = project({ issue: issue({ body: noSolution }) });
 
-      expect(result).toMatchObject({ eligible: false, reason: 'missing-task-spec' });
+      expect(result).toMatchObject({
+        eligible: false,
+        reason: 'missing-task-spec',
+      });
     });
 
     it('skips an issue whose criteria section has no list', () => {
@@ -280,7 +312,9 @@ P1
 
   describe('a hold is recorded, not a refusal', () => {
     const held = () =>
-      project({ issue: issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] }) });
+      project({
+        issue: issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] }),
+      });
 
     it('still projects a work order', () => {
       // `WorkOrderStatus.held` means "withheld by policy", which is a fact
@@ -317,9 +351,14 @@ P1
 
     it('needs ready as well — a hold alone is not a candidate', () => {
       // A hold does not make an unmarked issue into work.
-      const result = project({ issue: issue({ inputLabels: [INPUT_LABELS.HOLD] }) });
+      const result = project({
+        issue: issue({ inputLabels: [INPUT_LABELS.HOLD] }),
+      });
 
-      expect(result).toMatchObject({ eligible: false, reason: 'not-marked-ready' });
+      expect(result).toMatchObject({
+        eligible: false,
+        reason: 'not-marked-ready',
+      });
     });
   });
 
@@ -335,7 +374,8 @@ P1
       const result = project({ issue: issue({ body: placeholder }) });
 
       expect(result).toMatchObject({ eligible: false, reason: 'rejected' });
-      if (result.eligible || result.reason !== 'rejected') throw new Error('expected rejection');
+      if (result.eligible || result.reason !== 'rejected')
+        throw new Error('expected rejection');
       expect(result.problems.length).toBeGreaterThan(0);
       expect(result.message.length).toBeGreaterThan(0);
     });

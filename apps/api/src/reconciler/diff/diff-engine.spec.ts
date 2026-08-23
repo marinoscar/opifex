@@ -1,7 +1,13 @@
-import { INPUT_LABELS, MIRROR_LABELS } from '../../github/labels/factory-labels';
+import {
+  INPUT_LABELS,
+  MIRROR_LABELS,
+} from '../../github/labels/factory-labels';
 import type { NormalizedIssue } from '../../github/read/github-read.types';
 import { projectDesiredState } from '../projection/desired-state';
-import type { ObservedState, ObservedWorkOrder } from '../projection/desired-state.types';
+import type {
+  ObservedState,
+  ObservedWorkOrder,
+} from '../projection/desired-state.types';
 import type { ReconcileAction, ReconcileActionType } from './actions.types';
 import { computeActions } from './diff-engine';
 
@@ -24,7 +30,9 @@ function issue(overrides: Partial<NormalizedIssue> = {}): NormalizedIssue {
   };
 }
 
-function workOrder(overrides: Partial<ObservedWorkOrder> = {}): ObservedWorkOrder {
+function workOrder(
+  overrides: Partial<ObservedWorkOrder> = {},
+): ObservedWorkOrder {
   return {
     id: 'wo-uuid',
     identity: 'wo_app_312_a3f91c2_a1',
@@ -85,11 +93,22 @@ describe('computeActions', () => {
         observed({
           issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
           workOrders: [
-            workOrder({ run: { id: 'r', status: 'failed', costUsd: 10, pullRequestUrl: null } }),
+            workOrder({
+              run: {
+                id: 'r',
+                status: 'failed',
+                costUsd: 10,
+                pullRequestUrl: null,
+              },
+            }),
           ],
           repository: {
-            id: 'r', owner: 'acme', name: 'app',
-            observeEnabled: true, dispatchEnabled: true, budgetCeilingUsd: 5,
+            id: 'r',
+            owner: 'acme',
+            name: 'app',
+            observeEnabled: true,
+            dispatchEnabled: true,
+            budgetCeilingUsd: 5,
           },
         }),
       );
@@ -159,21 +178,35 @@ describe('computeActions', () => {
         observed({
           issues: [
             issue({
-              observedMirrorLabels: [MIRROR_LABELS.DISPATCHED, MIRROR_LABELS.BLOCKED],
+              observedMirrorLabels: [
+                MIRROR_LABELS.DISPATCHED,
+                MIRROR_LABELS.BLOCKED,
+              ],
             }),
           ],
           workOrders: [
             workOrder({
-              run: { id: 'r', status: 'succeeded', costUsd: null, pullRequestUrl: 'https://x/pull/9' },
+              run: {
+                id: 'r',
+                status: 'succeeded',
+                costUsd: null,
+                pullRequestUrl: 'https://x/pull/9',
+              },
             }),
           ],
         }),
       );
 
-      const removed = actions.filter((a) => a.type === 'remove-mirror-label').map((a) => a.label);
-      const added = actions.filter((a) => a.type === 'add-mirror-label').map((a) => a.label);
+      const removed = actions
+        .filter((a) => a.type === 'remove-mirror-label')
+        .map((a) => a.label);
+      const added = actions
+        .filter((a) => a.type === 'add-mirror-label')
+        .map((a) => a.label);
 
-      expect(removed.sort()).toEqual([MIRROR_LABELS.BLOCKED, MIRROR_LABELS.DISPATCHED].sort());
+      expect(removed.sort()).toEqual(
+        [MIRROR_LABELS.BLOCKED, MIRROR_LABELS.DISPATCHED].sort(),
+      );
       expect(added).toEqual([MIRROR_LABELS.REVIEW]);
     });
 
@@ -181,7 +214,11 @@ describe('computeActions', () => {
       // Deleting a label because we do not recognise it is the kind of
       // destructive surprise that makes an operator switch the system off.
       const actions = actionsFor(
-        observed({ issues: [issue({ observedMirrorLabels: ['factory/someones-own-label'] })] }),
+        observed({
+          issues: [
+            issue({ observedMirrorLabels: ['factory/someones-own-label'] }),
+          ],
+        }),
       );
 
       expect(types(actions)).not.toContain('remove-mirror-label');
@@ -199,7 +236,9 @@ describe('computeActions', () => {
         }),
       );
 
-      expect(actions.filter((a) => a.type === 'remove-mirror-label')).toHaveLength(1);
+      expect(
+        actions.filter((a) => a.type === 'remove-mirror-label'),
+      ).toHaveLength(1);
     });
   });
 
@@ -220,7 +259,14 @@ describe('computeActions', () => {
             }),
           ],
           workOrders: [
-            workOrder({ run: { id: 'r', status: 'running', costUsd: null, pullRequestUrl: null } }),
+            workOrder({
+              run: {
+                id: 'r',
+                status: 'running',
+                costUsd: null,
+                pullRequestUrl: null,
+              },
+            }),
           ],
         }),
       );
@@ -270,7 +316,14 @@ describe('computeActions', () => {
             }),
           ],
           workOrders: [
-            workOrder({ run: { id: 'r', status: 'blocked', costUsd: null, pullRequestUrl: null } }),
+            workOrder({
+              run: {
+                id: 'r',
+                status: 'blocked',
+                costUsd: null,
+                pullRequestUrl: null,
+              },
+            }),
           ],
         }),
       );
@@ -291,7 +344,11 @@ describe('computeActions', () => {
         observed({
           issues: [
             issue({ number: 1, inputLabels: [INPUT_LABELS.READY] }),
-            issue({ number: 2, inputLabels: [INPUT_LABELS.HOLD], observedMirrorLabels: [MIRROR_LABELS.DISPATCHED] }),
+            issue({
+              number: 2,
+              inputLabels: [INPUT_LABELS.HOLD],
+              observedMirrorLabels: [MIRROR_LABELS.DISPATCHED],
+            }),
           ],
         }),
       );
@@ -346,14 +403,21 @@ describe('computeActions', () => {
     it('does not mutate its inputs', () => {
       const state = observed({
         issues: [
-          issue({ inputLabels: [INPUT_LABELS.READY], observedMirrorLabels: [MIRROR_LABELS.BLOCKED] }),
+          issue({
+            inputLabels: [INPUT_LABELS.READY],
+            observedMirrorLabels: [MIRROR_LABELS.BLOCKED],
+          }),
         ],
       });
-      const before = JSON.stringify(state, (_k, v) => (v instanceof Set ? [...v] : v));
+      const before = JSON.stringify(state, (_k, v) =>
+        v instanceof Set ? [...v] : v,
+      );
 
       actionsFor(state);
 
-      expect(JSON.stringify(state, (_k, v) => (v instanceof Set ? [...v] : v))).toBe(before);
+      expect(
+        JSON.stringify(state, (_k, v) => (v instanceof Set ? [...v] : v)),
+      ).toBe(before);
     });
 
     it('has no way to execute anything', () => {

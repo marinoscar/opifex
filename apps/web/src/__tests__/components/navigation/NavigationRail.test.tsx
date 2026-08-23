@@ -86,9 +86,13 @@ describe('NavigationRail', () => {
       render(<NavigationRail />, { wrapperOptions: { user: mockAdminUser } });
 
       const nav = screen.getByRole('navigation', { name: /main navigation/i });
-      expect(within(nav).getAllByRole('link')).toHaveLength(DESTINATIONS.length);
+      expect(within(nav).getAllByRole('link')).toHaveLength(
+        DESTINATIONS.length,
+      );
       for (const destination of DESTINATIONS) {
-        expect(screen.getByRole('link', { name: destination.label })).toBeInTheDocument();
+        expect(
+          screen.getByRole('link', { name: destination.label }),
+        ).toBeInTheDocument();
       }
     });
 
@@ -100,9 +104,18 @@ describe('NavigationRail', () => {
       // when the destinations were unpermissioned and now that they are not.
       render(<NavigationRail />);
 
-      expect(screen.getByRole('link', { name: 'Runs' })).toHaveAttribute('href', '/runs');
-      expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('href', '/projects');
-      expect(screen.getByRole('link', { name: 'Cost' })).toHaveAttribute('href', '/cost');
+      expect(screen.getByRole('link', { name: 'Runs' })).toHaveAttribute(
+        'href',
+        '/runs',
+      );
+      expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute(
+        'href',
+        '/projects',
+      );
+      expect(screen.getByRole('link', { name: 'Cost' })).toHaveAttribute(
+        'href',
+        '/cost',
+      );
     });
 
     it('hides Projects from a user without projects:read', () => {
@@ -112,7 +125,9 @@ describe('NavigationRail', () => {
 
       render(<NavigationRail />);
 
-      expect(screen.queryByRole('link', { name: 'Projects' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: 'Projects' }),
+      ).not.toBeInTheDocument();
     });
 
     it('offers the Queue to a viewer, who really does hold workorders:read', () => {
@@ -122,7 +137,10 @@ describe('NavigationRail', () => {
       // have vanished for most of the people the cockpit is for.
       render(<NavigationRail />);
 
-      expect(screen.getByRole('link', { name: 'Queue' })).toHaveAttribute('href', '/queue');
+      expect(screen.getByRole('link', { name: 'Queue' })).toHaveAttribute(
+        'href',
+        '/queue',
+      );
     });
 
     it('hides the Queue from a user without workorders:read', () => {
@@ -132,16 +150,24 @@ describe('NavigationRail', () => {
 
       render(<NavigationRail />);
 
-      expect(screen.queryByRole('link', { name: 'Queue' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: 'Queue' }),
+      ).not.toBeInTheDocument();
     });
 
     it('hides the admin destinations from a user without the permissions', () => {
       render(<NavigationRail />);
 
       expect(screen.getByRole('link', { name: 'Cockpit' })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'User Settings' })).toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'User Management' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'System Settings' })).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('link', { name: 'User Settings' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: 'User Management' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: 'System Settings' }),
+      ).not.toBeInTheDocument();
     });
 
     it('gates on PERMISSION, not on the admin role', () => {
@@ -152,8 +178,12 @@ describe('NavigationRail', () => {
 
       render(<NavigationRail />);
 
-      expect(screen.getByRole('link', { name: 'System Settings' })).toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'User Management' })).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('link', { name: 'System Settings' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: 'User Management' }),
+      ).not.toBeInTheDocument();
     });
 
     it('shows User Management on users:read alone', () => {
@@ -161,8 +191,12 @@ describe('NavigationRail', () => {
 
       render(<NavigationRail />);
 
-      expect(screen.getByRole('link', { name: 'User Management' })).toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: 'System Settings' })).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('link', { name: 'User Management' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('link', { name: 'System Settings' }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -174,19 +208,19 @@ describe('NavigationRail', () => {
 
       render(<NavigationRail />, { wrapperOptions: { user: mockAdminUser } });
 
-      expect(screen.getByRole('link', { name: 'Cockpit' })).toHaveAttribute('href', '/');
-      expect(screen.getByRole('link', { name: 'User Settings' })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: 'Cockpit' })).toHaveAttribute(
         'href',
-        '/settings',
+        '/',
       );
-      expect(screen.getByRole('link', { name: 'User Management' })).toHaveAttribute(
-        'href',
-        '/admin/users',
-      );
-      expect(screen.getByRole('link', { name: 'System Settings' })).toHaveAttribute(
-        'href',
-        '/admin/settings',
-      );
+      expect(
+        screen.getByRole('link', { name: 'User Settings' }),
+      ).toHaveAttribute('href', '/settings');
+      expect(
+        screen.getByRole('link', { name: 'User Management' }),
+      ).toHaveAttribute('href', '/admin/users');
+      expect(
+        screen.getByRole('link', { name: 'System Settings' }),
+      ).toHaveAttribute('href', '/admin/settings');
     });
 
     it('navigates on click without any deferred timer', async () => {
@@ -196,10 +230,9 @@ describe('NavigationRail', () => {
       await user.click(screen.getByRole('link', { name: 'User Settings' }));
 
       await waitFor(() => {
-        expect(screen.getByRole('link', { name: 'User Settings' })).toHaveAttribute(
-          'aria-current',
-          'page',
-        );
+        expect(
+          screen.getByRole('link', { name: 'User Settings' }),
+        ).toHaveAttribute('aria-current', 'page');
       });
     });
   });
@@ -208,11 +241,12 @@ describe('NavigationRail', () => {
     it('marks the active destination with aria-current="page"', () => {
       render(<NavigationRail />, { wrapperOptions: { route: '/settings' } });
 
-      expect(screen.getByRole('link', { name: 'User Settings' })).toHaveAttribute(
+      expect(
+        screen.getByRole('link', { name: 'User Settings' }),
+      ).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByRole('link', { name: 'Cockpit' })).not.toHaveAttribute(
         'aria-current',
-        'page',
       );
-      expect(screen.getByRole('link', { name: 'Cockpit' })).not.toHaveAttribute('aria-current');
     });
 
     it('marks exactly one row active on a nested admin route', () => {
@@ -256,7 +290,9 @@ describe('NavigationRail', () => {
       // The caption is aria-hidden; the accessible name is still the full label,
       // so the row is findable by it either way.
       expect(screen.getByText('Settings')).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'User Settings' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('link', { name: 'User Settings' }),
+      ).toBeInTheDocument();
     });
 
     it('stays collapsed below lg even when the stored preference says expanded', async () => {
@@ -285,7 +321,9 @@ describe('NavigationRail', () => {
     it('is a real button carrying aria-expanded', () => {
       render(<NavigationRail />);
 
-      const toggle = screen.getByRole('button', { name: /collapse navigation/i });
+      const toggle = screen.getByRole('button', {
+        name: /collapse navigation/i,
+      });
       expect(toggle.tagName).toBe('BUTTON');
       expect(toggle).toHaveAttribute('aria-expanded', 'true');
     });
@@ -303,7 +341,9 @@ describe('NavigationRail', () => {
       const user = userEvent.setup();
       render(<NavigationRail />);
 
-      await user.click(screen.getByRole('button', { name: /collapse navigation/i }));
+      await user.click(
+        screen.getByRole('button', { name: /collapse navigation/i }),
+      );
 
       expect(toggleRailCollapsed).toHaveBeenCalledTimes(1);
     });
@@ -313,7 +353,9 @@ describe('NavigationRail', () => {
 
       await act(async () => setViewportWidth(800));
 
-      expect(screen.queryByRole('button', { name: /navigation/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /navigation/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -321,7 +363,9 @@ describe('NavigationRail', () => {
     it('is a nav landmark with an accessible name', () => {
       render(<NavigationRail />);
 
-      expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('navigation', { name: 'Main navigation' }),
+      ).toBeInTheDocument();
     });
 
     it('keeps DOM order equal to visual order, so focus order follows it', () => {
@@ -332,7 +376,9 @@ describe('NavigationRail', () => {
       // Sections do not reorder the table: the rail's DOM order is the
       // destination order, grouped. Anything else and the tab order stops
       // matching what the eye is reading down the column.
-      expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
+      expect(
+        screen.getAllByRole('link').map((link) => link.getAttribute('href')),
+      ).toEqual([
         '/',
         '/runs',
         '/queue',
@@ -358,7 +404,9 @@ describe('NavigationRail', () => {
       render(<NavigationRail />, { wrapperOptions: { user: mockAdminUser } });
 
       for (const section of SECTIONS) {
-        expect(screen.getByRole('list', { name: section.label })).toBeInTheDocument();
+        expect(
+          screen.getByRole('list', { name: section.label }),
+        ).toBeInTheDocument();
       }
 
       // Collapsed, the visible header is gone but the accessible name is not —
@@ -367,7 +415,9 @@ describe('NavigationRail', () => {
       await act(async () => setViewportWidth(800));
 
       for (const section of SECTIONS) {
-        expect(screen.getByRole('list', { name: section.label })).toBeInTheDocument();
+        expect(
+          screen.getByRole('list', { name: section.label }),
+        ).toBeInTheDocument();
       }
     });
 
@@ -397,7 +447,9 @@ describe('NavigationRail', () => {
       // one. The medium tier has no collapse toggle, so these are the only
       // dividers in the rail.
       const nav = screen.getByRole('navigation', { name: 'Main navigation' });
-      expect(within(nav).getAllByRole('separator')).toHaveLength(SECTIONS.length - 1);
+      expect(within(nav).getAllByRole('separator')).toHaveLength(
+        SECTIONS.length - 1,
+      );
     });
 
     it('drops a section that empties under permission filtering', async () => {
@@ -409,7 +461,9 @@ describe('NavigationRail', () => {
       render(<NavigationRail />);
 
       expect(screen.queryByText('Administration')).not.toBeInTheDocument();
-      expect(screen.queryByRole('list', { name: 'Administration' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('list', { name: 'Administration' }),
+      ).not.toBeInTheDocument();
       expect(screen.getByRole('list', { name: 'Operate' })).toBeInTheDocument();
       expect(screen.getByRole('list', { name: 'Account' })).toBeInTheDocument();
 
@@ -428,10 +482,14 @@ describe('NavigationRail', () => {
 
       for (const section of SECTIONS) {
         const list = screen.getByRole('list', { name: section.label });
-        const expected = DESTINATIONS.filter((d) => d.section === section.key).map((d) => d.path);
-        expect(within(list).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(
-          expected,
-        );
+        const expected = DESTINATIONS.filter(
+          (d) => d.section === section.key,
+        ).map((d) => d.path);
+        expect(
+          within(list)
+            .getAllByRole('link')
+            .map((link) => link.getAttribute('href')),
+        ).toEqual(expected);
       }
     });
   });

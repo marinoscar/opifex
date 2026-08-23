@@ -5,7 +5,10 @@ import {
   closeTestApp,
 } from './helpers/test-app.helper';
 import { resetPrismaMock } from './mocks/prisma.mock';
-import { setupBaseMocks, setupMockAllowedEmailList } from './fixtures/mock-setup.helper';
+import {
+  setupBaseMocks,
+  setupMockAllowedEmailList,
+} from './fixtures/mock-setup.helper';
 import {
   createMockAdminUser,
   createMockContributorUser,
@@ -202,7 +205,10 @@ describe('Allowlist (Integration)', () => {
         .send({ email: newEmail })
         .expect(201);
 
-      expect(response.body.data).toHaveProperty('email', newEmail.toLowerCase());
+      expect(response.body.data).toHaveProperty(
+        'email',
+        newEmail.toLowerCase(),
+      );
       expect(response.body.data).toHaveProperty('claimedById', null);
       expect(context.prismaMock.allowedEmail.create).toHaveBeenCalled();
     });

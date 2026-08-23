@@ -47,7 +47,7 @@ describe('RequestIdMiddleware', () => {
       expect(typeof mockRequest.requestId).toBe('string');
       // Check if it's a valid UUID format
       expect(mockRequest.requestId).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       );
     });
 
@@ -148,7 +148,7 @@ describe('RequestIdMiddleware', () => {
 
       expect(mockResponse.setHeader).toHaveBeenCalledWith(
         'x-request-id',
-        mockRequest.requestId
+        mockRequest.requestId,
       );
     });
 
@@ -168,7 +168,10 @@ describe('RequestIdMiddleware', () => {
 
       middleware.use(mockRequest, mockResponse, mockNext);
 
-      expect(mockResponse.setHeader).toHaveBeenCalledWith('x-trace-id', mockTraceId);
+      expect(mockResponse.setHeader).toHaveBeenCalledWith(
+        'x-trace-id',
+        mockTraceId,
+      );
     });
 
     it('should not set x-trace-id when trace context not available', () => {
@@ -179,7 +182,7 @@ describe('RequestIdMiddleware', () => {
 
       expect(mockResponse.setHeader).toHaveBeenCalledWith(
         'x-request-id',
-        expect.any(String)
+        expect.any(String),
       );
       expect(mockResponse.setHeader).toHaveBeenCalledTimes(1);
     });

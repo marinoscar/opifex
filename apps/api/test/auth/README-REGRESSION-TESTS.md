@@ -11,6 +11,7 @@ The file `oauth-regressions.e2e.spec.ts` contains comprehensive integration test
 **Issue Fixed**: The `HttpExceptionFilter` was using Express-style `response.status().json()` instead of Fastify's `response.code().send()`
 
 **Tests That Catch This**:
+
 - `should use Fastify response methods (code/send) not Express (status/json)`
   - Triggers an error by authenticating a deactivated user
   - If the filter uses wrong response methods, the test would fail with runtime errors
@@ -31,6 +32,7 @@ The file `oauth-regressions.e2e.spec.ts` contains comprehensive integration test
 **Issue Fixed**: The `GoogleOAuthGuard` needed to return raw Node.js http objects (IncomingMessage/ServerResponse) for Passport compatibility with Fastify, and copy the user back to the Fastify request.
 
 **Tests That Catch This**:
+
 - `should successfully authenticate with raw request/response objects`
   - Performs full OAuth callback
   - Would fail if Passport can't work with the request/response objects
@@ -52,6 +54,7 @@ The file `oauth-regressions.e2e.spec.ts` contains comprehensive integration test
 **Issue Fixed**: `AuthService.createNewUser` was calling admin bootstrap outside the transaction, causing FK violations.
 
 **Tests That Catch This**:
+
 - `should create admin user with role in single transaction`
   - Creates first admin user via OAuth
   - Verifies user, identity, settings, and admin role all exist
@@ -75,6 +78,7 @@ The file `oauth-regressions.e2e.spec.ts` contains comprehensive integration test
 **Issue Fixed**: Error redirect URLs contained newlines causing "Invalid character in header" errors.
 
 **Tests That Catch This**:
+
 - `should sanitize error messages with newlines for URL redirect`
   - Triggers error via deactivated user
   - Verifies redirect URL has no newlines
@@ -140,6 +144,7 @@ npm run test:e2e -- oauth
    - Requires roles and permissions to be seeded
 
 2. **Environment Variables**:
+
    ```
    DATABASE_URL=postgresql://user:pass@localhost:5432/testdb
    JWT_SECRET=test-secret-key-minimum-32-chars
@@ -156,6 +161,7 @@ npm run test:e2e -- oauth
 ## Test Coverage
 
 These tests provide:
+
 - **Unit Test Coverage**: Individual component behavior
 - **Integration Test Coverage**: Full HTTP request/response cycle with real Fastify adapter
 - **Database Integration**: Real Prisma operations with transaction testing
@@ -164,6 +170,7 @@ These tests provide:
 ## Verification Strategy
 
 Each regression has:
+
 1. **At least 2 tests**: One for success path, one for failure path
 2. **Explicit assertions**: Tests verify specific behavior changes
 3. **Database validation**: Tests check database state after operations
@@ -172,6 +179,7 @@ Each regression has:
 ## Future Maintenance
 
 When adding OAuth providers or modifying auth flow:
+
 1. Add similar regression tests for new providers
 2. Test raw request/response handling
 3. Test transaction integrity for user creation

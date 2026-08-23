@@ -59,7 +59,11 @@ describe('DispatchService', () => {
       // but it WILL resume on that runner (#56), and freeing the slot now
       // means over-subscribing the moment it does — which breaks the one
       // number the runner told us about itself.
-      expect([...OCCUPYING_STATUSES].sort()).toEqual(['blocked', 'running', 'stalled']);
+      expect([...OCCUPYING_STATUSES].sort()).toEqual([
+        'blocked',
+        'running',
+        'stalled',
+      ]);
     });
 
     it('counts none of the terminal statuses', () => {
@@ -97,7 +101,9 @@ describe('DispatchService', () => {
         runnerRow({ key: 'busy' }),
         runnerRow({ key: 'idle' }),
       ]);
-      prisma.run.groupBy.mockResolvedValue([{ runnerKey: 'busy', _count: { _all: 2 } }]);
+      prisma.run.groupBy.mockResolvedValue([
+        { runnerKey: 'busy', _count: { _all: 2 } },
+      ]);
 
       const decision = await service.decide([]);
 
@@ -113,7 +119,9 @@ describe('DispatchService', () => {
     it('drops a runner that registered no capability manifest', async () => {
       // There is nothing to match needs against. Defaulting one would route
       // real work on invented facts.
-      prisma.runner.findMany.mockResolvedValue([runnerRow({ capability: null })]);
+      prisma.runner.findMany.mockResolvedValue([
+        runnerRow({ capability: null }),
+      ]);
 
       const decision = await service.decide([]);
 
@@ -122,18 +130,24 @@ describe('DispatchService', () => {
     });
 
     it('says which runner it dropped, rather than dropping it quietly', async () => {
-      prisma.runner.findMany.mockResolvedValue([runnerRow({ key: 'naked', capability: null })]);
+      prisma.runner.findMany.mockResolvedValue([
+        runnerRow({ key: 'naked', capability: null }),
+      ]);
       const warn = jest.spyOn(service['logger'], 'warn');
 
       await service.decide([]);
 
-      expect(warn.mock.calls.some(([line]) => String(line).includes('naked'))).toBe(true);
+      expect(
+        warn.mock.calls.some(([line]) => String(line).includes('naked')),
+      ).toBe(true);
     });
 
     it('loads runners in a stable order', async () => {
       await service.decide([]);
 
-      expect(prisma.runner.findMany.mock.calls[0][0].orderBy).toEqual({ key: 'asc' });
+      expect(prisma.runner.findMany.mock.calls[0][0].orderBy).toEqual({
+        key: 'asc',
+      });
     });
   });
 
@@ -149,20 +163,30 @@ describe('DispatchService', () => {
       build(3);
       prisma.run.count.mockResolvedValue(3);
 
-      expect((await service.decide([])).queueReason).toBe('global-concurrency-reached');
+      expect((await service.decide([])).queueReason).toBe(
+        'global-concurrency-reached',
+      );
     });
   });
 
   describe('the decision it returns', () => {
     it('dispatches to a capable runner', async () => {
-      const decision = await service.decide(['full-streaming', 'cost-reporting']);
+      const decision = await service.decide([
+        'full-streaming',
+        'cost-reporting',
+      ]);
 
-      expect(decision).toMatchObject({ outcome: 'dispatch', runnerKey: 'claude-code-local' });
+      expect(decision).toMatchObject({
+        outcome: 'dispatch',
+        runnerKey: 'claude-code-local',
+      });
     });
 
     it('translates the database row into the seam type faithfully', async () => {
       prisma.runner.findMany.mockResolvedValue([
-        runnerRow({ capability: { ...runnerRow().capability, streamingFidelity: 'none' } }),
+        runnerRow({
+          capability: { ...runnerRow().capability, streamingFidelity: 'none' },
+        }),
       ]);
 
       const decision = await service.decide(['full-streaming']);
@@ -196,23 +220,30 @@ describe('DispatchService', () => {
       ['streamingFidelity', 'RunnerStreamingFidelity'],
       ['rateLimitSignal', 'RunnerSignalQuality'],
       ['stabilityTier', 'RunnerStabilityTier'],
-    ])('%s survives the round trip for every Prisma value', async (field, prismaEnum) => {
-      // The policy is written against a restated union so it stays pure. That
-      // is only safe while the two agree — a value the translation mangled
-      // would fail to route with no error anywhere.
-      const prisma_ = await import('@prisma/client');
-      const values = Object.values(
-        (prisma_ as unknown as Record<string, Record<string, string>>)[prismaEnum],
-      );
+    ])(
+      '%s survives the round trip for every Prisma value',
+      async (field, prismaEnum) => {
+        // The policy is written against a restated union so it stays pure. That
+        // is only safe while the two agree — a value the translation mangled
+        // would fail to route with no error anywhere.
+        const prisma_ = await import('@prisma/client');
+        const values = Object.values(
+          (prisma_ as unknown as Record<string, Record<string, string>>)[
+            prismaEnum
+          ],
+        );
 
-      for (const value of values) {
-        prisma.runner.findMany.mockResolvedValue([
-          runnerRow({ capability: { ...runnerRow().capability, [field]: value } }),
-        ]);
+        for (const value of values) {
+          prisma.runner.findMany.mockResolvedValue([
+            runnerRow({
+              capability: { ...runnerRow().capability, [field]: value },
+            }),
+          ]);
 
-        const decision = await service.decide([]);
-        expect(decision.candidates).toHaveLength(1);
-      }
-    });
+          const decision = await service.decide([]);
+          expect(decision.candidates).toHaveLength(1);
+        }
+      },
+    );
   });
 });

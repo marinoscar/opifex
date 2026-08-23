@@ -6,7 +6,9 @@ test.describe('Admin functionality', () => {
 
     // Verify we're on the admin page
     await expect(adminPage).toHaveURL('/admin/users');
-    await expect(adminPage.locator('h1, h2, h3, h4, h5, h6').first()).toBeVisible();
+    await expect(
+      adminPage.locator('h1, h2, h3, h4, h5, h6').first(),
+    ).toBeVisible();
   });
 
   test('admin can access system settings', async ({ adminPage }) => {

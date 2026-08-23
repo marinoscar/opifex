@@ -6,12 +6,15 @@ interface OAuthButtonProps {
 }
 
 // Provider configurations
-const providerConfig: Record<string, {
-  label: string;
-  icon: React.ReactNode;
-  color?: string;
-  textColor?: string;
-}> = {
+const providerConfig: Record<
+  string,
+  {
+    label: string;
+    icon: React.ReactNode;
+    color?: string;
+    textColor?: string;
+  }
+> = {
   google: {
     label: 'Continue with Google',
     icon: <GoogleIcon />,

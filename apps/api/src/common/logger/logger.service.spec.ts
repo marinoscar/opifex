@@ -101,14 +101,20 @@ describe('LoggerService', () => {
     it('should log at trace level', () => {
       service.trace('Trace message');
 
-      expect(mockPinoLogger.trace).toHaveBeenCalledWith(undefined, 'Trace message');
+      expect(mockPinoLogger.trace).toHaveBeenCalledWith(
+        undefined,
+        'Trace message',
+      );
     });
 
     it('should log at trace level with context', () => {
       const context = { userId: '123', action: 'read' };
       service.trace('Trace with context', context);
 
-      expect(mockPinoLogger.trace).toHaveBeenCalledWith(context, 'Trace with context');
+      expect(mockPinoLogger.trace).toHaveBeenCalledWith(
+        context,
+        'Trace with context',
+      );
     });
   });
 
@@ -116,14 +122,20 @@ describe('LoggerService', () => {
     it('should log at debug level', () => {
       service.debug('Debug message');
 
-      expect(mockPinoLogger.debug).toHaveBeenCalledWith(undefined, 'Debug message');
+      expect(mockPinoLogger.debug).toHaveBeenCalledWith(
+        undefined,
+        'Debug message',
+      );
     });
 
     it('should log at debug level with context', () => {
       const context = { query: 'SELECT * FROM users' };
       service.debug('Database query', context);
 
-      expect(mockPinoLogger.debug).toHaveBeenCalledWith(context, 'Database query');
+      expect(mockPinoLogger.debug).toHaveBeenCalledWith(
+        context,
+        'Database query',
+      );
     });
   });
 
@@ -131,14 +143,20 @@ describe('LoggerService', () => {
     it('should log at info level', () => {
       service.info('Info message');
 
-      expect(mockPinoLogger.info).toHaveBeenCalledWith(undefined, 'Info message');
+      expect(mockPinoLogger.info).toHaveBeenCalledWith(
+        undefined,
+        'Info message',
+      );
     });
 
     it('should log at info level with context', () => {
       const context = { event: 'user_login', userId: '123' };
       service.info('User logged in', context);
 
-      expect(mockPinoLogger.info).toHaveBeenCalledWith(context, 'User logged in');
+      expect(mockPinoLogger.info).toHaveBeenCalledWith(
+        context,
+        'User logged in',
+      );
     });
 
     it('should handle complex context objects', () => {
@@ -148,7 +166,10 @@ describe('LoggerService', () => {
       };
       service.info('Complex context', context);
 
-      expect(mockPinoLogger.info).toHaveBeenCalledWith(context, 'Complex context');
+      expect(mockPinoLogger.info).toHaveBeenCalledWith(
+        context,
+        'Complex context',
+      );
     });
   });
 
@@ -156,14 +177,20 @@ describe('LoggerService', () => {
     it('should log at warn level', () => {
       service.warn('Warning message');
 
-      expect(mockPinoLogger.warn).toHaveBeenCalledWith(undefined, 'Warning message');
+      expect(mockPinoLogger.warn).toHaveBeenCalledWith(
+        undefined,
+        'Warning message',
+      );
     });
 
     it('should log at warn level with context', () => {
       const context = { threshold: 90, current: 95 };
       service.warn('Threshold exceeded', context);
 
-      expect(mockPinoLogger.warn).toHaveBeenCalledWith(context, 'Threshold exceeded');
+      expect(mockPinoLogger.warn).toHaveBeenCalledWith(
+        context,
+        'Threshold exceeded',
+      );
     });
   });
 
@@ -174,7 +201,7 @@ describe('LoggerService', () => {
 
       expect(mockPinoLogger.error).toHaveBeenCalledWith(
         { err: error },
-        'Error occurred'
+        'Error occurred',
       );
     });
 
@@ -185,7 +212,7 @@ describe('LoggerService', () => {
 
       expect(mockPinoLogger.error).toHaveBeenCalledWith(
         { ...context, err: error },
-        'Database operation failed'
+        'Database operation failed',
       );
     });
 
@@ -195,7 +222,7 @@ describe('LoggerService', () => {
 
       expect(mockPinoLogger.error).toHaveBeenCalledWith(
         { error: errorObj },
-        'Unknown error occurred'
+        'Unknown error occurred',
       );
     });
 
@@ -207,7 +234,7 @@ describe('LoggerService', () => {
 
       expect(mockPinoLogger.error).toHaveBeenCalledWith(
         { err: error },
-        'Error with stack trace'
+        'Error with stack trace',
       );
       // Pino automatically serializes Error objects with stack traces
     });
@@ -218,7 +245,7 @@ describe('LoggerService', () => {
 
       expect(mockPinoLogger.error).toHaveBeenCalledWith(
         { err: error },
-        'Error message'
+        'Error message',
       );
     });
 
@@ -227,7 +254,7 @@ describe('LoggerService', () => {
 
       expect(mockPinoLogger.error).toHaveBeenCalledWith(
         { error: null },
-        'Error with null'
+        'Error with null',
       );
     });
 
@@ -236,7 +263,7 @@ describe('LoggerService', () => {
 
       expect(mockPinoLogger.error).toHaveBeenCalledWith(
         { error: undefined },
-        'Error with undefined'
+        'Error with undefined',
       );
     });
   });
@@ -248,7 +275,7 @@ describe('LoggerService', () => {
 
       expect(mockPinoLogger.fatal).toHaveBeenCalledWith(
         { err: error },
-        'Fatal error occurred'
+        'Fatal error occurred',
       );
     });
 
@@ -259,7 +286,7 @@ describe('LoggerService', () => {
 
       expect(mockPinoLogger.fatal).toHaveBeenCalledWith(
         { ...context, err: error },
-        'System failure'
+        'System failure',
       );
     });
 
@@ -269,7 +296,7 @@ describe('LoggerService', () => {
 
       expect(mockPinoLogger.fatal).toHaveBeenCalledWith(
         { error: errorObj },
-        'Critical failure'
+        'Critical failure',
       );
     });
   });
@@ -293,14 +320,17 @@ describe('LoggerService', () => {
       // The additional context is passed to the log method
       expect(mockPinoLogger.info).toHaveBeenCalledWith(
         additionalContext,
-        'User action'
+        'User action',
       );
     });
 
     it('should handle empty context object', () => {
       service.info('Message with empty context', {});
 
-      expect(mockPinoLogger.info).toHaveBeenCalledWith({}, 'Message with empty context');
+      expect(mockPinoLogger.info).toHaveBeenCalledWith(
+        {},
+        'Message with empty context',
+      );
     });
 
     it('should handle context with null values', () => {
@@ -309,7 +339,7 @@ describe('LoggerService', () => {
 
       expect(mockPinoLogger.info).toHaveBeenCalledWith(
         context,
-        'Message with null in context'
+        'Message with null in context',
       );
     });
   });
@@ -364,7 +394,7 @@ describe('LoggerService', () => {
       // Pino uses 'err' key for Error serialization
       expect(mockPinoLogger.error).toHaveBeenCalledWith(
         expect.objectContaining({ err: error }),
-        'Error'
+        'Error',
       );
     });
   });
@@ -384,8 +414,16 @@ describe('LoggerService', () => {
       service.info('First', { id: 1 });
       service.info('Second', { id: 2 });
 
-      expect(mockPinoLogger.info).toHaveBeenNthCalledWith(1, { id: 1 }, 'First');
-      expect(mockPinoLogger.info).toHaveBeenNthCalledWith(2, { id: 2 }, 'Second');
+      expect(mockPinoLogger.info).toHaveBeenNthCalledWith(
+        1,
+        { id: 1 },
+        'First',
+      );
+      expect(mockPinoLogger.info).toHaveBeenNthCalledWith(
+        2,
+        { id: 2 },
+        'Second',
+      );
     });
   });
 });

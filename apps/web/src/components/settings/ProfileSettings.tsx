@@ -31,8 +31,12 @@ export function ProfileSettings({
 }: ProfileSettingsProps) {
   const { user, refreshUser } = useAuth();
   const [displayName, setDisplayName] = useState(profile.displayName || '');
-  const [useProviderImage, setUseProviderImage] = useState(profile.useProviderImage);
-  const [customImageUrl, setCustomImageUrl] = useState(profile.customImageUrl || '');
+  const [useProviderImage, setUseProviderImage] = useState(
+    profile.useProviderImage,
+  );
+  const [customImageUrl, setCustomImageUrl] = useState(
+    profile.customImageUrl || '',
+  );
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 

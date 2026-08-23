@@ -38,7 +38,12 @@ export const runStatusSchema = z.enum([
 
 export const runsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(RUNS_MAX_PAGE_SIZE).default(RUNS_DEFAULT_PAGE_SIZE),
+  pageSize: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(RUNS_MAX_PAGE_SIZE)
+    .default(RUNS_DEFAULT_PAGE_SIZE),
   /**
    * Only runs a human has to do something about.
    *

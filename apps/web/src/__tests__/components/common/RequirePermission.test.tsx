@@ -24,11 +24,11 @@ describe('RequirePermission', () => {
         perm === 'user_settings:read' || perm === 'user_settings:write',
       hasAnyPermission: (...perms: string[]) =>
         perms.some(
-          (p) => p === 'user_settings:read' || p === 'user_settings:write'
+          (p) => p === 'user_settings:read' || p === 'user_settings:write',
         ),
       hasAllPermissions: (...perms: string[]) =>
         perms.every(
-          (p) => p === 'user_settings:read' || p === 'user_settings:write'
+          (p) => p === 'user_settings:read' || p === 'user_settings:write',
         ),
       hasRole: (role: string) => role === 'viewer',
       hasAnyRole: (...roleList: string[]) => roleList.includes('viewer'),
@@ -41,7 +41,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission permission="user_settings:read">
           <div>Protected Content</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('Protected Content')).toBeInTheDocument();
@@ -51,7 +51,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission permission="system_settings:write">
           <div>Admin Only Content</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Admin Only Content')).not.toBeInTheDocument();
@@ -61,7 +61,8 @@ describe('RequirePermission', () => {
       mockUsePermissions.mockReturnValue({
         permissions: new Set(['posts:create', 'posts:read']),
         roles: new Set(['contributor']),
-        hasPermission: (perm: string) => perm === 'posts:create' || perm === 'posts:read',
+        hasPermission: (perm: string) =>
+          perm === 'posts:create' || perm === 'posts:read',
         hasAnyPermission: vi.fn(),
         hasAllPermissions: vi.fn(),
         hasRole: vi.fn(),
@@ -72,10 +73,12 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission permission="posts:create">
           <button>Create Post</button>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
-      expect(screen.getByRole('button', { name: /create post/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /create post/i }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -87,7 +90,7 @@ describe('RequirePermission', () => {
           requireAll={false}
         >
           <div>Settings Content</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('Settings Content')).toBeInTheDocument();
@@ -100,7 +103,7 @@ describe('RequirePermission', () => {
           requireAll={false}
         >
           <div>Admin Settings</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Admin Settings')).not.toBeInTheDocument();
@@ -124,7 +127,7 @@ describe('RequirePermission', () => {
           requireAll={false}
         >
           <div>Can View Posts</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('Can View Posts')).toBeInTheDocument();
@@ -139,7 +142,7 @@ describe('RequirePermission', () => {
           requireAll={true}
         >
           <div>Edit Settings</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('Edit Settings')).toBeInTheDocument();
@@ -152,7 +155,7 @@ describe('RequirePermission', () => {
           requireAll={true}
         >
           <div>All Settings</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('All Settings')).not.toBeInTheDocument();
@@ -178,7 +181,7 @@ describe('RequirePermission', () => {
           requireAll={true}
         >
           <div>Full Access</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Full Access')).not.toBeInTheDocument();
@@ -190,7 +193,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission role="viewer">
           <div>Viewer Content</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('Viewer Content')).toBeInTheDocument();
@@ -200,7 +203,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission role="admin">
           <div>Admin Panel</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Admin Panel')).not.toBeInTheDocument();
@@ -221,7 +224,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission roles={['admin', 'contributor', 'viewer']}>
           <div>Multi-Role Content</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('Multi-Role Content')).toBeInTheDocument();
@@ -231,7 +234,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission roles={['admin', 'contributor']}>
           <div>Elevated Access</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Elevated Access')).not.toBeInTheDocument();
@@ -246,7 +249,7 @@ describe('RequirePermission', () => {
           fallback={<div>Access Denied</div>}
         >
           <div>Protected Content</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Protected Content')).not.toBeInTheDocument();
@@ -267,19 +270,21 @@ describe('RequirePermission', () => {
           fallback={<CustomFallback />}
         >
           <div>User Management</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('User Management')).not.toBeInTheDocument();
       expect(screen.getByText('Insufficient Permissions')).toBeInTheDocument();
-      expect(screen.getByText('Please contact your administrator')).toBeInTheDocument();
+      expect(
+        screen.getByText('Please contact your administrator'),
+      ).toBeInTheDocument();
     });
 
     it('should render fallback for role check failure', () => {
       render(
         <RequirePermission role="admin" fallback={<div>Admins Only</div>}>
           <div>Admin Dashboard</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Admin Dashboard')).not.toBeInTheDocument();
@@ -294,7 +299,7 @@ describe('RequirePermission', () => {
           fallback={<div>Restricted Area</div>}
         >
           <div>Admin Area</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Admin Area')).not.toBeInTheDocument();
@@ -307,7 +312,7 @@ describe('RequirePermission', () => {
       const { container } = render(
         <RequirePermission permission="system_settings:write">
           <div>Admin Content</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -318,7 +323,7 @@ describe('RequirePermission', () => {
       const { container } = render(
         <RequirePermission permission="users:delete" fallback={null}>
           <button>Delete User</button>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByRole('button')).not.toBeInTheDocument();
@@ -331,7 +336,7 @@ describe('RequirePermission', () => {
           <RequirePermission permission="nonexistent:permission">
             <div>Hidden Content</div>
           </RequirePermission>
-        </div>
+        </div>,
       );
 
       const wrapper = screen.getByTestId('wrapper');
@@ -355,7 +360,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission permission="posts:create" role="contributor">
           <div>Create Post</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('Create Post')).toBeInTheDocument();
@@ -376,7 +381,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission permission="posts:create" role="admin">
           <div>Admin Post</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Admin Post')).not.toBeInTheDocument();
@@ -397,7 +402,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission permission="posts:delete" role="admin">
           <div>Delete Post</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Delete Post')).not.toBeInTheDocument();
@@ -425,7 +430,7 @@ describe('RequirePermission', () => {
           roles={['admin', 'super_admin']}
         >
           <div>User Management</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('User Management')).toBeInTheDocument();
@@ -437,7 +442,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission permissions={[]}>
           <div>Always Visible</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('Always Visible')).toBeInTheDocument();
@@ -447,7 +452,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission roles={[]}>
           <div>Always Visible</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('Always Visible')).toBeInTheDocument();
@@ -457,7 +462,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission>
           <div>No Restrictions</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('No Restrictions')).toBeInTheDocument();
@@ -478,7 +483,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission permission="user_settings:read">
           <div>Settings</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Settings')).not.toBeInTheDocument();
@@ -499,7 +504,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission permission="posts:read">
           <div>Posts</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Posts')).not.toBeInTheDocument();
@@ -520,7 +525,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission role="viewer">
           <div>Role Required</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Role Required')).not.toBeInTheDocument();
@@ -534,10 +539,12 @@ describe('RequirePermission', () => {
             <p>Configuration options</p>
             <button>Save</button>
           </div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
-      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: /settings/i }),
+      ).toBeInTheDocument();
       expect(screen.getByText('Configuration options')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument();
     });
@@ -557,7 +564,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission permission="user:profile:update">
           <div>Update Profile</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('Update Profile')).toBeInTheDocument();
@@ -597,7 +604,7 @@ describe('RequirePermission', () => {
               'users:read',
               'users:write',
               'rbac:manage',
-            ].includes(p)
+            ].includes(p),
           ),
         hasAllPermissions: (...perms: string[]) =>
           perms.every((p) =>
@@ -609,7 +616,7 @@ describe('RequirePermission', () => {
               'users:read',
               'users:write',
               'rbac:manage',
-            ].includes(p)
+            ].includes(p),
           ),
         hasRole: (role: string) => role === 'admin',
         hasAnyRole: (...roleList: string[]) => roleList.includes('admin'),
@@ -621,7 +628,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission permission="system_settings:write">
           <div>System Configuration</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('System Configuration')).toBeInTheDocument();
@@ -634,7 +641,7 @@ describe('RequirePermission', () => {
           requireAll={true}
         >
           <div>User Administration</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('User Administration')).toBeInTheDocument();
@@ -644,7 +651,7 @@ describe('RequirePermission', () => {
       render(
         <RequirePermission role="admin">
           <div>Admin Dashboard</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
@@ -659,11 +666,13 @@ describe('RequirePermission', () => {
           <RequirePermission permission="user_settings:write">
             <button>Edit Profile</button>
           </RequirePermission>
-        </div>
+        </div>,
       );
 
       expect(screen.getByText('User Profile')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /edit profile/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /edit profile/i }),
+      ).toBeInTheDocument();
     });
 
     it('should hide admin menu items for non-admin users', () => {
@@ -674,7 +683,7 @@ describe('RequirePermission', () => {
           <RequirePermission role="admin">
             <div>Admin Panel</div>
           </RequirePermission>
-        </nav>
+        </nav>,
       );
 
       expect(screen.getByText('Home')).toBeInTheDocument();
@@ -694,12 +703,14 @@ describe('RequirePermission', () => {
           }
         >
           <div>Premium Content</div>
-        </RequirePermission>
+        </RequirePermission>,
       );
 
       expect(screen.queryByText('Premium Content')).not.toBeInTheDocument();
       expect(screen.getByText('Upgrade to Premium')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /upgrade now/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /upgrade now/i }),
+      ).toBeInTheDocument();
     });
 
     it('should allow contributors to create but not delete', () => {
@@ -723,11 +734,15 @@ describe('RequirePermission', () => {
           <RequirePermission permission="posts:delete">
             <button>Delete Post</button>
           </RequirePermission>
-        </div>
+        </div>,
       );
 
-      expect(screen.getByRole('button', { name: /create post/i })).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /delete post/i })).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /create post/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /delete post/i }),
+      ).not.toBeInTheDocument();
     });
   });
 });

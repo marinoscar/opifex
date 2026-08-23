@@ -46,12 +46,23 @@ import {
   useGridApiContext,
   useGridSelector,
 } from '@mui/x-data-grid';
-import { Alert, Box, Checkbox, IconButton, useMediaQuery, useTheme } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Checkbox,
+  IconButton,
+  useMediaQuery,
+  useTheme,
+} from '@mui/material';
 import visuallyHidden from '@mui/utils/visuallyHidden';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 import type { DataTableRendererProps } from '../types';
-import { buildColumnVisibilityModel, rowAccessibleName, toGridColumns } from './columnAdapter';
+import {
+  buildColumnVisibilityModel,
+  rowAccessibleName,
+  toGridColumns,
+} from './columnAdapter';
 
 /**
  * The per-row selection checkbox.
@@ -95,7 +106,10 @@ function SelectionCheckboxCell({
   size: 'small' | 'medium';
 }) {
   const apiRef = useGridApiContext();
-  const selectionManager = useGridSelector(apiRef, gridRowSelectionManagerSelector);
+  const selectionManager = useGridSelector(
+    apiRef,
+    gridRowSelectionManagerSelector,
+  );
 
   return (
     <Checkbox
@@ -111,7 +125,9 @@ function SelectionCheckboxCell({
       onChange={(event) => {
         apiRef.current.selectRow(id, event.target.checked, false);
       }}
-      slotProps={{ input: { 'aria-label': `Select ${label}`, name: 'select_row' } }}
+      slotProps={{
+        input: { 'aria-label': `Select ${label}`, name: 'select_row' },
+      }}
     />
   );
 }
@@ -140,7 +156,9 @@ const DEFAULT_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const MAX_UNPAGINATED_ROWS = 100;
 const EMPTY_SELECTION: ReadonlySet<string> = new Set<string>();
 
-export interface DesktopGridRendererProps<Row> extends DataTableRendererProps<Row> {
+export interface DesktopGridRendererProps<
+  Row,
+> extends DataTableRendererProps<Row> {
   /**
    * Which grid layout to draw. Omit to fall back to a viewport media query
    * (the pre-#253 behaviour) — `DataTable` always passes it explicitly.
@@ -196,7 +214,8 @@ export function DesktopGridRenderer<Row>({
   // to expand and no expander column is added.
   const expandable = isTablet && detailColumns.length > 0;
 
-  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(EMPTY_SELECTION);
+  const [expandedIds, setExpandedIds] =
+    useState<ReadonlySet<string>>(EMPTY_SELECTION);
 
   const toggleExpanded = useCallback((id: string) => {
     setExpandedIds((current) => {
@@ -226,7 +245,9 @@ export function DesktopGridRenderer<Row>({
 
   const getRowId = useCallback(
     (row: GridValidRowModel) =>
-      isDetailRow<Row>(row) ? detailRowId(row.__datatableDetailFor) : rowId(row as Row),
+      isDetailRow<Row>(row)
+        ? detailRowId(row.__datatableDetailFor)
+        : rowId(row as Row),
     [rowId],
   );
 
@@ -243,7 +264,8 @@ export function DesktopGridRenderer<Row>({
   );
 
   const getRowClassName = useCallback(
-    ({ row }: { row: GridValidRowModel }) => (isDetailRow<Row>(row) ? DETAIL_ROW_CLASS : ''),
+    ({ row }: { row: GridValidRowModel }) =>
+      isDetailRow<Row>(row) ? DETAIL_ROW_CLASS : '',
     [],
   );
 
@@ -281,7 +303,12 @@ export function DesktopGridRenderer<Row>({
               // auto_tagging" rather than a bare "Retry" repeated on every row
               // (issue #257). Mirrors the card renderer, which has always
               // passed this.
-              rowLabel={rowAccessibleName(columns, params.row as Row, String(params.id), visibleColumnIds)}
+              rowLabel={rowAccessibleName(
+                columns,
+                params.row as Row,
+                String(params.id),
+                visibleColumnIds,
+              )}
               onRun={runAction}
             />
           ),
@@ -292,7 +319,8 @@ export function DesktopGridRenderer<Row>({
 
     // Every column the expander's spanned cell must cover: itself, the visible
     // data columns, and the actions column if present.
-    const spannedColumns = 1 + visibleDataColumnCount + (rowActions?.length ? 1 : 0);
+    const spannedColumns =
+      1 + visibleDataColumnCount + (rowActions?.length ? 1 : 0);
 
     const expanderColumn: GridColDef = {
       field: EXPANDER_FIELD,
@@ -330,7 +358,12 @@ export function DesktopGridRenderer<Row>({
         // (issue #257): several rows' expander buttons with the identical bare
         // name "Show details" are indistinguishable to a screen reader tabbing
         // through them.
-        const rowLabel = rowAccessibleName(columns, params.row as Row, id, visibleColumnIds);
+        const rowLabel = rowAccessibleName(
+          columns,
+          params.row as Row,
+          id,
+          visibleColumnIds,
+        );
         return (
           <IconButton
             size="small"
@@ -341,7 +374,11 @@ export function DesktopGridRenderer<Row>({
             // hidden `detail` columns — so it gets a comfortable target
             // wherever the row is tall enough to hold one. `compact` rows are
             // 36px, so they keep the grid's own density instead.
-            sx={density === 'compact' ? undefined : { minWidth: 44, minHeight: 44 }}
+            sx={
+              density === 'compact'
+                ? undefined
+                : { minWidth: 44, minHeight: 44 }
+            }
             onClick={(event) => {
               event.stopPropagation();
               toggleExpanded(id);
@@ -386,13 +423,22 @@ export function DesktopGridRenderer<Row>({
     () =>
       pagination
         ? { page: pagination.page, pageSize: pagination.pageSize }
-        : { page: 0, pageSize: Math.min(Math.max(gridRows.length, 1), MAX_UNPAGINATED_ROWS) },
+        : {
+            page: 0,
+            pageSize: Math.min(
+              Math.max(gridRows.length, 1),
+              MAX_UNPAGINATED_ROWS,
+            ),
+          },
     [pagination, gridRows.length],
   );
 
   const handlePaginationModelChange = useCallback(
     (model: GridPaginationModel) => {
-      pagination?.onPaginationChange({ page: model.page, pageSize: model.pageSize });
+      pagination?.onPaginationChange({
+        page: model.page,
+        pageSize: model.pageSize,
+      });
     },
     [pagination],
   );
@@ -400,7 +446,8 @@ export function DesktopGridRenderer<Row>({
   // --- Sorting (server) -----------------------------------------------------
 
   const sortModel: GridSortModel = useMemo(
-    () => (sort?.sort ? [{ field: sort.sort.field, sort: sort.sort.direction }] : []),
+    () =>
+      sort?.sort ? [{ field: sort.sort.field, sort: sort.sort.direction }] : [],
     [sort],
   );
 
@@ -456,7 +503,8 @@ export function DesktopGridRenderer<Row>({
   // built-in virtualizer can actually run. `disableVirtualization` is left at
   // its default (false) throughout; see `virtualization/gridVirtualization.ts`.
   const virtualization = useMemo(
-    () => planGridVirtualization({ rowCount: gridRows.length, height, density }),
+    () =>
+      planGridVirtualization({ rowCount: gridRows.length, height, density }),
     [gridRows.length, height, density],
   );
 
@@ -464,7 +512,9 @@ export function DesktopGridRenderer<Row>({
 
   const slots = useMemo(
     () => ({
-      noRowsOverlay: () => <DataTableEmptyOverlay>{emptyState}</DataTableEmptyOverlay>,
+      noRowsOverlay: () => (
+        <DataTableEmptyOverlay>{emptyState}</DataTableEmptyOverlay>
+      ),
       loadingOverlay: () => <DataTableLoadingOverlay />,
       // Fixes a real axe violation (`aria-conditional-attr`, issue #257): the
       // grid's own header "select all" checkbox goes indeterminate but never
@@ -501,7 +551,12 @@ export function DesktopGridRenderer<Row>({
             renderCell: (params: GridRenderCellParams) => {
               if (isDetailRow<Row>(params.row)) return null;
               const row = params.row as Row;
-              const label = rowAccessibleName(columns, row, String(params.id), visibleColumnIds);
+              const label = rowAccessibleName(
+                columns,
+                row,
+                String(params.id),
+                visibleColumnIds,
+              );
               return (
                 <SelectionCheckboxCell
                   id={params.id}
@@ -552,7 +607,9 @@ export function DesktopGridRenderer<Row>({
           maxWidth: '100%',
           minWidth: 0,
           overflowX: 'auto',
-          ...(virtualization.height != null ? { height: virtualization.height } : {}),
+          ...(virtualization.height != null
+            ? { height: virtualization.height }
+            : {}),
         }}
       >
         <DataGrid
@@ -575,7 +632,9 @@ export function DesktopGridRenderer<Row>({
           rowCount={pagination?.total ?? rows.length}
           paginationModel={paginationModel}
           onPaginationModelChange={handlePaginationModelChange}
-          pageSizeOptions={pagination?.pageSizeOptions ?? DEFAULT_PAGE_SIZE_OPTIONS}
+          pageSizeOptions={
+            pagination?.pageSizeOptions ?? DEFAULT_PAGE_SIZE_OPTIONS
+          }
           hideFooter={!pagination}
           // Sorting — server-side.
           sortingMode="server"

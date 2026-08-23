@@ -9,7 +9,11 @@ import {
   explainErrors,
   validatorFor,
 } from '../../../test/schemas/contract-validators';
-import { RUNNER_SEAM_METHODS, type RunHandle, type WorkOrderSpec } from '../runner.types';
+import {
+  RUNNER_SEAM_METHODS,
+  type RunHandle,
+  type WorkOrderSpec,
+} from '../runner.types';
 import {
   ClaudeCodeLocalRunner,
   FINISHED_RUN_RETENTION_MS,
@@ -51,7 +55,11 @@ describe('ClaudeCodeLocalRunner', () => {
    * Writes its argv, cwd and stdin next to itself so the invocation can be
    * asserted, then runs whatever body the test asked for.
    */
-  async function fakeClaude(name: string, body: string, mode = 0o755): Promise<string> {
+  async function fakeClaude(
+    name: string,
+    body: string,
+    mode = 0o755,
+  ): Promise<string> {
     const path = join(binDir, name);
     await writeFile(
       path,
@@ -68,7 +76,9 @@ describe('ClaudeCodeLocalRunner', () => {
     return path;
   }
 
-  function build(overrides: Record<string, unknown> = {}): ClaudeCodeLocalRunner {
+  function build(
+    overrides: Record<string, unknown> = {},
+  ): ClaudeCodeLocalRunner {
     const values: Record<string, unknown> = {
       'runners.claudeCodeLocal.workspaceRoot': workspaceRoot,
       'runners.claudeCodeLocal.gitBinary': 'git',
@@ -81,11 +91,15 @@ describe('ClaudeCodeLocalRunner', () => {
       'github.token': undefined,
       ...overrides,
     };
-    const config = { get: (key: string) => values[key] } as unknown as ConfigService;
+    const config = {
+      get: (key: string) => values[key],
+    } as unknown as ConfigService;
     return new ClaudeCodeLocalRunner(config, new RunWorkspaceService(config));
   }
 
-  const workOrder = (overrides: Partial<WorkOrderSpec> = {}): WorkOrderSpec => ({
+  const workOrder = (
+    overrides: Partial<WorkOrderSpec> = {},
+  ): WorkOrderSpec => ({
     identity: 'wo_acme-widgets_42_abc1234_a1',
     runId: '3f1d9d3e-6b1a-4f8e-9c2a-8b5a4f0c1d22',
     repository: { owner: 'acme', name: 'widgets' },
@@ -104,17 +118,25 @@ describe('ClaudeCodeLocalRunner', () => {
   });
 
   /** Polls rather than sleeping: keeps the suite fast and deterministic. */
-  async function until(predicate: () => boolean | Promise<boolean>, timeoutMs = 10_000) {
+  async function until(
+    predicate: () => boolean | Promise<boolean>,
+    timeoutMs = 10_000,
+  ) {
     const deadline = Date.now() + timeoutMs;
     while (!(await predicate())) {
-      if (Date.now() > deadline) throw new Error('timed out waiting for condition');
+      if (Date.now() > deadline)
+        throw new Error('timed out waiting for condition');
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
   }
 
   /** Waits for a run to reach a terminal status and returns everything polled. */
-  async function drainUntilTerminal(runner: ClaudeCodeLocalRunner, handle: RunHandle) {
-    const events: Awaited<ReturnType<ClaudeCodeLocalRunner['poll']>>['events'] = [];
+  async function drainUntilTerminal(
+    runner: ClaudeCodeLocalRunner,
+    handle: RunHandle,
+  ) {
+    const events: Awaited<ReturnType<ClaudeCodeLocalRunner['poll']>>['events'] =
+      [];
     let status = 'running';
     await until(async () => {
       const result = await runner.poll(handle);
@@ -127,7 +149,10 @@ describe('ClaudeCodeLocalRunner', () => {
     await until(async () => {
       const result = await runner.poll(handle);
       events.push(...result.events);
-      return events.some((event) => event.type === 'run.completed' || event.type === 'run.failed');
+      return events.some(
+        (event) =>
+          event.type === 'run.completed' || event.type === 'run.failed',
+      );
     });
     return { status, events };
   }
@@ -195,14 +220,20 @@ describe('ClaudeCodeLocalRunner', () => {
       // a list called INTERNALS.
       const LIFECYCLE = ['onModuleDestroy'];
 
-      const implemented = Object.getOwnPropertyNames(ClaudeCodeLocalRunner.prototype)
+      const implemented = Object.getOwnPropertyNames(
+        ClaudeCodeLocalRunner.prototype,
+      )
         .filter(
           (name) =>
             name !== 'constructor' &&
-            typeof Object.getOwnPropertyDescriptor(ClaudeCodeLocalRunner.prototype, name)?.value ===
-              'function',
+            typeof Object.getOwnPropertyDescriptor(
+              ClaudeCodeLocalRunner.prototype,
+              name,
+            )?.value === 'function',
         )
-        .filter((name) => !INTERNALS.includes(name) && !LIFECYCLE.includes(name));
+        .filter(
+          (name) => !INTERNALS.includes(name) && !LIFECYCLE.includes(name),
+        );
 
       expect(implemented.sort()).toEqual([...RUNNER_SEAM_METHODS].sort());
     });
@@ -227,7 +258,9 @@ describe('ClaudeCodeLocalRunner', () => {
       const cwd = (await readFile(`${binary}.cwd`, 'utf8')).trim();
       expect(cwd).toContain('wo_acme-widgets_42_abc1234_a1');
       expect(await git(cwd, 'rev-parse', 'HEAD')).toBe(baseCommit);
-      expect(await git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('factory/42-abc1234-a1');
+      expect(await git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe(
+        'factory/42-abc1234-a1',
+      );
     }, 30_000);
 
     it('passes the flags that make the output stream exist at all', async () => {
@@ -242,7 +275,9 @@ describe('ClaudeCodeLocalRunner', () => {
       const handle = await runner.submit(order);
       await drainUntilTerminal(runner, handle);
 
-      const argv = (await readFile(`${binary}.argv`, 'utf8')).trim().split('\n');
+      const argv = (await readFile(`${binary}.argv`, 'utf8'))
+        .trim()
+        .split('\n');
       expect(argv).toContain('--print');
       expect(argv).toContain('--verbose');
       expect(argv[argv.indexOf('--output-format') + 1]).toBe('stream-json');
@@ -264,8 +299,12 @@ describe('ClaudeCodeLocalRunner', () => {
       const stdin = await readFile(`${binary}.stdin`, 'utf8');
       const argv = await readFile(`${binary}.argv`, 'utf8');
 
-      expect(stdin).toContain('Add a health endpoint that reports the build sha.');
-      expect(stdin).toContain('1. GET /health returns 200 with the build sha in the body');
+      expect(stdin).toContain(
+        'Add a health endpoint that reports the build sha.',
+      );
+      expect(stdin).toContain(
+        '1. GET /health returns 200 with the build sha in the body',
+      );
       expect(stdin).toContain('factory/42-abc1234-a1');
       expect(argv).not.toContain('Add a health endpoint');
     }, 30_000);
@@ -340,8 +379,14 @@ describe('ClaudeCodeLocalRunner', () => {
       const runner = build({ 'runners.claudeCodeLocal.binary': binary });
       const live = await runner.submit(workOrder());
 
-      const stale: RunHandle = { ...live, externalId: `${live.externalId}-old` };
-      await expect(runner.poll(stale)).resolves.toEqual({ status: 'unknown', events: [] });
+      const stale: RunHandle = {
+        ...live,
+        externalId: `${live.externalId}-old`,
+      };
+      await expect(runner.poll(stale)).resolves.toEqual({
+        status: 'unknown',
+        events: [],
+      });
       await drainUntilTerminal(runner, live);
     }, 30_000);
 
@@ -359,7 +404,10 @@ describe('ClaudeCodeLocalRunner', () => {
     }, 30_000);
 
     it('reports succeeded and a completed event for a clean exit', async () => {
-      const binary = await fakeClaude('clean', 'echo \'{"type":"assistant"}\'; exit 0');
+      const binary = await fakeClaude(
+        'clean',
+        'echo \'{"type":"assistant"}\'; exit 0',
+      );
       const runner = build({ 'runners.claudeCodeLocal.binary': binary });
 
       const handle = await runner.submit(workOrder());
@@ -404,7 +452,9 @@ describe('ClaudeCodeLocalRunner', () => {
       const { status, events } = await drainUntilTerminal(runner, handle);
 
       expect(status).toBe('failed');
-      expect(events.some((event) => event.type === 'run.completed')).toBe(false);
+      expect(events.some((event) => event.type === 'run.completed')).toBe(
+        false,
+      );
     }, 30_000);
 
     it('fails the run when the binary does not exist', async () => {
@@ -437,7 +487,8 @@ describe('ClaudeCodeLocalRunner', () => {
       const extra = await runner.poll(handle);
 
       const terminal = [...events, ...extra.events].filter(
-        (event) => event.type === 'run.completed' || event.type === 'run.failed',
+        (event) =>
+          event.type === 'run.completed' || event.type === 'run.failed',
       );
       expect(terminal).toHaveLength(1);
     }, 30_000);
@@ -457,12 +508,17 @@ describe('ClaudeCodeLocalRunner', () => {
       const handle = await runner.submit(workOrder());
       await until(async () => {
         try {
-          return (await readFile(`${binDir}/grandchild.pid`, 'utf8')).trim().length > 0;
+          return (
+            (await readFile(`${binDir}/grandchild.pid`, 'utf8')).trim().length >
+            0
+          );
         } catch {
           return false;
         }
       });
-      const grandchild = Number((await readFile(`${binDir}/grandchild.pid`, 'utf8')).trim());
+      const grandchild = Number(
+        (await readFile(`${binDir}/grandchild.pid`, 'utf8')).trim(),
+      );
 
       await runner.cancel(handle);
       const { status, events } = await drainUntilTerminal(runner, handle);
@@ -512,7 +568,10 @@ describe('ClaudeCodeLocalRunner', () => {
       // #61: the manifest must be "verified against observed behaviour, not
       // aspirational". A hard-coded version is a claim about a binary nobody
       // looked at.
-      const binary = await fakeClaude('versioned', 'echo "2.1.240 (Claude Code)"; exit 0');
+      const binary = await fakeClaude(
+        'versioned',
+        'echo "2.1.240 (Claude Code)"; exit 0',
+      );
       const runner = build({ 'runners.claudeCodeLocal.binary': binary });
 
       const capabilities = await runner.capabilities();
@@ -541,7 +600,10 @@ describe('ClaudeCodeLocalRunner', () => {
       // Each of these is earned by a mapping that exists in
       // stream-json-mapper.ts, not by what the CLI is capable of. Slice 1
       // shipped declaring 'none' for exactly that reason.
-      const binary = await fakeClaude('honest', 'echo "2.1.240 (Claude Code)"; exit 0');
+      const binary = await fakeClaude(
+        'honest',
+        'echo "2.1.240 (Claude Code)"; exit 0',
+      );
       const runner = build({ 'runners.claudeCodeLocal.binary': binary });
 
       const capabilities = await runner.capabilities();
@@ -555,7 +617,10 @@ describe('ClaudeCodeLocalRunner', () => {
       // Budget and wall-clock enforcement is #65 and the third slice. A
       // runner whose limits are advertised and not applied is not stable, and
       // stabilityTier also gates the preview-runner rule in dispatch (#64).
-      const binary = await fakeClaude('tier', 'echo "2.1.240 (Claude Code)"; exit 0');
+      const binary = await fakeClaude(
+        'tier',
+        'echo "2.1.240 (Claude Code)"; exit 0',
+      );
       const runner = build({ 'runners.claudeCodeLocal.binary': binary });
 
       expect((await runner.capabilities()).stabilityTier).toBe('experimental');
@@ -565,7 +630,10 @@ describe('ClaudeCodeLocalRunner', () => {
       // Two hand-maintained copies would drift, and the drift would be
       // invisible: the typed one drives dispatch while the JSON one is what a
       // human reads to decide whether to trust it.
-      const binary = await fakeClaude('mirror', 'echo "2.1.240 (Claude Code)"; exit 0');
+      const binary = await fakeClaude(
+        'mirror',
+        'echo "2.1.240 (Claude Code)"; exit 0',
+      );
       const runner = build({ 'runners.claudeCodeLocal.binary': binary });
 
       const { manifest, ...declared } = await runner.capabilities();
@@ -573,10 +641,15 @@ describe('ClaudeCodeLocalRunner', () => {
     }, 30_000);
 
     it('only ever claims to create factory branches', async () => {
-      const binary = await fakeClaude('branches', 'echo "2.1.240 (Claude Code)"; exit 0');
+      const binary = await fakeClaude(
+        'branches',
+        'echo "2.1.240 (Claude Code)"; exit 0',
+      );
       const runner = build({ 'runners.claudeCodeLocal.binary': binary });
 
-      expect((await runner.capabilities()).branchPatterns).toEqual(['factory/*']);
+      expect((await runner.capabilities()).branchPatterns).toEqual([
+        'factory/*',
+      ]);
     }, 30_000);
   });
 
@@ -629,7 +702,9 @@ describe('ClaudeCodeLocalRunner', () => {
       const handle = await runner.submit(workOrder());
       const { events } = await drainUntilTerminal(runner, handle);
 
-      expect(events.filter((event) => event.type === 'run.heartbeat').length).toBe(2);
+      expect(
+        events.filter((event) => event.type === 'run.heartbeat').length,
+      ).toBe(2);
     }, 30_000);
 
     it('puts the cost from the result line on the terminal event', async () => {
@@ -668,8 +743,12 @@ describe('ClaudeCodeLocalRunner', () => {
       const { status, events } = await drainUntilTerminal(runner, handle);
 
       expect(status).toBe('failed');
-      expect(events.filter((event) => event.type === 'run.completed')).toHaveLength(0);
-      expect(events.filter((event) => event.type === 'run.failed')).toHaveLength(1);
+      expect(
+        events.filter((event) => event.type === 'run.completed'),
+      ).toHaveLength(0);
+      expect(
+        events.filter((event) => event.type === 'run.failed'),
+      ).toHaveLength(1);
     }, 30_000);
 
     it('surfaces permission denials in the completion summary', async () => {
@@ -723,7 +802,10 @@ describe('ClaudeCodeLocalRunner', () => {
     it('tags every event with the runner key AND its observed version', async () => {
       // The schema asks `runner` to be key@version, and #66's retry decisions
       // read it as fact — a constant there would make a bisect meaningless.
-      const binary = await fakeClaude('tagged', `echo "2.1.240 (Claude Code)"\n${emit(STREAM)}\nexit 0`);
+      const binary = await fakeClaude(
+        'tagged',
+        `echo "2.1.240 (Claude Code)"\n${emit(STREAM)}\nexit 0`,
+      );
       const runner = build({ 'runners.claudeCodeLocal.binary': binary });
 
       // Probe first, so the version is known before the run starts.
@@ -733,7 +815,8 @@ describe('ClaudeCodeLocalRunner', () => {
       const { events } = await drainUntilTerminal(runner, handle);
 
       expect(events.length).toBeGreaterThan(0);
-      for (const event of events) expect(event.runner).toBe('claude-code-local@2.1.240');
+      for (const event of events)
+        expect(event.runner).toBe('claude-code-local@2.1.240');
     }, 30_000);
   });
 
@@ -749,7 +832,9 @@ describe('ClaudeCodeLocalRunner', () => {
 
       // 1/1200 of a minute ≈ 50ms — the enforcement path is the same at any
       // scale, and a test that waited a real minute would never be run.
-      const handle = await runner.submit(workOrder({ wallClockTimeoutMinutes: 1 / 1200 }));
+      const handle = await runner.submit(
+        workOrder({ wallClockTimeoutMinutes: 1 / 1200 }),
+      );
       const { status, events } = await drainUntilTerminal(runner, handle);
 
       expect(status).toBe('failed');
@@ -767,7 +852,9 @@ describe('ClaudeCodeLocalRunner', () => {
         'runners.claudeCodeLocal.killGraceMs': 200,
       });
 
-      const handle = await runner.submit(workOrder({ wallClockTimeoutMinutes: 1 / 1200 }));
+      const handle = await runner.submit(
+        workOrder({ wallClockTimeoutMinutes: 1 / 1200 }),
+      );
       const { events } = await drainUntilTerminal(runner, handle);
 
       const failed = events.find((event) => event.type === 'run.failed');
@@ -786,12 +873,14 @@ describe('ClaudeCodeLocalRunner', () => {
         'runners.claudeCodeLocal.defaultTimeoutMinutes': 1 / 1200,
       });
 
-      const handle = await runner.submit(workOrder({ wallClockTimeoutMinutes: null }));
+      const handle = await runner.submit(
+        workOrder({ wallClockTimeoutMinutes: null }),
+      );
       const { events } = await drainUntilTerminal(runner, handle);
 
-      expect(events.find((event) => event.type === 'run.failed')?.failure?.reason).toContain(
-        'wall-clock ceiling',
-      );
+      expect(
+        events.find((event) => event.type === 'run.failed')?.failure?.reason,
+      ).toContain('wall-clock ceiling');
     }, 30_000);
 
     it("lets the work order's own ceiling win over the default", async () => {
@@ -804,12 +893,14 @@ describe('ClaudeCodeLocalRunner', () => {
         'runners.claudeCodeLocal.defaultTimeoutMinutes': 600,
       });
 
-      const handle = await runner.submit(workOrder({ wallClockTimeoutMinutes: 1 / 1200 }));
+      const handle = await runner.submit(
+        workOrder({ wallClockTimeoutMinutes: 1 / 1200 }),
+      );
       const { events } = await drainUntilTerminal(runner, handle);
 
-      expect(events.find((event) => event.type === 'run.failed')?.failure?.reason).toContain(
-        'wall-clock ceiling',
-      );
+      expect(
+        events.find((event) => event.type === 'run.failed')?.failure?.reason,
+      ).toContain('wall-clock ceiling');
     }, 30_000);
 
     it('leaves a run unbounded when nothing sets a ceiling', async () => {
@@ -821,7 +912,9 @@ describe('ClaudeCodeLocalRunner', () => {
         'runners.claudeCodeLocal.defaultTimeoutMinutes': null,
       });
 
-      const handle = await runner.submit(workOrder({ wallClockTimeoutMinutes: null }));
+      const handle = await runner.submit(
+        workOrder({ wallClockTimeoutMinutes: null }),
+      );
       const { status, events } = await drainUntilTerminal(runner, handle);
 
       expect(status).toBe('succeeded');
@@ -859,11 +952,15 @@ describe('ClaudeCodeLocalRunner', () => {
       await drainUntilTerminal(runner, handle);
 
       // Age it past the retention window, then trigger a reap.
-      const runs = (runner as unknown as { runs: Map<string, { finishedAt: Date | null }> }).runs;
+      const runs = (
+        runner as unknown as { runs: Map<string, { finishedAt: Date | null }> }
+      ).runs;
       runs.get(workOrder().identity)!.finishedAt = new Date(
         Date.now() - FINISHED_RUN_RETENTION_MS - 1_000,
       );
-      await runner.submit(workOrder({ identity: 'wo_acme-widgets_99_abc1234_a1' }));
+      await runner.submit(
+        workOrder({ identity: 'wo_acme-widgets_99_abc1234_a1' }),
+      );
 
       expect(runs.has(workOrder().identity)).toBe(false);
     }, 30_000);
@@ -876,16 +973,20 @@ describe('ClaudeCodeLocalRunner', () => {
       const runner = build({ 'runners.claudeCodeLocal.binary': binary });
 
       const handle = await runner.submit(workOrder());
-      const runs = (runner as unknown as {
-        runs: Map<string, { finishedAt: Date | null; pending: unknown[] }>;
-      }).runs;
+      const runs = (
+        runner as unknown as {
+          runs: Map<string, { finishedAt: Date | null; pending: unknown[] }>;
+        }
+      ).runs;
 
       // Wait for the process to end WITHOUT polling, so the events stay queued.
       await until(() => runs.get(workOrder().identity)!.finishedAt !== null);
       runs.get(workOrder().identity)!.finishedAt = new Date(
         Date.now() - FINISHED_RUN_RETENTION_MS - 1_000,
       );
-      await runner.submit(workOrder({ identity: 'wo_acme-widgets_98_abc1234_a1' }));
+      await runner.submit(
+        workOrder({ identity: 'wo_acme-widgets_98_abc1234_a1' }),
+      );
 
       expect(runs.has(workOrder().identity)).toBe(true);
       expect((await runner.poll(handle)).events.length).toBeGreaterThan(0);
@@ -897,7 +998,9 @@ describe('ClaudeCodeLocalRunner', () => {
 
       const handle = await runner.submit(workOrder());
       await runner.poll(handle);
-      await runner.submit(workOrder({ identity: 'wo_acme-widgets_97_abc1234_a1' }));
+      await runner.submit(
+        workOrder({ identity: 'wo_acme-widgets_97_abc1234_a1' }),
+      );
 
       expect((await runner.poll(handle)).status).toBe('running');
       await runner.cancel(handle);
@@ -934,7 +1037,10 @@ describe('ClaudeCodeLocalRunner', () => {
       // #36". The schema requires `notes` whenever reportsCost is false —
       // a budget ceiling nobody can enforce is worse than an absent one,
       // because it looks like a control.
-      const binary = await fakeClaude('conform-cap', 'echo "2.1.240 (Claude Code)"; exit 0');
+      const binary = await fakeClaude(
+        'conform-cap',
+        'echo "2.1.240 (Claude Code)"; exit 0',
+      );
       const runner = build({ 'runners.claudeCodeLocal.binary': binary });
 
       const validate = validatorFor('runner-capability');

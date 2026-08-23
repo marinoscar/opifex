@@ -54,9 +54,7 @@ import {
   UpdateMetadataDto,
   updateMetadataSchema,
 } from './dto/update-metadata.dto';
-import {
-  DownloadUrlResponseDto,
-} from './dto/download-url-response.dto';
+import { DownloadUrlResponseDto } from './dto/download-url-response.dto';
 
 @ApiTags('Storage')
 @Controller('storage/objects')
@@ -70,19 +68,46 @@ export class ObjectsController {
   @Get()
   @ApiOperation({
     summary: 'List storage objects',
-    description: 'Get paginated list of user\'s storage objects with filtering and sorting',
+    description:
+      "Get paginated list of user's storage objects with filtering and sorting",
   })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
-  @ApiQuery({ name: 'pageSize', required: false, type: Number, description: 'Items per page (default: 20, max: 100)' })
-  @ApiQuery({ name: 'status', required: false, enum: ['pending', 'uploading', 'processing', 'ready', 'failed'], description: 'Filter by status' })
-  @ApiQuery({ name: 'sortBy', required: false, enum: ['createdAt', 'name', 'size'], description: 'Sort field (default: createdAt)' })
-  @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'], description: 'Sort order (default: desc)' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (default: 1)',
+  })
+  @ApiQuery({
+    name: 'pageSize',
+    required: false,
+    type: Number,
+    description: 'Items per page (default: 20, max: 100)',
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['pending', 'uploading', 'processing', 'ready', 'failed'],
+    description: 'Filter by status',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: ['createdAt', 'name', 'size'],
+    description: 'Sort field (default: createdAt)',
+  })
+  @ApiQuery({
+    name: 'sortOrder',
+    required: false,
+    enum: ['asc', 'desc'],
+    description: 'Sort order (default: desc)',
+  })
   @ApiDataResponse(ObjectResponseDto, {
     pagination: 'nested',
     description: 'List retrieved successfully',
   })
   async list(
-    @Query(new ZodValidationPipe(objectListQuerySchema)) query: ObjectListQueryDto,
+    @Query(new ZodValidationPipe(objectListQuerySchema))
+    query: ObjectListQueryDto,
     @CurrentUser('id') userId: string,
   ): Promise<{ data: ObjectListResponseDto }> {
     const result = await this.objectsService.list(query, userId);
@@ -97,8 +122,15 @@ export class ObjectsController {
     summary: 'Get storage object',
     description: 'Get metadata for a specific storage object',
   })
-  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'Object ID' })
-  @ApiDataResponse(ObjectResponseDto, { description: 'Object retrieved successfully' })
+  @ApiParam({
+    name: 'id',
+    type: String,
+    format: 'uuid',
+    description: 'Object ID',
+  })
+  @ApiDataResponse(ObjectResponseDto, {
+    description: 'Object retrieved successfully',
+  })
   @ApiResponse({
     status: 404,
     description: 'Object not found',
@@ -123,8 +155,18 @@ export class ObjectsController {
     summary: 'Get download URL',
     description: 'Generate a signed URL for downloading a storage object',
   })
-  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'Object ID' })
-  @ApiQuery({ name: 'expiresIn', required: false, type: Number, description: 'URL expiration in seconds (default: 3600)' })
+  @ApiParam({
+    name: 'id',
+    type: String,
+    format: 'uuid',
+    description: 'Object ID',
+  })
+  @ApiQuery({
+    name: 'expiresIn',
+    required: false,
+    type: Number,
+    description: 'URL expiration in seconds (default: 3600)',
+  })
   @ApiDataResponse(DownloadUrlResponseDto, {
     description: 'Download URL generated successfully',
   })
@@ -145,7 +187,11 @@ export class ObjectsController {
     @Query('expiresIn') expiresIn: number | undefined,
     @CurrentUser('id') userId: string,
   ): Promise<{ data: DownloadUrlResponseDto }> {
-    const result = await this.objectsService.getDownloadUrl(id, userId, expiresIn);
+    const result = await this.objectsService.getDownloadUrl(
+      id,
+      userId,
+      expiresIn,
+    );
     return { data: result };
   }
 
@@ -158,7 +204,12 @@ export class ObjectsController {
     summary: 'Delete storage object',
     description: 'Delete a storage object from both storage and database',
   })
-  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'Object ID' })
+  @ApiParam({
+    name: 'id',
+    type: String,
+    format: 'uuid',
+    description: 'Object ID',
+  })
   @ApiResponse({
     status: 204,
     description: 'Object deleted successfully',
@@ -184,11 +235,19 @@ export class ObjectsController {
   @Patch(':id/metadata')
   @ApiOperation({
     summary: 'Update object metadata',
-    description: 'Update metadata for a storage object (merges with existing metadata)',
+    description:
+      'Update metadata for a storage object (merges with existing metadata)',
   })
-  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'Object ID' })
+  @ApiParam({
+    name: 'id',
+    type: String,
+    format: 'uuid',
+    description: 'Object ID',
+  })
   @ApiBody({ type: UpdateMetadataBodyDto })
-  @ApiDataResponse(ObjectResponseDto, { description: 'Metadata updated successfully' })
+  @ApiDataResponse(ObjectResponseDto, {
+    description: 'Metadata updated successfully',
+  })
   @ApiResponse({
     status: 404,
     description: 'Object not found',
@@ -235,8 +294,15 @@ export class ObjectsController {
     summary: 'Get upload status',
     description: 'Check progress of a resumable upload',
   })
-  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'Object ID' })
-  @ApiDataResponse(UploadStatusResponseDto, { description: 'Upload status retrieved' })
+  @ApiParam({
+    name: 'id',
+    type: String,
+    format: 'uuid',
+    description: 'Object ID',
+  })
+  @ApiDataResponse(UploadStatusResponseDto, {
+    description: 'Upload status retrieved',
+  })
   async getUploadStatus(
     @Param('id') objectId: string,
     @CurrentUser('id') userId: string,
@@ -253,9 +319,16 @@ export class ObjectsController {
     summary: 'Complete resumable upload',
     description: 'Finalize a multipart upload after all parts are uploaded',
   })
-  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'Object ID' })
+  @ApiParam({
+    name: 'id',
+    type: String,
+    format: 'uuid',
+    description: 'Object ID',
+  })
   @ApiBody({ type: CompleteUploadBodyDto })
-  @ApiDataResponse(ObjectResponseDto, { description: 'Upload completed successfully' })
+  @ApiDataResponse(ObjectResponseDto, {
+    description: 'Upload completed successfully',
+  })
   async completeUpload(
     @Param('id') objectId: string,
     @Body(new ZodValidationPipe(completeUploadSchema)) dto: CompleteUploadDto,
@@ -277,7 +350,12 @@ export class ObjectsController {
     summary: 'Abort resumable upload',
     description: 'Cancel an in-progress multipart upload',
   })
-  @ApiParam({ name: 'id', type: String, format: 'uuid', description: 'Object ID' })
+  @ApiParam({
+    name: 'id',
+    type: String,
+    format: 'uuid',
+    description: 'Object ID',
+  })
   @ApiResponse({
     status: 204,
     description: 'Upload aborted successfully',

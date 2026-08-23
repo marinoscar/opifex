@@ -19,7 +19,11 @@ describe('LoggingInterceptor', () => {
     jest.restoreAllMocks();
   });
 
-  function createMockContext(method: string, url: string, requestId?: string): ExecutionContext {
+  function createMockContext(
+    method: string,
+    url: string,
+    requestId?: string,
+  ): ExecutionContext {
     const mockRequest: Partial<FastifyRequest> = {
       method,
       url,
@@ -206,7 +210,9 @@ describe('LoggingInterceptor', () => {
 
     it('should log for requests returning large objects', (done) => {
       const context = createMockContext('GET', '/api/large');
-      const largeData = { items: new Array(1000).fill({ id: 1, name: 'test' }) };
+      const largeData = {
+        items: new Array(1000).fill({ id: 1, name: 'test' }),
+      };
       const callHandler = createMockCallHandler(largeData);
 
       interceptor.intercept(context, callHandler).subscribe(() => {

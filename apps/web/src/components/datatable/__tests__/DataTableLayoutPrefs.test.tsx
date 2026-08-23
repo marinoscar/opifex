@@ -27,9 +27,23 @@
  * client every page uses.
  */
 
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { useState } from 'react';
-import { act, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import {
+  act,
+  screen,
+  within,
+  fireEvent,
+  waitFor,
+} from '@testing-library/react';
 import { render } from '../../../__tests__/utils/test-utils';
 import { DataTable } from '../DataTable';
 import { api } from '../../../services/api';
@@ -71,26 +85,31 @@ function installLayoutStubs() {
       get: () => containerWidth,
     });
   }
-  for (const prop of ['clientHeight', 'offsetHeight', 'scrollHeight'] as const) {
+  for (const prop of [
+    'clientHeight',
+    'offsetHeight',
+    'scrollHeight',
+  ] as const) {
     Object.defineProperty(HTMLElement.prototype, prop, {
       configurable: true,
       get: () => VIEWPORT_HEIGHT,
     });
   }
 
-  HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
-    return {
-      width: containerWidth,
-      height: VIEWPORT_HEIGHT,
-      top: 0,
-      left: 0,
-      right: containerWidth,
-      bottom: VIEWPORT_HEIGHT,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    } as DOMRect;
-  };
+  HTMLElement.prototype.getBoundingClientRect =
+    function getBoundingClientRect() {
+      return {
+        width: containerWidth,
+        height: VIEWPORT_HEIGHT,
+        top: 0,
+        left: 0,
+        right: containerWidth,
+        bottom: VIEWPORT_HEIGHT,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      } as DOMRect;
+    };
 
   class ControllableResizeObserver {
     private readonly entry: FakeObserver;
@@ -103,7 +122,8 @@ function installLayoutStubs() {
             target,
             contentRect: { width: containerWidth, height: VIEWPORT_HEIGHT },
           })) as unknown as ResizeObserverEntry[];
-          if (entries.length > 0) callback(entries, this as unknown as ResizeObserver);
+          if (entries.length > 0)
+            callback(entries, this as unknown as ResizeObserver);
         },
       };
       observers.add(this.entry);
@@ -122,7 +142,8 @@ function installLayoutStubs() {
     }
   }
 
-  global.ResizeObserver = ControllableResizeObserver as unknown as typeof ResizeObserver;
+  global.ResizeObserver =
+    ControllableResizeObserver as unknown as typeof ResizeObserver;
 
   window.matchMedia = vi.fn().mockImplementation((query: string) => {
     const max = /max-width:\s*([\d.]+)px/.exec(query);
@@ -156,7 +177,10 @@ let patchSpy: ReturnType<typeof vi.spyOn>;
 
 /** Seed what `GET /api/user-settings` returns for this test. */
 function stubSettings(dataTables?: Record<string, unknown>) {
-  getSpy.mockResolvedValue({ theme: 'light', ...(dataTables ? { dataTables } : {}) });
+  getSpy.mockResolvedValue({
+    theme: 'light',
+    ...(dataTables ? { dataTables } : {}),
+  });
 }
 
 /** Every `dataTables` payload sent to PATCH, in order. */
@@ -190,13 +214,36 @@ interface Job {
 }
 
 const JOBS: Job[] = [
-  { id: 'job-1', type: 'face_detection', status: 'pending', attempts: 1, lastError: null },
-  { id: 'job-2', type: 'auto_tagging', status: 'failed', attempts: 3, lastError: 'rate limited' },
+  {
+    id: 'job-1',
+    type: 'face_detection',
+    status: 'pending',
+    attempts: 1,
+    lastError: null,
+  },
+  {
+    id: 'job-2',
+    type: 'auto_tagging',
+    status: 'failed',
+    attempts: 3,
+    lastError: 'rate limited',
+  },
 ];
 
 const COLUMNS: DataTableColumn<Job>[] = [
-  { id: 'type', label: 'Type', priority: 'primary', sortable: true, value: (r) => r.type },
-  { id: 'status', label: 'Status', priority: 'primary', value: (r) => r.status },
+  {
+    id: 'type',
+    label: 'Type',
+    priority: 'primary',
+    sortable: true,
+    value: (r) => r.type,
+  },
+  {
+    id: 'status',
+    label: 'Status',
+    priority: 'primary',
+    value: (r) => r.status,
+  },
   {
     id: 'attempts',
     label: 'Attempts',
@@ -204,7 +251,12 @@ const COLUMNS: DataTableColumn<Job>[] = [
     sortable: true,
     value: (r) => r.attempts,
   },
-  { id: 'lastError', label: 'Last error', priority: 'detail', value: (r) => r.lastError },
+  {
+    id: 'lastError',
+    label: 'Last error',
+    priority: 'detail',
+    value: (r) => r.lastError,
+  },
 ];
 
 const rowId = (job: Job) => job.id;
@@ -224,7 +276,10 @@ function renderTable(overrides: Partial<TableProps> = {}) {
 }
 
 /** Render at a container width and let hydration settle. */
-async function renderHydrated(width: number, overrides: Partial<TableProps> = {}) {
+async function renderHydrated(
+  width: number,
+  overrides: Partial<TableProps> = {},
+) {
   containerWidth = width;
   const result = renderTable(overrides);
   // The stored entry arrives on a microtask; flush it before asserting.
@@ -234,10 +289,12 @@ async function renderHydrated(width: number, overrides: Partial<TableProps> = {}
 
 const wrapper = () => screen.getByTestId('datatable');
 const gridRow = () => document.querySelector('.MuiDataGrid-row') as HTMLElement;
-const gridRowMinHeight = () => Number.parseFloat(getComputedStyle(gridRow()).minHeight || '0');
+const gridRowMinHeight = () =>
+  Number.parseFloat(getComputedStyle(gridRow()).minHeight || '0');
 const cardHeaderPadding = () =>
   Number.parseFloat(
-    getComputedStyle(screen.getAllByTestId('datatable-card-header')[0]).paddingLeft || '0',
+    getComputedStyle(screen.getAllByTestId('datatable-card-header')[0])
+      .paddingLeft || '0',
   );
 
 function openColumnsMenu() {
@@ -253,7 +310,9 @@ function openColumnsMenu() {
  * explicitly.
  */
 function closeColumnsMenu() {
-  fireEvent.keyDown(screen.getByTestId('datatable-columns-menu'), { key: 'Escape' });
+  fireEvent.keyDown(screen.getByTestId('datatable-columns-menu'), {
+    key: 'Escape',
+  });
 }
 
 function openViewSheet() {
@@ -273,7 +332,9 @@ describe('layoutModel — visibility resolution', () => {
       'attempts',
       'lastError',
     ]);
-    expect(Array.from(resolveUserVisibleColumnIds(COLUMNS, undefined))).toHaveLength(4);
+    expect(
+      Array.from(resolveUserVisibleColumnIds(COLUMNS, undefined)),
+    ).toHaveLength(4);
   });
 
   it('hides only the columns explicitly marked hidden', () => {
@@ -308,11 +369,22 @@ describe('layoutModel — visibility resolution', () => {
 
   it('ignores a stored id for a column that no longer exists', () => {
     const stored: DataTableStoredLayout = {
-      visibleColumns: ['type', 'status', 'attempts', 'lastError', '-removedColumn'],
+      visibleColumns: [
+        'type',
+        'status',
+        'attempts',
+        'lastError',
+        '-removedColumn',
+      ],
     };
     const visible = resolveUserVisibleColumnIds(COLUMNS, stored);
     expect(visible.has('removedColumn')).toBe(false);
-    expect(Array.from(visible)).toEqual(['type', 'status', 'attempts', 'lastError']);
+    expect(Array.from(visible)).toEqual([
+      'type',
+      'status',
+      'attempts',
+      'lastError',
+    ]);
   });
 
   it('keeps a hideable:false column visible whatever the stored list says', () => {
@@ -320,7 +392,9 @@ describe('layoutModel — visibility resolution', () => {
       { ...COLUMNS[0], hideable: false },
       COLUMNS[1],
     ];
-    const visible = resolveUserVisibleColumnIds(pinned, { visibleColumns: ['-type', 'status'] });
+    const visible = resolveUserVisibleColumnIds(pinned, {
+      visibleColumns: ['-type', 'status'],
+    });
     expect(visible.has('type')).toBe(true);
   });
 
@@ -339,7 +413,9 @@ describe('layoutModel — visibility resolution', () => {
 
     const decoded = decodeVisibility(encoded);
     expect(Array.from(decoded.hidden)).toEqual(['attempts']);
-    expect(resolveUserVisibleColumnIds(COLUMNS, { visibleColumns: encoded })).toEqual(chosen);
+    expect(
+      resolveUserVisibleColumnIds(COLUMNS, { visibleColumns: encoded }),
+    ).toEqual(chosen);
   });
 
   it('AND-s the user choice with the tablet detail fold, never overriding it', () => {
@@ -347,20 +423,20 @@ describe('layoutModel — visibility resolution', () => {
       visibleColumns: ['type', 'status', 'lastError', '-attempts'],
     };
     // Desktop: the fold does not apply, so the user's choice is the whole story.
-    expect(Array.from(resolveVisibleColumnIds(COLUMNS, stored, 'desktop'))).toEqual([
-      'type',
-      'status',
-      'lastError',
-    ]);
+    expect(
+      Array.from(resolveVisibleColumnIds(COLUMNS, stored, 'desktop')),
+    ).toEqual(['type', 'status', 'lastError']);
     // Tablet: `lastError` is `detail`, folded into the row expander regardless.
-    expect(Array.from(resolveVisibleColumnIds(COLUMNS, stored, 'tablet'))).toEqual([
-      'type',
-      'status',
-    ]);
+    expect(
+      Array.from(resolveVisibleColumnIds(COLUMNS, stored, 'tablet')),
+    ).toEqual(['type', 'status']);
   });
 
   it('offers the picker only columns it can actually change', () => {
-    const pinned: DataTableColumn<Job>[] = [{ ...COLUMNS[0], hideable: false }, ...COLUMNS.slice(1)];
+    const pinned: DataTableColumn<Job>[] = [
+      { ...COLUMNS[0], hideable: false },
+      ...COLUMNS.slice(1),
+    ];
     expect(pickerColumns(pinned, 'desktop').map((c) => c.id)).toEqual([
       'status',
       'attempts',
@@ -368,20 +444,33 @@ describe('layoutModel — visibility resolution', () => {
     ]);
     // On a tablet the `detail` column is already folded into the expander, so a
     // checkbox for it would claim an effect it does not have.
-    expect(pickerColumns(pinned, 'tablet').map((c) => c.id)).toEqual(['status', 'attempts']);
+    expect(pickerColumns(pinned, 'tablet').map((c) => c.id)).toEqual([
+      'status',
+      'attempts',
+    ]);
   });
 });
 
 describe('layoutModel — stored entry hygiene', () => {
   it('resolves a stored sort only against a column that still sorts', () => {
-    expect(resolveStoredSort(COLUMNS, { sort: { field: 'attempts', direction: 'desc' } })).toEqual({
+    expect(
+      resolveStoredSort(COLUMNS, {
+        sort: { field: 'attempts', direction: 'desc' },
+      }),
+    ).toEqual({
       field: 'attempts',
       direction: 'desc',
     });
     // Column exists but is not sortable.
-    expect(resolveStoredSort(COLUMNS, { sort: { field: 'status', direction: 'asc' } })).toBeNull();
+    expect(
+      resolveStoredSort(COLUMNS, {
+        sort: { field: 'status', direction: 'asc' },
+      }),
+    ).toBeNull();
     // Column is gone entirely.
-    expect(resolveStoredSort(COLUMNS, { sort: { field: 'gone', direction: 'asc' } })).toBeNull();
+    expect(
+      resolveStoredSort(COLUMNS, { sort: { field: 'gone', direction: 'asc' } }),
+    ).toBeNull();
   });
 
   it('drops keys the entry contract does not allow, so the next PATCH cannot 400', () => {
@@ -413,7 +502,9 @@ describe('DataTable — defaults when nothing is stored', () => {
 
     expect(wrapper().getAttribute('data-density')).toBe('standard');
     for (const label of ['Type', 'Status', 'Attempts', 'Last error']) {
-      expect(screen.getByRole('columnheader', { name: label })).toBeInTheDocument();
+      expect(
+        screen.getByRole('columnheader', { name: label }),
+      ).toBeInTheDocument();
     }
     expect(patchSpy).not.toHaveBeenCalled();
   });
@@ -425,12 +516,18 @@ describe('DataTable — defaults when nothing is stored', () => {
     await renderHydrated(1400, { tableId: 'jobs' });
 
     expect(wrapper().getAttribute('data-density')).toBe('compact');
-    expect(screen.getByRole('columnheader', { name: 'Last error' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Attempts' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: 'Last error' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: 'Attempts' }),
+    ).toBeInTheDocument();
   });
 
   it('shows a newly-added column whose id predates nothing in the stored list', async () => {
-    stubSettings({ jobs: { visibleColumns: ['type', 'status', 'lastError', '-attempts'] } });
+    stubSettings({
+      jobs: { visibleColumns: ['type', 'status', 'lastError', '-attempts'] },
+    });
 
     const withNewColumn: DataTableColumn<Job>[] = [
       ...COLUMNS,
@@ -438,16 +535,26 @@ describe('DataTable — defaults when nothing is stored', () => {
     ];
     await renderHydrated(1400, { tableId: 'jobs', columns: withNewColumn });
 
-    expect(screen.getByRole('columnheader', { name: 'Owner' })).toBeInTheDocument();
-    expect(screen.queryByRole('columnheader', { name: 'Attempts' })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: 'Owner' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: 'Attempts' }),
+    ).not.toBeInTheDocument();
   });
 
   it('ignores a stored id for a column that no longer exists', async () => {
-    stubSettings({ jobs: { visibleColumns: ['type', 'status', 'attempts', 'lastError', '-gone'] } });
+    stubSettings({
+      jobs: {
+        visibleColumns: ['type', 'status', 'attempts', 'lastError', '-gone'],
+      },
+    });
     await renderHydrated(1400, { tableId: 'jobs' });
 
     for (const label of ['Type', 'Status', 'Attempts', 'Last error']) {
-      expect(screen.getByRole('columnheader', { name: label })).toBeInTheDocument();
+      expect(
+        screen.getByRole('columnheader', { name: label }),
+      ).toBeInTheDocument();
     }
   });
 
@@ -459,13 +566,19 @@ describe('DataTable — defaults when nothing is stored', () => {
       sort: { sort: null, onSortChange },
     });
 
-    expect(onSortChange).toHaveBeenCalledWith({ field: 'attempts', direction: 'desc' });
+    expect(onSortChange).toHaveBeenCalledWith({
+      field: 'attempts',
+      direction: 'desc',
+    });
   });
 
   it('does not restore a stored sort whose column is no longer sortable', async () => {
     stubSettings({ jobs: { sort: { field: 'status', direction: 'asc' } } });
     const onSortChange = vi.fn();
-    await renderHydrated(1400, { tableId: 'jobs', sort: { sort: null, onSortChange } });
+    await renderHydrated(1400, {
+      tableId: 'jobs',
+      sort: { sort: null, onSortChange },
+    });
 
     expect(onSortChange).not.toHaveBeenCalled();
   });
@@ -489,43 +602,70 @@ describe('DataTable — defaults when nothing is stored', () => {
 describe('DataTable — column picker', () => {
   it('hides a column from the GRID when unchecked in the desktop menu', async () => {
     await renderHydrated(1400, { tableId: 'jobs' });
-    expect(screen.getByRole('columnheader', { name: 'Attempts' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: 'Attempts' }),
+    ).toBeInTheDocument();
 
     const menu = openColumnsMenu();
-    fireEvent.click(within(menu).getByTestId('datatable-column-toggle-attempts'));
+    fireEvent.click(
+      within(menu).getByTestId('datatable-column-toggle-attempts'),
+    );
     closeColumnsMenu();
 
-    expect(screen.queryByRole('columnheader', { name: 'Attempts' })).not.toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Type' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: 'Attempts' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: 'Type' }),
+    ).toBeInTheDocument();
     // The button's accessible name carries the count no icon can convey.
-    expect(screen.getByRole('button', { name: 'Columns (1 hidden)' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Columns (1 hidden)' }),
+    ).toBeInTheDocument();
   });
 
   it('hides a field from the CARD when unchecked in the phone sheet', async () => {
     await renderHydrated(400, { tableId: 'jobs' });
-    expect(screen.getAllByTestId('datatable-card-field-attempts').length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByTestId('datatable-card-field-attempts').length,
+    ).toBeGreaterThan(0);
 
     const sheet = openViewSheet();
-    fireEvent.click(within(sheet).getByRole('checkbox', { name: 'Show Attempts' }));
+    fireEvent.click(
+      within(sheet).getByRole('checkbox', { name: 'Show Attempts' }),
+    );
 
-    expect(screen.queryAllByTestId('datatable-card-field-attempts')).toHaveLength(0);
-    expect(screen.getAllByTestId('datatable-card-headline-type').length).toBeGreaterThan(0);
+    expect(
+      screen.queryAllByTestId('datatable-card-field-attempts'),
+    ).toHaveLength(0);
+    expect(
+      screen.getAllByTestId('datatable-card-headline-type').length,
+    ).toBeGreaterThan(0);
   });
 
   it('does not offer a pinned (hideable: false) column', async () => {
-    const pinned: DataTableColumn<Job>[] = [{ ...COLUMNS[0], hideable: false }, ...COLUMNS.slice(1)];
+    const pinned: DataTableColumn<Job>[] = [
+      { ...COLUMNS[0], hideable: false },
+      ...COLUMNS.slice(1),
+    ];
     await renderHydrated(1400, { tableId: 'jobs', columns: pinned });
 
     const menu = openColumnsMenu();
-    expect(within(menu).queryByTestId('datatable-column-toggle-type')).not.toBeInTheDocument();
-    expect(within(menu).getByTestId('datatable-column-toggle-status')).toBeInTheDocument();
+    expect(
+      within(menu).queryByTestId('datatable-column-toggle-type'),
+    ).not.toBeInTheDocument();
+    expect(
+      within(menu).getByTestId('datatable-column-toggle-status'),
+    ).toBeInTheDocument();
   });
 
   it('keeps a hidden detail column out of the tablet expander panel', async () => {
     await renderHydrated(1400, { tableId: 'jobs' });
 
     const menu = openColumnsMenu();
-    fireEvent.click(within(menu).getByTestId('datatable-column-toggle-lastError'));
+    fireEvent.click(
+      within(menu).getByTestId('datatable-column-toggle-lastError'),
+    );
     closeColumnsMenu();
 
     // Narrow to the tablet grid: `lastError` would normally be reachable via
@@ -547,7 +687,9 @@ describe('DataTable — density', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Compact density' }));
     const compact = gridRowMinHeight();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Comfortable density' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Comfortable density' }),
+    );
     const comfortable = gridRowMinHeight();
 
     expect(compact).toBeLessThan(standard);
@@ -561,17 +703,21 @@ describe('DataTable — density', () => {
     expect(standard).toBeGreaterThan(0);
 
     const sheet = openViewSheet();
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Compact density' }));
+    fireEvent.click(
+      within(sheet).getByRole('button', { name: 'Compact density' }),
+    );
     const compact = cardHeaderPadding();
 
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Comfortable density' }));
+    fireEvent.click(
+      within(sheet).getByRole('button', { name: 'Comfortable density' }),
+    );
     const comfortable = cardHeaderPadding();
 
     expect(compact).toBeLessThan(standard);
     expect(comfortable).toBeGreaterThan(standard);
-    expect(screen.getAllByTestId('datatable-card')[0].getAttribute('data-density')).toBe(
-      'comfortable',
-    );
+    expect(
+      screen.getAllByTestId('datatable-card')[0].getAttribute('data-density'),
+    ).toBe('comfortable');
   });
 
   it('lets a user override the page’s density default', async () => {
@@ -596,9 +742,15 @@ describe('DataTable — persistence write discipline', () => {
       await act(async () => {});
 
       const menu = openColumnsMenu();
-      fireEvent.click(within(menu).getByTestId('datatable-column-toggle-attempts'));
-      fireEvent.click(within(menu).getByTestId('datatable-column-toggle-lastError'));
-      fireEvent.click(within(menu).getByTestId('datatable-column-toggle-status'));
+      fireEvent.click(
+        within(menu).getByTestId('datatable-column-toggle-attempts'),
+      );
+      fireEvent.click(
+        within(menu).getByTestId('datatable-column-toggle-lastError'),
+      );
+      fireEvent.click(
+        within(menu).getByTestId('datatable-column-toggle-status'),
+      );
 
       // Still nothing on the wire: the debounce is on the WRITE, and the three
       // clicks are one intent.
@@ -613,7 +765,9 @@ describe('DataTable — persistence write discipline', () => {
 
       expect(patchSpy).toHaveBeenCalledTimes(1);
       expect(patchedNamespaces()[0]).toEqual({
-        jobs: { visibleColumns: ['type', '-status', '-attempts', '-lastError'] },
+        jobs: {
+          visibleColumns: ['type', '-status', '-attempts', '-lastError'],
+        },
       });
     } finally {
       vi.useRealTimers();
@@ -625,7 +779,9 @@ describe('DataTable — persistence write discipline', () => {
     await renderHydrated(1400, { tableId: 'jobs' });
 
     const menu = openColumnsMenu();
-    fireEvent.click(within(menu).getByTestId('datatable-column-toggle-attempts'));
+    fireEvent.click(
+      within(menu).getByTestId('datatable-column-toggle-attempts'),
+    );
 
     await waitFor(() => expect(patchSpy).toHaveBeenCalled());
     // Density and pageSize ride along untouched: a delta would have silently
@@ -648,7 +804,9 @@ describe('DataTable — persistence write discipline', () => {
     await renderHydrated(1400, { tableId: 'jobs' });
 
     const menu = openColumnsMenu();
-    fireEvent.click(within(menu).getByTestId('datatable-column-toggle-attempts'));
+    fireEvent.click(
+      within(menu).getByTestId('datatable-column-toggle-attempts'),
+    );
     closeColumnsMenu();
     fireEvent.click(screen.getByTestId('datatable-density-compact'));
 
@@ -656,21 +814,31 @@ describe('DataTable — persistence write discipline', () => {
     // Let every rejection settle, so a stray handler would have had its chance.
     await act(async () => {});
 
-    expect(screen.queryByRole('columnheader', { name: 'Attempts' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: 'Attempts' }),
+    ).not.toBeInTheDocument();
     expect(wrapper().getAttribute('data-density')).toBe('compact');
-    expect(screen.getByRole('columnheader', { name: 'Type' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: 'Type' }),
+    ).toBeInTheDocument();
   });
 
   it('renders defaults, and stays usable, when the settings READ fails', async () => {
     getSpy.mockRejectedValue(new Error('settings unavailable'));
     await renderHydrated(1400, { tableId: 'jobs' });
 
-    expect(screen.getByRole('columnheader', { name: 'Attempts' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: 'Attempts' }),
+    ).toBeInTheDocument();
 
     const menu = openColumnsMenu();
-    fireEvent.click(within(menu).getByTestId('datatable-column-toggle-attempts'));
+    fireEvent.click(
+      within(menu).getByTestId('datatable-column-toggle-attempts'),
+    );
     closeColumnsMenu();
-    expect(screen.queryByRole('columnheader', { name: 'Attempts' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: 'Attempts' }),
+    ).not.toBeInTheDocument();
   });
 
   /**
@@ -693,17 +861,24 @@ describe('DataTable — persistence write discipline', () => {
     expect(wrapper().getAttribute('data-density')).toBe('compact');
 
     await act(async () => {
-      resolveGet({ theme: 'light', dataTables: { jobs: { density: 'comfortable' } } });
+      resolveGet({
+        theme: 'light',
+        dataTables: { jobs: { density: 'comfortable' } },
+      });
     });
 
     expect(wrapper().getAttribute('data-density')).toBe('compact');
   });
 
   it('expresses "reset to defaults" as the merge-patch DELETE', async () => {
-    stubSettings({ jobs: { density: 'compact', visibleColumns: ['type', '-attempts'] } });
+    stubSettings({
+      jobs: { density: 'compact', visibleColumns: ['type', '-attempts'] },
+    });
     await renderHydrated(1400, { tableId: 'jobs' });
 
-    expect(screen.queryByRole('columnheader', { name: 'Attempts' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: 'Attempts' }),
+    ).not.toBeInTheDocument();
 
     const menu = openColumnsMenu();
     fireEvent.click(within(menu).getByTestId('datatable-layout-reset'));
@@ -714,28 +889,42 @@ describe('DataTable — persistence write discipline', () => {
     await waitFor(() => expect(patchSpy).toHaveBeenCalled());
     expect(patchedNamespaces().at(-1)).toEqual({ jobs: null });
 
-    expect(screen.getByRole('columnheader', { name: 'Attempts' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: 'Attempts' }),
+    ).toBeInTheDocument();
     expect(wrapper().getAttribute('data-density')).toBe('standard');
   });
 
   it('offers "Reset to defaults" even when nothing has been customized', async () => {
     await renderHydrated(1400, { tableId: 'jobs' });
     const menu = openColumnsMenu();
-    expect(within(menu).getByTestId('datatable-layout-reset')).toBeInTheDocument();
+    expect(
+      within(menu).getByTestId('datatable-layout-reset'),
+    ).toBeInTheDocument();
   });
 
   it('does not persist anything on mount just for having a pagination config', async () => {
     await renderHydrated(1400, {
       tableId: 'jobs',
-      pagination: { page: 0, pageSize: 25, total: 2, onPaginationChange: vi.fn() },
-      sort: { sort: { field: 'type', direction: 'asc' }, onSortChange: vi.fn() },
+      pagination: {
+        page: 0,
+        pageSize: 25,
+        total: 2,
+        onPaginationChange: vi.fn(),
+      },
+      sort: {
+        sort: { field: 'type', direction: 'asc' },
+        onSortChange: vi.fn(),
+      },
     });
 
     // The page's own defaults are the BASELINE, not a preference: writing them
     // back would store "25 per page" as a user choice nobody made, and would
     // fire a PATCH on every mount of every paginated table.
     await waitFor(() => expect(getSpy).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, DATA_TABLE_PERSIST_DEBOUNCE_MS + 50));
+    await new Promise((resolve) =>
+      setTimeout(resolve, DATA_TABLE_PERSIST_DEBOUNCE_MS + 50),
+    );
     expect(patchSpy).not.toHaveBeenCalled();
   });
 
@@ -750,7 +939,12 @@ describe('DataTable — persistence write discipline', () => {
           ariaLabel="Enrichment jobs"
           tableId="jobs"
           sort={{ sort, onSortChange: setSort }}
-          pagination={{ page: 0, pageSize: 25, total: 2, onPaginationChange: vi.fn() }}
+          pagination={{
+            page: 0,
+            pageSize: 25,
+            total: 2,
+            onPaginationChange: vi.fn(),
+          }}
         />
       );
     }
@@ -781,12 +975,16 @@ describe('DataTable — no tableId', () => {
     expect(getSpy).not.toHaveBeenCalled();
 
     const menu = openColumnsMenu();
-    fireEvent.click(within(menu).getByTestId('datatable-column-toggle-attempts'));
+    fireEvent.click(
+      within(menu).getByTestId('datatable-column-toggle-attempts'),
+    );
     closeColumnsMenu();
     fireEvent.click(screen.getByTestId('datatable-density-compact'));
 
     // The controls are a UI feature; only the BACKUP is opt-in.
-    expect(screen.queryByRole('columnheader', { name: 'Attempts' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: 'Attempts' }),
+    ).not.toBeInTheDocument();
     expect(wrapper().getAttribute('data-density')).toBe('compact');
 
     await act(async () => {});
@@ -829,9 +1027,12 @@ describe('DataTable — layout controls obey the touch rules (issue #243 guard)'
     ];
 
     for (const control of mustBeTouchSized) {
-      const sized = control.closest<HTMLElement>('[class*="MuiCheckbox-root"]') ?? control;
+      const sized =
+        control.closest<HTMLElement>('[class*="MuiCheckbox-root"]') ?? control;
       const style = getComputedStyle(sized);
-      expect(Number.parseFloat(style.minHeight || '0')).toBeGreaterThanOrEqual(44);
+      expect(Number.parseFloat(style.minHeight || '0')).toBeGreaterThanOrEqual(
+        44,
+      );
     }
   });
 
@@ -842,9 +1043,9 @@ describe('DataTable — layout controls obey the touch rules (issue #243 guard)'
       screen.getByTestId('datatable-columns-button'),
       screen.getByTestId('datatable-density-standard'),
     ]) {
-      expect(Number.parseFloat(getComputedStyle(control).minHeight || '0')).toBeGreaterThanOrEqual(
-        44,
-      );
+      expect(
+        Number.parseFloat(getComputedStyle(control).minHeight || '0'),
+      ).toBeGreaterThanOrEqual(44);
     }
   });
 

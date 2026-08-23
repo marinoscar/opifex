@@ -149,14 +149,24 @@ describe('UserListQueryDto', () => {
     });
 
     it('should accept valid sortBy values', () => {
-      expect(userListQuerySchema.parse({ sortBy: 'email' }).sortBy).toBe('email');
-      expect(userListQuerySchema.parse({ sortBy: 'createdAt' }).sortBy).toBe('createdAt');
-      expect(userListQuerySchema.parse({ sortBy: 'updatedAt' }).sortBy).toBe('updatedAt');
+      expect(userListQuerySchema.parse({ sortBy: 'email' }).sortBy).toBe(
+        'email',
+      );
+      expect(userListQuerySchema.parse({ sortBy: 'createdAt' }).sortBy).toBe(
+        'createdAt',
+      );
+      expect(userListQuerySchema.parse({ sortBy: 'updatedAt' }).sortBy).toBe(
+        'updatedAt',
+      );
     });
 
     it('should accept valid sortOrder values', () => {
-      expect(userListQuerySchema.parse({ sortOrder: 'asc' }).sortOrder).toBe('asc');
-      expect(userListQuerySchema.parse({ sortOrder: 'desc' }).sortOrder).toBe('desc');
+      expect(userListQuerySchema.parse({ sortOrder: 'asc' }).sortOrder).toBe(
+        'asc',
+      );
+      expect(userListQuerySchema.parse({ sortOrder: 'desc' }).sortOrder).toBe(
+        'desc',
+      );
     });
 
     it('should reject invalid sortBy values', () => {

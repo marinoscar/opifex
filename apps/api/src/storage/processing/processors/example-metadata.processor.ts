@@ -71,8 +71,11 @@ export class ExampleMetadataProcessor implements ObjectProcessor {
         metadata,
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(`Failed to process object ${object.id}: ${errorMessage}`);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(
+        `Failed to process object ${object.id}: ${errorMessage}`,
+      );
 
       return {
         success: false,

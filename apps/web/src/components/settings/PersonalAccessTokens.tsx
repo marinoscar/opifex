@@ -23,7 +23,14 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Alert, Box, Button, Card, CardContent, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Typography,
+} from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { DataTable } from '../datatable';
@@ -35,11 +42,14 @@ import type { PatCreatedResponse, PersonalAccessToken } from '../../types';
 import { TABLE_ID, buildPatColumns, getTokenStatus } from './patColumns';
 
 export function PersonalAccessTokens() {
-  const { tokens, isLoading, error, createToken, revokeToken } = usePersonalAccessTokens();
+  const { tokens, isLoading, error, createToken, revokeToken } =
+    usePersonalAccessTokens();
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [revealDialogOpen, setRevealDialogOpen] = useState(false);
-  const [createdTokenValue, setCreatedTokenValue] = useState<string | null>(null);
+  const [createdTokenValue, setCreatedTokenValue] = useState<string | null>(
+    null,
+  );
   const [revoking, setRevoking] = useState<string | null>(null);
 
   const columns = useMemo(() => buildPatColumns(), []);

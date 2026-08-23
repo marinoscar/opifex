@@ -9,8 +9,16 @@ import {
 
 const BASE = 'a3f91c2000000000000000000000000000000000';
 
-function coordinates(overrides: Partial<WorkOrderCoordinates> = {}): WorkOrderCoordinates {
-  return { repository: 'opifex', issueNumber: 312, baseCommit: BASE, attempt: 1, ...overrides };
+function coordinates(
+  overrides: Partial<WorkOrderCoordinates> = {},
+): WorkOrderCoordinates {
+  return {
+    repository: 'opifex',
+    issueNumber: 312,
+    baseCommit: BASE,
+    attempt: 1,
+    ...overrides,
+  };
 }
 
 describe('workOrderIdentity', () => {
@@ -28,7 +36,9 @@ describe('workOrderIdentity', () => {
     it('gives the same answer every time', () => {
       // VISION §3.4 makes recovery abandon-and-re-run rather than session
       // resumption, and that only works if a re-run is idempotent.
-      expect(workOrderIdentity(coordinates())).toBe(workOrderIdentity(coordinates()));
+      expect(workOrderIdentity(coordinates())).toBe(
+        workOrderIdentity(coordinates()),
+      );
     });
 
     it('reads no clock and no randomness', () => {
@@ -48,13 +58,15 @@ describe('workOrderIdentity', () => {
       // Correct, and load-bearing: the same task against a different starting
       // tree is different work, and reusing the branch would rebase somebody's
       // changes by accident.
-      expect(workOrderIdentity(coordinates({ baseCommit: 'b'.repeat(40) }))).not.toBe(
-        workOrderIdentity(coordinates()),
-      );
+      expect(
+        workOrderIdentity(coordinates({ baseCommit: 'b'.repeat(40) })),
+      ).not.toBe(workOrderIdentity(coordinates()));
     });
 
     it('a different attempt', () => {
-      expect(workOrderIdentity(coordinates({ attempt: 2 }))).toBe('wo_opifex_312_a3f91c2_a2');
+      expect(workOrderIdentity(coordinates({ attempt: 2 }))).toBe(
+        'wo_opifex_312_a3f91c2_a2',
+      );
     });
 
     it('a different issue', () => {
@@ -95,31 +107,35 @@ describe('workOrderIdentity', () => {
     it('rejects an abbreviated base commit', () => {
       // An abbreviated base is ambiguous the moment the repository grows, and
       // this identity has to still resolve to one commit in a year.
-      expect(() => workOrderIdentity(coordinates({ baseCommit: 'a3f91c2' }))).toThrow(
-        /full 40-character SHA/,
-      );
+      expect(() =>
+        workOrderIdentity(coordinates({ baseCommit: 'a3f91c2' })),
+      ).toThrow(/full 40-character SHA/);
     });
 
     it('rejects a base commit that is not hex', () => {
-      expect(() => workOrderIdentity(coordinates({ baseCommit: 'z'.repeat(40) }))).toThrow(
-        /full 40-character SHA/,
-      );
+      expect(() =>
+        workOrderIdentity(coordinates({ baseCommit: 'z'.repeat(40) })),
+      ).toThrow(/full 40-character SHA/);
     });
 
     it.each([0, -1, 1.5])('rejects issue number %s', (issueNumber) => {
-      expect(() => workOrderIdentity(coordinates({ issueNumber }))).toThrow(/positive integer/);
+      expect(() => workOrderIdentity(coordinates({ issueNumber }))).toThrow(
+        /positive integer/,
+      );
     });
 
     it.each([0, -1])('rejects attempt %s', (attempt) => {
-      expect(() => workOrderIdentity(coordinates({ attempt }))).toThrow(/positive integer/);
+      expect(() => workOrderIdentity(coordinates({ attempt }))).toThrow(
+        /positive integer/,
+      );
     });
 
     it('rejects a repository name with nothing usable in it', () => {
       // Throwing rather than coercing: every downstream use reads this string
       // back, and a silently mangled identity correlates with nothing.
-      expect(() => workOrderIdentity(coordinates({ repository: '///' }))).toThrow(
-        /no usable characters/,
-      );
+      expect(() =>
+        workOrderIdentity(coordinates({ repository: '///' })),
+      ).toThrow(/no usable characters/);
     });
   });
 });
@@ -151,9 +167,9 @@ describe('workOrderBranch', () => {
   });
 
   it('changes with the base commit, so a moved base gets a fresh branch', () => {
-    expect(workOrderBranch(coordinates({ baseCommit: 'b'.repeat(40) }))).not.toBe(
-      workOrderBranch(coordinates()),
-    );
+    expect(
+      workOrderBranch(coordinates({ baseCommit: 'b'.repeat(40) })),
+    ).not.toBe(workOrderBranch(coordinates()));
   });
 });
 

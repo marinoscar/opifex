@@ -43,4 +43,6 @@ export const userDetailResponseSchema = userResponseSchema.extend({
   ),
 });
 
-export class UserDetailResponseDto extends createZodDto(userDetailResponseSchema) {}
+export class UserDetailResponseDto extends createZodDto(
+  userDetailResponseSchema,
+) {}

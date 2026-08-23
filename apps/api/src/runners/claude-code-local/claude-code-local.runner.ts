@@ -2,7 +2,10 @@ import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 
-import { RUN_EVENT_SCHEMA_VERSION, type RunEventPayload } from '../../run-events/run-event.types';
+import {
+  RUN_EVENT_SCHEMA_VERSION,
+  type RunEventPayload,
+} from '../../run-events/run-event.types';
 import {
   ChildProcessSupervisor,
   type SupervisedProcess,
@@ -24,10 +27,7 @@ import {
   type PermissionMode,
 } from './claude-code-invocation';
 import { RunWorkspaceService } from './run-workspace.service';
-import {
-  mapStreamLine,
-  type StreamResult,
-} from './stream-json-mapper';
+import { mapStreamLine, type StreamResult } from './stream-json-mapper';
 
 /**
  * The v1 runner: Claude Code, as a child process, on our own hardware.
@@ -114,7 +114,9 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
 
     const existing = this.runs.get(workOrder.identity);
     if (existing) {
-      this.logger.log(`Re-submit of ${workOrder.identity} returned the running handle`);
+      this.logger.log(
+        `Re-submit of ${workOrder.identity} returned the running handle`,
+      );
       return existing.handle;
     }
 
@@ -171,13 +173,16 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
       cwd: workspace.dir,
       env: buildInvocationEnv(workOrder),
       stdin: buildPrompt(workOrder),
-      killGraceMs: this.config.get<number>('runners.claudeCodeLocal.killGraceMs'),
+      killGraceMs: this.config.get<number>(
+        'runners.claudeCodeLocal.killGraceMs',
+      ),
       onLine: (line) => {
         run.linesObserved += 1;
         run.lastOutputAt = new Date();
         this.consumeLine(run, line);
       },
-      onError: (error) => this.logger.warn(`${workOrder.identity}: ${error.message}`),
+      onError: (error) =>
+        this.logger.warn(`${workOrder.identity}: ${error.message}`),
     });
 
     this.runs.set(workOrder.identity, run);
@@ -392,7 +397,8 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
    * the process, which is exactly why it is the ceiling worth having.
    */
   private armDeadline(run: LocalRun): void {
-    const minutes = run.workOrder.wallClockTimeoutMinutes ?? this.defaultTimeoutMinutes;
+    const minutes =
+      run.workOrder.wallClockTimeoutMinutes ?? this.defaultTimeoutMinutes;
     // A ceiling of null AND no configured default means genuinely unbounded,
     // which is a deliberate operator choice rather than an oversight.
     if (minutes === null || minutes <= 0) return;
@@ -489,7 +495,9 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
       case 'drop':
         if (!run.loggedDrops.has(mapping.reason)) {
           run.loggedDrops.add(mapping.reason);
-          this.logger.debug(`${run.workOrder.identity}: dropped a line — ${mapping.reason}`);
+          this.logger.debug(
+            `${run.workOrder.identity}: dropped a line — ${mapping.reason}`,
+          );
         }
         return;
     }
@@ -503,7 +511,9 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
    * any later bisect read it as fact.
    */
   private runnerTag(): string {
-    return this.observedVersion ? `${this.key}@${this.observedVersion}` : this.key;
+    return this.observedVersion
+      ? `${this.key}@${this.observedVersion}`
+      : this.key;
   }
 
   private statusOf(run: LocalRun): RunnerRunStatus {
@@ -520,7 +530,10 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
    * or a late `error`, and a duplicate terminal event would give ingestion
    * two contradictory endings for one run.
    */
-  private settle(run: LocalRun, outcome: NonNullable<ReturnType<SupervisedProcess['result']>>) {
+  private settle(
+    run: LocalRun,
+    outcome: NonNullable<ReturnType<SupervisedProcess['result']>>,
+  ) {
     if (run.settled) return;
     run.settled = true;
     run.finishedAt = new Date();
@@ -576,7 +589,9 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
    * nothing. Here that gap is real: a run killed before its `result` line
    * spent money nobody can account for, and saying so beats reporting $0.
    */
-  private costOf(run: LocalRun): { cost?: { usd?: number; tokensInput?: number; tokensOutput?: number } } {
+  private costOf(run: LocalRun): {
+    cost?: { usd?: number; tokensInput?: number; tokensOutput?: number };
+  } {
     const result = run.cliResult;
     if (!result) return {};
 
@@ -586,7 +601,9 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
       tokensOutput: result.tokensOutput,
     };
 
-    return Object.values(cost).every((value) => value === undefined) ? {} : { cost };
+    return Object.values(cost).every((value) => value === undefined)
+      ? {}
+      : { cost };
   }
 
   /**
@@ -598,11 +615,14 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
    * rather than a hypothetical one.
    */
   private completionSummary(run: LocalRun, observed: string): string {
-    const parts = [`${run.workOrder.identity} exited cleanly after ${observed}`];
+    const parts = [
+      `${run.workOrder.identity} exited cleanly after ${observed}`,
+    ];
 
     const denials = run.cliResult?.permissionDenials ?? 0;
     if (denials > 0) parts.push(`${denials} permission denial(s)`);
-    if (run.parseFailures > 0) parts.push(`${run.parseFailures} unparseable line(s)`);
+    if (run.parseFailures > 0)
+      parts.push(`${run.parseFailures} unparseable line(s)`);
 
     return parts.join(', ');
   }
@@ -611,7 +631,12 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
     run: LocalRun,
     outcome: NonNullable<ReturnType<SupervisedProcess['result']>>,
   ): string {
-    const stderr = run.process.stderr().trim().split('\n').filter(Boolean).pop();
+    const stderr = run.process
+      .stderr()
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .pop();
     const detail = stderr ? `: ${stderr}` : '';
 
     switch (outcome.kind) {
@@ -733,12 +758,19 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
    * notice. Widening it is a deliberate act by an operator who has read that.
    */
   private get permissionMode(): PermissionMode {
-    const configured = this.config.get<string>('runners.claudeCodeLocal.permissionMode');
-    if (configured && (PERMISSION_MODES as readonly string[]).includes(configured)) {
+    const configured = this.config.get<string>(
+      'runners.claudeCodeLocal.permissionMode',
+    );
+    if (
+      configured &&
+      (PERMISSION_MODES as readonly string[]).includes(configured)
+    ) {
       return configured as PermissionMode;
     }
     if (configured) {
-      this.logger.warn(`Unknown permission mode "${configured}"; falling back to acceptEdits`);
+      this.logger.warn(
+        `Unknown permission mode "${configured}"; falling back to acceptEdits`,
+      );
     }
     return 'acceptEdits';
   }

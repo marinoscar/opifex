@@ -37,9 +37,7 @@ self.addEventListener('push', (event) => {
   // handler returns, so a receipt fired without awaiting it would be killed
   // in flight — and an escalation that was shown but never confirmed is
   // recorded as a failure, which would then be wrong.
-  event.waitUntil(
-    Promise.all([show(payload), confirm(payload.receiptId)]),
-  );
+  event.waitUntil(Promise.all([show(payload), confirm(payload.receiptId)]));
 });
 
 self.addEventListener('notificationclick', (event) => {
@@ -51,12 +49,14 @@ self.addEventListener('notificationclick', (event) => {
   // VISION §8's "one tap": focus the tab that is already open on this page
   // rather than stacking another one, and only open a new window if none is.
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        if (client.url === url && 'focus' in client) return client.focus();
-      }
-      return self.clients.openWindow(url);
-    }),
+    self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clients) => {
+        for (const client of clients) {
+          if (client.url === url && 'focus' in client) return client.focus();
+        }
+        return self.clients.openWindow(url);
+      }),
   );
 });
 
@@ -87,7 +87,12 @@ function show(payload) {
   // what, why, what it touches, what happens if they roll over. The body is
   // the only part a locked phone shows, so `body` leads and the rest follows
   // when the notification is expanded.
-  const lines = [payload.body, payload.why, payload.blastRadius, payload.ifIgnored]
+  const lines = [
+    payload.body,
+    payload.why,
+    payload.blastRadius,
+    payload.ifIgnored,
+  ]
     .filter(Boolean)
     .join('\n\n');
 

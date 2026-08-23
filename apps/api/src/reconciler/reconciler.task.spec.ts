@@ -69,7 +69,12 @@ describe('ReconcilerTask', () => {
       suppressed: 0,
       failures: [],
     });
-    execute = jest.fn().mockResolvedValue({ executed: 0, noops: 0, suppressed: 0, failures: [] });
+    execute = jest.fn().mockResolvedValue({
+      executed: 0,
+      noops: 0,
+      suppressed: 0,
+      failures: [],
+    });
     drain = jest.fn().mockResolvedValue({
       dispatched: 0,
       stillQueued: 0,
@@ -82,14 +87,23 @@ describe('ReconcilerTask', () => {
 
     task = new ReconcilerTask(
       { get: () => undefined } as unknown as ConfigService,
-      { addInterval: jest.fn(), doesExist: jest.fn(), deleteInterval: jest.fn() } as unknown as
-        SchedulerRegistry,
+      {
+        addInterval: jest.fn(),
+        doesExist: jest.fn(),
+        deleteInterval: jest.fn(),
+      } as unknown as SchedulerRegistry,
       { tick } as unknown as ReconcilerService,
       { execute } as unknown as MirrorLabelExecutor,
       { report } as unknown as SpecFeedbackExecutor,
       { drain } as unknown as DispatchQueueService,
       { listObserved } as unknown as RepositoriesService,
-      { sweep: jest.fn().mockResolvedValue({ runsWatched: 0, eventsRecorded: 0, disagreements: [] }) } as unknown as GitLivenessService,
+      {
+        sweep: jest.fn().mockResolvedValue({
+          runsWatched: 0,
+          eventsRecorded: 0,
+          disagreements: [],
+        }),
+      } as unknown as GitLivenessService,
       {
         sweep: jest.fn().mockResolvedValue({
           runsJudged: 0,
@@ -175,7 +189,9 @@ describe('ReconcilerTask', () => {
       // order, so it produces NO action — gating this on the action list
       // would silence feedback in the one repository where nothing else is
       // happening, which is precisely where somebody is waiting to hear back.
-      tick.mockResolvedValue(tickRecord({ rejections: [REJECTION], actions: [] }));
+      tick.mockResolvedValue(
+        tickRecord({ rejections: [REJECTION], actions: [] }),
+      );
 
       await run();
 
@@ -201,7 +217,9 @@ describe('ReconcilerTask', () => {
       // Spec feedback is behind its OWN flag. Sharing the label gate would
       // mean an operator who wants status labels gets prose they never asked
       // for, and one who wants feedback has to accept labels to get it.
-      tick.mockResolvedValue(tickRecord({ rejections: [REJECTION], actions: [] }));
+      tick.mockResolvedValue(
+        tickRecord({ rejections: [REJECTION], actions: [] }),
+      );
       listObserved.mockResolvedValue([]);
 
       await run();

@@ -16,7 +16,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
  */
 export class ErrorDto {
   @ApiProperty({
-    description: 'HTTP status code, repeated in the body so a logged payload is self-describing.',
+    description:
+      'HTTP status code, repeated in the body so a logged payload is self-describing.',
     example: 409,
   })
   statusCode!: number;

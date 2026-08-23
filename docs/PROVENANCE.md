@@ -2,7 +2,7 @@
 
 VISION §5 calls this **"the single cheapest high-leverage decision in this
 project"**, and the reason is timing rather than cleverness: designing the
-vocabulary *before* there is history to migrate costs nothing, and retrofitting
+vocabulary _before_ there is history to migrate costs nothing, and retrofitting
 it costs everything. A commit written today without a `Work-Order:` trailer
 cannot be given one later without rewriting history.
 
@@ -19,7 +19,7 @@ nothing but `git log` and the GitHub API:
 Decision --informed--> Issue --generated--> WorkOrder --produced--> PR --contains--> Commit
 ```
 
-Read left to right it answers *"what came of that ADR?"* Read right to left it
+Read left to right it answers _"what came of that ADR?"_ Read right to left it
 answers the question that actually matters at 2am: **"why does this line of
 code exist, and who decided it should?"**
 
@@ -31,7 +31,7 @@ rewritten.
 The shape is deliberately close to [PROV-O](https://www.w3.org/TR/prov-o/) —
 `Decision` as `prov:Entity`, `WorkOrder` as `prov:Activity`, the runner as
 `prov:Agent`. Nothing here commits to publishing RDF, and nothing should. The
-point is that the option stays open, because a vocabulary that *cannot* be
+point is that the option stays open, because a vocabulary that _cannot_ be
 mapped later is a decision made by accident.
 
 ## Format
@@ -60,7 +60,7 @@ Rules that a checker can apply mechanically:
   case-sensitive: `work-order:` does not count.
 - One space after the colon. No leading whitespace.
 - A key appears **at most once**. Two `Issue:` trailers is an error, not a list
-  — see *Multiple issues* below.
+  — see _Multiple issues_ below.
 - Unknown keys are permitted and ignored. Forbidding them would make the
   vocabulary impossible to extend without a flag day.
 
@@ -68,11 +68,11 @@ Rules that a checker can apply mechanically:
 
 ### `Work-Order:` — the WorkOrder node
 
-| | |
-|---|---|
-| **Format** | `wo_{repo}_{issue}_{commit7}_a{attempt}`, matching `^wo_[a-z0-9-]+_\d+_[0-9a-f]{7}_a\d+$` |
+|              |                                                                                                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Format**   | `wo_{repo}_{issue}_{commit7}_a{attempt}`, matching `^wo_[a-z0-9-]+_\d+_[0-9a-f]{7}_a\d+$`                                                              |
 | **Referent** | The work order's deterministic identity (#62). Resolves to a `work_orders` row and to the execution record at `.opifex/work-order.json` on the branch. |
-| **Required** | Agent-authored commits only. |
+| **Required** | Agent-authored commits only.                                                                                                                           |
 
 The identity is content-addressed and stable, so this trailer keeps pointing at
 the right thing even if the row is deleted — the string itself names the repo,
@@ -80,14 +80,14 @@ issue, base commit and attempt.
 
 ### `Issue:` — the Issue node
 
-| | |
-|---|---|
-| **Format** | `#{number}` for the same repository, matching `^#\d+$`. Cross-repository: `{owner}/{repo}#{number}`. |
-| **Referent** | The GitHub issue the work was authorized by. |
-| **Required** | Agent-authored commits, always. Human-authored commits: recommended, and validated when present. |
+|              |                                                                                                      |
+| ------------ | ---------------------------------------------------------------------------------------------------- |
+| **Format**   | `#{number}` for the same repository, matching `^#\d+$`. Cross-repository: `{owner}/{repo}#{number}`. |
+| **Referent** | The GitHub issue the work was authorized by.                                                         |
+| **Required** | Agent-authored commits, always. Human-authored commits: recommended, and validated when present.     |
 
 The `Issue --informed--> ... --> Commit` edge has to exist somewhere; the
-question this trailer answers is *where*. On an agent-authored commit it has to
+question this trailer answers is _where_. On an agent-authored commit it has to
 exist on the commit itself — a work order is generated from an issue, and
 nothing downstream of the commit is guaranteed to still be attached to the PR
 that carried it, since squash merges (see below) drop everything but the
@@ -107,10 +107,10 @@ optional-but-validated-if-present on human-authored ones.
 
 ### `Decision:` — the Decision node
 
-| | |
-|---|---|
-| **Format** | `ADR-{4 digits}`, matching `^ADR-\d{4}$` |
-| **Referent** | A file under `docs/adr/`. `ADR-0005` is `docs/adr/0005-*.md`. |
+|              |                                                                                      |
+| ------------ | ------------------------------------------------------------------------------------ |
+| **Format**   | `ADR-{4 digits}`, matching `^ADR-\d{4}$`                                             |
+| **Referent** | A file under `docs/adr/`. `ADR-0005` is `docs/adr/0005-*.md`.                        |
 | **Required** | Optional. Present when the work implements or is constrained by a recorded decision. |
 
 Optional because most commits implement no ADR, and a vocabulary that demanded
@@ -118,14 +118,14 @@ one would be satisfied with a fictional value within a week.
 
 ### `Runner:` — the Agent node
 
-| | |
-|---|---|
-| **Format** | `{runner-key}@{version}`, matching `^[a-z0-9-]+@\S+$` |
+|              |                                                                    |
+| ------------ | ------------------------------------------------------------------ |
+| **Format**   | `{runner-key}@{version}`, matching `^[a-z0-9-]+@\S+$`              |
 | **Referent** | A `runners` row by `key`, at the version that produced the commit. |
 | **Required** | Agent-authored commits only. Never present on human-authored ones. |
 
 The version is part of the value rather than a separate trailer because the
-question is always *"which runner, at which version, produced this?"* — and a
+question is always _"which runner, at which version, produced this?"_ — and a
 version that can go missing independently is a version that will.
 
 **This trailer is the machine-readable definition of "agent-authored."** A
@@ -134,11 +134,11 @@ must never appear on a human commit.
 
 ### `Run-Id:` — the execution
 
-| | |
-|---|---|
-| **Format** | A UUID, matching `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$` |
-| **Referent** | A `runs` row. |
-| **Required** | Agent-authored commits only. |
+|              |                                                                                   |
+| ------------ | --------------------------------------------------------------------------------- |
+| **Format**   | A UUID, matching `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$` |
+| **Referent** | A `runs` row.                                                                     |
+| **Required** | Agent-authored commits only.                                                      |
 
 Distinct from `Work-Order:` in exactly the way #60 established: the work order
 identity names the **work** and survives a kill-and-re-run; the run id names
@@ -148,11 +148,11 @@ thing an operator will want to search for.
 
 ### `Attempt:` — which attempt
 
-| | |
-|---|---|
-| **Format** | A positive integer, matching `^[1-9]\d*$` |
+|              |                                                                               |
+| ------------ | ----------------------------------------------------------------------------- |
+| **Format**   | A positive integer, matching `^[1-9]\d*$`                                     |
 | **Referent** | Nothing on its own. It is redundant with the `_a{n}` suffix of `Work-Order:`. |
-| **Required** | Agent-authored commits only. |
+| **Required** | Agent-authored commits only.                                                  |
 
 Redundant on purpose. It is the input to success metric 4 (attempts per work
 order), which VISION §13 uses to answer its own open question about how small a
@@ -162,21 +162,21 @@ is authoritative**, because it is the value everything else resolves through.
 
 ## Required by authorship
 
-| Trailer | Agent-authored | Human-authored |
-|---|---|---|
-| `Issue:` | **required** | recommended, validated if present |
-| `Work-Order:` | **required** | must be absent |
-| `Runner:` | **required** | must be absent |
-| `Run-Id:` | **required** | must be absent |
-| `Attempt:` | **required** | must be absent |
-| `Decision:` | optional | optional |
+| Trailer       | Agent-authored | Human-authored                    |
+| ------------- | -------------- | --------------------------------- |
+| `Issue:`      | **required**   | recommended, validated if present |
+| `Work-Order:` | **required**   | must be absent                    |
+| `Runner:`     | **required**   | must be absent                    |
+| `Run-Id:`     | **required**   | must be absent                    |
+| `Attempt:`    | **required**   | must be absent                    |
+| `Decision:`   | optional       | optional                          |
 
 A human PR legitimately carries no required trailer at all — `Issue:` where
 present, and possibly `Decision:`. That is not a lesser standard; a human
 commit has no work order, no runner and no run, so demanding those fields
 would mean inventing them, and an invented `Run-Id` is worse than an absent
-one. VISION §5's premise is that the chain is *honest*, not that it is *full*.
-`Issue:` is the one field a human commit *could* carry the same edge with as
+one. VISION §5's premise is that the chain is _honest_, not that it is _full_.
+`Issue:` is the one field a human commit _could_ carry the same edge with as
 an agent commit, which is why it alone is recommended rather than simply
 optional — but the edge does not depend on it, because the PR's closing
 keyword already carries it at the level the commit belongs to.

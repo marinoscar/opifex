@@ -25,9 +25,13 @@ describe('MetricsRow', () => {
     render(<MetricsRow summary={null} state="unwired" phase="Phase 3" />);
 
     // VISION §10's own phrase, so the landmark matches the document.
-    expect(screen.getByRole('region', { name: 'Success metrics' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('region', { name: 'Success metrics' }),
+    ).toBeInTheDocument();
     for (const metric of METRIC_LIST) {
-      expect(screen.getByRole('heading', { name: metric.label })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: metric.label }),
+      ).toBeInTheDocument();
     }
   });
 

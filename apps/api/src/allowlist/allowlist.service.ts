@@ -81,9 +81,7 @@ export class AllowlistService {
     });
 
     if (existing) {
-      throw new ConflictException(
-        `Email ${email} is already in the allowlist`,
-      );
+      throw new ConflictException(`Email ${email} is already in the allowlist`);
     }
 
     // Create entry
@@ -112,7 +110,9 @@ export class AllowlistService {
       { email },
     );
 
-    this.logger.log(`Email ${email} added to allowlist by admin ${adminUserId}`);
+    this.logger.log(
+      `Email ${email} added to allowlist by admin ${adminUserId}`,
+    );
 
     return entry;
   }

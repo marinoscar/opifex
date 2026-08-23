@@ -1,5 +1,19 @@
-import { Body, Controller, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+} from '@nestjs/common';
+import {
+  ApiBody,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { Auth } from '../auth/decorators/auth.decorator';
 import { PERMISSIONS } from '../common/constants/roles.constants';
@@ -37,21 +51,27 @@ export class RunEventsController {
   })
   @ApiParam({ name: 'runId', type: String, format: 'uuid' })
   @ApiBody({
-    description: 'A run event, or an array of them. See schemas/run-event.schema.json.',
+    description:
+      'A run event, or an array of them. See schemas/run-event.schema.json.',
     schema: {
       oneOf: [
         { type: 'object', additionalProperties: true },
-        { type: 'array', items: { type: 'object', additionalProperties: true } },
+        {
+          type: 'array',
+          items: { type: 'object', additionalProperties: true },
+        },
       ],
     },
   })
   @ApiResponse({
     status: 202,
-    description: 'Accepted. Body reports how many were stored and how many were already known.',
+    description:
+      'Accepted. Body reports how many were stored and how many were already known.',
   })
   @ApiResponse({
     status: 400,
-    description: 'One or more events failed validation; the body names each failure by path.',
+    description:
+      'One or more events failed validation; the body names each failure by path.',
   })
   @ApiResponse({ status: 404, description: 'Run not found' })
   async report(

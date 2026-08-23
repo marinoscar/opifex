@@ -31,7 +31,7 @@ Use the platform `fetch` and own the pipeline: `GitHubHttpService`, with
 
 **Why the SDK's defaults are the problem, not the solution.** Octokit's
 throttling plugin, the part that would otherwise do this work, responds to a
-rate-limit response by *sleeping until the reset*. That is the one behaviour a
+rate-limit response by _sleeping until the reset_. That is the one behaviour a
 reconciler must not have: VISION §4 makes the tick loop the thing that observes
 everything, so a tick blocked on a one-hour reset has stopped observing every
 other repository too. The correct response is to surface the exhaustion with
@@ -40,7 +40,7 @@ the plugin and reimplementing the accounting anyway.
 
 Similarly, ETag handling would be ours regardless: Octokit surfaces the header
 but does not store bodies, and a 304 has no body. Something has to remember
-what the response was unchanged *from*.
+what the response was unchanged _from_.
 
 **What we give up.** Typed endpoint definitions (`octokit.rest.issues.list`)
 and its pagination iterator. Types are recovered where they matter by the

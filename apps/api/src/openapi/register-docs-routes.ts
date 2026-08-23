@@ -34,7 +34,10 @@ export interface DocsLogger {
   error(message: string, stack?: string): void;
 }
 
-type DocsRouteHandler = (request: FastifyRequest, reply: FastifyReply) => unknown;
+type DocsRouteHandler = (
+  request: FastifyRequest,
+  reply: FastifyReply,
+) => unknown;
 
 interface DocsHandlers {
   /** Serves `OPENAPI_JSON_PATH`. */

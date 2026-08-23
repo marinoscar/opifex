@@ -21,12 +21,14 @@ This guide covers the Device Authorization Flow implementation in OPIFEX.
 The Device Authorization Flow (defined in [RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)) is an OAuth 2.0 extension that enables input-constrained devices to obtain user authorization without requiring a web browser on the device itself.
 
 **Key Characteristics:**
+
 - User authenticates on a separate device (phone, computer)
 - Device polls for authorization status
 - Short, human-readable codes for easy entry
 - Secure, standards-compliant implementation
 
 **Benefits:**
+
 - Works on devices without browsers or keyboards
 - User-friendly verification process
 - Secure by design (hashed codes, rate limiting, expiration)
@@ -37,9 +39,11 @@ The Device Authorization Flow (defined in [RFC 8628](https://datatracker.ietf.or
 ## Use Cases
 
 ### CLI Applications
+
 Command-line tools that need user authentication without opening a local web browser.
 
 **Example:** A deployment CLI that needs access to your organization's API:
+
 ```bash
 $ deploy-cli login
 Please visit: http://localhost:3535/device
@@ -49,6 +53,7 @@ Waiting for authorization...
 ```
 
 ### API Reference (Scalar)
+
 Obtaining a token to use against the interactive [API reference](API.md#openapi-documentation) at `/api/docs`.
 
 **Example:** If you're already signed in to the deployment in your browser, the reference
@@ -57,14 +62,17 @@ when that shortcut doesn't apply: a signed-out browser, a different device, or a
 client that just needs a token to paste into the reference's Authentication panel.
 
 ### Mobile Applications
+
 Native mobile apps that want to provide a web-based authorization flow without handling OAuth redirects directly.
 
 ### IoT Devices
+
 Smart devices (TVs, thermostats, etc.) with limited input capabilities that need user authorization.
 
 **Example:** A smart TV app displays a code for the user to enter on their phone or computer.
 
 ### Third-Party Integrations
+
 External services that need to access your API on behalf of users.
 
 ---
@@ -120,6 +128,7 @@ External services that need to access your API on behalf of users.
 ### Step-by-Step Process
 
 #### 1. Device Requests Authorization
+
 The device initiates the flow by requesting a device code pair:
 
 ```http
@@ -136,6 +145,7 @@ Content-Type: application/json
 ```
 
 #### 2. Server Returns Codes
+
 The API responds with device and user codes:
 
 ```json
@@ -152,12 +162,15 @@ The API responds with device and user codes:
 ```
 
 #### 3. User Navigates to Activation Page
+
 The user opens the `verificationUri` or `verificationUriComplete` in a web browser and logs in (if not already authenticated).
 
 #### 4. User Enters Code
+
 On the activation page, the user enters the `userCode` displayed by the device.
 
 #### 5. User Approves or Denies
+
 The frontend calls the authorization endpoint:
 
 ```http
@@ -172,6 +185,7 @@ Content-Type: application/json
 ```
 
 #### 6. Device Polls for Token
+
 Meanwhile, the device continuously polls the token endpoint:
 
 ```http
@@ -184,6 +198,7 @@ Content-Type: application/json
 ```
 
 **While Pending:**
+
 ```json
 {
   "statusCode": 400,
@@ -193,6 +208,7 @@ Content-Type: application/json
 ```
 
 **After Approval:**
+
 ```json
 {
   "data": {
@@ -205,6 +221,7 @@ Content-Type: application/json
 ```
 
 #### 7. Device Uses Tokens
+
 The device can now use the access token for authenticated API requests.
 
 ---
@@ -214,9 +231,11 @@ The device can now use the access token for authenticated API requests.
 ### Public Endpoints
 
 #### POST /api/auth/device/code
+
 Generate a new device code pair to initiate the device authorization flow.
 
 **Request:**
+
 ```json
 {
   "clientInfo": {
@@ -228,14 +247,16 @@ Generate a new device code pair to initiate the device authorization flow.
 ```
 
 **Request Fields:**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `clientInfo` | object | No | Optional metadata about the client device |
-| `clientInfo.name` | string | No | Application name |
-| `clientInfo.version` | string | No | Application version |
-| `clientInfo.platform` | string | No | Platform (linux, windows, macos, etc.) |
+
+| Field                 | Type   | Required | Description                               |
+| --------------------- | ------ | -------- | ----------------------------------------- |
+| `clientInfo`          | object | No       | Optional metadata about the client device |
+| `clientInfo.name`     | string | No       | Application name                          |
+| `clientInfo.version`  | string | No       | Application version                       |
+| `clientInfo.platform` | string | No       | Platform (linux, windows, macos, etc.)    |
 
 **Response (200 OK):**
+
 ```json
 {
   "data": {
@@ -250,21 +271,24 @@ Generate a new device code pair to initiate the device authorization flow.
 ```
 
 **Response Fields:**
-| Field | Type | Description |
-|-------|------|-------------|
-| `deviceCode` | string | Opaque code for device polling (keep secret) |
-| `userCode` | string | Human-readable code for user entry (8 chars, formatted XXXX-XXXX) |
-| `verificationUri` | string | URL where user should authorize |
-| `verificationUriComplete` | string | URL with user code pre-filled |
-| `expiresIn` | number | Code lifetime in seconds (default: 900) |
-| `interval` | number | Minimum polling interval in seconds (default: 5) |
+
+| Field                     | Type   | Description                                                       |
+| ------------------------- | ------ | ----------------------------------------------------------------- |
+| `deviceCode`              | string | Opaque code for device polling (keep secret)                      |
+| `userCode`                | string | Human-readable code for user entry (8 chars, formatted XXXX-XXXX) |
+| `verificationUri`         | string | URL where user should authorize                                   |
+| `verificationUriComplete` | string | URL with user code pre-filled                                     |
+| `expiresIn`               | number | Code lifetime in seconds (default: 900)                           |
+| `interval`                | number | Minimum polling interval in seconds (default: 5)                  |
 
 ---
 
 #### POST /api/auth/device/token
+
 Poll for authorization status and obtain tokens when approved.
 
 **Request:**
+
 ```json
 {
   "deviceCode": "a4f3b8c9d2e1f5a6b7c8d9e0f1a2b3c4"
@@ -272,11 +296,13 @@ Poll for authorization status and obtain tokens when approved.
 ```
 
 **Request Fields:**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `deviceCode` | string | Yes | Device code from /auth/device/code |
+
+| Field        | Type   | Required | Description                        |
+| ------------ | ------ | -------- | ---------------------------------- |
+| `deviceCode` | string | Yes      | Device code from /auth/device/code |
 
 **Response (200 OK - Authorized):**
+
 ```json
 {
   "data": {
@@ -289,12 +315,13 @@ Poll for authorization status and obtain tokens when approved.
 ```
 
 **Response Fields (Success):**
-| Field | Type | Description |
-|-------|------|-------------|
-| `accessToken` | string | JWT access token for API requests |
+
+| Field          | Type   | Description                                   |
+| -------------- | ------ | --------------------------------------------- |
+| `accessToken`  | string | JWT access token for API requests             |
 | `refreshToken` | string | Refresh token for obtaining new access tokens |
-| `tokenType` | string | Token type (always "Bearer") |
-| `expiresIn` | number | Access token lifetime in seconds |
+| `tokenType`    | string | Token type (always "Bearer")                  |
+| `expiresIn`    | number | Access token lifetime in seconds              |
 
 **Error Responses:**
 
@@ -305,25 +332,30 @@ See [Error Handling](#error-handling) section for detailed error codes and meani
 ### Authenticated Endpoints
 
 All authenticated endpoints require a valid JWT access token in the Authorization header:
+
 ```
 Authorization: Bearer <access_token>
 ```
 
 #### GET /api/auth/device/activate
+
 Get activation page information and optionally validate a user code.
 
 **Query Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `code` | string | No | User verification code to validate |
+
+| Parameter | Type   | Required | Description                        |
+| --------- | ------ | -------- | ---------------------------------- |
+| `code`    | string | No       | User verification code to validate |
 
 **Request (No Code):**
+
 ```http
 GET /api/auth/device/activate
 Authorization: Bearer <token>
 ```
 
 **Response (No Code):**
+
 ```json
 {
   "data": {
@@ -333,12 +365,14 @@ Authorization: Bearer <token>
 ```
 
 **Request (With Code):**
+
 ```http
 GET /api/auth/device/activate?code=ABCD-1234
 Authorization: Bearer <token>
 ```
 
 **Response (With Code):**
+
 ```json
 {
   "data": {
@@ -355,15 +389,18 @@ Authorization: Bearer <token>
 ```
 
 **Error Responses:**
+
 - **404 Not Found** - Invalid user code
 - **400 Bad Request** - Code has expired or already been processed
 
 ---
 
 #### POST /api/auth/device/authorize
+
 Approve or deny a device authorization request.
 
 **Request:**
+
 ```json
 {
   "userCode": "ABCD-1234",
@@ -372,12 +409,14 @@ Approve or deny a device authorization request.
 ```
 
 **Request Fields:**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `userCode` | string | Yes | User code from the device |
-| `approve` | boolean | Yes | true to approve, false to deny |
+
+| Field      | Type    | Required | Description                    |
+| ---------- | ------- | -------- | ------------------------------ |
+| `userCode` | string  | Yes      | User code from the device      |
+| `approve`  | boolean | Yes      | true to approve, false to deny |
 
 **Response (200 OK):**
+
 ```json
 {
   "data": {
@@ -388,27 +427,32 @@ Approve or deny a device authorization request.
 ```
 
 **Error Responses:**
+
 - **404 Not Found** - Invalid user code
 - **400 Bad Request** - Code has expired or already been processed
 
 ---
 
 #### GET /api/auth/device/sessions
+
 List the current user's approved device sessions.
 
 **Query Parameters:**
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `page` | number | No | 1 | Page number |
-| `limit` | number | No | 10 | Page size |
+
+| Parameter | Type   | Required | Default | Description |
+| --------- | ------ | -------- | ------- | ----------- |
+| `page`    | number | No       | 1       | Page number |
+| `limit`   | number | No       | 10      | Page size   |
 
 **Request:**
+
 ```http
 GET /api/auth/device/sessions?page=1&limit=10
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -436,18 +480,22 @@ Authorization: Bearer <token>
 ---
 
 #### DELETE /api/auth/device/sessions/:id
+
 Revoke a specific device session.
 
 **Parameters:**
+
 - `id` (path) - Session ID to revoke
 
 **Request:**
+
 ```http
 DELETE /api/auth/device/sessions/uuid-1234
 Authorization: Bearer <token>
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "data": {
@@ -458,6 +506,7 @@ Authorization: Bearer <token>
 ```
 
 **Error Responses:**
+
 - **404 Not Found** - Session not found or doesn't belong to current user
 
 ---
@@ -495,7 +544,7 @@ async function loginWithDeviceFlow() {
   let authorized = false;
 
   while (!authorized) {
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
 
     try {
       const tokenResponse = await axios.post(`${API_BASE}/auth/device/token`, {
@@ -509,7 +558,6 @@ async function loginWithDeviceFlow() {
       // Save tokens to config file or environment
       saveTokens(accessToken, refreshToken);
       authorized = true;
-
     } catch (error) {
       const errorCode = error.response?.data?.error;
 
@@ -676,13 +724,16 @@ function DeviceAuthScreen() {
   }, []);
 
   async function initiateDeviceAuth() {
-    const response = await axios.post('http://localhost:3535/api/auth/device/code', {
-      clientInfo: {
-        name: 'My Mobile App',
-        version: '1.0.0',
-        platform: Platform.OS,
+    const response = await axios.post(
+      'http://localhost:3535/api/auth/device/code',
+      {
+        clientInfo: {
+          name: 'My Mobile App',
+          version: '1.0.0',
+          platform: Platform.OS,
+        },
       },
-    });
+    );
 
     const { deviceCode, userCode, verificationUriComplete, interval } =
       response.data.data;
@@ -700,15 +751,17 @@ function DeviceAuthScreen() {
 
     const poll = async () => {
       try {
-        const response = await axios.post('http://localhost:3535/api/auth/device/token', {
-          deviceCode,
-        });
+        const response = await axios.post(
+          'http://localhost:3535/api/auth/device/token',
+          {
+            deviceCode,
+          },
+        );
 
         // Success! Save tokens and navigate to main app
         const { accessToken, refreshToken } = response.data.data;
         await saveTokens(accessToken, refreshToken);
         navigation.navigate('Home');
-
       } catch (error) {
         const errorCode = error.response?.data?.error;
 
@@ -761,20 +814,22 @@ DEVICE_TOKEN_EXPIRY_DAYS=7
 
 **Variables:**
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `DEVICE_CODE_EXPIRY_MINUTES` | number | 15 | How long device codes remain valid (minutes) |
-| `DEVICE_CODE_POLL_INTERVAL` | number | 5 | Minimum time between polling requests (seconds) |
-| `DEVICE_TOKEN_EXPIRY_DAYS` | number | 7 | Token lifetime for device-authorized sessions (days) |
+| Variable                     | Type   | Default | Description                                          |
+| ---------------------------- | ------ | ------- | ---------------------------------------------------- |
+| `DEVICE_CODE_EXPIRY_MINUTES` | number | 15      | How long device codes remain valid (minutes)         |
+| `DEVICE_CODE_POLL_INTERVAL`  | number | 5       | Minimum time between polling requests (seconds)      |
+| `DEVICE_TOKEN_EXPIRY_DAYS`   | number | 7       | Token lifetime for device-authorized sessions (days) |
 
 ### Configuration Notes
 
 **Expiry Time:**
+
 - **Too short** (< 5 minutes): Users may not have enough time to complete authorization
 - **Too long** (> 30 minutes): Increases security risk if codes are leaked
 - **Recommended:** 10-15 minutes for most use cases
 
 **Poll Interval:**
+
 - **Too short** (< 3 seconds): Unnecessary server load
 - **Too long** (> 10 seconds): Poor user experience
 - **Recommended:** 5 seconds for optimal balance
@@ -805,6 +860,7 @@ Authorization: Bearer <token>
 ```
 
 **Response shows:**
+
 - User code for identification
 - Client information (app name, version, platform)
 - Authorization timestamp
@@ -820,6 +876,7 @@ Authorization: Bearer <token>
 ```
 
 **Effect:**
+
 - Session marked as denied
 - Future token refresh attempts will fail
 - User must re-authorize the device
@@ -840,37 +897,44 @@ Authorization: Bearer <token>
 ## Security Considerations
 
 ### Code Format
+
 - **User codes** use only unambiguous characters (no 0/O, 1/I/l)
 - 8 characters formatted as `XXXX-XXXX` for easy reading
 - Character set: `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`
 
 ### Code Hashing
+
 - **Device codes** are hashed (SHA-256) before storage
 - Only hashes stored in database, never plaintext
 - Prevents code leakage from database compromise
 
 ### Rate Limiting
+
 - **Per-device rate limiting** enforced on polling
 - If device polls too frequently, returns `slow_down` error
 - Prevents polling DoS attacks
 
 ### Expiration
+
 - **Time-based expiration**: Default 15 minutes
 - **Single-use codes**: Marked as expired after token issuance
 - **Automatic cleanup**: Expired codes removed by scheduled task
 
 ### User Control
+
 - **Explicit approval required**: Users must actively approve each device
 - **Deny option**: Users can explicitly deny authorization
 - **Session management**: Users can view and revoke device access
 - **Audit trail**: All authorizations logged with user and device info
 
 ### Input Validation
+
 - User codes normalized (uppercase, whitespace removed)
 - Client info validated and sanitized
 - Device codes validated format and length
 
 ### Database Security
+
 - Device codes stored as SHA-256 hashes
 - Foreign key constraints prevent orphaned records
 - Indexes optimize lookup performance
@@ -894,6 +958,7 @@ Device authorization uses standard OAuth 2.0 error codes as defined in RFC 8628.
 ### Error Codes
 
 #### authorization_pending
+
 **Status:** 400 Bad Request
 **Meaning:** User has not yet authorized the device
 **Action:** Continue polling at specified interval
@@ -908,6 +973,7 @@ Device authorization uses standard OAuth 2.0 error codes as defined in RFC 8628.
 ---
 
 #### slow_down
+
 **Status:** 400 Bad Request
 **Meaning:** Device is polling too frequently
 **Action:** Increase polling interval by at least 5 seconds
@@ -920,6 +986,7 @@ Device authorization uses standard OAuth 2.0 error codes as defined in RFC 8628.
 ```
 
 **Client Implementation:**
+
 ```javascript
 if (error === 'slow_down') {
   pollInterval += 5000; // Add 5 seconds
@@ -929,6 +996,7 @@ if (error === 'slow_down') {
 ---
 
 #### expired_token
+
 **Status:** 400 Bad Request
 **Meaning:** Device code has expired
 **Action:** Start a new device flow (request new code)
@@ -943,6 +1011,7 @@ if (error === 'slow_down') {
 ---
 
 #### access_denied
+
 **Status:** 400 Bad Request
 **Meaning:** User explicitly denied authorization
 **Action:** Inform user and stop polling
@@ -957,6 +1026,7 @@ if (error === 'slow_down') {
 ---
 
 #### invalid_grant
+
 **Status:** 401 Unauthorized
 **Meaning:** Invalid device code provided
 **Action:** Verify device code and restart flow if necessary
@@ -973,6 +1043,7 @@ if (error === 'slow_down') {
 ### Error Handling Best Practices
 
 **Polling Loop:**
+
 ```javascript
 async function pollForToken(deviceCode, interval) {
   let pollInterval = interval * 1000;
@@ -983,7 +1054,6 @@ async function pollForToken(deviceCode, interval) {
     try {
       const tokens = await requestToken(deviceCode);
       return tokens; // Success!
-
     } catch (error) {
       switch (error.code) {
         case 'authorization_pending':
@@ -1010,6 +1080,7 @@ async function pollForToken(deviceCode, interval) {
 ```
 
 **User Feedback:**
+
 - Show "Waiting for authorization..." during `authorization_pending`
 - Display error messages clearly for `expired_token` and `access_denied`
 - Handle `slow_down` silently (no user notification needed)
@@ -1023,6 +1094,7 @@ async function pollForToken(deviceCode, interval) {
 **Cause:** User entered wrong code or code doesn't exist
 
 **Solutions:**
+
 1. Verify the user code is entered correctly (case-insensitive)
 2. Check that the code hasn't expired (15 minutes default)
 3. Ensure database is seeded and running
@@ -1034,6 +1106,7 @@ async function pollForToken(deviceCode, interval) {
 **Cause:** More than 15 minutes (default) elapsed since code generation
 
 **Solutions:**
+
 1. Restart the device authorization flow
 2. Increase `DEVICE_CODE_EXPIRY_MINUTES` if users need more time
 
@@ -1044,6 +1117,7 @@ async function pollForToken(deviceCode, interval) {
 **Cause:** Code already approved or denied by user
 
 **Solutions:**
+
 1. If approved: device should have received tokens
 2. If denied: restart authorization flow
 3. Don't attempt to reuse codes
@@ -1055,6 +1129,7 @@ async function pollForToken(deviceCode, interval) {
 **Cause:** Device polling too frequently
 
 **Solutions:**
+
 1. Respect the `interval` returned in the initial response
 2. Increase polling interval when `slow_down` received
 3. Check `DEVICE_CODE_POLL_INTERVAL` configuration
@@ -1064,11 +1139,13 @@ async function pollForToken(deviceCode, interval) {
 ### Tokens Not Returned After Approval
 
 **Possible Causes:**
+
 1. Device stopped polling before approval completed
 2. Network connectivity issues
 3. User account disabled
 
 **Solutions:**
+
 1. Ensure continuous polling until success or explicit error
 2. Check API logs for detailed error information
 3. Verify user account is active

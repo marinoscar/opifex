@@ -47,11 +47,18 @@ export class DispatchService {
    * Takes the NEEDS, not a work order — routing must not be able to see a
    * runner name even if one somehow appeared on the record (VISION §6).
    */
-  async decide(needs: readonly RunnerNeed[], identity?: string): Promise<DispatchDecision> {
-    const [pool, globalLiveRuns] = await Promise.all([this.loadPool(), this.countLiveRuns()]);
+  async decide(
+    needs: readonly RunnerNeed[],
+    identity?: string,
+  ): Promise<DispatchDecision> {
+    const [pool, globalLiveRuns] = await Promise.all([
+      this.loadPool(),
+      this.countLiveRuns(),
+    ]);
 
     const decision = decideDispatch({ needs, identity }, pool, {
-      globalMaxConcurrent: this.config.get<number | null>('dispatch.maxConcurrent') ?? null,
+      globalMaxConcurrent:
+        this.config.get<number | null>('dispatch.maxConcurrent') ?? null,
       globalLiveRuns,
       allowPreviewWithoutGaFallback:
         this.config.get<boolean>('dispatch.allowPreviewRunner') === true,
@@ -87,24 +94,28 @@ export class DispatchService {
       }),
     ]);
 
-    const liveByRunner = new Map(loads.map((row) => [row.runnerKey, row._count._all]));
+    const liveByRunner = new Map(
+      loads.map((row) => [row.runnerKey, row._count._all]),
+    );
 
-    return runners
-      // A runner with no capability manifest cannot be matched against needs
-      // at all — there is nothing to match. Dropped rather than defaulted:
-      // guessing a manifest would route real work on invented facts.
-      .filter((runner) => {
-        if (runner.capability) return true;
-        this.logger.warn(
-          `Runner ${runner.key} has registered no capability manifest and cannot be routed to`,
-        );
-        return false;
-      })
-      .map((runner) => ({
-        enabled: runner.enabled,
-        liveRuns: liveByRunner.get(runner.key) ?? 0,
-        capabilities: toCapabilities(runner, runner.capability!),
-      }));
+    return (
+      runners
+        // A runner with no capability manifest cannot be matched against needs
+        // at all — there is nothing to match. Dropped rather than defaulted:
+        // guessing a manifest would route real work on invented facts.
+        .filter((runner) => {
+          if (runner.capability) return true;
+          this.logger.warn(
+            `Runner ${runner.key} has registered no capability manifest and cannot be routed to`,
+          );
+          return false;
+        })
+        .map((runner) => ({
+          enabled: runner.enabled,
+          liveRuns: liveByRunner.get(runner.key) ?? 0,
+          capabilities: toCapabilities(runner, runner.capability!),
+        }))
+    );
   }
 
   private async countLiveRuns(): Promise<number> {
@@ -114,8 +125,12 @@ export class DispatchService {
   }
 }
 
-type RunnerRow = Awaited<ReturnType<PrismaService['runner']['findUniqueOrThrow']>>;
-type CapabilityRow = Awaited<ReturnType<PrismaService['runnerCapability']['findUniqueOrThrow']>>;
+type RunnerRow = Awaited<
+  ReturnType<PrismaService['runner']['findUniqueOrThrow']>
+>;
+type CapabilityRow = Awaited<
+  ReturnType<PrismaService['runnerCapability']['findUniqueOrThrow']>
+>;
 
 /**
  * The database row as the seam's type.
@@ -124,17 +139,25 @@ type CapabilityRow = Awaited<ReturnType<PrismaService['runnerCapability']['findU
  * `RunnerCapabilities` from `runner.types.ts`, which restates its enums so it
  * stays a pure contract with no Prisma import. A spec pins the two together.
  */
-function toCapabilities(runner: RunnerRow, capability: CapabilityRow): RunnerCapabilities {
+function toCapabilities(
+  runner: RunnerRow,
+  capability: CapabilityRow,
+): RunnerCapabilities {
   return {
     key: runner.key,
     displayName: runner.displayName,
     version: runner.version,
     schemaVersion: capability.schemaVersion,
-    invocationModel: capability.invocationModel as RunnerCapabilities['invocationModel'],
-    executionLocus: capability.executionLocus as RunnerCapabilities['executionLocus'],
-    streamingFidelity: capability.streamingFidelity as RunnerCapabilities['streamingFidelity'],
-    rateLimitSignal: capability.rateLimitSignal as RunnerCapabilities['rateLimitSignal'],
-    stabilityTier: capability.stabilityTier as RunnerCapabilities['stabilityTier'],
+    invocationModel:
+      capability.invocationModel as RunnerCapabilities['invocationModel'],
+    executionLocus:
+      capability.executionLocus as RunnerCapabilities['executionLocus'],
+    streamingFidelity:
+      capability.streamingFidelity as RunnerCapabilities['streamingFidelity'],
+    rateLimitSignal:
+      capability.rateLimitSignal as RunnerCapabilities['rateLimitSignal'],
+    stabilityTier:
+      capability.stabilityTier as RunnerCapabilities['stabilityTier'],
     reportsCost: capability.reportsCost,
     resumable: capability.resumable,
     maxConcurrency: capability.maxConcurrency,

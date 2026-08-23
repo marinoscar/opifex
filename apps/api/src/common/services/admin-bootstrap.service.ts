@@ -35,9 +35,7 @@ export class AdminBootstrapService implements OnModuleInit {
       return;
     }
 
-    this.logger.log(
-      `Admin bootstrap configured for: ${initialAdminEmail}`,
-    );
+    this.logger.log(`Admin bootstrap configured for: ${initialAdminEmail}`);
   }
 
   /**
@@ -64,9 +62,7 @@ export class AdminBootstrapService implements OnModuleInit {
       return false;
     }
 
-    const existingAdmins = adminRole.userRoles.filter(
-      (ur) => ur.user.isActive,
-    );
+    const existingAdmins = adminRole.userRoles.filter((ur) => ur.user.isActive);
 
     // Only grant admin if:
     // 1. Email matches INITIAL_ADMIN_EMAIL

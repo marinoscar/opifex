@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { ThemeContextProvider, useThemeContext } from '../../contexts/ThemeContext';
+import {
+  ThemeContextProvider,
+  useThemeContext,
+} from '../../contexts/ThemeContext';
 
 describe('ThemeContext', () => {
   beforeEach(() => {
@@ -212,7 +215,9 @@ describe('ThemeContext', () => {
   describe('Context Usage', () => {
     it('should throw error when used outside provider', () => {
       // Suppress console.error for this test
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
 
       expect(() => {
         renderHook(() => useThemeContext());

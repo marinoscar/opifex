@@ -69,13 +69,17 @@ describe('UserSettingsPage', () => {
     it('should display page title', () => {
       render(<UserSettingsPage />);
 
-      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: /settings/i }),
+      ).toBeInTheDocument();
     });
 
     it('should display page description', () => {
       render(<UserSettingsPage />);
 
-      expect(screen.getByText(/manage your account preferences/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/manage your account preferences/i),
+      ).toBeInTheDocument();
     });
   });
 
@@ -342,7 +346,8 @@ describe('UserSettingsPage', () => {
       const themeCard = document.getElementById('theme')!;
 
       expect(
-        email.compareDocumentPosition(themeCard) & Node.DOCUMENT_POSITION_FOLLOWING,
+        email.compareDocumentPosition(themeCard) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     });
   });
@@ -360,7 +365,9 @@ describe('UserSettingsPage', () => {
       const scrollIntoView = vi.fn();
       Element.prototype.scrollIntoView = scrollIntoView;
 
-      render(<UserSettingsPage />, { wrapperOptions: { route: '/settings#theme' } });
+      render(<UserSettingsPage />, {
+        wrapperOptions: { route: '/settings#theme' },
+      });
 
       expect(scrollIntoView).toHaveBeenCalledTimes(1);
       expect(document.activeElement).toBe(document.getElementById('theme'));
@@ -381,10 +388,11 @@ describe('UserSettingsPage', () => {
         refresh: vi.fn(),
       });
 
-      render(<UserSettingsPage />, { wrapperOptions: { route: '/settings#theme' } });
+      render(<UserSettingsPage />, {
+        wrapperOptions: { route: '/settings#theme' },
+      });
 
       expect(scrollIntoView).not.toHaveBeenCalled();
     });
   });
-
 });

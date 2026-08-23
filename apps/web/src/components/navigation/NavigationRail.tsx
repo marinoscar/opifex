@@ -62,7 +62,11 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useNavigationPrefs } from '../../hooks/useNavigationPrefs';
-import { DESTINATIONS, SECTIONS, resolveActiveDestination } from '../../config/destinations';
+import {
+  DESTINATIONS,
+  SECTIONS,
+  resolveActiveDestination,
+} from '../../config/destinations';
 import type { Destination } from '../../config/destinations';
 
 /**
@@ -93,7 +97,14 @@ interface RailRowProps {
   expanded: boolean;
 }
 
-function RailRow({ to, Icon, label, compactLabel, active, expanded }: RailRowProps) {
+function RailRow({
+  to,
+  Icon,
+  label,
+  compactLabel,
+  active,
+  expanded,
+}: RailRowProps) {
   const theme = useTheme();
 
   const button = (
@@ -133,7 +144,9 @@ function RailRow({ to, Icon, label, compactLabel, active, expanded }: RailRowPro
     >
       <ListItemIcon
         sx={{
-          color: active ? theme.palette.primary.main : theme.palette.text.secondary,
+          color: active
+            ? theme.palette.primary.main
+            : theme.palette.text.secondary,
           minWidth: expanded ? 40 : 'auto',
           justifyContent: 'center',
         }}
@@ -156,7 +169,9 @@ function RailRow({ to, Icon, label, compactLabel, active, expanded }: RailRowPro
             fontSize: '0.625rem',
             lineHeight: 1.2,
             maxWidth: '100%',
-            color: active ? theme.palette.primary.main : theme.palette.text.secondary,
+            color: active
+              ? theme.palette.primary.main
+              : theme.palette.text.secondary,
           }}
         >
           {compactLabel}
@@ -171,7 +186,13 @@ function RailRow({ to, Icon, label, compactLabel, active, expanded }: RailRowPro
           the accessible name above, never as a substitute for it — a tooltip is
           a pointer affordance and reaches neither a screen reader reliably nor
           a keyboard-only user at all. */}
-      {expanded ? button : <Tooltip title={label} placement="right">{button}</Tooltip>}
+      {expanded ? (
+        button
+      ) : (
+        <Tooltip title={label} placement="right">
+          {button}
+        </Tooltip>
+      )}
     </ListItem>
   );
 }
@@ -195,7 +216,8 @@ export function NavigationRail() {
   // `usePermissions`' predicates are memoized, so keying on `hasPermission` is
   // safe: this recomputes when the user's permission set changes, not per render.
   const visibleDestinations = DESTINATIONS.filter(
-    (destination) => !destination.permission || hasPermission(destination.permission),
+    (destination) =>
+      !destination.permission || hasPermission(destination.permission),
   );
 
   // Sections are built AFTER the permission filter and then emptied ones are
@@ -267,7 +289,12 @@ export function NavigationRail() {
                   component="li"
                   variant="overline"
                   color="text.secondary"
-                  sx={{ display: 'block', px: 2, pt: index > 0 ? 1.5 : 0.5, lineHeight: 2 }}
+                  sx={{
+                    display: 'block',
+                    px: 2,
+                    pt: index > 0 ? 1.5 : 0.5,
+                    lineHeight: 2,
+                  }}
                 >
                   {section.label}
                 </Typography>
@@ -309,7 +336,9 @@ export function NavigationRail() {
               size="small"
               onClick={toggleRailCollapsed}
               aria-expanded={expanded}
-              aria-label={expanded ? 'Collapse navigation' : 'Expand navigation'}
+              aria-label={
+                expanded ? 'Collapse navigation' : 'Expand navigation'
+              }
             >
               {expanded ? (
                 <ChevronLeftIcon fontSize="small" />

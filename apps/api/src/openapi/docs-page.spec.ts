@@ -26,11 +26,16 @@ describe('renderDocsPage', () => {
   });
 
   it('loads the reference bundle from the default CDN', () => {
-    expect(renderDocsPage(options)).toContain(`<script src="${DEFAULT_SCALAR_CDN}">`);
+    expect(renderDocsPage(options)).toContain(
+      `<script src="${DEFAULT_SCALAR_CDN}">`,
+    );
   });
 
   it('lets an air-gapped deployment point the bundle somewhere else', () => {
-    const html = renderDocsPage({ ...options, cdn: 'https://assets.internal/scalar.js' });
+    const html = renderDocsPage({
+      ...options,
+      cdn: 'https://assets.internal/scalar.js',
+    });
     expect(html).toContain('<script src="https://assets.internal/scalar.js">');
     expect(html).not.toContain(DEFAULT_SCALAR_CDN);
   });
@@ -39,7 +44,9 @@ describe('renderDocsPage', () => {
     const previous = process.env.API_DOCS_CDN;
     process.env.API_DOCS_CDN = 'https://cdn.example.test/bundle.js';
     try {
-      expect(renderDocsPage(options)).toContain('https://cdn.example.test/bundle.js');
+      expect(renderDocsPage(options)).toContain(
+        'https://cdn.example.test/bundle.js',
+      );
     } finally {
       if (previous === undefined) delete process.env.API_DOCS_CDN;
       else process.env.API_DOCS_CDN = previous;
@@ -74,13 +81,19 @@ describe('renderDocsPage', () => {
 
   describe('escaping', () => {
     it('escapes interpolated text into the markup', () => {
-      const html = renderDocsPage({ ...options, version: '<img src=x onerror=alert(1)>' });
+      const html = renderDocsPage({
+        ...options,
+        version: '<img src=x onerror=alert(1)>',
+      });
       expect(html).not.toContain('<img src=x');
       expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
     });
 
     it('cannot be broken out of by a value containing a closing script tag', () => {
-      const html = renderDocsPage({ ...options, specUrl: '/spec</script><script>evil()' });
+      const html = renderDocsPage({
+        ...options,
+        specUrl: '/spec</script><script>evil()',
+      });
       expect(html).not.toContain('</script><script>evil()');
     });
   });

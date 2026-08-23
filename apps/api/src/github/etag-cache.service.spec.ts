@@ -13,8 +13,12 @@ describe('EtagCacheService', () => {
       cache.set('GET', 'https://api.github.com/repos/a/b', entry('"get"'));
       cache.set('HEAD', 'https://api.github.com/repos/a/b', entry('"head"'));
 
-      expect(cache.get('GET', 'https://api.github.com/repos/a/b')!.etag).toBe('"get"');
-      expect(cache.get('HEAD', 'https://api.github.com/repos/a/b')!.etag).toBe('"head"');
+      expect(cache.get('GET', 'https://api.github.com/repos/a/b')!.etag).toBe(
+        '"get"',
+      );
+      expect(cache.get('HEAD', 'https://api.github.com/repos/a/b')!.etag).toBe(
+        '"head"',
+      );
     });
 
     it('normalises the method case', () => {
@@ -25,7 +29,9 @@ describe('EtagCacheService', () => {
     });
 
     it('misses on an unknown URL', () => {
-      expect(new EtagCacheService(10).get('GET', 'https://api.github.com/x')).toBeUndefined();
+      expect(
+        new EtagCacheService(10).get('GET', 'https://api.github.com/x'),
+      ).toBeUndefined();
     });
   });
 
@@ -69,16 +75,32 @@ describe('EtagCacheService', () => {
       // that could see a private repository must not be replayed to one that
       // cannot.
       const cache = new EtagCacheService(10);
-      cache.set('GET', 'https://api.github.com/repos/acme/app/issues', entry('"i"'));
-      cache.set('GET', 'https://api.github.com/repos/acme/app/labels', entry('"l"'));
-      cache.set('GET', 'https://api.github.com/repos/acme/other/issues', entry('"o"'));
+      cache.set(
+        'GET',
+        'https://api.github.com/repos/acme/app/issues',
+        entry('"i"'),
+      );
+      cache.set(
+        'GET',
+        'https://api.github.com/repos/acme/app/labels',
+        entry('"l"'),
+      );
+      cache.set(
+        'GET',
+        'https://api.github.com/repos/acme/other/issues',
+        entry('"o"'),
+      );
 
       expect(cache.invalidateRepository('acme', 'app')).toBe(2);
-      expect(cache.get('GET', 'https://api.github.com/repos/acme/other/issues')).toBeDefined();
+      expect(
+        cache.get('GET', 'https://api.github.com/repos/acme/other/issues'),
+      ).toBeDefined();
     });
 
     it('reports zero when nothing matched', () => {
-      expect(new EtagCacheService(10).invalidateRepository('acme', 'app')).toBe(0);
+      expect(new EtagCacheService(10).invalidateRepository('acme', 'app')).toBe(
+        0,
+      );
     });
   });
 

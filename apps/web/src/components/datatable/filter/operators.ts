@@ -36,7 +36,10 @@ export const DEFAULT_FILTER_TYPE: DataTableFilterType = 'text';
  * Order is the order the operator picker lists them in, so the first entry is
  * also the default operator for a fresh filter on that type.
  */
-export const OPERATORS_BY_FILTER_TYPE: Record<DataTableFilterType, FilterOperator[]> = {
+export const OPERATORS_BY_FILTER_TYPE: Record<
+  DataTableFilterType,
+  FilterOperator[]
+> = {
   text: ['contains', 'equals', 'startsWith', 'isEmpty'],
   number: ['equals', 'gt', 'lt', 'between'],
   date: ['before', 'after', 'between'],
@@ -106,7 +109,9 @@ export function operatorArity(operator: FilterOperator): OperatorArity {
 }
 
 /** The value type a column filters as. */
-export function filterTypeOf<Row>(column: DataTableColumn<Row>): DataTableFilterType {
+export function filterTypeOf<Row>(
+  column: DataTableColumn<Row>,
+): DataTableFilterType {
   return column.filterType ?? DEFAULT_FILTER_TYPE;
 }
 
@@ -123,7 +128,8 @@ export function isFilterableColumn<Row>(column: DataTableColumn<Row>): boolean {
     column.filterable === true ||
     (Array.isArray(column.filterable) && column.filterable.length > 0);
   if (!declared) return false;
-  if (filterTypeOf(column) === 'enum') return (column.enumValues?.length ?? 0) > 0;
+  if (filterTypeOf(column) === 'enum')
+    return (column.enumValues?.length ?? 0) > 0;
   return true;
 }
 
@@ -138,7 +144,9 @@ export function filterableColumns<Row>(
  * The operators offered for a column: the explicit array when one is declared,
  * otherwise the default set for its value type.
  */
-export function operatorsForColumn<Row>(column: DataTableColumn<Row>): FilterOperator[] {
+export function operatorsForColumn<Row>(
+  column: DataTableColumn<Row>,
+): FilterOperator[] {
   if (Array.isArray(column.filterable) && column.filterable.length > 0) {
     return column.filterable;
   }
@@ -146,7 +154,9 @@ export function operatorsForColumn<Row>(column: DataTableColumn<Row>): FilterOpe
 }
 
 /** The operator a fresh filter on this column starts with. */
-export function defaultOperatorForColumn<Row>(column: DataTableColumn<Row>): FilterOperator {
+export function defaultOperatorForColumn<Row>(
+  column: DataTableColumn<Row>,
+): FilterOperator {
   return operatorsForColumn(column)[0];
 }
 

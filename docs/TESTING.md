@@ -20,11 +20,13 @@ This document describes the testing strategy, frameworks, and conventions used i
 **Framework:** Jest + Supertest + @nestjs/testing
 
 **Why These Frameworks:**
+
 - **Jest**: Industry-standard JavaScript testing framework with excellent TypeScript support, built-in mocking, and parallel test execution
 - **Supertest**: HTTP assertion library that works seamlessly with NestJS applications, allowing end-to-end API testing without spinning up a real server
 - **@nestjs/testing**: Official NestJS testing utilities that provide dependency injection and module compilation for isolated testing
 
 **Key Features:**
+
 - Unit tests run in isolation with mocked dependencies
 - E2E tests use a real test database (PostgreSQL)
 - OAuth strategies are mocked to avoid external dependencies
@@ -35,12 +37,14 @@ This document describes the testing strategy, frameworks, and conventions used i
 **Framework:** Vitest + React Testing Library + MSW (Mock Service Worker)
 
 **Why These Frameworks:**
+
 - **Vitest**: Fast, modern test runner built for Vite projects with Jest-compatible API, native ESM support, and excellent performance
 - **React Testing Library**: Encourages testing components from the user's perspective rather than implementation details, promoting maintainable tests
 - **MSW (Mock Service Worker)**: Intercepts network requests at the network level, providing realistic API mocking without changing application code
 - **@testing-library/user-event**: Simulates real user interactions more accurately than fireEvent
 
 **Key Features:**
+
 - Component tests render UI in jsdom environment
 - API calls are mocked with MSW handlers
 - User interactions tested with user-event library
@@ -70,6 +74,7 @@ apps/api/
 ```
 
 **Test Types:**
+
 - **Unit tests** (`*.spec.ts`): Located alongside source files, test individual services/controllers/guards in isolation
 - **E2E tests** (`*.e2e.spec.ts`): Located in `test/` directory, test full request-response cycles with real database
 
@@ -95,6 +100,7 @@ apps/web/
 ```
 
 **Test Types:**
+
 - **Component tests**: Test individual React components in isolation
 - **Page tests**: Test entire pages with routing and context
 - **Context tests**: Test React contexts and custom hooks
@@ -172,10 +178,12 @@ NODE_ENV="test"
 ### Naming Conventions
 
 **Backend:**
+
 - Unit tests: `*.spec.ts` (e.g., `auth.service.spec.ts`)
 - E2E tests: `*.e2e.spec.ts` (e.g., `auth.e2e.spec.ts`)
 
 **Frontend:**
+
 - All tests: `*.test.tsx` or `*.test.ts`
 - Test files mirror source structure (e.g., `LoginPage.tsx` → `LoginPage.test.tsx`)
 
@@ -211,6 +219,7 @@ describe('ComponentName or ServiceName', () => {
 ```
 
 **Best Practices:**
+
 - Group related tests in `describe` blocks
 - Use descriptive test names starting with "should"
 - Follow Arrange-Act-Assert pattern
@@ -268,7 +277,11 @@ describe('ServiceName', () => {
 
 ```typescript
 import request from 'supertest';
-import { TestContext, createTestApp, closeTestApp } from '../helpers/test-app.helper';
+import {
+  TestContext,
+  createTestApp,
+  closeTestApp,
+} from '../helpers/test-app.helper';
 import { resetDatabase } from '../helpers/database.helper';
 import { createTestUser, authHeader } from '../helpers/auth.helper';
 
@@ -382,7 +395,10 @@ describe('useCustomHook', () => {
 Use the provided mock factory for consistent Prisma mocking:
 
 ```typescript
-import { createMockPrismaService, MockPrismaService } from '../../test/mocks/prisma.mock';
+import {
+  createMockPrismaService,
+  MockPrismaService,
+} from '../../test/mocks/prisma.mock';
 
 let mockPrisma: MockPrismaService;
 
@@ -390,7 +406,10 @@ beforeEach(() => {
   mockPrisma = createMockPrismaService();
 
   // Configure specific mocks
-  mockPrisma.user.findUnique.mockResolvedValue({ id: '1', email: 'test@example.com' });
+  mockPrisma.user.findUnique.mockResolvedValue({
+    id: '1',
+    email: 'test@example.com',
+  });
 });
 ```
 
@@ -401,7 +420,10 @@ The mock factory provides Jest mock functions for all Prisma operations (findUni
 Google OAuth is mocked using a custom Passport strategy:
 
 ```typescript
-import { MockGoogleStrategy, createMockGoogleProfile } from '../../test/mocks/google-oauth.mock';
+import {
+  MockGoogleStrategy,
+  createMockGoogleProfile,
+} from '../../test/mocks/google-oauth.mock';
 
 // Set mock profile for next auth
 MockGoogleStrategy.setMockProfile({
@@ -619,6 +641,7 @@ module.exports = {
 ```
 
 **Key Settings:**
+
 - `testRegex`: Matches `*.spec.ts` files
 - `roots`: Includes both `src/` and `test/` directories
 - `setupFilesAfterEnv`: Runs setup before tests
@@ -666,6 +689,7 @@ export default defineConfig({
 ```
 
 **Key Settings:**
+
 - `environment: 'jsdom'`: Browser-like environment for React
 - `globals: true`: No need to import `describe`, `it`, `expect`
 - `setupFiles`: Runs MSW setup and browser mocks
@@ -748,6 +772,7 @@ export default defineConfig({
 **Target Coverage:** 70% minimum (enforced in frontend)
 
 **What to Focus On:**
+
 - Business logic in services
 - RBAC guards and decorators
 - API controllers (especially auth)
@@ -755,6 +780,7 @@ export default defineConfig({
 - Critical user flows (login, settings)
 
 **What Can Have Lower Coverage:**
+
 - DTOs and type definitions
 - Module configuration files
 - Simple getter/setter methods
@@ -763,6 +789,7 @@ export default defineConfig({
 ### Debugging Tests
 
 **Backend:**
+
 ```bash
 # Run tests with Node debugger
 npm run test:debug
@@ -778,6 +805,7 @@ npm test -- -t "should create user"
 ```
 
 **Frontend:**
+
 ```bash
 # Open Vitest UI for interactive debugging
 npm run test:ui
@@ -790,6 +818,7 @@ npm run test:ui
 ```
 
 **Helpful Debugging Tools:**
+
 - `screen.debug()` - Print current DOM state
 - `screen.logTestingPlaygroundURL()` - Get query suggestions
 - `console.log` in tests (shown in output)
@@ -800,26 +829,33 @@ npm run test:ui
 ### Backend
 
 **Issue:** Tests timeout waiting for database
+
 - **Solution:** Check `DATABASE_URL` in `.env.test`, ensure test DB is running
 
 **Issue:** Prisma mock not working as expected
+
 - **Solution:** Clear mocks in `afterEach`, use `mockResolvedValue` for promises
 
 **Issue:** JWT validation fails in tests
+
 - **Solution:** Ensure `JWT_SECRET` is set in test environment
 
 ### Frontend
 
 **Issue:** "Target container is not a DOM element"
+
 - **Solution:** Ensure `jsdom` environment is set in vitest.config.ts
 
 **Issue:** "window.matchMedia is not a function"
+
 - **Solution:** Check that setup.ts is imported in vitest.config
 
 **Issue:** MSW not intercepting requests
+
 - **Solution:** Verify server.listen() is called in beforeAll
 
 **Issue:** Async state not updating in tests
+
 - **Solution:** Use `await waitFor()` to wait for async updates
 
 ## E2E Testing with Playwright
@@ -833,6 +869,7 @@ The application supports end-to-end testing using Playwright with a dedicated te
 In development/test environments, a special login page at `/testing/login` allows Playwright tests to authenticate as any user with any role without going through Google OAuth.
 
 **How it works:**
+
 1. Backend provides `POST /api/auth/test/login` endpoint (disabled in production)
 2. Frontend provides `/testing/login` page (excluded from production builds)
 3. Tests can authenticate as admin, contributor, or viewer roles
@@ -859,7 +896,7 @@ import { Page } from '@playwright/test';
 
 export async function loginAsTestUser(
   page: Page,
-  options: { email: string; role?: 'admin' | 'contributor' | 'viewer' }
+  options: { email: string; role?: 'admin' | 'contributor' | 'viewer' },
 ): Promise<void> {
   await page.goto('/testing/login');
   await page.fill('[data-testid="test-email-input"]', options.email);

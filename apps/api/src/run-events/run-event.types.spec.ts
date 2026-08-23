@@ -29,15 +29,21 @@ const schema = JSON.parse(
 
 describe('run-event types, pinned against the schema', () => {
   it('matches the schema version', () => {
-    expect(RUN_EVENT_SCHEMA_VERSION).toBe(schema.properties.schemaVersion.const);
+    expect(RUN_EVENT_SCHEMA_VERSION).toBe(
+      schema.properties.schemaVersion.const,
+    );
   });
 
   it('matches the six event types exactly', () => {
-    expect([...RUN_EVENT_TYPES].sort()).toEqual([...schema.properties.type.enum!].sort());
+    expect([...RUN_EVENT_TYPES].sort()).toEqual(
+      [...schema.properties.type.enum!].sort(),
+    );
   });
 
   it('matches the three sources exactly', () => {
-    expect([...RUN_EVENT_SOURCES].sort()).toEqual([...schema.properties.source.enum!].sort());
+    expect([...RUN_EVENT_SOURCES].sort()).toEqual(
+      [...schema.properties.source.enum!].sort(),
+    );
   });
 
   it('matches the blocked reasons exactly', () => {
@@ -45,8 +51,12 @@ describe('run-event types, pinned against the schema', () => {
     // why this digs rather than reading a top-level property.
     const branch = schema.allOf.find(
       (b) =>
-        (b.then?.properties as Record<string, { properties?: Record<string, { enum?: string[] }> }>)
-          ?.blocked?.properties?.reason?.enum !== undefined,
+        (
+          b.then?.properties as Record<
+            string,
+            { properties?: Record<string, { enum?: string[] }> }
+          >
+        )?.blocked?.properties?.reason?.enum !== undefined,
     );
     const reasons = (
       branch!.then!.properties as Record<

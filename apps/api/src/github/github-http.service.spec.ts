@@ -1,7 +1,11 @@
 import { ConfigService } from '@nestjs/config';
 
 import { EtagCacheService } from './etag-cache.service';
-import { GitHubHttpService, backoffMs, parseNextLink } from './github-http.service';
+import {
+  GitHubHttpService,
+  backoffMs,
+  parseNextLink,
+} from './github-http.service';
 import {
   GitHubAuthError,
   GitHubNotFoundError,
@@ -48,10 +52,13 @@ function githubResponse(
     'x-ratelimit-resource': 'core',
     ...extraHeaders,
   });
-  return new Response(status === 204 || status === 304 ? null : JSON.stringify(body), {
-    status,
-    headers,
-  });
+  return new Response(
+    status === 204 || status === 304 ? null : JSON.stringify(body),
+    {
+      status,
+      headers,
+    },
+  );
 }
 
 describe('GitHubHttpService', () => {
@@ -112,7 +119,9 @@ describe('GitHubHttpService', () => {
       const service = build({ 'github.token': undefined });
 
       expect(service.configured).toBe(false);
-      await expect(service.request('/repos/acme/app')).rejects.toBeInstanceOf(GitHubAuthError);
+      await expect(service.request('/repos/acme/app')).rejects.toBeInstanceOf(
+        GitHubAuthError,
+      );
       // The API must boot without GitHub configured; it just cannot call it.
       expect(fetchMock).not.toHaveBeenCalled();
     });
@@ -133,9 +142,13 @@ describe('GitHubHttpService', () => {
       // client ever gets. Dropping it because the request failed would be the
       // exact mistake the rate-limit state exists to prevent.
       fetchMock.mockImplementation(async () =>
-        githubResponse(403, { message: 'API rate limit exceeded' }, {
-          'x-ratelimit-remaining': '0',
-        }),
+        githubResponse(
+          403,
+          { message: 'API rate limit exceeded' },
+          {
+            'x-ratelimit-remaining': '0',
+          },
+        ),
       );
 
       await expect(build().request('/repos/acme/app')).rejects.toBeInstanceOf(
@@ -162,14 +175,22 @@ describe('GitHubHttpService', () => {
       );
       const service = build();
 
-      const first = await service.request<{ number: number }[]>('/repos/acme/app/issues');
+      const first = await service.request<{ number: number }[]>(
+        '/repos/acme/app/issues',
+      );
       expect(first.fromCache).toBe(false);
 
-      fetchMock.mockResolvedValueOnce(githubResponse(304, null, { etag: 'W/"abc"' }));
-      const second = await service.request<{ number: number }[]>('/repos/acme/app/issues');
+      fetchMock.mockResolvedValueOnce(
+        githubResponse(304, null, { etag: 'W/"abc"' }),
+      );
+      const second = await service.request<{ number: number }[]>(
+        '/repos/acme/app/issues',
+      );
 
       const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
-      expect((init.headers as Record<string, string>)['if-none-match']).toBe('W/"abc"');
+      expect((init.headers as Record<string, string>)['if-none-match']).toBe(
+        'W/"abc"',
+      );
 
       // A 304 has no body. Without a stored one, "unchanged" would be an
       // answer the caller could not use.
@@ -178,33 +199,49 @@ describe('GitHubHttpService', () => {
     });
 
     it('counts a 304 as a hit, so the ETag path is provably working', async () => {
-      fetchMock.mockResolvedValueOnce(githubResponse(200, {}, { etag: 'W/"a"' }));
+      fetchMock.mockResolvedValueOnce(
+        githubResponse(200, {}, { etag: 'W/"a"' }),
+      );
       const service = build();
       await service.request('/repos/acme/app');
 
       fetchMock.mockResolvedValueOnce(githubResponse(304, null));
       await service.request('/repos/acme/app');
 
-      expect(rateLimit.report()).toMatchObject({ conditionalHits: 1, conditionalMisses: 0 });
+      expect(rateLimit.report()).toMatchObject({
+        conditionalHits: 1,
+        conditionalMisses: 0,
+      });
     });
 
     it('counts a changed resource as a miss', async () => {
-      fetchMock.mockResolvedValueOnce(githubResponse(200, { v: 1 }, { etag: 'W/"a"' }));
+      fetchMock.mockResolvedValueOnce(
+        githubResponse(200, { v: 1 }, { etag: 'W/"a"' }),
+      );
       const service = build();
       await service.request('/repos/acme/app');
 
-      fetchMock.mockResolvedValueOnce(githubResponse(200, { v: 2 }, { etag: 'W/"b"' }));
+      fetchMock.mockResolvedValueOnce(
+        githubResponse(200, { v: 2 }, { etag: 'W/"b"' }),
+      );
       const second = await service.request<{ v: number }>('/repos/acme/app');
 
       expect(second.data).toEqual({ v: 2 });
-      expect(rateLimit.report()).toMatchObject({ conditionalHits: 0, conditionalMisses: 1 });
+      expect(rateLimit.report()).toMatchObject({
+        conditionalHits: 0,
+        conditionalMisses: 1,
+      });
       // The new ETag replaces the old one, or the next request would validate
       // against a version two responses behind.
-      expect(etags.get('GET', 'https://api.github.com/repos/acme/app')!.etag).toBe('W/"b"');
+      expect(
+        etags.get('GET', 'https://api.github.com/repos/acme/app')!.etag,
+      ).toBe('W/"b"');
     });
 
     it('does not cache or condition a write', async () => {
-      fetchMock.mockImplementation(async () => githubResponse(201, { id: 1 }, { etag: 'W/"a"' }));
+      fetchMock.mockImplementation(async () =>
+        githubResponse(201, { id: 1 }, { etag: 'W/"a"' }),
+      );
 
       await build().request('/repos/acme/app/issues/1/comments', {
         method: 'POST',
@@ -212,7 +249,9 @@ describe('GitHubHttpService', () => {
       });
 
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-      expect((init.headers as Record<string, string>)['if-none-match']).toBeUndefined();
+      expect(
+        (init.headers as Record<string, string>)['if-none-match'],
+      ).toBeUndefined();
       expect(etags.size).toBe(0);
     });
 
@@ -223,40 +262,58 @@ describe('GitHubHttpService', () => {
 
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(init.body).toBe('{"body":"hello"}');
-      expect((init.headers as Record<string, string>)['content-type']).toBe('application/json');
+      expect((init.headers as Record<string, string>)['content-type']).toBe(
+        'application/json',
+      );
     });
   });
 
   describe('error classification', () => {
     it('maps 401 to an auth error', async () => {
-      fetchMock.mockImplementation(async () => githubResponse(401, { message: 'Bad credentials' }));
+      fetchMock.mockImplementation(async () =>
+        githubResponse(401, { message: 'Bad credentials' }),
+      );
 
-      await expect(build().request('/x')).rejects.toBeInstanceOf(GitHubAuthError);
+      await expect(build().request('/x')).rejects.toBeInstanceOf(
+        GitHubAuthError,
+      );
     });
 
     it('maps 404 to not-found, since GitHub hides private repositories that way', async () => {
-      fetchMock.mockImplementation(async () => githubResponse(404, { message: 'Not Found' }));
+      fetchMock.mockImplementation(async () =>
+        githubResponse(404, { message: 'Not Found' }),
+      );
 
-      await expect(build().request('/x')).rejects.toBeInstanceOf(GitHubNotFoundError);
+      await expect(build().request('/x')).rejects.toBeInstanceOf(
+        GitHubNotFoundError,
+      );
     });
 
     it('maps a 403 that is NOT a rate limit to an auth error', async () => {
       // A permissions problem. Retrying it will never help, so it must not
       // land in the transient bucket.
       fetchMock.mockImplementation(async () =>
-        githubResponse(403, { message: 'Resource not accessible by personal access token' }),
+        githubResponse(403, {
+          message: 'Resource not accessible by personal access token',
+        }),
       );
 
-      await expect(build().request('/x')).rejects.toBeInstanceOf(GitHubAuthError);
+      await expect(build().request('/x')).rejects.toBeInstanceOf(
+        GitHubAuthError,
+      );
     });
 
     it('maps a primary rate limit to a dated rate-limit error', async () => {
       const reset = Math.floor(Date.now() / 1000) + 1800;
       fetchMock.mockImplementation(async () =>
-        githubResponse(403, { message: 'API rate limit exceeded' }, {
-          'x-ratelimit-remaining': '0',
-          'x-ratelimit-reset': String(reset),
-        }),
+        githubResponse(
+          403,
+          { message: 'API rate limit exceeded' },
+          {
+            'x-ratelimit-remaining': '0',
+            'x-ratelimit-reset': String(reset),
+          },
+        ),
       );
 
       const error = await build()
@@ -266,15 +323,21 @@ describe('GitHubHttpService', () => {
       expect(error).toBeInstanceOf(GitHubRateLimitError);
       expect((error as GitHubRateLimitError).secondary).toBe(false);
       // The reconciler schedules around this rather than sleeping on it.
-      expect((error as GitHubRateLimitError).resetAt.getTime()).toBe(reset * 1000);
+      expect((error as GitHubRateLimitError).resetAt.getTime()).toBe(
+        reset * 1000,
+      );
     });
 
     it('maps a secondary rate limit via retry-after, and flags it as secondary', async () => {
       fetchMock.mockImplementation(async () =>
-        githubResponse(403, { message: 'You have exceeded a secondary rate limit' }, {
-          'retry-after': '60',
-          'x-ratelimit-remaining': '4000',
-        }),
+        githubResponse(
+          403,
+          { message: 'You have exceeded a secondary rate limit' },
+          {
+            'retry-after': '60',
+            'x-ratelimit-remaining': '4000',
+          },
+        ),
       );
 
       const error = (await build()
@@ -290,15 +353,23 @@ describe('GitHubHttpService', () => {
       // `resetAt` is the whole value of the class. A guessed one would have
       // the scheduler hold back or charge ahead for no reason.
       fetchMock.mockImplementation(
-        async () => new Response(JSON.stringify({ message: 'Forbidden' }), { status: 403 }),
+        async () =>
+          new Response(JSON.stringify({ message: 'Forbidden' }), {
+            status: 403,
+          }),
       );
 
-      await expect(build().request('/x')).rejects.toBeInstanceOf(GitHubAuthError);
+      await expect(build().request('/x')).rejects.toBeInstanceOf(
+        GitHubAuthError,
+      );
     });
 
     it('maps other 4xx to a request error carrying GitHub own body', async () => {
       fetchMock.mockImplementation(async () =>
-        githubResponse(422, { message: 'Validation Failed', errors: [{ field: 'labels' }] }),
+        githubResponse(422, {
+          message: 'Validation Failed',
+          errors: [{ field: 'labels' }],
+        }),
       );
 
       const error = (await build()
@@ -316,7 +387,9 @@ describe('GitHubHttpService', () => {
         .mockResolvedValueOnce(githubResponse(502, { message: 'Bad gateway' }))
         .mockResolvedValueOnce(githubResponse(200, { ok: true }));
 
-      const result = await build({ 'github.maxRetries': 2 }).request<{ ok: boolean }>('/x');
+      const result = await build({ 'github.maxRetries': 2 }).request<{
+        ok: boolean;
+      }>('/x');
 
       expect(result.data).toEqual({ ok: true });
       expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -333,11 +406,13 @@ describe('GitHubHttpService', () => {
     });
 
     it('gives up after maxRetries and surfaces the transient error', async () => {
-      fetchMock.mockImplementation(async () => githubResponse(503, { message: 'unavailable' }));
-
-      await expect(build({ 'github.maxRetries': 2 }).request('/x')).rejects.toBeInstanceOf(
-        GitHubTransientError,
+      fetchMock.mockImplementation(async () =>
+        githubResponse(503, { message: 'unavailable' }),
       );
+
+      await expect(
+        build({ 'github.maxRetries': 2 }).request('/x'),
+      ).rejects.toBeInstanceOf(GitHubTransientError);
       expect(fetchMock).toHaveBeenCalledTimes(3);
     });
 
@@ -346,40 +421,55 @@ describe('GitHubHttpService', () => {
       // because the budget is gone spends the next window's budget on finding
       // out the budget is gone.
       fetchMock.mockImplementation(async () =>
-        githubResponse(403, { message: 'API rate limit exceeded' }, {
-          'x-ratelimit-remaining': '0',
-        }),
+        githubResponse(
+          403,
+          { message: 'API rate limit exceeded' },
+          {
+            'x-ratelimit-remaining': '0',
+          },
+        ),
       );
 
-      await expect(build({ 'github.maxRetries': 3 }).request('/x')).rejects.toBeInstanceOf(
-        GitHubRateLimitError,
-      );
+      await expect(
+        build({ 'github.maxRetries': 3 }).request('/x'),
+      ).rejects.toBeInstanceOf(GitHubRateLimitError);
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it('never retries a 404 or a 422', async () => {
-      fetchMock.mockImplementation(async () => githubResponse(404, { message: 'Not Found' }));
-
-      await expect(build({ 'github.maxRetries': 3 }).request('/x')).rejects.toBeInstanceOf(
-        GitHubNotFoundError,
+      fetchMock.mockImplementation(async () =>
+        githubResponse(404, { message: 'Not Found' }),
       );
+
+      await expect(
+        build({ 'github.maxRetries': 3 }).request('/x'),
+      ).rejects.toBeInstanceOf(GitHubNotFoundError);
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('paginate()', () => {
     function page(items: unknown[], next?: string) {
-      return githubResponse(200, items, next ? { link: `<${next}>; rel="next"` } : {});
+      return githubResponse(
+        200,
+        items,
+        next ? { link: `<${next}>; rel="next"` } : {},
+      );
     }
 
     it('follows rel="next" and concatenates', async () => {
       fetchMock
         .mockResolvedValueOnce(
-          page([{ n: 1 }], 'https://api.github.com/repos/acme/app/issues?page=2'),
+          page(
+            [{ n: 1 }],
+            'https://api.github.com/repos/acme/app/issues?page=2',
+          ),
         )
         .mockResolvedValueOnce(page([{ n: 2 }]));
 
-      const result = await build().paginate<{ n: number }>('/repos/acme/app/issues');
+      const result = await build().paginate<{ n: number }>(
+        '/repos/acme/app/issues',
+      );
 
       expect(result.items).toEqual([{ n: 1 }, { n: 2 }]);
       expect(result.pages).toBe(2);
@@ -391,24 +481,33 @@ describe('GitHubHttpService', () => {
 
       await build().paginate('/repos/acme/app/issues');
 
-      expect((fetchMock.mock.calls[0] as [string])[0]).toContain('per_page=100');
+      expect((fetchMock.mock.calls[0] as [string])[0]).toContain(
+        'per_page=100',
+      );
     });
 
     it('stops at maxPages and says so rather than truncating silently', async () => {
       // A repository with 40 000 closed issues would otherwise turn one
       // adapter call into 400 requests and an exhausted budget.
       fetchMock.mockImplementation(async () =>
-        page([{ n: 1 }], 'https://api.github.com/repos/acme/app/issues?page=99'),
+        page(
+          [{ n: 1 }],
+          'https://api.github.com/repos/acme/app/issues?page=99',
+        ),
       );
 
-      const result = await build().paginate('/repos/acme/app/issues', { maxPages: 3 });
+      const result = await build().paginate('/repos/acme/app/issues', {
+        maxPages: 3,
+      });
 
       expect(result.pages).toBe(3);
       expect(result.truncated).toBe(true);
     });
 
     it('reports allFromCache only when every page was a 304', async () => {
-      fetchMock.mockResolvedValueOnce(page([{ n: 1 }], 'https://api.github.com/x?page=2'));
+      fetchMock.mockResolvedValueOnce(
+        page([{ n: 1 }], 'https://api.github.com/x?page=2'),
+      );
       fetchMock.mockResolvedValueOnce(page([{ n: 2 }]));
       const service = build();
       const first = await service.paginate('/repos/acme/app/issues');
@@ -427,7 +526,9 @@ describe('parseNextLink', () => {
   });
 
   it('returns null on the last page, where only rel="prev" is present', () => {
-    expect(parseNextLink('<https://api.github.com/x?page=1>; rel="prev"')).toBeNull();
+    expect(
+      parseNextLink('<https://api.github.com/x?page=1>; rel="prev"'),
+    ).toBeNull();
   });
 
   it('returns null when there is no Link header at all', () => {
@@ -436,9 +537,9 @@ describe('parseNextLink', () => {
 
   it('handles a cursor URL with no page number', () => {
     // Issue timelines, which #41 needs, are cursor-paginated and have none.
-    expect(parseNextLink('<https://api.github.com/x?after=Y3Vyc29y>; rel="next"')).toBe(
-      'https://api.github.com/x?after=Y3Vyc29y',
-    );
+    expect(
+      parseNextLink('<https://api.github.com/x?after=Y3Vyc29y>; rel="next"'),
+    ).toBe('https://api.github.com/x?after=Y3Vyc29y');
   });
 });
 

@@ -1,9 +1,15 @@
 import { INPUT_LABELS } from '../github/labels/factory-labels';
 import type { NormalizedIssue } from '../github/read/github-read.types';
-import { ISSUE_TEMPLATES, type IssueTemplate } from '../github/write/issue-templates';
+import {
+  ISSUE_TEMPLATES,
+  type IssueTemplate,
+} from '../github/write/issue-templates';
 import { parseSections } from '../github/write/issue-conformance';
 import type { RunnerNeed } from '../runners/runner.types';
-import { generateWorkOrder, type GeneratedWorkOrder } from './work-order-generator';
+import {
+  generateWorkOrder,
+  type GeneratedWorkOrder,
+} from './work-order-generator';
 import type { CriteriaProblem } from './acceptance-criteria';
 
 /**
@@ -65,7 +71,12 @@ export type IssueProjectionResult =
   /** The issue is not a candidate at all. Silent — not a complaint. */
   | { eligible: false; reason: SkipReason }
   /** It is a candidate and its spec is not good enough. The author is told. */
-  | { eligible: false; reason: 'rejected'; problems: CriteriaProblem[]; message: string };
+  | {
+      eligible: false;
+      reason: 'rejected';
+      problems: CriteriaProblem[];
+      message: string;
+    };
 
 /**
  * Why an issue produced nothing, silently.
@@ -119,7 +130,8 @@ export function projectIssue(input: ProjectIssueInput): IssueProjectionResult {
   // opt-IN. VISION §3.5 gates on reversibility and a run spends money, so an
   // issue must be marked before the factory touches it — the alternative,
   // treating every open issue as work, turns a backlog into a bill.
-  if (!issue.inputLabels.includes(INPUT_LABELS.READY)) return skip('not-marked-ready');
+  if (!issue.inputLabels.includes(INPUT_LABELS.READY))
+    return skip('not-marked-ready');
 
   if (!issue.body || issue.body.trim().length === 0) return skip('no-body');
 
@@ -266,7 +278,10 @@ function readNeeds(issue: NormalizedIssue): RunnerNeed[] {
   return [...new Set(needs)];
 }
 
-function issueUrl(repository: { owner: string; name: string }, issueNumber: number): string {
+function issueUrl(
+  repository: { owner: string; name: string },
+  issueNumber: number,
+): string {
   return `https://github.com/${repository.owner}/${repository.name}/issues/${issueNumber}`;
 }
 

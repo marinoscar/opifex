@@ -15,10 +15,17 @@ declare module 'fastify' {
 @Injectable()
 export class RequestIdMiddleware implements NestMiddleware {
   // NestJS middleware with Fastify receives raw Node.js objects
-  use(req: FastifyRequest['raw'] & { requestId?: string; traceId?: string; spanId?: string }, res: ServerResponse, next: () => void) {
+  use(
+    req: FastifyRequest['raw'] & {
+      requestId?: string;
+      traceId?: string;
+      spanId?: string;
+    },
+    res: ServerResponse,
+    next: () => void,
+  ) {
     // Get or generate request ID
-    const requestId =
-      (req.headers['x-request-id'] as string) || randomUUID();
+    const requestId = (req.headers['x-request-id'] as string) || randomUUID();
 
     // Get trace context from OpenTelemetry
     const activeSpan = trace.getSpan(context.active());

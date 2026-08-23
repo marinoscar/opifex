@@ -15,7 +15,11 @@ import { CostService } from './cost.service';
  * expensive way for this endpoint to be wrong.
  */
 describe('CostService', () => {
-  function run(cost: number | null, repository = 'marinoscar/opifex', startedAt = '2026-08-23T01:00:00Z') {
+  function run(
+    cost: number | null,
+    repository = 'marinoscar/opifex',
+    startedAt = '2026-08-23T01:00:00Z',
+  ) {
     return {
       startedAt: new Date(startedAt),
       costUsd: cost === null ? null : { toNumber: () => cost },
@@ -108,8 +112,14 @@ describe('CostService', () => {
 
       const summary = await service.summary();
 
-      const other = summary.byRepository.find((r) => r.repository === 'marinoscar/other');
-      expect(other).toMatchObject({ totalUsd: null, runs: 2, runsWithoutCost: 2 });
+      const other = summary.byRepository.find(
+        (r) => r.repository === 'marinoscar/other',
+      );
+      expect(other).toMatchObject({
+        totalUsd: null,
+        runs: 2,
+        runsWithoutCost: 2,
+      });
     });
   });
 
@@ -124,8 +134,18 @@ describe('CostService', () => {
       const summary = await service.summary();
 
       expect(summary.byRepository).toEqual([
-        { repository: 'marinoscar/opifex', totalUsd: 5, runs: 2, runsWithoutCost: 0 },
-        { repository: 'marinoscar/other', totalUsd: 1, runs: 1, runsWithoutCost: 0 },
+        {
+          repository: 'marinoscar/opifex',
+          totalUsd: 5,
+          runs: 2,
+          runsWithoutCost: 0,
+        },
+        {
+          repository: 'marinoscar/other',
+          totalUsd: 1,
+          runs: 1,
+          runsWithoutCost: 0,
+        },
       ]);
     });
 
@@ -177,7 +197,9 @@ describe('CostService', () => {
     });
 
     it('excludes a run that reported no cost from the series entirely', async () => {
-      findMany.mockResolvedValue([run(null, 'marinoscar/opifex', '2026-08-23T01:00:00Z')]);
+      findMany.mockResolvedValue([
+        run(null, 'marinoscar/opifex', '2026-08-23T01:00:00Z'),
+      ]);
 
       const summary = await service.summary();
 
@@ -215,7 +237,8 @@ describe('CostService', () => {
 
       const where = findMany.mock.calls[0][0].where;
       const span =
-        new Date(where.startedAt.lte).getTime() - new Date(where.startedAt.gte).getTime();
+        new Date(where.startedAt.lte).getTime() -
+        new Date(where.startedAt.gte).getTime();
       expect(span).toBe(14 * 24 * 60 * 60 * 1000);
     });
 
@@ -224,7 +247,8 @@ describe('CostService', () => {
 
       expect(summary.generatedAt).toBe(summary.window.to);
       const span =
-        new Date(summary.window.to).getTime() - new Date(summary.window.from).getTime();
+        new Date(summary.window.to).getTime() -
+        new Date(summary.window.from).getTime();
       expect(span).toBe(30 * 24 * 60 * 60 * 1000);
     });
   });

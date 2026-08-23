@@ -23,7 +23,9 @@ export interface DecimalLike {
   toNumber(): number;
 }
 
-export function toNumberOrNull(value: DecimalLike | number | null | undefined): number | null {
+export function toNumberOrNull(
+  value: DecimalLike | number | null | undefined,
+): number | null {
   if (value === null || value === undefined) return null;
   return typeof value === 'number' ? value : value.toNumber();
 }

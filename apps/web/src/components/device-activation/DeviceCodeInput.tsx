@@ -69,7 +69,11 @@ export function DeviceCodeInput({
         slotProps={{
           htmlInput: {
             maxLength: 9,
-            style: { textTransform: 'uppercase', letterSpacing: '0.1em', fontSize: '1.2rem' },
+            style: {
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              fontSize: '1.2rem',
+            },
           },
         }}
         sx={{ mb: 2 }}

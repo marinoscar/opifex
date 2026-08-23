@@ -55,7 +55,10 @@ export function StatusChip({
 }: StatusChipProps) {
   const theme = useTheme();
   const descriptor = getRunStatusDescriptor(status);
-  const token = statusTokens[theme.palette.mode === 'dark' ? 'dark' : 'light'][descriptor.token];
+  const token =
+    statusTokens[theme.palette.mode === 'dark' ? 'dark' : 'light'][
+      descriptor.token
+    ];
   const Icon = descriptor.Icon;
 
   const chip = (

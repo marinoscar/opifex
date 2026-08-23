@@ -5,7 +5,14 @@ export const listEscalationsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
   status: z
-    .enum(['raised', 'dispatched', 'delivered', 'failed', 'acknowledged', 'resolved'])
+    .enum([
+      'raised',
+      'dispatched',
+      'delivered',
+      'failed',
+      'acknowledged',
+      'resolved',
+    ])
     .optional(),
   /**
    * Only escalations nobody has dealt with.
@@ -23,7 +30,9 @@ export const listEscalationsQuerySchema = z.object({
   runId: z.uuid().optional(),
 });
 
-export class ListEscalationsQueryDto extends createZodDto(listEscalationsQuerySchema) {}
+export class ListEscalationsQueryDto extends createZodDto(
+  listEscalationsQuerySchema,
+) {}
 
 export const escalationResponseSchema = z.object({
   id: z.uuid(),
@@ -50,7 +59,9 @@ export const escalationResponseSchema = z.object({
   acknowledgedById: z.uuid().nullable(),
 });
 
-export class EscalationResponseDto extends createZodDto(escalationResponseSchema) {}
+export class EscalationResponseDto extends createZodDto(
+  escalationResponseSchema,
+) {}
 
 export const latencySummaryQuerySchema = z.object({
   /** Inclusive lower bound on `raisedAt`. Defaults to the whole history. */
@@ -61,7 +72,9 @@ export const latencySummaryQuerySchema = z.object({
   repository: z.string().optional(),
 });
 
-export class LatencySummaryQueryDto extends createZodDto(latencySummaryQuerySchema) {}
+export class LatencySummaryQueryDto extends createZodDto(
+  latencySummaryQuerySchema,
+) {}
 
 const latencyStatsSchema = z.object({
   count: z.number().int(),
@@ -103,4 +116,6 @@ export const latencySummaryResponseSchema = latencyGroupSchema.extend({
   bySource: z.record(z.string(), latencyGroupSchema),
 });
 
-export class LatencySummaryResponseDto extends createZodDto(latencySummaryResponseSchema) {}
+export class LatencySummaryResponseDto extends createZodDto(
+  latencySummaryResponseSchema,
+) {}

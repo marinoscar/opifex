@@ -6,10 +6,7 @@ import {
 } from '../helpers/test-app.helper';
 import { resetPrismaMock, mockPrismaTransaction } from '../mocks/prisma.mock';
 import { setupBaseMocks, setupMockUser } from '../fixtures/mock-setup.helper';
-import {
-  createMockAdminUser,
-  authHeader,
-} from '../helpers/auth-mock.helper';
+import { createMockAdminUser, authHeader } from '../helpers/auth-mock.helper';
 import { prismaMock } from '../mocks/prisma.mock';
 import { mockRoles } from '../fixtures/test-data.factory';
 
@@ -43,7 +40,9 @@ describe('Users Self-Prevention Guards (Integration)', () => {
 
         expect(response.body).toHaveProperty('code');
         expect(response.body.code).toBe('FORBIDDEN');
-        expect(response.body.message).toBe('Cannot deactivate your own account');
+        expect(response.body.message).toBe(
+          'Cannot deactivate your own account',
+        );
       });
 
       it('should not modify the user in database', async () => {
@@ -104,7 +103,7 @@ describe('Users Self-Prevention Guards (Integration)', () => {
             data: expect.objectContaining({
               isActive: false,
             }),
-          })
+          }),
         );
       });
 
@@ -220,7 +219,9 @@ describe('Users Self-Prevention Guards (Integration)', () => {
 
         expect(response.body).toHaveProperty('code');
         expect(response.body.code).toBe('FORBIDDEN');
-        expect(response.body.message).toBe('Cannot remove admin role from yourself');
+        expect(response.body.message).toBe(
+          'Cannot remove admin role from yourself',
+        );
       });
 
       it('should return 403 when setting empty role list', async () => {
@@ -232,7 +233,9 @@ describe('Users Self-Prevention Guards (Integration)', () => {
           .send({ roleNames: [] })
           .expect(403);
 
-        expect(response.body.message).toBe('Cannot remove admin role from yourself');
+        expect(response.body.message).toBe(
+          'Cannot remove admin role from yourself',
+        );
       });
 
       it('should not modify roles in database', async () => {
@@ -339,8 +342,16 @@ describe('Users Self-Prevention Guards (Integration)', () => {
           email: admin.email,
           isActive: true,
           userRoles: [
-            { userId: admin.id, roleId: mockRoles.admin.id, role: { ...mockRoles.admin, rolePermissions: [] } },
-            { userId: admin.id, roleId: mockRoles.viewer.id, role: { ...mockRoles.viewer, rolePermissions: [] } },
+            {
+              userId: admin.id,
+              roleId: mockRoles.admin.id,
+              role: { ...mockRoles.admin, rolePermissions: [] },
+            },
+            {
+              userId: admin.id,
+              roleId: mockRoles.viewer.id,
+              role: { ...mockRoles.viewer, rolePermissions: [] },
+            },
           ],
           identities: [],
         };
@@ -386,8 +397,16 @@ describe('Users Self-Prevention Guards (Integration)', () => {
           email: admin.email,
           isActive: true,
           userRoles: [
-            { userId: admin.id, roleId: mockRoles.contributor.id, role: { ...mockRoles.contributor, rolePermissions: [] } },
-            { userId: admin.id, roleId: mockRoles.admin.id, role: { ...mockRoles.admin, rolePermissions: [] } },
+            {
+              userId: admin.id,
+              roleId: mockRoles.contributor.id,
+              role: { ...mockRoles.contributor, rolePermissions: [] },
+            },
+            {
+              userId: admin.id,
+              roleId: mockRoles.admin.id,
+              role: { ...mockRoles.admin, rolePermissions: [] },
+            },
           ],
           identities: [],
         };
@@ -489,7 +508,13 @@ describe('Users Self-Prevention Guards (Integration)', () => {
           id: otherUser.id,
           email: otherUser.email,
           isActive: true,
-          userRoles: [{ userId: otherUser.id, roleId: mockRoles.contributor.id, role: { ...mockRoles.contributor, rolePermissions: [] } }],
+          userRoles: [
+            {
+              userId: otherUser.id,
+              roleId: mockRoles.contributor.id,
+              role: { ...mockRoles.contributor, rolePermissions: [] },
+            },
+          ],
           identities: [],
         };
 
@@ -497,7 +522,9 @@ describe('Users Self-Prevention Guards (Integration)', () => {
           .mockResolvedValueOnce(viewerUser as any)
           .mockResolvedValueOnce(updatedUser as any);
 
-        prismaMock.role.findMany.mockResolvedValue([mockRoles.contributor] as any);
+        prismaMock.role.findMany.mockResolvedValue([
+          mockRoles.contributor,
+        ] as any);
         prismaMock.auditEvent.create.mockResolvedValue({} as any);
 
         await request(context.app.getHttpServer())
@@ -559,7 +586,9 @@ describe('Users Self-Prevention Guards (Integration)', () => {
           .mockResolvedValueOnce(viewerUser as any)
           .mockResolvedValueOnce(promotedUser as any);
 
-        prismaMock.role.findMany.mockResolvedValue([mockRoles.contributor] as any);
+        prismaMock.role.findMany.mockResolvedValue([
+          mockRoles.contributor,
+        ] as any);
         prismaMock.auditEvent.create.mockResolvedValue({} as any);
 
         const response = await request(context.app.getHttpServer())

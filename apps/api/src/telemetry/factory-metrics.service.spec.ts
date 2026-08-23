@@ -12,7 +12,10 @@ import {
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
 
-import { FactoryMetrics, type DetectionMeasurement } from './factory-metrics.service';
+import {
+  FactoryMetrics,
+  type DetectionMeasurement,
+} from './factory-metrics.service';
 import { traceIdForWorkOrder } from './work-order-trace';
 
 const IDENTITY = 'wo_opifex_312_a3f91c2_a1';
@@ -20,7 +23,9 @@ const STOPPED = new Date('2026-08-22T10:00:00Z');
 const RAISED = new Date('2026-08-22T10:00:04Z');
 const DELIVERED = new Date('2026-08-22T10:00:07Z');
 
-function measurement(overrides: Partial<DetectionMeasurement> = {}): DetectionMeasurement {
+function measurement(
+  overrides: Partial<DetectionMeasurement> = {},
+): DetectionMeasurement {
   return {
     workOrderIdentity: IDENTITY,
     repository: 'marinoscar/opifex',
@@ -42,10 +47,14 @@ describe('FactoryMetrics', () => {
     spans = new InMemorySpanExporter();
     trace.disable();
     trace.setGlobalTracerProvider(
-      new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(spans)] }),
+      new BasicTracerProvider({
+        spanProcessors: [new SimpleSpanProcessor(spans)],
+      }),
     );
 
-    metricExporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+    metricExporter = new InMemoryMetricExporter(
+      AggregationTemporality.CUMULATIVE,
+    );
     reader = new PeriodicExportingMetricReader({
       exporter: metricExporter,
       exportIntervalMillis: 2 ** 30,
@@ -72,7 +81,9 @@ describe('FactoryMetrics', () => {
   }
 
   async function instrument(name: string) {
-    return (await collected()).find((metric) => metric.descriptor.name === name);
+    return (await collected()).find(
+      (metric) => metric.descriptor.name === name,
+    );
   }
 
   describe('stop to noticed', () => {
@@ -80,7 +91,10 @@ describe('FactoryMetrics', () => {
       service.recordDetected(measurement());
 
       const histogram = await instrument('opifex.detection.detect_latency');
-      expect(histogram!.dataPoints[0].value).toMatchObject({ sum: 4_000, count: 1 });
+      expect(histogram!.dataPoints[0].value).toMatchObject({
+        sum: 4_000,
+        count: 1,
+      });
     });
 
     it('says which liveness source was carrying the run', async () => {
@@ -89,7 +103,9 @@ describe('FactoryMetrics', () => {
       service.recordDetected(measurement({ detectionSource: 'git' }));
 
       const histogram = await instrument('opifex.detection.detect_latency');
-      expect(histogram!.dataPoints[0].attributes['opifex.detection.source']).toBe('git');
+      expect(
+        histogram!.dataPoints[0].attributes['opifex.detection.source'],
+      ).toBe('git');
     });
 
     it('labels an unattributable detection rather than dropping the attribute', async () => {
@@ -98,7 +114,9 @@ describe('FactoryMetrics', () => {
       service.recordDetected(measurement({ detectionSource: null }));
 
       const histogram = await instrument('opifex.detection.detect_latency');
-      expect(histogram!.dataPoints[0].attributes['opifex.detection.source']).toBe('unknown');
+      expect(
+        histogram!.dataPoints[0].attributes['opifex.detection.source'],
+      ).toBe('unknown');
     });
 
     it('counts the escalation', async () => {
@@ -117,7 +135,10 @@ describe('FactoryMetrics', () => {
       service.recordNotified({ ...measurement(), deliveredAt: DELIVERED });
 
       const histogram = await instrument('opifex.detection.latency');
-      expect(histogram!.dataPoints[0].value).toMatchObject({ sum: 7_000, count: 1 });
+      expect(histogram!.dataPoints[0].value).toMatchObject({
+        sum: 7_000,
+        count: 1,
+      });
     });
 
     it('is not recorded by noticing alone', async () => {
@@ -157,7 +178,10 @@ describe('FactoryMetrics', () => {
       );
 
       const histogram = await instrument('opifex.detection.detect_latency');
-      expect(histogram!.dataPoints[0].value).toMatchObject({ sum: 0, count: 1 });
+      expect(histogram!.dataPoints[0].value).toMatchObject({
+        sum: 0,
+        count: 1,
+      });
     });
   });
 
@@ -188,7 +212,9 @@ describe('FactoryMetrics', () => {
       service.recordDetected(measurement());
       service.recordNotified({ ...measurement(), deliveredAt: DELIVERED });
 
-      const traceIds = new Set(spans.getFinishedSpans().map((s) => s.spanContext().traceId));
+      const traceIds = new Set(
+        spans.getFinishedSpans().map((s) => s.spanContext().traceId),
+      );
       expect(traceIds.size).toBe(1);
     });
 
@@ -222,13 +248,17 @@ describe('FactoryMetrics', () => {
       const result = service.recordRunEvent(runEvent);
 
       expect(result.traceId).toBe(traceIdForWorkOrder(IDENTITY));
-      expect(spans.getFinishedSpans()[0].spanContext().traceId).toBe(result.traceId);
+      expect(spans.getFinishedSpans()[0].spanContext().traceId).toBe(
+        result.traceId,
+      );
     });
 
     it('returns the span id it actually emitted, for the row to store', () => {
       const result = service.recordRunEvent(runEvent);
 
-      expect(result.spanId).toBe(spans.getFinishedSpans()[0].spanContext().spanId);
+      expect(result.spanId).toBe(
+        spans.getFinishedSpans()[0].spanContext().spanId,
+      );
     });
 
     it('carries cost and tokens as attributes', () => {
@@ -264,7 +294,11 @@ describe('FactoryMetrics', () => {
     });
 
     it('falls back to the event type for a turn', () => {
-      service.recordRunEvent({ ...runEvent, toolSignature: null, type: 'progress' });
+      service.recordRunEvent({
+        ...runEvent,
+        toolSignature: null,
+        type: 'progress',
+      });
 
       expect(spans.getFinishedSpans()[0].name).toBe('progress');
     });
@@ -299,7 +333,9 @@ describe('FactoryMetrics', () => {
       });
       service.recordDetected(measurement({ detectionSource: 'git' }));
 
-      const traceIds = new Set(spans.getFinishedSpans().map((s) => s.spanContext().traceId));
+      const traceIds = new Set(
+        spans.getFinishedSpans().map((s) => s.spanContext().traceId),
+      );
       expect(spans.getFinishedSpans()).toHaveLength(3);
       expect(traceIds).toEqual(new Set([traceIdForWorkOrder(IDENTITY)]));
     });
@@ -308,7 +344,8 @@ describe('FactoryMetrics', () => {
       // An event says when something happened, not how long it took. Giving
       // it a made-up duration would put a number on the dashboard that no
       // source produced.
-      const [span] = (service.recordRunEvent(runEvent), spans.getFinishedSpans());
+      const [span] =
+        (service.recordRunEvent(runEvent), spans.getFinishedSpans());
 
       expect(hrToMs(span.endTime)).toBe(hrToMs(span.startTime));
     });

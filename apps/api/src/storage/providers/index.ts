@@ -3,7 +3,10 @@
  * Centralizes imports for storage provider abstractions and implementations
  */
 
-export { STORAGE_PROVIDER, StorageProvider } from './storage-provider.interface';
+export {
+  STORAGE_PROVIDER,
+  StorageProvider,
+} from './storage-provider.interface';
 export {
   StorageUploadOptions,
   StorageUploadResult,

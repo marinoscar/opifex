@@ -1,4 +1,8 @@
-import { createTestApp, closeTestApp, TestContext } from '../helpers/test-app.helper';
+import {
+  createTestApp,
+  closeTestApp,
+  TestContext,
+} from '../helpers/test-app.helper';
 import { createOpenApiDocument } from '../../src/openapi/document';
 import {
   DOCS_PATH,
@@ -219,13 +223,14 @@ describe('documentation routes when generation succeeds', () => {
   });
 
   it('serves the real reference page, unchanged', async () => {
-    const response = await context.app.inject({ method: 'GET', url: DOCS_PATH });
+    const response = await context.app.inject({
+      method: 'GET',
+      url: DOCS_PATH,
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toContain('text/html');
-    expect(response.body).toContain(
-      '<title>OPIFEX API Reference</title>',
-    );
+    expect(response.body).toContain('<title>OPIFEX API Reference</title>');
     expect(response.body).toContain('createApiReference');
     // The version it was handed, proving the argument still reaches the page.
     expect(response.body).toContain('9.9.9');

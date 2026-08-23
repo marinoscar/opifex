@@ -60,10 +60,18 @@ export class MirrorLabelExecutor {
     actions: ReconcileAction[],
     enabledFor: ReadonlySet<string>,
   ): Promise<ExecutionOutcome> {
-    const outcome: ExecutionOutcome = { executed: 0, noops: 0, suppressed: 0, failures: [] };
+    const outcome: ExecutionOutcome = {
+      executed: 0,
+      noops: 0,
+      suppressed: 0,
+      failures: [],
+    };
 
     for (const action of actions) {
-      if (action.type !== 'add-mirror-label' && action.type !== 'remove-mirror-label') {
+      if (
+        action.type !== 'add-mirror-label' &&
+        action.type !== 'remove-mirror-label'
+      ) {
         continue;
       }
 
@@ -78,15 +86,26 @@ export class MirrorLabelExecutor {
         // A label action with no label is a diff-engine bug, not a GitHub
         // problem. Recorded rather than thrown so one malformed action cannot
         // abandon the rest of the list.
-        outcome.failures.push({ action, reason: 'label action carried no label' });
+        outcome.failures.push({
+          action,
+          reason: 'label action carried no label',
+        });
         continue;
       }
 
       try {
         const result =
           action.type === 'add-mirror-label'
-            ? await this.writes.addLabel({ owner, name }, action.issueNumber, label)
-            : await this.writes.removeLabel({ owner, name }, action.issueNumber, label);
+            ? await this.writes.addLabel(
+                { owner, name },
+                action.issueNumber,
+                label,
+              )
+            : await this.writes.removeLabel(
+                { owner, name },
+                action.issueNumber,
+                label,
+              );
 
         if (!result.performed) {
           // The global kill switch. Counted separately from a per-repository

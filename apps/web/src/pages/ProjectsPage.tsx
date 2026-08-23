@@ -19,7 +19,8 @@ export default function ProjectsPage() {
           Projects
         </Typography>
         <Typography color="text.secondary" sx={{ mb: 4 }}>
-          The repositories under supervision, and what each one is allowed to do.
+          The repositories under supervision, and what each one is allowed to
+          do.
         </Typography>
 
         <NotWiredState

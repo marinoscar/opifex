@@ -34,7 +34,9 @@ export class CostController {
       'rate limit, which would answer a different question under this one’s label.',
   })
   @ApiQuery({ name: 'days', required: false, type: Number })
-  @ApiDataResponse(CostSummaryDto, { description: 'Spend, and how much of it is known' })
+  @ApiDataResponse(CostSummaryDto, {
+    description: 'Spend, and how much of it is known',
+  })
   async summary(@Query() query: CostQueryDto) {
     return this.cost.summary(query.days);
   }

@@ -24,7 +24,11 @@
  * Rule 2 is the reason for the encoding below.
  */
 
-import type { DataTableColumn, DataTableDensity, DataTableLayout } from '../types';
+import type {
+  DataTableColumn,
+  DataTableDensity,
+  DataTableLayout,
+} from '../types';
 import type { DataTableSettings, UserSettings } from '../../../types';
 
 // ---------------------------------------------------------------------------
@@ -88,11 +92,18 @@ export type DataTableStoredSort = NonNullable<DataTableStoredLayout['sort']>;
 /** The whole namespace, keyed by `tableId`. Mirrors `UserSettings['dataTables']`. */
 export type DataTablesSettings = NonNullable<UserSettings['dataTables']>;
 
-const DENSITIES: readonly DataTableDensity[] = ['compact', 'standard', 'comfortable'];
+const DENSITIES: readonly DataTableDensity[] = [
+  'compact',
+  'standard',
+  'comfortable',
+];
 
 /** Whether a value is one of the three densities. */
 export function isDensity(value: unknown): value is DataTableDensity {
-  return typeof value === 'string' && (DENSITIES as readonly string[]).includes(value);
+  return (
+    typeof value === 'string' &&
+    (DENSITIES as readonly string[]).includes(value)
+  );
 }
 
 /**
@@ -128,7 +139,10 @@ export function sanitizeStoredLayout(raw: unknown): DataTableStoredLayout {
     out.sort = { field: sort.field, direction: sort.direction };
   }
 
-  if (typeof record.pageSize === 'number' && Number.isInteger(record.pageSize)) {
+  if (
+    typeof record.pageSize === 'number' &&
+    Number.isInteger(record.pageSize)
+  ) {
     out.pageSize = record.pageSize;
   }
 
@@ -180,7 +194,9 @@ export function pickerColumns<Row>(
   columns: DataTableColumn<Row>[],
   layout: DataTableLayout,
 ): DataTableColumn<Row>[] {
-  return columns.filter((column) => isHideable(column) && !layoutHidesColumn(column, layout));
+  return columns.filter(
+    (column) => isHideable(column) && !layoutHidesColumn(column, layout),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -231,7 +247,10 @@ export function encodeVisibility<Row>(
     if (column.id.length > DATA_TABLE_MAX_ID_LENGTH) continue;
     if (visibleIds.has(column.id)) {
       visible.push(column.id);
-    } else if (column.id.length + HIDDEN_COLUMN_PREFIX.length <= DATA_TABLE_MAX_ID_LENGTH) {
+    } else if (
+      column.id.length + HIDDEN_COLUMN_PREFIX.length <=
+      DATA_TABLE_MAX_ID_LENGTH
+    ) {
       hidden.push(`${HIDDEN_COLUMN_PREFIX}${column.id}`);
     }
   }
@@ -261,7 +280,9 @@ export function resolveUserVisibleColumnIds<Row>(
   columns: DataTableColumn<Row>[],
   stored: DataTableStoredLayout | null | undefined,
 ): Set<string> {
-  const decoded = stored?.visibleColumns ? decodeVisibility(stored.visibleColumns) : null;
+  const decoded = stored?.visibleColumns
+    ? decodeVisibility(stored.visibleColumns)
+    : null;
   const out = new Set<string>();
 
   for (const column of columns) {
@@ -351,8 +372,12 @@ export const CARD_DENSITY: Record<DataTableDensity, CardDensityMetrics> = {
 };
 
 /** Card metrics for a density, falling back to `standard`. */
-export function cardDensityMetrics(density: DataTableDensity | undefined): CardDensityMetrics {
-  return CARD_DENSITY[density ?? DEFAULT_DENSITY] ?? CARD_DENSITY[DEFAULT_DENSITY];
+export function cardDensityMetrics(
+  density: DataTableDensity | undefined,
+): CardDensityMetrics {
+  return (
+    CARD_DENSITY[density ?? DEFAULT_DENSITY] ?? CARD_DENSITY[DEFAULT_DENSITY]
+  );
 }
 
 /** Human label for a density, used by the picker and its accessible names. */

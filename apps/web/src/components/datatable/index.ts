@@ -43,7 +43,10 @@ export {
 export type { DataTableBreakpoints } from './useContainerLayout';
 
 // --- Desktop / tablet renderer ----------------------------------------------
-export { DesktopGridRenderer, ACTIONS_FIELD } from './desktop/DesktopGridRenderer';
+export {
+  DesktopGridRenderer,
+  ACTIONS_FIELD,
+} from './desktop/DesktopGridRenderer';
 export type { DesktopGridRendererProps } from './desktop/DesktopGridRenderer';
 export {
   toGridColDef,
@@ -54,7 +57,11 @@ export {
   rowAccessibleName,
   DEFAULT_COLUMN_MIN_WIDTH,
 } from './desktop/columnAdapter';
-export { TruncatedCell, DataTableEmptyOverlay, DataTableLoadingOverlay } from './desktop/cells';
+export {
+  TruncatedCell,
+  DataTableEmptyOverlay,
+  DataTableLoadingOverlay,
+} from './desktop/cells';
 export { RowActionsCell } from './desktop/RowActionsCell';
 export type { RowActionsCellProps } from './desktop/RowActionsCell';
 export {
@@ -69,18 +76,29 @@ export {
 export { CardListRenderer } from './mobile/CardListRenderer';
 export { DataCard } from './mobile/DataCard';
 export type { DataCardProps } from './mobile/DataCard';
-export { CardField, ExpandableValue, columnContent, columnText } from './mobile/CardField';
+export {
+  CardField,
+  ExpandableValue,
+  columnContent,
+  columnText,
+} from './mobile/CardField';
 export { CompactPagination } from './mobile/CompactPagination';
 export { CardSortControl } from './mobile/CardSortControl';
 
 // --- Filtering + quick search (#254) ----------------------------------------
-export { DataTableFilterBar, FILTER_COUNT_CLASS } from './filter/DataTableFilterBar';
+export {
+  DataTableFilterBar,
+  FILTER_COUNT_CLASS,
+} from './filter/DataTableFilterBar';
 export type { DataTableFilterBarProps } from './filter/DataTableFilterBar';
 export { FilterEditor } from './filter/FilterEditor';
 export type { FilterEditorProps } from './filter/FilterEditor';
 export { FilterChips } from './filter/FilterChips';
 export type { FilterChipsProps } from './filter/FilterChips';
-export { QuickSearchField, DEFAULT_QUICK_SEARCH_DEBOUNCE_MS } from './filter/QuickSearchField';
+export {
+  QuickSearchField,
+  DEFAULT_QUICK_SEARCH_DEBOUNCE_MS,
+} from './filter/QuickSearchField';
 export type { QuickSearchFieldProps } from './filter/QuickSearchField';
 export {
   OPERATORS_BY_FILTER_TYPE,
@@ -117,10 +135,16 @@ export {
   DATATABLE_FILTER_PARAM,
   DATATABLE_SEARCH_PARAM,
 } from './filter/filterUrl';
-export type { DataTableUrlState, DataTableUrlOptions } from './filter/filterUrl';
+export type {
+  DataTableUrlState,
+  DataTableUrlOptions,
+} from './filter/filterUrl';
 
 // --- Layout persistence: visibility + density (#255) -------------------------
-export { DataTableViewBar, HIDDEN_COLUMN_COUNT_CLASS } from './layout/DataTableViewBar';
+export {
+  DataTableViewBar,
+  HIDDEN_COLUMN_COUNT_CLASS,
+} from './layout/DataTableViewBar';
 export type { DataTableViewBarProps } from './layout/DataTableViewBar';
 export { useDataTableLayoutPrefs } from './layout/useDataTableLayoutPrefs';
 export type {

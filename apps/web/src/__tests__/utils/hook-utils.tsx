@@ -1,4 +1,8 @@
-import { renderHook, RenderHookOptions, RenderHookResult } from '@testing-library/react';
+import {
+  renderHook,
+  RenderHookOptions,
+  RenderHookResult,
+} from '@testing-library/react';
 import { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
@@ -14,9 +18,7 @@ export function createHookWrapper(options: HookWrapperOptions = {}) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
       <MemoryRouter initialEntries={[route]}>
-        <ThemeProvider theme={lightTheme}>
-          {children}
-        </ThemeProvider>
+        <ThemeProvider theme={lightTheme}>{children}</ThemeProvider>
       </MemoryRouter>
     );
   };
@@ -24,7 +26,9 @@ export function createHookWrapper(options: HookWrapperOptions = {}) {
 
 export function renderHookWithProviders<TResult, TProps>(
   hook: (props: TProps) => TResult,
-  options: RenderHookOptions<TProps> & { wrapperOptions?: HookWrapperOptions } = {},
+  options: RenderHookOptions<TProps> & {
+    wrapperOptions?: HookWrapperOptions;
+  } = {},
 ): RenderHookResult<TResult, TProps> {
   const { wrapperOptions, ...renderOptions } = options;
 

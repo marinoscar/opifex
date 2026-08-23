@@ -95,7 +95,9 @@ describe('DatabaseHealthIndicator', () => {
       } catch (e) {
         const healthCheckError = e as HealthCheckError;
         expect(healthCheckError.causes.database.responseTime).toBeDefined();
-        expect(healthCheckError.causes.database.responseTime).toMatch(/^\d+ms$/);
+        expect(healthCheckError.causes.database.responseTime).toMatch(
+          /^\d+ms$/,
+        );
       }
     });
 

@@ -1,5 +1,18 @@
-import { Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
+import {
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { Auth } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -57,10 +70,27 @@ export class EscalationsController {
       'real latency is unbounded, and omitting them silently would make a broken transport ' +
       'render as excellent latency over a tiny sample.',
   })
-  @ApiQuery({ name: 'since', required: false, type: String, format: 'date-time' })
-  @ApiQuery({ name: 'until', required: false, type: String, format: 'date-time' })
-  @ApiQuery({ name: 'repository', required: false, type: String, example: 'marinoscar/opifex' })
-  @ApiDataResponse(LatencySummaryResponseDto, { description: 'Detection latency summary' })
+  @ApiQuery({
+    name: 'since',
+    required: false,
+    type: String,
+    format: 'date-time',
+  })
+  @ApiQuery({
+    name: 'until',
+    required: false,
+    type: String,
+    format: 'date-time',
+  })
+  @ApiQuery({
+    name: 'repository',
+    required: false,
+    type: String,
+    example: 'marinoscar/opifex',
+  })
+  @ApiDataResponse(LatencySummaryResponseDto, {
+    description: 'Detection latency summary',
+  })
   async latency(@Query() query: LatencySummaryQueryDto) {
     return this.escalations.latencySummary({
       since: query.since ? new Date(query.since) : undefined,
@@ -78,7 +108,9 @@ export class EscalationsController {
       'Acknowledging twice is not an error; the first acknowledgement stands.',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
-  @ApiDataResponse(EscalationResponseDto, { description: 'The acknowledged escalation' })
+  @ApiDataResponse(EscalationResponseDto, {
+    description: 'The acknowledged escalation',
+  })
   @ApiResponse({ status: 404, description: 'Escalation not found' })
   async acknowledge(
     @Param('id', ParseUUIDPipe) id: string,

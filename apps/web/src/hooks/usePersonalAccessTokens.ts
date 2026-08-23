@@ -1,5 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { PersonalAccessToken, PatCreatedResponse, PatDurationUnit } from '../types';
+import type {
+  PersonalAccessToken,
+  PatCreatedResponse,
+  PatDurationUnit,
+} from '../types';
 import {
   getPersonalAccessTokens as fetchTokensApi,
   createPersonalAccessToken as createTokenApi,
@@ -36,7 +40,8 @@ export function usePersonalAccessTokens(): UsePersonalAccessTokensResult {
       const result = await fetchTokensApi();
       if (isMounted()) setTokens(result);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch tokens';
+      const message =
+        err instanceof Error ? err.message : 'Failed to fetch tokens';
       if (isMounted()) {
         setError(message);
         setTokens([]);
@@ -59,7 +64,8 @@ export function usePersonalAccessTokens(): UsePersonalAccessTokensResult {
         await fetchTokens();
         return response;
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to create token';
+        const message =
+          err instanceof Error ? err.message : 'Failed to create token';
         if (isMounted()) setError(message);
         throw err;
       }
@@ -75,7 +81,8 @@ export function usePersonalAccessTokens(): UsePersonalAccessTokensResult {
         // Refresh the list
         await fetchTokens();
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to revoke token';
+        const message =
+          err instanceof Error ? err.message : 'Failed to revoke token';
         if (isMounted()) setError(message);
         throw err;
       }

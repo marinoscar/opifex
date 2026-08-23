@@ -70,6 +70,7 @@ enum DeviceCodeStatus {
 Generates a new device code pair to initiate the authorization flow.
 
 **Request:**
+
 ```json
 {
   "clientInfo": {
@@ -80,6 +81,7 @@ Generates a new device code pair to initiate the authorization flow.
 ```
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -98,6 +100,7 @@ Generates a new device code pair to initiate the authorization flow.
 Device polls this endpoint to check authorization status.
 
 **Request:**
+
 ```json
 {
   "deviceCode": "a4f3b8c9d2e1f5a6b7c8d9e0f1a2b3c4"
@@ -105,6 +108,7 @@ Device polls this endpoint to check authorization status.
 ```
 
 **Response (Success):**
+
 ```json
 {
   "data": {
@@ -117,6 +121,7 @@ Device polls this endpoint to check authorization status.
 ```
 
 **Response (Pending - 400):**
+
 ```json
 {
   "error": "authorization_pending",
@@ -125,6 +130,7 @@ Device polls this endpoint to check authorization status.
 ```
 
 **Response (Rate Limited - 400):**
+
 ```json
 {
   "error": "slow_down",
@@ -133,6 +139,7 @@ Device polls this endpoint to check authorization status.
 ```
 
 **Other Error Codes:**
+
 - `expired_token` - The device code has expired
 - `access_denied` - User denied the authorization request
 
@@ -141,9 +148,11 @@ Device polls this endpoint to check authorization status.
 Returns information for the device activation page.
 
 **Query Parameters:**
+
 - `code` (optional): User verification code (e.g., "ABCD-1234")
 
 **Response (no code):**
+
 ```json
 {
   "data": {
@@ -153,6 +162,7 @@ Returns information for the device activation page.
 ```
 
 **Response (with valid code):**
+
 ```json
 {
   "data": {
@@ -171,6 +181,7 @@ Returns information for the device activation page.
 User approves or denies a device authorization request.
 
 **Request:**
+
 ```json
 {
   "userCode": "ABCD-1234",
@@ -179,6 +190,7 @@ User approves or denies a device authorization request.
 ```
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -193,10 +205,12 @@ User approves or denies a device authorization request.
 Lists the user's approved device sessions.
 
 **Query Parameters:**
+
 - `page` (optional): Page number (default: 1)
 - `limit` (optional): Page size (default: 10)
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -224,6 +238,7 @@ Lists the user's approved device sessions.
 Revokes a specific device session.
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -255,6 +270,7 @@ DEVICE_CODE_POLL_INTERVAL=5      # Minimum seconds between polls
 ## User Code Generation
 
 User codes are generated using a safe character set to avoid confusion:
+
 - Characters: `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`
 - Format: `XXXX-XXXX` (e.g., `ABCD-1234`)
 - Excludes: 0, O, 1, I, l (to prevent user confusion)
@@ -264,6 +280,7 @@ User codes are generated using a safe character set to avoid confusion:
 ### Device Code Cleanup
 
 Runs daily at 2 AM to remove:
+
 - Expired device codes
 - Codes marked as expired more than 24 hours ago
 
@@ -273,8 +290,10 @@ Runs daily at 2 AM to remove:
 
 ```typescript
 // 1. Request device code
-const { deviceCode, userCode, verificationUri, interval } =
-  await fetch('/api/auth/activate/code', { method: 'POST' }).then(r => r.json());
+const { deviceCode, userCode, verificationUri, interval } = await fetch(
+  '/api/auth/activate/code',
+  { method: 'POST' },
+).then((r) => r.json());
 
 console.log(`Please visit ${verificationUri}`);
 console.log(`Enter code: ${userCode}`);
@@ -286,8 +305,8 @@ while (true) {
   try {
     const tokens = await fetch('/api/auth/activate/token', {
       method: 'POST',
-      body: JSON.stringify({ deviceCode })
-    }).then(r => r.json());
+      body: JSON.stringify({ deviceCode }),
+    }).then((r) => r.json());
 
     // Success! Store tokens
     console.log('Authorized!');
@@ -309,10 +328,9 @@ const searchParams = new URLSearchParams(window.location.search);
 const code = searchParams.get('code');
 
 // Fetch device info
-const deviceInfo = await fetch(
-  `/api/auth/activate/activate?code=${code}`,
-  { headers: { Authorization: `Bearer ${accessToken}` } }
-).then(r => r.json());
+const deviceInfo = await fetch(`/api/auth/activate/activate?code=${code}`, {
+  headers: { Authorization: `Bearer ${accessToken}` },
+}).then((r) => r.json());
 
 // Display device info and approval UI
 // On approve:
@@ -321,8 +339,8 @@ await fetch('/api/auth/activate/authorize', {
   headers: { Authorization: `Bearer ${accessToken}` },
   body: JSON.stringify({
     userCode: code,
-    approve: true
-  })
+    approve: true,
+  }),
 });
 ```
 
@@ -330,19 +348,20 @@ await fetch('/api/auth/activate/authorize', {
 
 The module follows RFC 8628 error codes for consistency:
 
-| Error Code | Status | Description |
-|------------|--------|-------------|
-| `authorization_pending` | 400 | User hasn't authorized yet |
-| `slow_down` | 400 | Polling too fast |
-| `expired_token` | 400 | Device code expired |
-| `access_denied` | 400 | User denied authorization |
-| `invalid_grant` | 401 | Invalid device code |
+| Error Code              | Status | Description                |
+| ----------------------- | ------ | -------------------------- |
+| `authorization_pending` | 400    | User hasn't authorized yet |
+| `slow_down`             | 400    | Polling too fast           |
+| `expired_token`         | 400    | Device code expired        |
+| `access_denied`         | 400    | User denied authorization  |
+| `invalid_grant`         | 401    | Invalid device code        |
 
 ## Testing
 
 ### Manual Testing
 
 1. Generate a device code:
+
 ```bash
 curl -X POST http://localhost:3535/api/auth/activate/code \
   -H "Content-Type: application/json" \
@@ -352,6 +371,7 @@ curl -X POST http://localhost:3535/api/auth/activate/code \
 2. Visit the verification URL and enter the user code
 
 3. Poll for tokens:
+
 ```bash
 curl -X POST http://localhost:3535/api/auth/activate/token \
   -H "Content-Type: application/json" \

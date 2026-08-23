@@ -25,7 +25,12 @@ export const COST_MAX_DAYS = 90;
 export const COST_DEFAULT_DAYS = 30;
 
 export const costQuerySchema = z.object({
-  days: z.coerce.number().int().min(1).max(COST_MAX_DAYS).default(COST_DEFAULT_DAYS),
+  days: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(COST_MAX_DAYS)
+    .default(COST_DEFAULT_DAYS),
 });
 
 export class CostQueryDto extends createZodDto(costQuerySchema) {}

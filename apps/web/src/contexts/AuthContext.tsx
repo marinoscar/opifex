@@ -39,9 +39,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     const fetchProviders = async () => {
       try {
-        const response = await api.get<{ providers: AuthProviderType[] }>('/auth/providers', {
-          skipAuth: true,
-        });
+        const response = await api.get<{ providers: AuthProviderType[] }>(
+          '/auth/providers',
+          {
+            skipAuth: true,
+          },
+        );
         setProviders(response.providers);
       } catch (error) {
         console.error('Failed to fetch auth providers:', error);
@@ -89,17 +92,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
     initAuth();
   }, [location.pathname, fetchUser]);
 
-  const login = useCallback((provider: string) => {
-    // Store return URL for redirect after login (including query params)
-    const fromLocation = location.state?.from;
-    const returnUrl = fromLocation
-      ? `${fromLocation.pathname}${fromLocation.search || ''}`
-      : '/';
-    sessionStorage.setItem('auth_return_url', returnUrl);
+  const login = useCallback(
+    (provider: string) => {
+      // Store return URL for redirect after login (including query params)
+      const fromLocation = location.state?.from;
+      const returnUrl = fromLocation
+        ? `${fromLocation.pathname}${fromLocation.search || ''}`
+        : '/';
+      sessionStorage.setItem('auth_return_url', returnUrl);
 
-    // Redirect to OAuth provider
-    window.location.href = `/api/auth/${provider}`;
-  }, [location.state]);
+      // Redirect to OAuth provider
+      window.location.href = `/api/auth/${provider}`;
+    },
+    [location.state],
+  );
 
   const logout = useCallback(async () => {
     try {
@@ -127,11 +133,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     refreshUser,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

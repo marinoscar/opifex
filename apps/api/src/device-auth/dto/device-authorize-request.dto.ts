@@ -13,7 +13,9 @@ export const DeviceAuthorizeRequestSchema = z.object({
   approve: z.boolean(),
 });
 
-export class DeviceAuthorizeRequestDto extends createZodDto(DeviceAuthorizeRequestSchema) {
+export class DeviceAuthorizeRequestDto extends createZodDto(
+  DeviceAuthorizeRequestSchema,
+) {
   @ApiProperty({
     description: 'User verification code to authorize',
     example: 'ABCD-1234',

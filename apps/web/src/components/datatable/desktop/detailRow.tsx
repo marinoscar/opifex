@@ -100,7 +100,10 @@ export interface DetailRowPanelProps<Row> {
  * pairs, in declaration order — the same shape the card renderer's collapsed
  * region uses, so a value looks the same wherever it was folded away to.
  */
-export function DetailRowPanel<Row>({ row, columns }: DetailRowPanelProps<Row>) {
+export function DetailRowPanel<Row>({
+  row,
+  columns,
+}: DetailRowPanelProps<Row>) {
   return (
     <Box
       data-testid="datatable-row-detail-panel"
@@ -112,7 +115,9 @@ export function DetailRowPanel<Row>({ row, columns }: DetailRowPanelProps<Row>) 
         px: 2,
         py: 1.5,
         bgcolor: (theme) =>
-          theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.025)',
+          theme.palette.mode === 'dark'
+            ? 'rgba(255, 255, 255, 0.04)'
+            : 'rgba(0, 0, 0, 0.025)',
       }}
     >
       <Stack spacing={1.25} sx={{ minWidth: 0 }}>
@@ -121,7 +126,11 @@ export function DetailRowPanel<Row>({ row, columns }: DetailRowPanelProps<Row>) 
             ? column.render(row)
             : formatColumnValue(extractColumnValue(column, row));
           return (
-            <Box key={column.id} data-testid={`datatable-detail-field-${column.id}`} sx={{ minWidth: 0 }}>
+            <Box
+              key={column.id}
+              data-testid={`datatable-detail-field-${column.id}`}
+              sx={{ minWidth: 0 }}
+            >
               <Typography
                 variant="caption"
                 component="div"

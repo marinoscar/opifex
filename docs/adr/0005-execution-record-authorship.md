@@ -10,8 +10,8 @@
 VISION §4 says a work order is recorded twice, in two places, for two reasons:
 
 > The work order is posted to the issue as a fenced JSON comment (the
-> *authorization record*) and committed to the branch as its first commit (the
-> *execution record*).
+> _authorization record_) and committed to the branch as its first commit (the
+> _execution record_).
 
 #63 states what the pair buys:
 
@@ -37,8 +37,8 @@ creates the branch and everything on it.
 as its first commit, at dispatch, before calling `submit`.**
 
 The execution record lives at **`.opifex/work-order.json`** — a fixed path, so
-it can be read back without searching — and its bytes are the *same
-serialization* posted to the issue as the authorization record.
+it can be read back without searching — and its bytes are the _same
+serialization_ posted to the issue as the authorization record.
 
 The runner receives a branch that already exists with exactly one commit on it.
 It must not amend, rebase or force-push that commit.
@@ -47,8 +47,8 @@ It must not amend, rebase or force-push that commit.
 
 **A record the subject writes about itself is not evidence.** This is the
 argument that decided it. VISION §8 is explicit that the runner is never
-trustable, and the execution record's stated job is to prove *what the runner
-was given*. If the runner writes it, a misbehaving runner writes a record
+trustable, and the execution record's stated job is to prove _what the runner
+was given_. If the runner writes it, a misbehaving runner writes a record
 matching whatever it actually did, and the comparison against the
 authorization record catches accidents but never misbehaviour. Written by the
 control plane, the record is testimony from the party that is not the subject.
@@ -60,24 +60,24 @@ serializing independently, byte-identity is a property somebody has to keep
 testing forever, and JSON key order alone would break it.
 
 **First-commit ordering can actually be guaranteed.** The record must be the
-branch's *first* commit. If the runner creates the branch, nothing stops it
+branch's _first_ commit. If the runner creates the branch, nothing stops it
 committing work before writing the record, and there is no way to repair that
 afterwards without rewriting history — which is the one thing a factory branch
 must never need. Creating the ref ourselves makes "first" true by construction.
 
 **The runner's idempotency check gets better, not worse.** The obvious
-objection: VISION §4 says *"a runner checks whether its branch already exists
-before doing anything"*, and under this decision the branch always exists, so
+objection: VISION §4 says _"a runner checks whether its branch already exists
+before doing anything"_, and under this decision the branch always exists, so
 that check degenerates.
 
 The replacement is strictly more informative. The execution-record commit has a
 known SHA, handed to the runner. The check becomes:
 
-| Branch HEAD | Means |
-|---|---|
-| equals the execution-record SHA | Dispatched, nothing done yet. Start work. |
-| ahead of it | A previous run already did work. Do not start over. |
-| branch missing | Dispatch did not complete. Refuse; the control plane will retry. |
+| Branch HEAD                     | Means                                                            |
+| ------------------------------- | ---------------------------------------------------------------- |
+| equals the execution-record SHA | Dispatched, nothing done yet. Start work.                        |
+| ahead of it                     | A previous run already did work. Do not start over.              |
+| branch missing                  | Dispatch did not complete. Refuse; the control plane will retry. |
 
 "Does the branch exist" cannot distinguish the first two. That distinction is
 exactly what a kill-and-re-run needs in order to avoid discarding work a dead

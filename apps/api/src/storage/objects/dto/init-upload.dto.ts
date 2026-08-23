@@ -27,4 +27,6 @@ export const initUploadResponseSchema = z.object({
   ),
 });
 
-export class InitUploadResponseDto extends createZodDto(initUploadResponseSchema) {}
+export class InitUploadResponseDto extends createZodDto(
+  initUploadResponseSchema,
+) {}

@@ -38,11 +38,18 @@ import {
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import type { DataTableColumn, DataTableDensity, DataTableRowAction } from '../types';
+import type {
+  DataTableColumn,
+  DataTableDensity,
+  DataTableRowAction,
+} from '../types';
 import { RowActionsCell } from '../desktop/RowActionsCell';
 import { CardField, columnContent, columnText } from './CardField';
 import { cardDensityMetrics } from '../layout/layoutModel';
-import { containIntrinsicSize, useLazyImages } from '../virtualization/cardVirtualization';
+import {
+  containIntrinsicSize,
+  useLazyImages,
+} from '../virtualization/cardVirtualization';
 
 export interface DataCardProps<Row> {
   row: Row;
@@ -118,7 +125,8 @@ export function DataCard<Row>({
 
   // The first `primary` column doubles as the card's accessible name and as the
   // disambiguator on the actions menu ("Row actions for face_detection").
-  const headlineText = primaryColumns.length > 0 ? columnText(primaryColumns[0], row) : id;
+  const headlineText =
+    primaryColumns.length > 0 ? columnText(primaryColumns[0], row) : id;
 
   return (
     <Card
@@ -140,7 +148,9 @@ export function DataCard<Row>({
       // `content-visibility` outright, so a computed-style assertion could not
       // see it. These are the test hooks for the decision, not the styling.
       data-skip-offscreen={skipping ? 'true' : 'false'}
-      data-intrinsic-height={skipping ? containIntrinsicSize(intrinsicHeight) : undefined}
+      data-intrinsic-height={
+        skipping ? containIntrinsicSize(intrinsicHeight) : undefined
+      }
       sx={{
         listStyle: 'none',
         minWidth: 0,
@@ -157,7 +167,10 @@ export function DataCard<Row>({
               borderColor: 'primary.main',
               // Derived from the palette — see the note in BulkActionBar.
               bgcolor: (theme) =>
-                alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08),
+                alpha(
+                  theme.palette.primary.main,
+                  theme.palette.mode === 'dark' ? 0.16 : 0.08,
+                ),
             }
           : {}),
       }}
@@ -279,7 +292,10 @@ export function DataCard<Row>({
                     : 'rgba(0, 0, 0, 0.02)',
               }}
             >
-              <Stack spacing={metrics.fieldGap} sx={{ pt: metrics.py, minWidth: 0 }}>
+              <Stack
+                spacing={metrics.fieldGap}
+                sx={{ pt: metrics.py, minWidth: 0 }}
+              >
                 {detailColumns.map((column) => (
                   <CardField key={column.id} column={column} row={row} />
                 ))}

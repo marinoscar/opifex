@@ -50,16 +50,28 @@ import { TABLE_ID, asUserSortField, buildUserColumns } from './userListColumns';
  * Returning a SCALAR (not the filter object) is what lets the refetch effect
  * below depend on it directly — see rule 2 in the module docblock.
  */
-function readIsFilter(filters: DataTableFilterModel, columnId: string): string | undefined {
+function readIsFilter(
+  filters: DataTableFilterModel,
+  columnId: string,
+): string | undefined {
   const found = filters.find(
     (filter) => filter.columnId === columnId && filter.operator === 'is',
   );
-  return typeof found?.value === 'string' && found.value ? found.value : undefined;
+  return typeof found?.value === 'string' && found.value
+    ? found.value
+    : undefined;
 }
 
 export function UserList() {
-  const { users, total, isLoading, error, fetchUsers, updateUser, updateUserRoles } =
-    useUsers();
+  const {
+    users,
+    total,
+    isLoading,
+    error,
+    fetchUsers,
+    updateUser,
+    updateUserRoles,
+  } = useUsers();
   const { hasPermission } = usePermissions();
 
   const [search, setSearch] = useState('');
@@ -68,13 +80,18 @@ export function UserList() {
   const [sort, setSort] = useState<DataTableSortState | null>(null);
   const [filters, setFilters] = useState<DataTableFilterModel>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [rolesDialogUser, setRolesDialogUser] = useState<UserListItem | null>(null);
+  const [rolesDialogUser, setRolesDialogUser] = useState<UserListItem | null>(
+    null,
+  );
 
   const columns = useMemo(() => buildUserColumns(), []);
 
   // --- Query params, flattened to scalars ------------------------------------
   const roleFilter = useMemo(() => readIsFilter(filters, 'roles'), [filters]);
-  const statusFilter = useMemo(() => readIsFilter(filters, 'isActive'), [filters]);
+  const statusFilter = useMemo(
+    () => readIsFilter(filters, 'isActive'),
+    [filters],
+  );
   // Narrowed against the endpoint's `sortBy` enum: a stored layout is
   // user-writable JSON, so an unrecognised field is dropped rather than sent.
   const sortField = asUserSortField(sort?.field);
@@ -86,7 +103,8 @@ export function UserList() {
       pageSize,
       search: search || undefined,
       role: roleFilter,
-      isActive: statusFilter === undefined ? undefined : statusFilter === 'active',
+      isActive:
+        statusFilter === undefined ? undefined : statusFilter === 'active',
       ...(sortField ? { sortBy: sortField, sortOrder: sortDirection } : {}),
     });
     // Every dependency is a scalar. `fetchUsers` is `useCallback([])`-stable.
@@ -211,13 +229,19 @@ export function UserList() {
             filename: 'users',
             // Replays THIS page's own query, so an export can only ever contain
             // what the user's own list request already returns.
-            fetchAllRows: async ({ page: exportPage, pageSize: exportPageSize }) => {
+            fetchAllRows: async ({
+              page: exportPage,
+              pageSize: exportPageSize,
+            }) => {
               const response = await getUsers({
                 page: exportPage + 1,
                 pageSize: exportPageSize,
                 search: search || undefined,
                 role: roleFilter,
-                isActive: statusFilter === undefined ? undefined : statusFilter === 'active',
+                isActive:
+                  statusFilter === undefined
+                    ? undefined
+                    : statusFilter === 'active',
               });
               return response.items;
             },

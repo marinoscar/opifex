@@ -27,11 +27,16 @@ import type { Destination, DestinationKey } from '../../config/destinations';
  * A hand-maintained copy would drift the first time someone adds a route, which
  * is exactly the moment the assertion is supposed to fire.
  */
-const APP_TSX = resolve(dirname(fileURLToPath(import.meta.url)), '../../App.tsx');
+const APP_TSX = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../App.tsx',
+);
 
 function declaredRoutePaths(): string[] {
   const source = readFileSync(APP_TSX, 'utf8');
-  const paths = [...source.matchAll(/path="([^"]+)"/g)].map((match) => match[1]);
+  const paths = [...source.matchAll(/path="([^"]+)"/g)].map(
+    (match) => match[1],
+  );
   // `*` is the catch-all, which renders `NotFoundPage` rather than belonging to
   // a destination. It is the one route that is deliberately owned by nothing
   // AND absent from `UNOWNED_ROUTES` — it is not a place, it is the absence of
@@ -52,22 +57,32 @@ describe('destinations — route ownership', () => {
     // old version of this test a chore to maintain and a liability to trust.
     const paths = declaredRoutePaths();
 
-    expect(paths).toEqual(expect.arrayContaining(DESTINATIONS.map((d) => d.path)));
+    expect(paths).toEqual(
+      expect.arrayContaining(DESTINATIONS.map((d) => d.path)),
+    );
     expect(paths).toEqual(expect.arrayContaining([...UNOWNED_ROUTES]));
   });
 
   it('claims every route in App.tsx exactly once, or deliberately not at all', () => {
     for (const path of declaredRoutePaths()) {
-      const owners = (Object.keys(DESTINATION_ROUTES) as DestinationKey[]).filter((key) =>
+      const owners = (
+        Object.keys(DESTINATION_ROUTES) as DestinationKey[]
+      ).filter((key) =>
         DESTINATION_ROUTES[key].some((prefix) => owns(prefix, path)),
       );
 
       if (UNOWNED_ROUTES.includes(path)) {
-        expect(owners, `${path} is listed as unowned but a destination claims it`).toEqual([]);
+        expect(
+          owners,
+          `${path} is listed as unowned but a destination claims it`,
+        ).toEqual([]);
       } else {
         // NOT `toHaveLength(1)` with a bare message: naming the owners is what
         // makes the failure actionable when it does fire.
-        expect(owners, `${path} should be owned by exactly one destination`).toHaveLength(1);
+        expect(
+          owners,
+          `${path} should be owned by exactly one destination`,
+        ).toHaveLength(1);
       }
     }
   });
@@ -92,7 +107,9 @@ describe('destinations — route ownership', () => {
     // route list can each grow past the other.
     const paths = declaredRoutePaths();
     for (const destination of DESTINATIONS) {
-      expect(paths, `${destination.key} has no route in App.tsx`).toContain(destination.path);
+      expect(paths, `${destination.key} has no route in App.tsx`).toContain(
+        destination.path,
+      );
     }
   });
 
@@ -101,7 +118,10 @@ describe('destinations — route ownership', () => {
     // highlighting something arbitrary. No destination is better than a wrong
     // one — the login screen does not belong to the cockpit.
     for (const path of UNOWNED_ROUTES) {
-      expect(resolveActiveDestination(path), `${path} must activate no destination`).toBeNull();
+      expect(
+        resolveActiveDestination(path),
+        `${path} must activate no destination`,
+      ).toBeNull();
     }
   });
 
@@ -150,7 +170,9 @@ describe('destinations — segment-boundary matching', () => {
   it('activates a destination for its child routes', () => {
     expect(resolveActiveDestination('/settings/profile')).toBe('settings');
     expect(resolveActiveDestination('/admin/users/abc-123')).toBe('users');
-    expect(resolveActiveDestination('/runs/wo_opifex_312_a3f91c2_a1')).toBe('runs');
+    expect(resolveActiveDestination('/runs/wo_opifex_312_a3f91c2_a1')).toBe(
+      'runs',
+    );
   });
 
   it('gives the longest matching prefix the win', () => {
@@ -177,11 +199,19 @@ describe('destinations — reachability regression', () => {
    * orphans `/settings` is precisely the kind of regression the whole
    * single-source-of-truth exercise is supposed to make impossible.
    */
-  const PRE_REDESIGN_PATHS = ['/', '/settings', '/admin/users', '/admin/settings'];
+  const PRE_REDESIGN_PATHS = [
+    '/',
+    '/settings',
+    '/admin/users',
+    '/admin/settings',
+  ];
 
   it('still resolves every path that existed before the redesign', () => {
     for (const path of PRE_REDESIGN_PATHS) {
-      expect(resolveActiveDestination(path), `${path} became unreachable`).not.toBeNull();
+      expect(
+        resolveActiveDestination(path),
+        `${path} became unreachable`,
+      ).not.toBeNull();
     }
   });
 
@@ -283,7 +313,9 @@ describe('destinations — the table itself', () => {
     // the same pull request as the endpoint that backs it. That simultaneity
     // is the rule this file's header sets, and this list is what makes
     // breaking it fail rather than merely be noticed in review.
-    const live = DESTINATIONS.filter((d) => d.status === 'live').map((d) => d.key);
+    const live = DESTINATIONS.filter((d) => d.status === 'live').map(
+      (d) => d.key,
+    );
     expect(live.sort()).toEqual([
       'cost',
       'dashboard',
@@ -301,16 +333,19 @@ describe('destinations — the table itself', () => {
     // asserts the END of #80's flips rather than deleting the check — a new
     // planned destination should show up here as a failure to be re-stated,
     // not slip in unnoticed.
-    const planned = DESTINATIONS.filter((d) => d.status === 'planned').map((d) => d.key);
+    const planned = DESTINATIONS.filter((d) => d.status === 'planned').map(
+      (d) => d.key,
+    );
     expect(planned).toEqual([]);
   });
 
   it('puts every destination in a declared section', () => {
     const sectionKeys = SECTIONS.map((section) => section.key);
     for (const destination of DESTINATIONS) {
-      expect(sectionKeys, `${destination.key} has an unknown section`).toContain(
-        destination.section,
-      );
+      expect(
+        sectionKeys,
+        `${destination.key} has an unknown section`,
+      ).toContain(destination.section);
     }
   });
 
@@ -341,15 +376,20 @@ describe('destinations — the table itself', () => {
 
   it('gives every destination a compactLabel short enough for a 56px rail', () => {
     for (const destination of DESTINATIONS) {
-      expect(destination.compactLabel.length, `${destination.key} compactLabel`).toBeLessThanOrEqual(
-        8,
-      );
+      expect(
+        destination.compactLabel.length,
+        `${destination.key} compactLabel`,
+      ).toBeLessThanOrEqual(8);
     }
   });
 
   it('gives every destination a unique key and a unique path', () => {
-    expect(new Set(DESTINATIONS.map((d) => d.key)).size).toBe(DESTINATIONS.length);
-    expect(new Set(DESTINATIONS.map((d) => d.path)).size).toBe(DESTINATIONS.length);
+    expect(new Set(DESTINATIONS.map((d) => d.key)).size).toBe(
+      DESTINATIONS.length,
+    );
+    expect(new Set(DESTINATIONS.map((d) => d.path)).size).toBe(
+      DESTINATIONS.length,
+    );
   });
 });
 
@@ -361,7 +401,9 @@ describe('destinations — the bottom-bar split', () => {
     // The ceiling exists so `showLabels` stays valid at 360px. This is the
     // assertion that fires if someone adds a fourth primary key without
     // reading why there are three.
-    expect(BOTTOM_NAV_KEYS.length + 1).toBeLessThanOrEqual(BOTTOM_NAV_MAX_ACTIONS);
+    expect(BOTTOM_NAV_KEYS.length + 1).toBeLessThanOrEqual(
+      BOTTOM_NAV_MAX_ACTIONS,
+    );
   });
 
   it('promotes the configured keys, in bar order', () => {
@@ -382,7 +424,9 @@ describe('destinations — the bottom-bar split', () => {
     for (const canSee of [seeEverything, seeNoAdmin]) {
       const { primary, overflow } = bottomNavSplit(canSee);
       const split = [...primary, ...overflow].map((d) => d.key).sort();
-      const visible = DESTINATIONS.filter(canSee).map((d) => d.key).sort();
+      const visible = DESTINATIONS.filter(canSee)
+        .map((d) => d.key)
+        .sort();
       expect(split).toEqual(visible);
     }
   });
@@ -409,19 +453,29 @@ describe('destinations — the bottom-bar split', () => {
     // The permission path specifically, now that a primary destination has
     // one: a viewer without `workorders:read` loses the Queue tab and the bar
     // closes up rather than rendering a gap.
-    const { primary } = bottomNavSplit((d) => d.permission !== 'workorders:read');
+    const { primary } = bottomNavSplit(
+      (d) => d.permission !== 'workorders:read',
+    );
     expect(primary.map((d) => d.key)).toEqual(['dashboard', 'runs']);
   });
 
   it('keeps the overflow in table order, not in permission order', () => {
     const { overflow } = bottomNavSplit(seeEverything);
-    expect(overflow.map((d) => d.key)).toEqual(['projects', 'cost', 'settings', 'users', 'system']);
+    expect(overflow.map((d) => d.key)).toEqual([
+      'projects',
+      'cost',
+      'settings',
+      'users',
+      'system',
+    ]);
   });
 
   it('returns an empty overflow when nothing is left over', () => {
     // The state that makes `BottomNav` hide More entirely: a trigger that opens
     // an empty sheet is a control that does nothing.
-    const { primary, overflow } = bottomNavSplit((d) => BOTTOM_NAV_KEYS.includes(d.key));
+    const { primary, overflow } = bottomNavSplit((d) =>
+      BOTTOM_NAV_KEYS.includes(d.key),
+    );
     expect(primary).toHaveLength(BOTTOM_NAV_KEYS.length);
     expect(overflow).toEqual([]);
   });

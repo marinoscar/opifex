@@ -6,7 +6,13 @@ import { ProfileSettings } from '../../../components/settings/ProfileSettings';
 
 // Mock the ImageUpload component
 vi.mock('../../../components/settings/ImageUpload', () => ({
-  ImageUpload: ({ onUpload, disabled }: { onUpload: (url: string) => void; disabled?: boolean }) => (
+  ImageUpload: ({
+    onUpload,
+    disabled,
+  }: {
+    onUpload: (url: string) => void;
+    disabled?: boolean;
+  }) => (
     <button
       onClick={() => onUpload('https://example.com/uploaded-image.jpg')}
       disabled={disabled}
@@ -19,7 +25,8 @@ vi.mock('../../../components/settings/ImageUpload', () => ({
 
 // Mock the AuthContext - need to import original to get AuthContext
 vi.mock('../../../contexts/AuthContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../contexts/AuthContext')>();
+  const actual =
+    await importOriginal<typeof import('../../../contexts/AuthContext')>();
   return {
     ...actual,
     useAuth: vi.fn(),
@@ -59,12 +66,12 @@ describe('ProfileSettings', () => {
 
   describe('Rendering', () => {
     it('should render profile card with title', () => {
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       expect(screen.getByText('Profile')).toBeInTheDocument();
-      expect(screen.getByText(/customize how you appear to others/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/customize how you appear to others/i),
+      ).toBeInTheDocument();
     });
 
     it('should render display name input with current value', () => {
@@ -80,18 +87,14 @@ describe('ProfileSettings', () => {
     });
 
     it('should render empty display name input when not set', () => {
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const displayNameInput = screen.getByLabelText(/display name/i);
       expect(displayNameInput).toHaveValue('');
     });
 
     it('should render email field as read-only', () => {
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const emailInput = screen.getByLabelText(/email/i);
       expect(emailInput).toBeDisabled();
@@ -100,20 +103,18 @@ describe('ProfileSettings', () => {
     });
 
     it('should render profile image avatar', () => {
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       // Avatar renders but without image (uses fallback icon), so check by text content
       expect(screen.getByText('Profile Image')).toBeInTheDocument();
     });
 
     it('should render use provider image toggle', () => {
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
-      const toggle = screen.getByRole('switch', { name: /use google profile image/i });
+      const toggle = screen.getByRole('switch', {
+        name: /use google profile image/i,
+      });
       expect(toggle).toBeInTheDocument();
       expect(toggle).toBeChecked();
     });
@@ -130,19 +131,17 @@ describe('ProfileSettings', () => {
     });
 
     it('should hide image upload when using provider image', () => {
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       expect(screen.queryByTestId('image-upload-mock')).not.toBeInTheDocument();
     });
 
     it('should render save button', () => {
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
-      expect(screen.getByRole('button', { name: /save changes/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /save changes/i }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -150,9 +149,7 @@ describe('ProfileSettings', () => {
     it('should update display name on input change', async () => {
       const user = userEvent.setup();
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const displayNameInput = screen.getByLabelText(/display name/i);
       await user.clear(displayNameInput);
@@ -164,9 +161,7 @@ describe('ProfileSettings', () => {
     it('should enable save button when display name changes', async () => {
       const user = userEvent.setup();
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const saveButton = screen.getByRole('button', { name: /save changes/i });
       expect(saveButton).toBeDisabled();
@@ -178,21 +173,22 @@ describe('ProfileSettings', () => {
     });
 
     it('should show placeholder from email', () => {
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const displayNameInput = screen.getByLabelText(/display name/i);
       const expectedPlaceholder = mockUser.email.split('@')[0];
-      expect(displayNameInput).toHaveAttribute('placeholder', expectedPlaceholder);
+      expect(displayNameInput).toHaveAttribute(
+        'placeholder',
+        expectedPlaceholder,
+      );
     });
 
     it('should show helper text', () => {
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
-      expect(screen.getByText(/leave empty to use your google name/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/leave empty to use your google name/i),
+      ).toBeInTheDocument();
     });
   });
 
@@ -200,11 +196,11 @@ describe('ProfileSettings', () => {
     it('should toggle use provider image switch', async () => {
       const user = userEvent.setup();
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
-      const toggle = screen.getByRole('switch', { name: /use google profile image/i });
+      const toggle = screen.getByRole('switch', {
+        name: /use google profile image/i,
+      });
       expect(toggle).toBeChecked();
 
       await user.click(toggle);
@@ -216,14 +212,14 @@ describe('ProfileSettings', () => {
     it('should enable save button when toggling provider image', async () => {
       const user = userEvent.setup();
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const saveButton = screen.getByRole('button', { name: /save changes/i });
       expect(saveButton).toBeDisabled();
 
-      const toggle = screen.getByRole('switch', { name: /use google profile image/i });
+      const toggle = screen.getByRole('switch', {
+        name: /use google profile image/i,
+      });
       await user.click(toggle);
 
       expect(saveButton).toBeEnabled();
@@ -248,10 +244,16 @@ describe('ProfileSettings', () => {
 
     it('should disable provider toggle when disabled prop is true', () => {
       render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} disabled />
+        <ProfileSettings
+          profile={defaultProfile}
+          onSave={mockOnSave}
+          disabled
+        />,
       );
 
-      const toggle = screen.getByRole('switch', { name: /use google profile image/i });
+      const toggle = screen.getByRole('switch', {
+        name: /use google profile image/i,
+      });
       expect(toggle).toBeDisabled();
     });
 
@@ -271,9 +273,7 @@ describe('ProfileSettings', () => {
         refreshUser: mockRefreshUser,
       });
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const avatar = screen.getByRole('img');
       expect(avatar).toHaveAttribute('src', userWithImage.profileImageUrl);
@@ -297,9 +297,7 @@ describe('ProfileSettings', () => {
     it('should call onSave with updated profile data', async () => {
       const user = userEvent.setup();
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const displayNameInput = screen.getByLabelText(/display name/i);
       await user.type(displayNameInput, 'New Name');
@@ -319,9 +317,7 @@ describe('ProfileSettings', () => {
     it('should call refreshUser after successful save', async () => {
       const user = userEvent.setup();
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const displayNameInput = screen.getByLabelText(/display name/i);
       await user.type(displayNameInput, 'New Name');
@@ -368,12 +364,16 @@ describe('ProfileSettings', () => {
 
       render(<ProfileSettings profile={profile} onSave={mockOnSave} />);
 
-      const toggle = screen.getByRole('switch', { name: /use google profile image/i });
+      const toggle = screen.getByRole('switch', {
+        name: /use google profile image/i,
+      });
       await user.click(toggle);
 
       // Wait for state to update
       await waitFor(() => {
-        const saveButton = screen.getByRole('button', { name: /save changes/i });
+        const saveButton = screen.getByRole('button', {
+          name: /save changes/i,
+        });
         expect(saveButton).toBeEnabled();
       });
 
@@ -390,9 +390,7 @@ describe('ProfileSettings', () => {
     });
 
     it('should not call onSave when no changes', () => {
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const saveButton = screen.getByRole('button', { name: /save changes/i });
       expect(saveButton).toBeDisabled();
@@ -408,7 +406,7 @@ describe('ProfileSettings', () => {
       };
 
       render(
-        <ProfileSettings profile={profile} onSave={mockOnSave} disabled />
+        <ProfileSettings profile={profile} onSave={mockOnSave} disabled />,
       );
 
       const saveButton = screen.getByRole('button', { name: /save changes/i });
@@ -425,9 +423,7 @@ describe('ProfileSettings', () => {
       });
       mockOnSave.mockReturnValue(savePromise);
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const displayNameInput = screen.getByLabelText(/display name/i);
       await user.type(displayNameInput, 'New Name');
@@ -435,12 +431,16 @@ describe('ProfileSettings', () => {
       const saveButton = screen.getByRole('button', { name: /save changes/i });
       await user.click(saveButton);
 
-      expect(screen.getByRole('button', { name: /saving\.\.\./i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /saving\.\.\./i }),
+      ).toBeInTheDocument();
 
       // Resolve the save
       resolveSave!();
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /save changes/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /save changes/i }),
+        ).toBeInTheDocument();
       });
     });
 
@@ -483,9 +483,7 @@ describe('ProfileSettings', () => {
       });
       mockOnSave.mockReturnValue(savePromise);
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const displayNameInput = screen.getByLabelText(/display name/i);
       await user.type(displayNameInput, 'New Name');
@@ -493,7 +491,9 @@ describe('ProfileSettings', () => {
       const saveButton = screen.getByRole('button', { name: /save changes/i });
       await user.click(saveButton);
 
-      expect(screen.getByRole('button', { name: /saving\.\.\./i })).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: /saving\.\.\./i }),
+      ).toBeDisabled();
 
       resolveSave!();
     });
@@ -504,17 +504,17 @@ describe('ProfileSettings', () => {
       const user = userEvent.setup();
 
       // Suppress console errors for this test
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
 
       // Use a slow save to test loading state reset after save
       mockOnSave.mockImplementation(async () => {
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
         // Component uses try/finally so loading state will be reset
       });
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const displayNameInput = screen.getByLabelText(/display name/i);
       await user.type(displayNameInput, 'New Name');
@@ -524,7 +524,9 @@ describe('ProfileSettings', () => {
 
       // Should still reset loading state after save completes
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /save changes/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /save changes/i }),
+        ).toBeInTheDocument();
       });
 
       consoleSpy.mockRestore();
@@ -534,20 +536,20 @@ describe('ProfileSettings', () => {
       const user = userEvent.setup();
 
       // Suppress console errors for this test
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
 
       // Use a mock that simulates a slow save - tests that refreshUser is not called
       // when save completes (success case validates the flow)
       mockOnSave.mockImplementation(async () => {
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
         // Simulates save that doesn't call refreshUser scenario
         // Note: The component always calls refreshUser after save in try block,
         // so this test verifies save was called
       });
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const displayNameInput = screen.getByLabelText(/display name/i);
       await user.type(displayNameInput, 'New Name');
@@ -571,17 +573,17 @@ describe('ProfileSettings', () => {
       const user = userEvent.setup();
 
       // Suppress console errors for this test
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
 
       // Use a slow refreshUser to test loading state reset
       mockRefreshUser.mockImplementation(async () => {
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
         // Simulates refresh completing - component uses try/finally
       });
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const displayNameInput = screen.getByLabelText(/display name/i);
       await user.type(displayNameInput, 'New Name');
@@ -591,7 +593,9 @@ describe('ProfileSettings', () => {
 
       // Should reset loading state after save/refresh completes
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /save changes/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /save changes/i }),
+        ).toBeInTheDocument();
       });
 
       consoleSpy.mockRestore();
@@ -602,9 +606,7 @@ describe('ProfileSettings', () => {
     it('should detect display name changes', async () => {
       const user = userEvent.setup();
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const saveButton = screen.getByRole('button', { name: /save changes/i });
       expect(saveButton).toBeDisabled();
@@ -618,14 +620,14 @@ describe('ProfileSettings', () => {
     it('should detect useProviderImage changes', async () => {
       const user = userEvent.setup();
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const saveButton = screen.getByRole('button', { name: /save changes/i });
       expect(saveButton).toBeDisabled();
 
-      const toggle = screen.getByRole('switch', { name: /use google profile image/i });
+      const toggle = screen.getByRole('switch', {
+        name: /use google profile image/i,
+      });
       await user.click(toggle);
 
       expect(saveButton).toBeEnabled();
@@ -652,7 +654,7 @@ describe('ProfileSettings', () => {
     it('should reset changes when profile prop changes', async () => {
       const user = userEvent.setup();
       const { rerender } = render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
+        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />,
       );
 
       const displayNameInput = screen.getByLabelText(/display name/i);
@@ -676,9 +678,7 @@ describe('ProfileSettings', () => {
     it('should disable save when changes are reverted', async () => {
       const user = userEvent.setup();
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const displayNameInput = screen.getByLabelText(/display name/i);
       await user.type(displayNameInput, 'New Name');
@@ -696,7 +696,11 @@ describe('ProfileSettings', () => {
   describe('Disabled State', () => {
     it('should disable display name input when disabled prop is true', () => {
       render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} disabled />
+        <ProfileSettings
+          profile={defaultProfile}
+          onSave={mockOnSave}
+          disabled
+        />,
       );
 
       const displayNameInput = screen.getByLabelText(/display name/i);
@@ -705,10 +709,16 @@ describe('ProfileSettings', () => {
 
     it('should disable provider image toggle when disabled prop is true', () => {
       render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} disabled />
+        <ProfileSettings
+          profile={defaultProfile}
+          onSave={mockOnSave}
+          disabled
+        />,
       );
 
-      const toggle = screen.getByRole('switch', { name: /use google profile image/i });
+      const toggle = screen.getByRole('switch', {
+        name: /use google profile image/i,
+      });
       expect(toggle).toBeDisabled();
     });
 
@@ -718,7 +728,9 @@ describe('ProfileSettings', () => {
         useProviderImage: false,
       };
 
-      render(<ProfileSettings profile={profile} onSave={mockOnSave} disabled />);
+      render(
+        <ProfileSettings profile={profile} onSave={mockOnSave} disabled />,
+      );
 
       const uploadButton = screen.getByTestId('image-upload-mock');
       expect(uploadButton).toBeDisabled();
@@ -743,9 +755,7 @@ describe('ProfileSettings', () => {
         refreshUser: mockRefreshUser,
       });
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const avatar = screen.getByAltText('John Doe');
       expect(avatar).toBeInTheDocument();
@@ -769,9 +779,7 @@ describe('ProfileSettings', () => {
         refreshUser: mockRefreshUser,
       });
 
-      render(
-        <ProfileSettings profile={defaultProfile} onSave={mockOnSave} />
-      );
+      render(<ProfileSettings profile={defaultProfile} onSave={mockOnSave} />);
 
       const avatar = screen.getByAltText(mockUser.email);
       expect(avatar).toBeInTheDocument();

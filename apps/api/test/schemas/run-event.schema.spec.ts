@@ -29,7 +29,9 @@ function buildValidator(): ValidateFunction {
 }
 
 /** A minimal valid event, for tests that mutate one field at a time. */
-function baseEvent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function baseEvent(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     schemaVersion: '1.0.0',
     eventId: 'evt-1',
@@ -79,7 +81,9 @@ describe('run-event.schema.json', () => {
     it('covers all six event types across the examples', () => {
       // The floor is only demonstrated if every type has a worked example.
       const types = new Set(
-        files.map((f) => JSON.parse(readFileSync(join(EXAMPLE_DIR, f), 'utf8')).type),
+        files.map(
+          (f) => JSON.parse(readFileSync(join(EXAMPLE_DIR, f), 'utf8')).type,
+        ),
       );
 
       expect([...types].sort()).toEqual([
@@ -94,7 +98,9 @@ describe('run-event.schema.json', () => {
 
     it('covers all three sources across the examples', () => {
       const sources = new Set(
-        files.map((f) => JSON.parse(readFileSync(join(EXAMPLE_DIR, f), 'utf8')).source),
+        files.map(
+          (f) => JSON.parse(readFileSync(join(EXAMPLE_DIR, f), 'utf8')).source,
+        ),
       );
 
       expect([...sources].sort()).toEqual([
@@ -151,7 +157,10 @@ describe('run-event.schema.json', () => {
     it('has no default for source anywhere in the schema', () => {
       // A default would let an omitted source be filled in, which is exactly
       // the masquerade the field exists to prevent.
-      const properties = schema.properties as Record<string, Record<string, unknown>>;
+      const properties = schema.properties as Record<
+        string,
+        Record<string, unknown>
+      >;
       expect(properties.source.default).toBeUndefined();
     });
   });
@@ -163,14 +172,12 @@ describe('run-event.schema.json', () => {
       expect(validate(baseEvent({ type: 'run.paused' }))).toBe(false);
     });
 
-    it.each([
-      'run.started',
-      'run.heartbeat',
-      'run.progress',
-      'run.completed',
-    ])('accepts %s with no type-specific payload', (type) => {
-      expect(validate(baseEvent({ type }))).toBe(true);
-    });
+    it.each(['run.started', 'run.heartbeat', 'run.progress', 'run.completed'])(
+      'accepts %s with no type-specific payload',
+      (type) => {
+        expect(validate(baseEvent({ type }))).toBe(true);
+      },
+    );
   });
 
   describe('run.blocked', () => {
@@ -187,7 +194,10 @@ describe('run-event.schema.json', () => {
         validate(
           baseEvent({
             type: 'run.blocked',
-            blocked: { reason: 'rate-limit', resetAt: '2026-08-21T18:00:00.000Z' },
+            blocked: {
+              reason: 'rate-limit',
+              resetAt: '2026-08-21T18:00:00.000Z',
+            },
           }),
         ),
       ).toBe(true);
@@ -197,14 +207,21 @@ describe('run-event.schema.json', () => {
       // Permitted on purpose: a run blocked for a reason the runner cannot
       // name still parks. #56 escalates it rather than parking forever,
       // because nothing can compute when it would resume.
-      expect(validate(baseEvent({ type: 'run.blocked', blocked: { reason: 'unknown' } }))).toBe(
-        true,
-      );
+      expect(
+        validate(
+          baseEvent({ type: 'run.blocked', blocked: { reason: 'unknown' } }),
+        ),
+      ).toBe(true);
     });
 
     it('rejects an unrecognised reason', () => {
       expect(
-        validate(baseEvent({ type: 'run.blocked', blocked: { reason: 'feeling-slow' } })),
+        validate(
+          baseEvent({
+            type: 'run.blocked',
+            blocked: { reason: 'feeling-slow' },
+          }),
+        ),
       ).toBe(false);
     });
   });
@@ -217,7 +234,10 @@ describe('run-event.schema.json', () => {
     it('accepts a reason with the advisory retryable flag', () => {
       expect(
         validate(
-          baseEvent({ type: 'run.failed', failure: { reason: 'tests red', retryable: true } }),
+          baseEvent({
+            type: 'run.failed',
+            failure: { reason: 'tests red', retryable: true },
+          }),
         ),
       ).toBe(true);
     });
@@ -229,7 +249,9 @@ describe('run-event.schema.json', () => {
     });
 
     it('requires both name and signature when present', () => {
-      expect(validate(baseEvent({ type: 'run.progress', tool: { name: 'Bash' } }))).toBe(false);
+      expect(
+        validate(baseEvent({ type: 'run.progress', tool: { name: 'Bash' } })),
+      ).toBe(false);
     });
 
     it('accepts a full tool object', () => {
@@ -237,7 +259,11 @@ describe('run-event.schema.json', () => {
         validate(
           baseEvent({
             type: 'run.progress',
-            tool: { name: 'Bash', signature: 'sha256:abc', phase: 'running tests' },
+            tool: {
+              name: 'Bash',
+              signature: 'sha256:abc',
+              phase: 'running tests',
+            },
           }),
         ),
       ).toBe(true);
@@ -281,7 +307,9 @@ describe('run-event.schema.json', () => {
     it('are rejected, so a typo is not silently accepted', () => {
       // `occuredAt` (one r) would otherwise be stored as an unknown field and
       // the event would carry no timestamp at all.
-      expect(validate(baseEvent({ occuredAt: '2026-08-21T10:00:00.000Z' }))).toBe(false);
+      expect(
+        validate(baseEvent({ occuredAt: '2026-08-21T10:00:00.000Z' })),
+      ).toBe(false);
     });
 
     it('are rejected inside the nested objects too', () => {
@@ -289,7 +317,10 @@ describe('run-event.schema.json', () => {
         validate(
           baseEvent({
             type: 'run.blocked',
-            blocked: { reason: 'rate-limit', resetsAt: '2026-08-21T18:00:00.000Z' },
+            blocked: {
+              reason: 'rate-limit',
+              resetsAt: '2026-08-21T18:00:00.000Z',
+            },
           }),
         ),
       ).toBe(false);

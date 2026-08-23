@@ -28,12 +28,12 @@ describe('AppModule — TestAuthModule registration', () => {
     let registered = false;
 
     jest.isolateModules(() => {
-       
       const { AppModule } = require('./app.module');
-       
+
       const { TestAuthModule } = require('./test-auth/test-auth.module');
 
-      const imports: unknown[] = Reflect.getMetadata('imports', AppModule) ?? [];
+      const imports: unknown[] =
+        Reflect.getMetadata('imports', AppModule) ?? [];
       registered = imports.includes(TestAuthModule);
     });
 

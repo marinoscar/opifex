@@ -66,7 +66,9 @@ describe('usePersonalAccessTokens', () => {
 
     it('should start with isLoading true while initial fetch is in progress', async () => {
       let resolve: (tokens: PersonalAccessToken[]) => void;
-      const promise = new Promise<PersonalAccessToken[]>((r) => { resolve = r; });
+      const promise = new Promise<PersonalAccessToken[]>((r) => {
+        resolve = r;
+      });
 
       vi.mocked(api.getPersonalAccessTokens).mockReturnValue(promise);
 
@@ -107,7 +109,10 @@ describe('usePersonalAccessTokens', () => {
 
   describe('fetchTokens', () => {
     it('should fetch and set tokens on success', async () => {
-      vi.mocked(api.getPersonalAccessTokens).mockResolvedValue([mockToken1, mockToken2]);
+      vi.mocked(api.getPersonalAccessTokens).mockResolvedValue([
+        mockToken1,
+        mockToken2,
+      ]);
 
       const { result } = renderHook(() => usePersonalAccessTokens());
 
@@ -137,7 +142,9 @@ describe('usePersonalAccessTokens', () => {
     });
 
     it('should set error and empty tokens when fetch fails', async () => {
-      vi.mocked(api.getPersonalAccessTokens).mockRejectedValue(new Error('Network error'));
+      vi.mocked(api.getPersonalAccessTokens).mockRejectedValue(
+        new Error('Network error'),
+      );
 
       const { result } = renderHook(() => usePersonalAccessTokens());
 
@@ -148,7 +155,9 @@ describe('usePersonalAccessTokens', () => {
     });
 
     it('should use a generic error message for non-Error failures', async () => {
-      vi.mocked(api.getPersonalAccessTokens).mockRejectedValue('some string error');
+      vi.mocked(api.getPersonalAccessTokens).mockRejectedValue(
+        'some string error',
+      );
 
       const { result } = renderHook(() => usePersonalAccessTokens());
 
@@ -197,7 +206,9 @@ describe('usePersonalAccessTokens', () => {
         .mockResolvedValueOnce([]) // initial mount fetch
         .mockResolvedValueOnce([mockToken1]); // refresh after create
 
-      vi.mocked(api.createPersonalAccessToken).mockResolvedValue(mockCreatedResponse);
+      vi.mocked(api.createPersonalAccessToken).mockResolvedValue(
+        mockCreatedResponse,
+      );
 
       const { result } = renderHook(() => usePersonalAccessTokens());
       await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -217,7 +228,9 @@ describe('usePersonalAccessTokens', () => {
 
     it('should call createPersonalAccessToken with correct data', async () => {
       vi.mocked(api.getPersonalAccessTokens).mockResolvedValue([]);
-      vi.mocked(api.createPersonalAccessToken).mockResolvedValue(mockCreatedResponse);
+      vi.mocked(api.createPersonalAccessToken).mockResolvedValue(
+        mockCreatedResponse,
+      );
 
       const { result } = renderHook(() => usePersonalAccessTokens());
       await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -254,7 +267,9 @@ describe('usePersonalAccessTokens', () => {
         .mockResolvedValueOnce([]) // initial mount fetch
         .mockResolvedValueOnce([newToken]); // refresh after create
 
-      vi.mocked(api.createPersonalAccessToken).mockResolvedValue(mockCreatedResponse);
+      vi.mocked(api.createPersonalAccessToken).mockResolvedValue(
+        mockCreatedResponse,
+      );
 
       const { result } = renderHook(() => usePersonalAccessTokens());
       await waitFor(() => expect(result.current.tokens).toEqual([]));
@@ -273,7 +288,9 @@ describe('usePersonalAccessTokens', () => {
 
     it('should set error and rethrow when create fails', async () => {
       vi.mocked(api.getPersonalAccessTokens).mockResolvedValue([]);
-      vi.mocked(api.createPersonalAccessToken).mockRejectedValue(new Error('Create failed'));
+      vi.mocked(api.createPersonalAccessToken).mockRejectedValue(
+        new Error('Create failed'),
+      );
 
       const { result } = renderHook(() => usePersonalAccessTokens());
       await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -301,7 +318,9 @@ describe('usePersonalAccessTokens', () => {
         .mockRejectedValueOnce(new Error('Initial error'))
         .mockResolvedValue([]);
 
-      vi.mocked(api.createPersonalAccessToken).mockResolvedValue(mockCreatedResponse);
+      vi.mocked(api.createPersonalAccessToken).mockResolvedValue(
+        mockCreatedResponse,
+      );
 
       const { result } = renderHook(() => usePersonalAccessTokens());
       await waitFor(() => expect(result.current.error).toBe('Initial error'));
@@ -324,7 +343,10 @@ describe('usePersonalAccessTokens', () => {
 
   describe('revokeToken', () => {
     it('should call revokePersonalAccessToken with the token id', async () => {
-      vi.mocked(api.getPersonalAccessTokens).mockResolvedValue([mockToken1, mockToken2]);
+      vi.mocked(api.getPersonalAccessTokens).mockResolvedValue([
+        mockToken1,
+        mockToken2,
+      ]);
       vi.mocked(api.revokePersonalAccessToken).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => usePersonalAccessTokens());
@@ -357,7 +379,9 @@ describe('usePersonalAccessTokens', () => {
 
     it('should set error and rethrow when revoke fails', async () => {
       vi.mocked(api.getPersonalAccessTokens).mockResolvedValue([mockToken1]);
-      vi.mocked(api.revokePersonalAccessToken).mockRejectedValue(new Error('Revoke failed'));
+      vi.mocked(api.revokePersonalAccessToken).mockRejectedValue(
+        new Error('Revoke failed'),
+      );
 
       const { result } = renderHook(() => usePersonalAccessTokens());
       await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -378,7 +402,9 @@ describe('usePersonalAccessTokens', () => {
 
     it('should use generic error message for non-Error failures on revoke', async () => {
       vi.mocked(api.getPersonalAccessTokens).mockResolvedValue([mockToken1]);
-      vi.mocked(api.revokePersonalAccessToken).mockRejectedValue('unknown failure');
+      vi.mocked(api.revokePersonalAccessToken).mockRejectedValue(
+        'unknown failure',
+      );
 
       const { result } = renderHook(() => usePersonalAccessTokens());
       await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -391,7 +417,9 @@ describe('usePersonalAccessTokens', () => {
         }
       });
 
-      await waitFor(() => expect(result.current.error).toBe('Failed to revoke token'));
+      await waitFor(() =>
+        expect(result.current.error).toBe('Failed to revoke token'),
+      );
     });
 
     it('should clear error before attempting revoke', async () => {
@@ -402,7 +430,9 @@ describe('usePersonalAccessTokens', () => {
       vi.mocked(api.revokePersonalAccessToken).mockResolvedValue(undefined);
 
       const { result } = renderHook(() => usePersonalAccessTokens());
-      await waitFor(() => expect(result.current.error).toBe('Initial fetch error'));
+      await waitFor(() =>
+        expect(result.current.error).toBe('Initial fetch error'),
+      );
 
       await act(async () => {
         await result.current.revokeToken('pat-id-1');

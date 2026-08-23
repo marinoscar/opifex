@@ -1,12 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  useTheme,
-} from '@mui/material';
+import { Box, Card, CardContent, Typography, useTheme } from '@mui/material';
 import { ApiError } from '../services/api';
 import { getDeviceActivationInfo, authorizeDevice } from '../services/api';
 import { DeviceCodeInput } from '../components/device-activation/DeviceCodeInput';
@@ -69,7 +63,9 @@ export default function ActivateDevicePage() {
       });
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.message || 'Failed to authorize device. Please try again.');
+        setError(
+          err.message || 'Failed to authorize device. Please try again.',
+        );
       } else {
         setError('Network error. Please check your connection and try again.');
       }
@@ -118,7 +114,9 @@ export default function ActivateDevicePage() {
           {/* Header */}
           <Box sx={{ textAlign: 'center', mb: 4 }}>
             <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold' }}>
-              {state.step === 'complete' ? 'Authorization Complete' : 'Authorize Device'}
+              {state.step === 'complete'
+                ? 'Authorization Complete'
+                : 'Authorize Device'}
             </Typography>
             {state.step !== 'complete' && (
               <Typography color="text.secondary" sx={{ mt: 1 }}>

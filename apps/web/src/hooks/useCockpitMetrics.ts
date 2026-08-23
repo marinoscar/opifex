@@ -14,7 +14,10 @@
  */
 
 import { useCallback } from 'react';
-import { COCKPIT_ENDPOINTS, COCKPIT_POLL_INTERVAL_MS } from '../config/cockpitApi';
+import {
+  COCKPIT_ENDPOINTS,
+  COCKPIT_POLL_INTERVAL_MS,
+} from '../config/cockpitApi';
 import { getCockpitMetrics } from '../services/api';
 import type { MetricsSummary } from '../types/cockpit';
 import { usePolledResource } from './usePolledResource';
@@ -28,7 +31,10 @@ export interface UseCockpitMetricsResult extends UsePolledResourceResult<Metrics
 export function useCockpitMetrics(): UseCockpitMetricsResult {
   const endpoint = COCKPIT_ENDPOINTS.metrics;
 
-  const fetcher = useCallback((signal: AbortSignal) => getCockpitMetrics(signal), []);
+  const fetcher = useCallback(
+    (signal: AbortSignal) => getCockpitMetrics(signal),
+    [],
+  );
 
   const resource = usePolledResource<MetricsSummary>({
     fetcher,

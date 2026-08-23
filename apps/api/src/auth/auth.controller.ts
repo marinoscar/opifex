@@ -59,7 +59,8 @@ export class AuthController {
   @Get('providers')
   @ApiOperation({
     summary: 'List enabled OAuth providers',
-    description: 'Returns a list of OAuth providers that are configured and enabled',
+    description:
+      'Returns a list of OAuth providers that are configured and enabled',
   })
   @ApiResponse({
     status: 200,
@@ -103,7 +104,8 @@ export class AuthController {
   @UseGuards(GoogleOAuthGuard)
   @ApiOperation({
     summary: 'Google OAuth callback',
-    description: 'Handles the OAuth callback from Google and redirects to frontend with token',
+    description:
+      'Handles the OAuth callback from Google and redirects to frontend with token',
   })
   @ApiResponse({
     status: 302,
@@ -129,7 +131,9 @@ export class AuthController {
       const tokens = await this.authService.handleGoogleLogin(profile);
 
       // Set refresh token in HttpOnly cookie
-      this.logger.log(`Setting refresh token cookie with options: ${JSON.stringify(COOKIE_OPTIONS)}`);
+      this.logger.log(
+        `Setting refresh token cookie with options: ${JSON.stringify(COOKIE_OPTIONS)}`,
+      );
       res.setCookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken!, COOKIE_OPTIONS);
 
       // Redirect to frontend with access token only
@@ -156,12 +160,13 @@ export class AuthController {
 
       const appUrl = this.configService.get<string>('appUrl');
       // Sanitize error message for URL - remove newlines and encode
-      const errorMessage = error instanceof Error
-        ? encodeURIComponent(error.message.replace(/[\r\n]/g, ' ').substring(0, 200))
-        : 'authentication_failed';
-      return res.redirect(
-        `${appUrl}/auth/callback?error=${errorMessage}`,
-      );
+      const errorMessage =
+        error instanceof Error
+          ? encodeURIComponent(
+              error.message.replace(/[\r\n]/g, ' ').substring(0, 200),
+            )
+          : 'authentication_failed';
+      return res.redirect(`${appUrl}/auth/callback?error=${errorMessage}`);
     }
   }
 

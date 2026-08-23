@@ -17,7 +17,9 @@ export const DeviceCodeRequestSchema = z.object({
   clientInfo: ClientInfoSchema.optional(),
 });
 
-export class DeviceCodeRequestDto extends createZodDto(DeviceCodeRequestSchema) {
+export class DeviceCodeRequestDto extends createZodDto(
+  DeviceCodeRequestSchema,
+) {
   @ApiProperty({
     description: 'Optional client information',
     required: false,

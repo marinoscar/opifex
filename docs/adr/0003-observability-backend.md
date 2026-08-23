@@ -15,8 +15,8 @@ exported OTLP traces and metrics into that collector since before this epic.
 
 #59 asks for detection latency — VISION §10's success metric 1 — to be
 "queryable per run and aggregatable for the cockpit", and notes the
-discrepancy directly: *"Either is fine — but pick one deliberately and say so,
-rather than half-configuring both."*
+discrepancy directly: _"Either is fine — but pick one deliberately and say so,
+rather than half-configuring both."_
 
 That warning is the real decision being made here. A half-configured second
 backend is worse than no second backend: it produces a dashboard that renders,
@@ -71,7 +71,7 @@ for one work order are emitted by processes that share no call stack: a runner
 posting events over HTTP, the git watcher on a reconciler tick, the watchdog
 in a third place. There is no live context for OTEL's normal propagation to
 carry. `traceIdForWorkOrder()` hashes the identity to 128 bits, so any
-component that knows *which* work order it is talking about can join the trace
+component that knows _which_ work order it is talking about can join the trace
 with no lookup and no coordination. The cost is that a work order's trace id
 changes if its identity ever changes — which is acceptable because the
 identity is content-addressed and stable by construction (VISION §3.2).

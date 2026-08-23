@@ -18,7 +18,10 @@ describe('SpendLedgerService', () => {
   /** A Prisma `Decimal`, as far as anything here is concerned. */
   const decimal = (value: number) => ({ toNumber: () => value });
 
-  function ledgerOver(rows: unknown[]): { ledger: SpendLedgerService; findMany: jest.Mock } {
+  function ledgerOver(rows: unknown[]): {
+    ledger: SpendLedgerService;
+    findMany: jest.Mock;
+  } {
     const findMany = jest.fn().mockResolvedValue(rows);
     const prisma = { run: { findMany } } as unknown as PrismaService;
     return { ledger: new SpendLedgerService(prisma), findMany };
@@ -91,7 +94,10 @@ describe('SpendLedgerService', () => {
     // possible failure: `NaN >= limit` is false, so a broken conversion would
     // read as unlimited headroom and open the gate.
     const { ledger } = ledgerOver([
-      { costUsd: { toNumber: () => Number.NaN }, workOrder: { budgetCeilingUsd: decimal(7) } },
+      {
+        costUsd: { toNumber: () => Number.NaN },
+        workOrder: { budgetCeilingUsd: decimal(7) },
+      },
     ]);
 
     const tally = await ledger.tally(30, NOW);
@@ -102,7 +108,9 @@ describe('SpendLedgerService', () => {
   });
 
   it('accepts a plain number as well as a Decimal', async () => {
-    const { ledger } = ledgerOver([{ costUsd: 1.25, workOrder: { budgetCeilingUsd: 3 } }]);
+    const { ledger } = ledgerOver([
+      { costUsd: 1.25, workOrder: { budgetCeilingUsd: 3 } },
+    ]);
 
     expect((await ledger.tally(30, NOW)).reportedUsd).toBe(1.25);
   });
@@ -119,7 +127,9 @@ describe('SpendLedgerService', () => {
     expect(tally.window.days).toBe(7);
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { startedAt: { gte: new Date('2026-08-16T12:00:00Z'), lte: NOW } },
+        where: {
+          startedAt: { gte: new Date('2026-08-16T12:00:00Z'), lte: NOW },
+        },
       }),
     );
   });

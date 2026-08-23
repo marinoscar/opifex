@@ -69,7 +69,11 @@ describe('usePermissions', () => {
         displayName: 'Test User',
         profileImageUrl: null,
         roles: [{ name: 'viewer' }, { name: 'contributor' }],
-        permissions: ['user_settings:read', 'user_settings:write', 'users:read'],
+        permissions: [
+          'user_settings:read',
+          'user_settings:write',
+          'users:read',
+        ],
         isActive: true,
         createdAt: '2024-01-01T00:00:00Z',
       };
@@ -221,10 +225,13 @@ describe('usePermissions', () => {
       const { result } = renderHook(() => usePermissions());
 
       expect(
-        result.current.hasAnyPermission('user_settings:read', 'system_settings:write')
+        result.current.hasAnyPermission(
+          'user_settings:read',
+          'system_settings:write',
+        ),
       ).toBe(true);
       expect(
-        result.current.hasAnyPermission('users:read', 'user_settings:write')
+        result.current.hasAnyPermission('users:read', 'user_settings:write'),
       ).toBe(true);
     });
 
@@ -253,7 +260,7 @@ describe('usePermissions', () => {
       const { result } = renderHook(() => usePermissions());
 
       expect(
-        result.current.hasAnyPermission('system_settings:write', 'users:write')
+        result.current.hasAnyPermission('system_settings:write', 'users:write'),
       ).toBe(false);
     });
 
@@ -298,7 +305,10 @@ describe('usePermissions', () => {
       const { result } = renderHook(() => usePermissions());
 
       expect(
-        result.current.hasAnyPermission('user_settings:read', 'user_settings:write')
+        result.current.hasAnyPermission(
+          'user_settings:read',
+          'user_settings:write',
+        ),
       ).toBe(false);
     });
 
@@ -339,7 +349,11 @@ describe('usePermissions', () => {
         displayName: 'Test User',
         profileImageUrl: null,
         roles: [{ name: 'contributor' }],
-        permissions: ['user_settings:read', 'user_settings:write', 'users:read'],
+        permissions: [
+          'user_settings:read',
+          'user_settings:write',
+          'users:read',
+        ],
         isActive: true,
         createdAt: '2024-01-01T00:00:00Z',
       };
@@ -357,10 +371,13 @@ describe('usePermissions', () => {
       const { result } = renderHook(() => usePermissions());
 
       expect(
-        result.current.hasAllPermissions('user_settings:read', 'user_settings:write')
+        result.current.hasAllPermissions(
+          'user_settings:read',
+          'user_settings:write',
+        ),
       ).toBe(true);
       expect(
-        result.current.hasAllPermissions('user_settings:read', 'users:read')
+        result.current.hasAllPermissions('user_settings:read', 'users:read'),
       ).toBe(true);
     });
 
@@ -389,10 +406,13 @@ describe('usePermissions', () => {
       const { result } = renderHook(() => usePermissions());
 
       expect(
-        result.current.hasAllPermissions('user_settings:read', 'system_settings:write')
+        result.current.hasAllPermissions(
+          'user_settings:read',
+          'system_settings:write',
+        ),
       ).toBe(false);
       expect(
-        result.current.hasAllPermissions('users:read', 'users:write')
+        result.current.hasAllPermissions('users:read', 'users:write'),
       ).toBe(false);
     });
 
@@ -438,7 +458,10 @@ describe('usePermissions', () => {
       const { result } = renderHook(() => usePermissions());
 
       expect(
-        result.current.hasAllPermissions('user_settings:read', 'user_settings:write')
+        result.current.hasAllPermissions(
+          'user_settings:read',
+          'user_settings:write',
+        ),
       ).toBe(false);
     });
 
@@ -628,7 +651,9 @@ describe('usePermissions', () => {
 
       expect(result.current.hasAnyRole('viewer', 'admin')).toBe(true);
       expect(result.current.hasAnyRole('contributor', 'admin')).toBe(true);
-      expect(result.current.hasAnyRole('admin', 'viewer', 'contributor')).toBe(true);
+      expect(result.current.hasAnyRole('admin', 'viewer', 'contributor')).toBe(
+        true,
+      );
     });
 
     it('should return false when user has none of the roles', () => {
@@ -1117,7 +1142,11 @@ describe('usePermissions', () => {
         displayName: 'Test User',
         profileImageUrl: null,
         roles: [{ name: 'viewer' }],
-        permissions: ['user_settings:read', 'user_settings:read', 'user_settings:write'],
+        permissions: [
+          'user_settings:read',
+          'user_settings:read',
+          'user_settings:write',
+        ],
         isActive: true,
         createdAt: '2024-01-01T00:00:00Z',
       };
@@ -1146,7 +1175,11 @@ describe('usePermissions', () => {
         email: 'test@example.com',
         displayName: 'Test User',
         profileImageUrl: null,
-        roles: [{ name: 'viewer' }, { name: 'viewer' }, { name: 'contributor' }],
+        roles: [
+          { name: 'viewer' },
+          { name: 'viewer' },
+          { name: 'contributor' },
+        ],
         permissions: ['user_settings:read'],
         isActive: true,
         createdAt: '2024-01-01T00:00:00Z',

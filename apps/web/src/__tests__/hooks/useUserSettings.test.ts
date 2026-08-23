@@ -67,9 +67,7 @@ describe('useUserSettings', () => {
     });
 
     it('should not be saving initially', () => {
-      vi.mocked(api.get).mockImplementation(
-        () => new Promise(() => {}),
-      );
+      vi.mocked(api.get).mockImplementation(() => new Promise(() => {}));
 
       const { result } = renderHook(() => useUserSettings());
 
@@ -493,7 +491,9 @@ describe('useUserSettings', () => {
       }).rejects.toThrow();
 
       // Verify that api.get was called again to refresh settings
-      expect(vi.mocked(api.get).mock.calls.length).toBeGreaterThan(initialGetCalls);
+      expect(vi.mocked(api.get).mock.calls.length).toBeGreaterThan(
+        initialGetCalls,
+      );
     });
 
     it('should throw custom error message on version conflict', async () => {
@@ -612,9 +612,7 @@ describe('useUserSettings', () => {
     });
 
     it('should not update when settings is null', async () => {
-      vi.mocked(api.get).mockRejectedValue(
-        new ApiError('Failed to load', 500),
-      );
+      vi.mocked(api.get).mockRejectedValue(new ApiError('Failed to load', 500));
 
       const { result } = renderHook(() => useUserSettings());
 

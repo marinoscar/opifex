@@ -38,10 +38,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <Typography color="text.secondary">
             {this.state.error?.message || 'An unexpected error occurred'}
           </Typography>
-          <Button
-            variant="contained"
-            onClick={() => window.location.reload()}
-          >
+          <Button variant="contained" onClick={() => window.location.reload()}>
             Reload Page
           </Button>
         </Box>

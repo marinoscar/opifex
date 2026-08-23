@@ -93,24 +93,33 @@ export class GitHubReadService {
   async listIssues(
     repo: RepositoryRef,
     options: ListIssuesOptions = {},
-  ): Promise<{ issues: NormalizedIssue[]; truncated: boolean; allFromCache: boolean }> {
-    const { items, truncated, allFromCache } = await this.http.paginate<RawIssue>(
-      `/repos/${repo.owner}/${repo.name}/issues`,
-      {
-        query: {
-          state: options.state ?? 'open',
-          since: options.since?.toISOString(),
-          labels: options.labels?.length ? options.labels.join(',') : undefined,
-          // Newest activity first, so a truncated sweep drops the STALEST
-          // issues rather than an arbitrary slice.
-          sort: 'updated',
-          direction: 'desc',
+  ): Promise<{
+    issues: NormalizedIssue[];
+    truncated: boolean;
+    allFromCache: boolean;
+  }> {
+    const { items, truncated, allFromCache } =
+      await this.http.paginate<RawIssue>(
+        `/repos/${repo.owner}/${repo.name}/issues`,
+        {
+          query: {
+            state: options.state ?? 'open',
+            since: options.since?.toISOString(),
+            labels: options.labels?.length
+              ? options.labels.join(',')
+              : undefined,
+            // Newest activity first, so a truncated sweep drops the STALEST
+            // issues rather than an arbitrary slice.
+            sort: 'updated',
+            direction: 'desc',
+          },
+          maxPages: options.maxPages,
         },
-        maxPages: options.maxPages,
-      },
-    );
+      );
 
-    const issues = items.map(toNormalizedIssue).filter((issue) => !issue.isPullRequest);
+    const issues = items
+      .map(toNormalizedIssue)
+      .filter((issue) => !issue.isPullRequest);
 
     if (truncated) {
       this.logger.warn(
@@ -121,7 +130,10 @@ export class GitHubReadService {
     return { issues, truncated, allFromCache };
   }
 
-  async getIssue(repo: RepositoryRef, issueNumber: number): Promise<NormalizedIssue> {
+  async getIssue(
+    repo: RepositoryRef,
+    issueNumber: number,
+  ): Promise<NormalizedIssue> {
     const { data } = await this.http.request<RawIssue>(
       `/repos/${repo.owner}/${repo.name}/issues/${issueNumber}`,
     );
@@ -206,7 +218,10 @@ export class GitHubReadService {
    * out to mean "the system I happened to query had nothing to say". #107
    * gates PR surfacing on this answer, so a false green is expensive.
    */
-  async listChecks(repo: RepositoryRef, sha: string): Promise<NormalizedCheck[]> {
+  async listChecks(
+    repo: RepositoryRef,
+    sha: string,
+  ): Promise<NormalizedCheck[]> {
     const [checkRuns, statuses] = await Promise.all([
       this.http.paginate<RawCheckRun>(
         `/repos/${repo.owner}/${repo.name}/commits/${sha}/check-runs`,
@@ -317,7 +332,11 @@ export class GitHubReadService {
 // ---------------------------------------------------------------------------
 
 function toNormalizedLabel(raw: RawLabel): NormalizedLabel {
-  return { name: raw.name, color: raw.color, description: raw.description ?? null };
+  return {
+    name: raw.name,
+    color: raw.color,
+    description: raw.description ?? null,
+  };
 }
 
 export function toNormalizedIssue(raw: RawIssue): NormalizedIssue {
@@ -335,13 +354,17 @@ export function toNormalizedIssue(raw: RawIssue): NormalizedIssue {
     state: raw.state === 'closed' ? 'closed' : 'open',
     author: raw.user?.login ?? null,
     labels: visible.map(toNormalizedLabel),
-    inputLabels: visible.map((l) => l.name).filter((name): name is InputLabel => isInputLabel(name)),
+    inputLabels: visible
+      .map((l) => l.name)
+      .filter((name): name is InputLabel => isInputLabel(name)),
     unknownInputLabels: visible.map((l) => l.name).filter(isUnknownInputLabel),
     // Kept OUT of `labels` and surfaced separately: the diff engine needs to
     // know what is currently written in order to avoid redundant writes and
     // to remove stale labels, while the projection must never see them. See
     // the field's doc comment for why those are different things.
-    observedMirrorLabels: all.filter((label) => isMirrorLabel(label.name)).map((l) => l.name),
+    observedMirrorLabels: all
+      .filter((label) => isMirrorLabel(label.name))
+      .map((l) => l.name),
     // GitHub's issues endpoint returns pull requests as issues, distinguished
     // only by the presence of this key.
     isPullRequest: raw.pull_request !== undefined,
@@ -351,7 +374,9 @@ export function toNormalizedIssue(raw: RawIssue): NormalizedIssue {
   };
 }
 
-export function toNormalizedPullRequest(raw: RawPullRequest): NormalizedPullRequest {
+export function toNormalizedPullRequest(
+  raw: RawPullRequest,
+): NormalizedPullRequest {
   return {
     number: raw.number,
     title: raw.title,
@@ -429,7 +454,8 @@ function toNormalizedLabelEvent(raw: RawLabelEvent): NormalizedLabelEvent {
     // GitHub Apps, and the `[bot]` suffix catches an App acting through a
     // token where GitHub reports the type as `User`. A human check that either
     // one can fool is not a check.
-    actorIsBot: raw.actor?.type === 'Bot' || (login?.endsWith('[bot]') ?? false),
+    actorIsBot:
+      raw.actor?.type === 'Bot' || (login?.endsWith('[bot]') ?? false),
     occurredAt: new Date(raw.created_at),
   };
 }

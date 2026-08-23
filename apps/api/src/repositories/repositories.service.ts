@@ -42,8 +42,12 @@ export class RepositoriesService {
 
   async list(query: ListRepositoriesQueryDto) {
     const where: Prisma.RepositoryWhereInput = {
-      ...(query.observeEnabled !== undefined && { observeEnabled: query.observeEnabled }),
-      ...(query.dispatchEnabled !== undefined && { dispatchEnabled: query.dispatchEnabled }),
+      ...(query.observeEnabled !== undefined && {
+        observeEnabled: query.observeEnabled,
+      }),
+      ...(query.dispatchEnabled !== undefined && {
+        dispatchEnabled: query.dispatchEnabled,
+      }),
       ...(query.projectId !== undefined && { projectId: query.projectId }),
     };
 
@@ -66,7 +70,9 @@ export class RepositoriesService {
   }
 
   async findById(id: string) {
-    const repository = await this.prisma.repository.findUnique({ where: { id } });
+    const repository = await this.prisma.repository.findUnique({
+      where: { id },
+    });
     if (!repository) {
       throw new NotFoundException(`Repository ${id} not found`);
     }
@@ -94,7 +100,9 @@ export class RepositoriesService {
     }
 
     if (dto.projectId) {
-      const project = await this.prisma.project.findUnique({ where: { id: dto.projectId } });
+      const project = await this.prisma.project.findUnique({
+        where: { id: dto.projectId },
+      });
       if (!project) {
         throw new NotFoundException(`Project ${dto.projectId} not found`);
       }
@@ -138,7 +146,9 @@ export class RepositoriesService {
     }
 
     if (dto.projectId) {
-      const project = await this.prisma.project.findUnique({ where: { id: dto.projectId } });
+      const project = await this.prisma.project.findUnique({
+        where: { id: dto.projectId },
+      });
       if (!project) {
         throw new NotFoundException(`Project ${dto.projectId} not found`);
       }
@@ -157,19 +167,27 @@ export class RepositoriesService {
       // leaves it alone instead of writing `undefined` over it.
       data: {
         ...(dto.projectId !== undefined && { projectId: dto.projectId }),
-        ...(dto.observeEnabled !== undefined && { observeEnabled: dto.observeEnabled }),
-        ...(dto.dispatchEnabled !== undefined && { dispatchEnabled: dto.dispatchEnabled }),
+        ...(dto.observeEnabled !== undefined && {
+          observeEnabled: dto.observeEnabled,
+        }),
+        ...(dto.dispatchEnabled !== undefined && {
+          dispatchEnabled: dto.dispatchEnabled,
+        }),
         ...(dto.mirrorLabelsEnabled !== undefined && {
           mirrorLabelsEnabled: dto.mirrorLabelsEnabled,
         }),
         ...(dto.specFeedbackEnabled !== undefined && {
           specFeedbackEnabled: dto.specFeedbackEnabled,
         }),
-        ...(dto.budgetCeilingUsd !== undefined && { budgetCeilingUsd: dto.budgetCeilingUsd }),
+        ...(dto.budgetCeilingUsd !== undefined && {
+          budgetCeilingUsd: dto.budgetCeilingUsd,
+        }),
         ...(dto.wallClockTimeoutMinutes !== undefined && {
           wallClockTimeoutMinutes: dto.wallClockTimeoutMinutes,
         }),
-        ...(dto.pathConstraints !== undefined && { pathConstraints: dto.pathConstraints }),
+        ...(dto.pathConstraints !== undefined && {
+          pathConstraints: dto.pathConstraints,
+        }),
       },
     });
 
@@ -231,7 +249,9 @@ export class RepositoriesService {
       if (repository.archived) {
         // An archived repository accepts no writes at all, so registering one
         // produces a work order that can never open a pull request.
-        throw new BadRequestException(`${owner}/${name} is archived and cannot be worked on`);
+        throw new BadRequestException(
+          `${owner}/${name} is archived and cannot be worked on`,
+        );
       }
       return repository;
     } catch (error) {

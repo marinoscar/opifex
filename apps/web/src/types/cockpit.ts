@@ -43,12 +43,7 @@
  *  - `quarantined` — needs a human; by §8 it cannot clear its own quarantine
  */
 export type RunStatus =
-  | 'running'
-  | 'succeeded'
-  | 'stalled'
-  | 'blocked'
-  | 'failed'
-  | 'quarantined';
+  'running' | 'succeeded' | 'stalled' | 'blocked' | 'failed' | 'quarantined';
 
 /**
  * Every `RunStatus`, in the order the cockpit lists them: healthy first, then

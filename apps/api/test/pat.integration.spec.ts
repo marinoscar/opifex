@@ -221,7 +221,11 @@ describe('Personal Access Tokens (Integration)', () => {
       await request(context.app.getHttpServer())
         .post('/api/pat')
         .set(authHeader(user.accessToken))
-        .send({ name: 'Short Lived', durationValue: 15, durationUnit: 'minutes' })
+        .send({
+          name: 'Short Lived',
+          durationValue: 15,
+          durationUnit: 'minutes',
+        })
         .expect(201);
     });
 
@@ -250,7 +254,11 @@ describe('Personal Access Tokens (Integration)', () => {
       await request(context.app.getHttpServer())
         .post('/api/pat')
         .set(authHeader(user.accessToken))
-        .send({ name: 'Annual Token', durationValue: 12, durationUnit: 'months' })
+        .send({
+          name: 'Annual Token',
+          durationValue: 12,
+          durationUnit: 'months',
+        })
         .expect(201);
     });
   });
@@ -261,9 +269,7 @@ describe('Personal Access Tokens (Integration)', () => {
 
   describe('GET /api/pat', () => {
     it('should return 401 when not authenticated', async () => {
-      await request(context.app.getHttpServer())
-        .get('/api/pat')
-        .expect(401);
+      await request(context.app.getHttpServer()).get('/api/pat').expect(401);
     });
 
     it('should return list of tokens for current user', async () => {
@@ -298,7 +304,9 @@ describe('Personal Access Tokens (Integration)', () => {
         },
       ];
 
-      context.prismaMock.personalAccessToken.findMany.mockResolvedValue(mockTokens);
+      context.prismaMock.personalAccessToken.findMany.mockResolvedValue(
+        mockTokens,
+      );
 
       const response = await request(context.app.getHttpServer())
         .get('/api/pat')
@@ -394,7 +402,9 @@ describe('Personal Access Tokens (Integration)', () => {
         updatedAt: now,
       };
 
-      context.prismaMock.personalAccessToken.findFirst.mockResolvedValue(mockPat);
+      context.prismaMock.personalAccessToken.findFirst.mockResolvedValue(
+        mockPat,
+      );
       context.prismaMock.personalAccessToken.update.mockResolvedValue({
         ...mockPat,
         revokedAt: now,
@@ -405,7 +415,9 @@ describe('Personal Access Tokens (Integration)', () => {
         .set(authHeader(user.accessToken))
         .expect(204);
 
-      expect(context.prismaMock.personalAccessToken.update).toHaveBeenCalledWith({
+      expect(
+        context.prismaMock.personalAccessToken.update,
+      ).toHaveBeenCalledWith({
         where: { id: patId },
         data: { revokedAt: expect.any(Date) },
       });
@@ -445,7 +457,9 @@ describe('Personal Access Tokens (Integration)', () => {
         updatedAt: now,
       };
 
-      context.prismaMock.personalAccessToken.findFirst.mockResolvedValue(mockPat);
+      context.prismaMock.personalAccessToken.findFirst.mockResolvedValue(
+        mockPat,
+      );
 
       await request(context.app.getHttpServer())
         .delete(`/api/pat/${patId}`)
@@ -462,7 +476,7 @@ describe('Personal Access Tokens (Integration)', () => {
         .expect(400);
     });
 
-    it('should not allow a user to revoke another user\'s token (returns 404)', async () => {
+    it("should not allow a user to revoke another user's token (returns 404)", async () => {
       const user = await createMockAdminUser(context);
 
       // findFirst returns null because it filters by userId

@@ -1,16 +1,16 @@
 # Runbook: turning Opifex on, and the observation week
 
 VISION §12 requires the reconciler to run **read-only for a week**, recording what
-it *would* have done, before it is allowed to do anything. This is how you start
+it _would_ have done, before it is allowed to do anything. This is how you start
 that week, and what to read while it runs.
 
 It also closes the exit criteria on epics **#16** and **#17** that no amount of
-code can close: *"detection latency is measured, graphed, and in seconds"* and
-*"a notification reaches a phone."* Those are observations, not features.
+code can close: _"detection latency is measured, graphed, and in seconds"_ and
+_"a notification reaches a phone."_ Those are observations, not features.
 
 > **Nothing here writes to GitHub.** `GITHUB_WRITES_ENABLED` defaults to `false`
 > and every write adapter returns `performed: false` without issuing a request.
-> The one thing that *does* leave the building is a push notification to your own
+> The one thing that _does_ leave the building is a push notification to your own
 > phone.
 
 ---
@@ -19,12 +19,12 @@ code can close: *"detection latency is measured, graphed, and in seconds"* and
 
 You need:
 
-| | Why |
-|---|---|
-| A GitHub token with `repo` read scope | The reconciler reads issues, labels, commits, PRs and check runs |
-| A PostgreSQL 16 database | Migrations are applied on deploy |
-| A phone that can open the cockpit over **HTTPS** | Web Push refuses to subscribe on a plain-HTTP origin |
-| Google OAuth credentials | See the papercut below — you need them even if nobody logs in |
+|                                                  | Why                                                              |
+| ------------------------------------------------ | ---------------------------------------------------------------- |
+| A GitHub token with `repo` read scope            | The reconciler reads issues, labels, commits, PRs and check runs |
+| A PostgreSQL 16 database                         | Migrations are applied on deploy                                 |
+| A phone that can open the cockpit over **HTTPS** | Web Push refuses to subscribe on a plain-HTTP origin             |
+| Google OAuth credentials                         | See the papercut below — you need them even if nobody logs in    |
 
 ### Papercut: Google credentials are required to boot (#138)
 
@@ -136,7 +136,7 @@ make the first write and the first run happen on one flip.
 
 1. Open the cockpit **over HTTPS** on the phone. On iOS, add it to the home
    screen first — Safari only allows push from an installed web app.
-2. Settings → **Phone notifications** → *Notify this device*.
+2. Settings → **Phone notifications** → _Notify this device_.
 3. The card tells you what is wrong if it cannot: insecure origin, no Push API,
    no server keys, or a denied permission. Those are four unrelated fixes, which
    is why it names which one applies.
@@ -170,7 +170,7 @@ something is enabled that should not be — stop and find out what.
 This log is the deliverable of the week. Every action carries a `reason` naming
 the observed inputs and an `evidence` block with the raw values, so a decision
 can be checked without reading code. You are looking for actions that are
-*plausible but wrong* — the reason sounds right and the evidence does not support
+_plausible but wrong_ — the reason sounds right and the evidence does not support
 it. That is the failure mode the week exists to catch.
 
 ### Every day: was anything missed?
@@ -189,14 +189,14 @@ curl 'http://localhost:3535/api/escalations/latency?since=2026-08-22T00:00:00Z' 
 
 Read it in this order:
 
-| Field | What it tells you |
-|---|---|
-| `notified` | **The metric.** Stop → a human informed. VISION §10's target is *seconds*. |
-| `detected` | Stop → Opifex noticing. The flattering number. |
-| `awaitingNotification` | Raised, never delivered. Unbounded latency — **read this before believing `notified`.** |
-| `unmeasurable` | No stop time at all, e.g. a `system` escalation. |
-| `bySource.runner` vs `bySource.git` | Git-derived detection is structurally slower. A blended figure describes neither. |
-| `truncated` | The window held more than one summary reads. |
+| Field                               | What it tells you                                                                       |
+| ----------------------------------- | --------------------------------------------------------------------------------------- |
+| `notified`                          | **The metric.** Stop → a human informed. VISION §10's target is _seconds_.              |
+| `detected`                          | Stop → Opifex noticing. The flattering number.                                          |
+| `awaitingNotification`              | Raised, never delivered. Unbounded latency — **read this before believing `notified`.** |
+| `unmeasurable`                      | No stop time at all, e.g. a `system` escalation.                                        |
+| `bySource.runner` vs `bySource.git` | Git-derived detection is structurally slower. A blended figure describes neither.       |
+| `truncated`                         | The window held more than one summary reads.                                            |
 
 A beautiful `notified` next to a large `awaitingNotification` means the transport
 is broken and the percentile is describing a handful of lucky escalations.
@@ -229,15 +229,15 @@ Do it in stages, and let each one sit before the next:
 
 ## Troubleshooting
 
-| Symptom | Cause |
-|---|---|
-| `Reconciler is DISABLED` | `RECONCILER_ENABLED` is not the literal `true` |
-| `OAuth2Strategy requires a clientID option` | #138 — set the Google variables |
-| Ticks recorded, `repositoriesObserved: 0` | No repository has `observeEnabled` |
-| `skipped-locked` in the tick log | Another instance holds the advisory lease. Expected if two are running; the design, not a race |
-| Escalations raised, none delivered | Check `failureReason` — it names which of three problems: no VAPID keys, no devices, or every device rejecting |
-| Notification shows but the escalation stays `dispatched` | The device's receipt did not reach the server. It flips to `failed` after `NOTIFY_RECEIPT_TIMEOUT_MS` |
-| Rate limit exhausted | `GITHUB_RATE_LIMIT_RESERVE` holds requests back for interactive use; raise it if you also hit the API from a shell |
+| Symptom                                                  | Cause                                                                                                              |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `Reconciler is DISABLED`                                 | `RECONCILER_ENABLED` is not the literal `true`                                                                     |
+| `OAuth2Strategy requires a clientID option`              | #138 — set the Google variables                                                                                    |
+| Ticks recorded, `repositoriesObserved: 0`                | No repository has `observeEnabled`                                                                                 |
+| `skipped-locked` in the tick log                         | Another instance holds the advisory lease. Expected if two are running; the design, not a race                     |
+| Escalations raised, none delivered                       | Check `failureReason` — it names which of three problems: no VAPID keys, no devices, or every device rejecting     |
+| Notification shows but the escalation stays `dispatched` | The device's receipt did not reach the server. It flips to `failed` after `NOTIFY_RECEIPT_TIMEOUT_MS`              |
+| Rate limit exhausted                                     | `GITHUB_RATE_LIMIT_RESERVE` holds requests back for interactive use; raise it if you also hit the API from a shell |
 
 ## What this week cannot tell you
 

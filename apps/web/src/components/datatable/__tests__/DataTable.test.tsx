@@ -22,7 +22,11 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { screen, within, fireEvent } from '@testing-library/react';
 import { render } from '../../../__tests__/utils/test-utils';
 import { DataTable, shouldRenderViewBar } from '../DataTable';
-import { toGridColDef, extractColumnValue, buildColumnVisibilityModel } from '../desktop/columnAdapter';
+import {
+  toGridColDef,
+  extractColumnValue,
+  buildColumnVisibilityModel,
+} from '../desktop/columnAdapter';
 import type { DataTableColumn } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -49,19 +53,20 @@ function installLayoutStubs() {
     });
   }
 
-  HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
-    return {
-      width: VIEWPORT_WIDTH,
-      height: VIEWPORT_HEIGHT,
-      top: 0,
-      left: 0,
-      right: VIEWPORT_WIDTH,
-      bottom: VIEWPORT_HEIGHT,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    } as DOMRect;
-  };
+  HTMLElement.prototype.getBoundingClientRect =
+    function getBoundingClientRect() {
+      return {
+        width: VIEWPORT_WIDTH,
+        height: VIEWPORT_HEIGHT,
+        top: 0,
+        left: 0,
+        right: VIEWPORT_WIDTH,
+        bottom: VIEWPORT_HEIGHT,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      } as DOMRect;
+    };
 
   class FiringResizeObserver {
     private readonly callback: ResizeObserverCallback;
@@ -82,7 +87,8 @@ function installLayoutStubs() {
     unobserve() {}
     disconnect() {}
   }
-  global.ResizeObserver = FiringResizeObserver as unknown as typeof ResizeObserver;
+  global.ResizeObserver =
+    FiringResizeObserver as unknown as typeof ResizeObserver;
 }
 
 beforeAll(() => {
@@ -102,28 +108,69 @@ interface Job {
 }
 
 const JOBS: Job[] = [
-  { id: 'job-1', type: 'face_detection', status: 'succeeded', attempts: 1, lastError: null },
-  { id: 'job-2', type: 'auto_tagging', status: 'failed', attempts: 3, lastError: 'rate limited by provider after three consecutive attempts' },
-  { id: 'job-3', type: 'geocode', status: 'pending', attempts: 0, lastError: null },
+  {
+    id: 'job-1',
+    type: 'face_detection',
+    status: 'succeeded',
+    attempts: 1,
+    lastError: null,
+  },
+  {
+    id: 'job-2',
+    type: 'auto_tagging',
+    status: 'failed',
+    attempts: 3,
+    lastError: 'rate limited by provider after three consecutive attempts',
+  },
+  {
+    id: 'job-3',
+    type: 'geocode',
+    status: 'pending',
+    attempts: 0,
+    lastError: null,
+  },
 ];
 
 const COLUMNS: DataTableColumn<Job>[] = [
-  { id: 'type', label: 'Type', priority: 'primary', sortable: true, value: (r) => r.type },
+  {
+    id: 'type',
+    label: 'Type',
+    priority: 'primary',
+    sortable: true,
+    value: (r) => r.type,
+  },
   {
     id: 'status',
     label: 'Status',
     priority: 'primary',
     value: (r) => r.status,
-    render: (r) => <span data-testid={`status-chip-${r.id}`}>{r.status.toUpperCase()}</span>,
+    render: (r) => (
+      <span data-testid={`status-chip-${r.id}`}>{r.status.toUpperCase()}</span>
+    ),
   },
-  { id: 'attempts', label: 'Attempts', priority: 'secondary', align: 'right', sortable: true, value: (r) => r.attempts },
-  { id: 'lastError', label: 'Last error', priority: 'detail', truncate: true, value: (r) => r.lastError },
+  {
+    id: 'attempts',
+    label: 'Attempts',
+    priority: 'secondary',
+    align: 'right',
+    sortable: true,
+    value: (r) => r.attempts,
+  },
+  {
+    id: 'lastError',
+    label: 'Last error',
+    priority: 'detail',
+    truncate: true,
+    value: (r) => r.lastError,
+  },
 ];
 
 const rowId = (job: Job) => job.id;
 
 /** Minimum props for the table under test, overridable per case. */
-function renderTable(overrides: Partial<React.ComponentProps<typeof DataTable<Job>>> = {}) {
+function renderTable(
+  overrides: Partial<React.ComponentProps<typeof DataTable<Job>>> = {},
+) {
   return render(
     <DataTable<Job>
       columns={COLUMNS}
@@ -143,11 +190,20 @@ describe('DataTable — desktop rendering', () => {
   it('resolves to the desktop renderer and renders headers and rows', () => {
     renderTable();
 
-    expect(screen.getByTestId('datatable')).toHaveAttribute('data-renderer', 'desktop');
+    expect(screen.getByTestId('datatable')).toHaveAttribute(
+      'data-renderer',
+      'desktop',
+    );
 
-    expect(screen.getByRole('columnheader', { name: /type/i })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /status/i })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /attempts/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: /type/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: /status/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: /attempts/i }),
+    ).toBeInTheDocument();
 
     expect(screen.getByText('face_detection')).toBeInTheDocument();
     expect(screen.getByText('auto_tagging')).toBeInTheDocument();
@@ -156,7 +212,9 @@ describe('DataTable — desktop rendering', () => {
 
   it('uses the column render function for rich cells', () => {
     renderTable();
-    expect(screen.getByTestId('status-chip-job-1')).toHaveTextContent('SUCCEEDED');
+    expect(screen.getByTestId('status-chip-job-1')).toHaveTextContent(
+      'SUCCEEDED',
+    );
     expect(screen.getByTestId('status-chip-job-2')).toHaveTextContent('FAILED');
   });
 
@@ -166,14 +224,23 @@ describe('DataTable — desktop rendering', () => {
   });
 
   it('shows the caller-supplied empty state when there are no rows', () => {
-    renderTable({ rows: [], emptyState: <span>No jobs match these filters</span> });
+    renderTable({
+      rows: [],
+      emptyState: <span>No jobs match these filters</span>,
+    });
     const overlay = screen.getByTestId('datatable-empty-overlay');
-    expect(within(overlay).getByText('No jobs match these filters')).toBeInTheDocument();
+    expect(
+      within(overlay).getByText('No jobs match these filters'),
+    ).toBeInTheDocument();
   });
 
   it('falls back to a default empty message when no emptyState is given', () => {
     renderTable({ rows: [] });
-    expect(within(screen.getByTestId('datatable-empty-overlay')).getByText('No results')).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('datatable-empty-overlay')).getByText(
+        'No results',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('renders the error state as an alert above the table', () => {
@@ -193,7 +260,9 @@ describe('shouldRenderViewBar', () => {
   const empty = { rowCount: 0, hasActiveQuery: false } as const;
 
   it('draws the bar whenever there are rows', () => {
-    expect(shouldRenderViewBar({ rowCount: 3, hasActiveQuery: false })).toBe(true);
+    expect(shouldRenderViewBar({ rowCount: 3, hasActiveQuery: false })).toBe(
+      true,
+    );
   });
 
   it('hides the bar for a table that resolved to zero rows with nothing applied', () => {
@@ -226,12 +295,18 @@ describe('DataTable — empty table chrome (issue #438)', () => {
     renderTable({ rows: [], emptyState: <span>No node credentials yet</span> });
 
     expect(screen.queryByTestId('datatable-view-bar')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('datatable-columns-button')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('datatable-export-button')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-columns-button'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-export-button'),
+    ).not.toBeInTheDocument();
 
     // The renderers below the bars own the empty state and are untouched.
     expect(
-      within(screen.getByTestId('datatable-empty-overlay')).getByText('No node credentials yet'),
+      within(screen.getByTestId('datatable-empty-overlay')).getByText(
+        'No node credentials yet',
+      ),
     ).toBeInTheDocument();
   });
 
@@ -277,7 +352,9 @@ describe('DataTable — server pagination', () => {
 
   it('hides the footer entirely when no pagination config is supplied', () => {
     renderTable();
-    expect(screen.queryByRole('button', { name: /go to next page/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /go to next page/i }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -291,15 +368,22 @@ describe('DataTable — server sorting', () => {
     renderTable({ sort: { sort: null, onSortChange } });
 
     fireEvent.click(screen.getByRole('columnheader', { name: /^type$/i }));
-    expect(onSortChange).toHaveBeenCalledWith({ field: 'type', direction: 'asc' });
+    expect(onSortChange).toHaveBeenCalledWith({
+      field: 'type',
+      direction: 'asc',
+    });
   });
 
   it('reflects the controlled sort state on the header', () => {
-    renderTable({ sort: { sort: { field: 'attempts', direction: 'desc' }, onSortChange: vi.fn() } });
-    expect(screen.getByRole('columnheader', { name: /attempts/i })).toHaveAttribute(
-      'aria-sort',
-      'descending',
-    );
+    renderTable({
+      sort: {
+        sort: { field: 'attempts', direction: 'desc' },
+        onSortChange: vi.fn(),
+      },
+    });
+    expect(
+      screen.getByRole('columnheader', { name: /attempts/i }),
+    ).toHaveAttribute('aria-sort', 'descending');
   });
 
   it('does not make a non-sortable column interactive', () => {
@@ -319,19 +403,27 @@ describe('DataTable — server sorting', () => {
 describe('DataTable — selection and bulk actions', () => {
   it('emits the selected id set when a row checkbox is toggled', () => {
     const onSelectionChange = vi.fn();
-    renderTable({ selection: { selectedIds: new Set<string>(), onSelectionChange } });
+    renderTable({
+      selection: { selectedIds: new Set<string>(), onSelectionChange },
+    });
 
     // Row checkboxes are named after their row (issue #257) — job-1's `type`
     // is `face_detection` — never a bare "Select row".
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select face_detection' }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Select face_detection' }),
+    );
 
     expect(onSelectionChange).toHaveBeenCalledTimes(1);
-    expect(Array.from(onSelectionChange.mock.calls[0][0] as Set<string>)).toEqual(['job-1']);
+    expect(
+      Array.from(onSelectionChange.mock.calls[0][0] as Set<string>),
+    ).toEqual(['job-1']);
   });
 
   it('maps the select-all header checkbox to every loaded row id', () => {
     const onSelectionChange = vi.fn();
-    renderTable({ selection: { selectedIds: new Set<string>(), onSelectionChange } });
+    renderTable({
+      selection: { selectedIds: new Set<string>(), onSelectionChange },
+    });
 
     fireEvent.click(screen.getByRole('checkbox', { name: /select all rows/i }));
 
@@ -345,7 +437,10 @@ describe('DataTable — selection and bulk actions', () => {
     const onSelectionChange = vi.fn();
     const archive = vi.fn();
     renderTable({
-      selection: { selectedIds: new Set(['job-1', 'job-2']), onSelectionChange },
+      selection: {
+        selectedIds: new Set(['job-1', 'job-2']),
+        onSelectionChange,
+      },
       bulkActions: [{ id: 'archive', label: 'Archive', onClick: archive }],
     });
 
@@ -360,7 +455,9 @@ describe('DataTable — selection and bulk actions', () => {
 
   it('clears the selection from the bulk bar', () => {
     const onSelectionChange = vi.fn();
-    renderTable({ selection: { selectedIds: new Set(['job-1']), onSelectionChange } });
+    renderTable({
+      selection: { selectedIds: new Set(['job-1']), onSelectionChange },
+    });
 
     fireEvent.click(screen.getByRole('button', { name: /clear selection/i }));
     expect((onSelectionChange.mock.calls[0][0] as Set<string>).size).toBe(0);
@@ -368,15 +465,25 @@ describe('DataTable — selection and bulk actions', () => {
 
   it('renders no bulk bar and no checkboxes without a selection config', () => {
     renderTable();
-    expect(screen.queryByTestId('datatable-bulk-action-bar')).not.toBeInTheDocument();
-    expect(screen.queryByRole('checkbox', { name: /select all rows/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-bulk-action-bar'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('checkbox', { name: /select all rows/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('honours selectable: false', () => {
     renderTable({
-      selection: { selectable: false, selectedIds: new Set(['job-1']), onSelectionChange: vi.fn() },
+      selection: {
+        selectable: false,
+        selectedIds: new Set(['job-1']),
+        onSelectionChange: vi.fn(),
+      },
     });
-    expect(screen.queryByTestId('datatable-bulk-action-bar')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-bulk-action-bar'),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -387,7 +494,9 @@ describe('DataTable — selection and bulk actions', () => {
 describe('DataTable — row actions', () => {
   it('renders a single action as a labelled icon button', () => {
     const retry = vi.fn();
-    renderTable({ rowActions: [{ id: 'retry', label: 'Retry', onClick: retry }] });
+    renderTable({
+      rowActions: [{ id: 'retry', label: 'Retry', onClick: retry }],
+    });
 
     // Disambiguated per row (issue #257): "Retry for face_detection", never a
     // bare "Retry" repeated identically on every row.
@@ -399,7 +508,12 @@ describe('DataTable — row actions', () => {
   it('disables an action per row', () => {
     renderTable({
       rowActions: [
-        { id: 'retry', label: 'Retry', onClick: vi.fn(), disabled: (row) => row.status === 'pending' },
+        {
+          id: 'retry',
+          label: 'Retry',
+          onClick: vi.fn(),
+          disabled: (row) => row.status === 'pending',
+        },
       ],
     });
     const buttons = screen.getAllByRole('button', { name: /^retry for /i });
@@ -429,7 +543,10 @@ describe('DataTable — row actions', () => {
           id: 'delete',
           label: 'Delete',
           destructive: true,
-          confirm: { title: 'Delete job?', description: 'This removes the job row permanently.' },
+          confirm: {
+            title: 'Delete job?',
+            description: 'This removes the job row permanently.',
+          },
           onClick: destroy,
         },
       ],
@@ -438,12 +555,16 @@ describe('DataTable — row actions', () => {
     // Single-action buttons are disambiguated per row (issue #257): job-1's
     // `type` is `face_detection`, so the button reads "Delete for
     // face_detection", never a bare "Delete" repeated on every row.
-    fireEvent.click(screen.getAllByRole('button', { name: /^delete for /i })[0]);
+    fireEvent.click(
+      screen.getAllByRole('button', { name: /^delete for /i })[0],
+    );
     expect(destroy).not.toHaveBeenCalled();
 
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByText('Delete job?')).toBeInTheDocument();
-    expect(within(dialog).getByText('This removes the job row permanently.')).toBeInTheDocument();
+    expect(
+      within(dialog).getByText('This removes the job row permanently.'),
+    ).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
     expect(destroy).toHaveBeenCalledWith(JOBS[0]);
@@ -452,11 +573,25 @@ describe('DataTable — row actions', () => {
   it('does not run the action when the confirm dialog is cancelled', () => {
     const destroy = vi.fn();
     renderTable({
-      rowActions: [{ id: 'delete', label: 'Delete', destructive: true, confirm: true, onClick: destroy }],
+      rowActions: [
+        {
+          id: 'delete',
+          label: 'Delete',
+          destructive: true,
+          confirm: true,
+          onClick: destroy,
+        },
+      ],
     });
 
-    fireEvent.click(screen.getAllByRole('button', { name: /^delete for /i })[0]);
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(
+      screen.getAllByRole('button', { name: /^delete for /i })[0],
+    );
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Cancel',
+      }),
+    );
     expect(destroy).not.toHaveBeenCalled();
   });
 });
@@ -487,21 +622,30 @@ describe('columnAdapter', () => {
   it('wires `value` into valueGetter', () => {
     const def = toGridColDef(COLUMNS[0]);
     expect(def.valueGetter).toBeDefined();
-     
+
     const got = (def.valueGetter as any)(undefined, job, def, undefined);
     expect(got).toBe('auto_tagging');
   });
 
   it('falls back to row[id] when no `value` extractor is declared', () => {
-    const column: DataTableColumn<Job> = { id: 'attempts', label: 'Attempts', priority: 'secondary' };
+    const column: DataTableColumn<Job> = {
+      id: 'attempts',
+      label: 'Attempts',
+      priority: 'secondary',
+    };
     expect(extractColumnValue(column, job)).toBe(3);
-    expect(extractColumnValue({ id: 'nope', label: 'Nope', priority: 'detail' }, job)).toBeNull();
+    expect(
+      extractColumnValue(
+        { id: 'nope', label: 'Nope', priority: 'detail' },
+        job,
+      ),
+    ).toBeNull();
   });
 
   it('wires `render` into renderCell', () => {
     const def = toGridColDef(COLUMNS[1]);
     expect(def.renderCell).toBeDefined();
-     
+
     const node = (def.renderCell as any)({ row: job, value: 'failed' });
     render(<>{node}</>);
     expect(screen.getByTestId('status-chip-job-2')).toHaveTextContent('FAILED');
@@ -509,7 +653,7 @@ describe('columnAdapter', () => {
 
   it('wraps a truncate column in an ellipsis cell carrying the full value', () => {
     const def = toGridColDef(COLUMNS[3]); // lastError, truncate: true
-     
+
     const node = (def.renderCell as any)({ row: job, value: job.lastError });
     render(<>{node}</>);
 
@@ -522,10 +666,12 @@ describe('columnAdapter', () => {
 
   it('renders an em dash for a null scalar in a truncate column', () => {
     const def = toGridColDef(COLUMNS[3]);
-     
+
     const node = (def.renderCell as any)({ row: JOBS[0], value: null });
     render(<>{node}</>);
-    expect(screen.getByTestId('datatable-truncated-cell')).toHaveTextContent('—');
+    expect(screen.getByTestId('datatable-truncated-cell')).toHaveTextContent(
+      '—',
+    );
   });
 
   it('flexes by default and honours an explicit width', () => {
@@ -533,19 +679,28 @@ describe('columnAdapter', () => {
     expect(flexed.flex).toBe(1);
     expect(flexed.minWidth).toBeGreaterThan(0);
 
-    const fixed = toGridColDef<Job>({ id: 'type', label: 'Type', priority: 'primary', width: 160 });
+    const fixed = toGridColDef<Job>({
+      id: 'type',
+      label: 'Type',
+      priority: 'primary',
+      width: 160,
+    });
     expect(fixed.width).toBe(160);
     expect(fixed.flex).toBeUndefined();
   });
 
   it('hides only `detail` columns when the viewport is narrow', () => {
-    expect(buildColumnVisibilityModel(COLUMNS, { hideDetailColumns: true })).toEqual({
+    expect(
+      buildColumnVisibilityModel(COLUMNS, { hideDetailColumns: true }),
+    ).toEqual({
       type: true,
       status: true,
       attempts: true,
       lastError: false,
     });
-    expect(buildColumnVisibilityModel(COLUMNS, { hideDetailColumns: false })).toEqual({
+    expect(
+      buildColumnVisibilityModel(COLUMNS, { hideDetailColumns: false }),
+    ).toEqual({
       type: true,
       status: true,
       attempts: true,
@@ -560,13 +715,16 @@ describe('columnAdapter', () => {
 
 describe('DataTable — horizontal containment', () => {
   /** Intentionally far wider than the 800px viewport. */
-  const WIDE_COLUMNS: DataTableColumn<Job>[] = Array.from({ length: 14 }, (_, index) => ({
-    id: `col${index}`,
-    label: `A very long column heading number ${index}`,
-    priority: 'secondary' as const,
-    width: 320,
-    value: () => `a rather long cell value for column ${index}`,
-  }));
+  const WIDE_COLUMNS: DataTableColumn<Job>[] = Array.from(
+    { length: 14 },
+    (_, index) => ({
+      id: `col${index}`,
+      label: `A very long column heading number ${index}`,
+      priority: 'secondary' as const,
+      width: 320,
+      value: () => `a rather long cell value for column ${index}`,
+    }),
+  );
 
   beforeEach(() => {
     document.body.style.margin = '0';
@@ -579,7 +737,12 @@ describe('DataTable — horizontal containment', () => {
         rows={JOBS}
         rowId={rowId}
         ariaLabel="Wide table"
-        pagination={{ page: 0, pageSize: 25, total: 3, onPaginationChange: vi.fn() }}
+        pagination={{
+          page: 0,
+          pageSize: 25,
+          total: 3,
+          onPaginationChange: vi.fn(),
+        }}
       />,
     );
 

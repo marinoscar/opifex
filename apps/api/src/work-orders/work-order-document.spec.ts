@@ -10,10 +10,16 @@ import {
   serializeWorkOrder,
   toWorkOrderDocument,
 } from './work-order-document';
-import { generateWorkOrder, type IssueProjection } from './work-order-generator';
+import {
+  generateWorkOrder,
+  type IssueProjection,
+} from './work-order-generator';
 
 const SCHEMA = JSON.parse(
-  readFileSync(join(__dirname, '../../../../schemas/work-order.schema.json'), 'utf8'),
+  readFileSync(
+    join(__dirname, '../../../../schemas/work-order.schema.json'),
+    'utf8',
+  ),
 ) as Record<string, unknown>;
 
 const PROVENANCE = readFileSync(
@@ -38,8 +44,12 @@ function issue(overrides: Partial<IssueProjection> = {}): IssueProjection {
 }
 
 function generated(overrides: Partial<IssueProjection> = {}) {
-  const result = generateWorkOrder({ issue: issue(overrides), baseCommit: BASE });
-  if (!result.ok) throw new Error(`Expected generation to succeed: ${result.message}`);
+  const result = generateWorkOrder({
+    issue: issue(overrides),
+    baseCommit: BASE,
+  });
+  if (!result.ok)
+    throw new Error(`Expected generation to succeed: ${result.message}`);
   return result.workOrder;
 }
 
@@ -52,7 +62,8 @@ describe('the work-order document', () => {
     validate = ajv.compile(SCHEMA);
   });
 
-  const errors = (candidate: unknown) => (validate(candidate) ? [] : validate.errors);
+  const errors = (candidate: unknown) =>
+    validate(candidate) ? [] : validate.errors;
 
   describe('it validates against the real schema', () => {
     it('a generated work order serializes to a valid document', () => {
@@ -64,12 +75,20 @@ describe('the work-order document', () => {
 
     it('validates with no optional fields set', () => {
       expect(
-        errors(toWorkOrderDocument(generated({ decisionRefs: [], pathConstraints: [] }))),
+        errors(
+          toWorkOrderDocument(
+            generated({ decisionRefs: [], pathConstraints: [] }),
+          ),
+        ),
       ).toEqual([]);
     });
 
     it('validates a retry', () => {
-      const result = generateWorkOrder({ issue: issue(), baseCommit: BASE, attempt: 4 });
+      const result = generateWorkOrder({
+        issue: issue(),
+        baseCommit: BASE,
+        attempt: 4,
+      });
       if (!result.ok) throw new Error('unreachable');
 
       expect(errors(toWorkOrderDocument(result.workOrder))).toEqual([]);
@@ -97,14 +116,18 @@ describe('the work-order document', () => {
     it('names no runner', () => {
       // The schema rejects one via unevaluatedProperties; this asserts the
       // serializer never tries.
-      expect(Object.keys(toWorkOrderDocument(generated()))).not.toContain('runner');
+      expect(Object.keys(toWorkOrderDocument(generated()))).not.toContain(
+        'runner',
+      );
     });
   });
 
   describe('one serialization, two destinations', () => {
     it('is deterministic', () => {
       // Byte-identity between the two records is only structural if this is.
-      expect(serializeWorkOrder(generated())).toBe(serializeWorkOrder(generated()));
+      expect(serializeWorkOrder(generated())).toBe(
+        serializeWorkOrder(generated()),
+      );
     });
 
     it('is readable in a diff and in a fenced block', () => {
@@ -136,7 +159,13 @@ describe('the work-order document', () => {
       // docs/PROVENANCE.md: the five agent trailers are all-or-nothing. A
       // commit carrying Runner: and no Run-Id: is malformed, not partially
       // compliant.
-      for (const trailer of ['Work-Order:', 'Issue:', 'Runner:', 'Run-Id:', 'Attempt:']) {
+      for (const trailer of [
+        'Work-Order:',
+        'Issue:',
+        'Runner:',
+        'Run-Id:',
+        'Attempt:',
+      ]) {
         expect(message()).toContain(trailer);
       }
     });
@@ -158,8 +187,12 @@ describe('the work-order document', () => {
       // Pinned against the spec rather than against a literal, so a change to
       // either has to be a change to both.
       const documented = (trailer: string) => {
-        const section = PROVENANCE.slice(PROVENANCE.indexOf(`### \`${trailer}:\``));
-        const pattern = /matching `\^([^`]+)\$`/.exec(section.slice(0, 700))![1];
+        const section = PROVENANCE.slice(
+          PROVENANCE.indexOf(`### \`${trailer}:\``),
+        );
+        const pattern = /matching `\^([^`]+)\$`/.exec(
+          section.slice(0, 700),
+        )![1];
         return new RegExp(`^${pattern}$`);
       };
 
@@ -167,10 +200,19 @@ describe('the work-order document', () => {
         message()
           .split('\n')
           .filter((line) => /^[A-Z][A-Za-z-]*: /.test(line))
-          .map((line) => [line.slice(0, line.indexOf(':')), line.slice(line.indexOf(': ') + 2)]),
+          .map((line) => [
+            line.slice(0, line.indexOf(':')),
+            line.slice(line.indexOf(': ') + 2),
+          ]),
       );
 
-      for (const trailer of ['Work-Order', 'Issue', 'Runner', 'Run-Id', 'Attempt']) {
+      for (const trailer of [
+        'Work-Order',
+        'Issue',
+        'Runner',
+        'Run-Id',
+        'Attempt',
+      ]) {
         expect(values[trailer]).toMatch(documented(trailer));
       }
     });

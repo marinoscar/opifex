@@ -1,4 +1,8 @@
-import { INPUT_LABELS, MIRROR_LABELS, isMirrorLabel } from '../../github/labels/factory-labels';
+import {
+  INPUT_LABELS,
+  MIRROR_LABELS,
+  isMirrorLabel,
+} from '../../github/labels/factory-labels';
 import type { NormalizedIssue } from '../../github/read/github-read.types';
 import type {
   DesiredIssueState,
@@ -184,7 +188,8 @@ function groupWorkOrdersByIssue(
   const byIssue = new Map<number, ObservedWorkOrder>();
 
   for (const workOrder of workOrders) {
-    if (workOrder.status === 'superseded' || workOrder.status === 'cancelled') continue;
+    if (workOrder.status === 'superseded' || workOrder.status === 'cancelled')
+      continue;
 
     const existing = byIssue.get(workOrder.issueNumber);
     if (!existing || workOrder.attempt > existing.attempt) {

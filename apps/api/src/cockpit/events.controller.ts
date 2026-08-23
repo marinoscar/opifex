@@ -42,7 +42,10 @@ export class EventsController {
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
   @ApiQuery({ name: 'type', required: false, type: String })
   @ApiQuery({ name: 'source', required: false, type: String })
-  @ApiDataResponse(ActivityEventDto, { pagination: 'flat', description: 'Paginated activity' })
+  @ApiDataResponse(ActivityEventDto, {
+    pagination: 'flat',
+    description: 'Paginated activity',
+  })
   async feed(@Query() query: EventsQueryDto) {
     return this.events.feed(query);
   }

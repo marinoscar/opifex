@@ -36,7 +36,10 @@ type Task =
   | { fn: 'parseTrailers'; message: string };
 
 type CheckCommitResult = { problems: string[] };
-type ParseTrailersResult = { trailers: { key: string; value: string }[]; malformed: string[] };
+type ParseTrailersResult = {
+  trailers: { key: string; value: string }[];
+  malformed: string[];
+};
 
 function runTasks(tasks: Task[]): (CheckCommitResult | ParseTrailersResult)[] {
   const output = execFileSync('node', [HARNESS], {
@@ -47,7 +50,10 @@ function runTasks(tasks: Task[]): (CheckCommitResult | ParseTrailersResult)[] {
   return JSON.parse(output);
 }
 
-function checkCommit(message: string, overrides: Partial<Commit> = {}): string[] {
+function checkCommit(
+  message: string,
+  overrides: Partial<Commit> = {},
+): string[] {
   const commit: Commit = {
     sha: 'a'.repeat(40),
     parents: ['b'.repeat(40)],
@@ -55,12 +61,16 @@ function checkCommit(message: string, overrides: Partial<Commit> = {}): string[]
     message,
     ...overrides,
   };
-  const [result] = runTasks([{ fn: 'checkCommit', commit }]) as [CheckCommitResult];
+  const [result] = runTasks([{ fn: 'checkCommit', commit }]) as [
+    CheckCommitResult,
+  ];
   return result.problems;
 }
 
 function parseTrailers(message: string): ParseTrailersResult {
-  const [result] = runTasks([{ fn: 'parseTrailers', message }]) as [ParseTrailersResult];
+  const [result] = runTasks([{ fn: 'parseTrailers', message }]) as [
+    ParseTrailersResult,
+  ];
   return result;
 }
 
@@ -74,7 +84,13 @@ const AGENT_TRAILERS = [
 ];
 
 function agentMessage(trailers: string[] = AGENT_TRAILERS): string {
-  return ['feat(api): add the widget endpoint', '', 'Body text.', '', ...trailers].join('\n');
+  return [
+    'feat(api): add the widget endpoint',
+    '',
+    'Body text.',
+    '',
+    ...trailers,
+  ].join('\n');
 }
 
 describe('check-provenance.mjs', () => {
@@ -94,12 +110,20 @@ describe('check-provenance.mjs', () => {
     });
 
     it('passes with only a well-formed Issue:', () => {
-      const message = ['fix(web): correct the button label', '', 'Issue: #171'].join('\n');
+      const message = [
+        'fix(web): correct the button label',
+        '',
+        'Issue: #171',
+      ].join('\n');
       expect(checkCommit(message)).toEqual([]);
     });
 
     it('fails Issue: 171 (missing the #) on format', () => {
-      const message = ['fix(web): correct the button label', '', 'Issue: 171'].join('\n');
+      const message = [
+        'fix(web): correct the button label',
+        '',
+        'Issue: 171',
+      ].join('\n');
       const problems = checkCommit(message);
       expect(problems).toHaveLength(1);
       expect(problems[0]).toContain('Issue:');
@@ -118,7 +142,9 @@ describe('check-provenance.mjs', () => {
       // required agent trailers, not Runner: itself.
       expect(problems).toHaveLength(4);
       for (const key of ['Work-Order', 'Issue', 'Run-Id', 'Attempt']) {
-        expect(problems.some((p) => p.startsWith(`${key}: missing`))).toBe(true);
+        expect(problems.some((p) => p.startsWith(`${key}: missing`))).toBe(
+          true,
+        );
       }
       expect(problems.some((p) => p.startsWith('Runner:'))).toBe(false);
 
@@ -145,7 +171,9 @@ describe('check-provenance.mjs', () => {
     });
 
     it('fails when Attempt: disagrees with the Work-Order: suffix, and says Work-Order: is authoritative', () => {
-      const trailers = AGENT_TRAILERS.map((t) => (t.startsWith('Attempt:') ? 'Attempt: 3' : t));
+      const trailers = AGENT_TRAILERS.map((t) =>
+        t.startsWith('Attempt:') ? 'Attempt: 3' : t,
+      );
       const problems = checkCommit(agentMessage(trailers));
 
       expect(problems).toHaveLength(1);
@@ -158,7 +186,7 @@ describe('check-provenance.mjs', () => {
 
   describe('general rules', () => {
     it('exempts merge commits, even with no trailers', () => {
-      const problems = checkCommit("Merge pull request #99 from feat/x", {
+      const problems = checkCommit('Merge pull request #99 from feat/x', {
         parents: ['a'.repeat(40), 'c'.repeat(40)],
       });
       expect(problems).toEqual([]);
@@ -180,7 +208,11 @@ describe('check-provenance.mjs', () => {
     });
 
     it('fails Issue:  #1 with two spaces after the colon', () => {
-      const message = ['fix(web): correct the button label', '', 'Issue:  #1'].join('\n');
+      const message = [
+        'fix(web): correct the button label',
+        '',
+        'Issue:  #1',
+      ].join('\n');
       const problems = checkCommit(message);
 
       expect(problems).toHaveLength(1);
@@ -242,7 +274,10 @@ describe('check-provenance.mjs', () => {
       const { trailers, malformed } = parseTrailers(message);
       expect(malformed).toEqual([]);
       expect(trailers).toEqual([
-        { key: 'Note', value: 'this is a real trailer position, just an unknown key.' },
+        {
+          key: 'Note',
+          value: 'this is a real trailer position, just an unknown key.',
+        },
       ]);
     });
   });

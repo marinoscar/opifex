@@ -37,7 +37,9 @@ describe('MetricsService', () => {
       // (VISION §10) is to show the six.
       const summary = await service.summary();
 
-      expect(Object.keys(summary.metrics).sort()).toEqual([...METRIC_IDS].sort());
+      expect(Object.keys(summary.metrics).sort()).toEqual(
+        [...METRIC_IDS].sort(),
+      );
     });
 
     it('reports when it computed, and over what window', async () => {
@@ -71,13 +73,20 @@ describe('MetricsService', () => {
       }
     });
 
-    it.each(['deadTimePerDay', 'firstPassAcceptance', 'costPerMergedPr', 'quotaBurn'] as const)(
+    it.each([
+      'deadTimePerDay',
+      'firstPassAcceptance',
+      'costPerMergedPr',
+      'quotaBurn',
+    ] as const)(
       'leaves %s unmeasured rather than approximating it',
       async (id) => {
         // Each of these could be faked from adjacent data — dead time from
         // currently-stalled runs, quota burn from the GitHub rate limit — and
         // each fake answers a different question than the metric names.
-        escalationFindMany.mockResolvedValue([escalation('2026-08-23T01:00:00Z', 5000)]);
+        escalationFindMany.mockResolvedValue([
+          escalation('2026-08-23T01:00:00Z', 5000),
+        ]);
         workOrderFindMany.mockResolvedValue([
           { updatedAt: new Date('2026-08-23T01:00:00Z'), _count: { runs: 2 } },
         ]);
@@ -91,7 +100,9 @@ describe('MetricsService', () => {
 
   describe('detection latency', () => {
     it('is reported in seconds, the unit the VISION target is written in', async () => {
-      escalationFindMany.mockResolvedValue([escalation('2026-08-23T01:00:00Z', 45 * MS)]);
+      escalationFindMany.mockResolvedValue([
+        escalation('2026-08-23T01:00:00Z', 45 * MS),
+      ]);
 
       const summary = await service.summary();
 
@@ -115,7 +126,9 @@ describe('MetricsService', () => {
       // An escalation with no progressStoppedAt has no stop to measure from.
       await service.summary();
 
-      expect(escalationFindMany.mock.calls[0][0].where.detectLatencyMs).toEqual({ not: null });
+      expect(escalationFindMany.mock.calls[0][0].where.detectLatencyMs).toEqual(
+        { not: null },
+      );
     });
 
     it('queries only inside the window', async () => {
@@ -123,7 +136,8 @@ describe('MetricsService', () => {
 
       const where = escalationFindMany.mock.calls[0][0].where;
       const span =
-        new Date(where.raisedAt.lte).getTime() - new Date(where.raisedAt.gte).getTime();
+        new Date(where.raisedAt.lte).getTime() -
+        new Date(where.raisedAt.gte).getTime();
       expect(span).toBe(3 * 24 * 60 * 60 * 1000);
     });
   });
@@ -194,7 +208,10 @@ describe('MetricsService', () => {
 
       const summary = await service.summary();
 
-      expect(summary.metrics.attemptsPerWorkOrder).toEqual({ value: null, trend: [] });
+      expect(summary.metrics.attemptsPerWorkOrder).toEqual({
+        value: null,
+        trend: [],
+      });
     });
   });
 });

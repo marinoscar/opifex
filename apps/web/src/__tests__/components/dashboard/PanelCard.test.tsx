@@ -9,7 +9,9 @@ import { PanelCard } from '../../../components/dashboard/PanelCard';
  * unwired/empty distinction cannot be got right in one panel and wrong in
  * another. These assertions are the switch's specification.
  */
-function renderPanel(props: Partial<React.ComponentProps<typeof PanelCard>> = {}) {
+function renderPanel(
+  props: Partial<React.ComponentProps<typeof PanelCard>> = {},
+) {
   return render(
     <PanelCard
       title="Needs attention"
@@ -26,14 +28,21 @@ function renderPanel(props: Partial<React.ComponentProps<typeof PanelCard>> = {}
 describe('PanelCard', () => {
   it('always renders its title as a level-2 heading', () => {
     renderPanel();
-    expect(screen.getByRole('heading', { level: 2, name: 'Needs attention' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Needs attention' }),
+    ).toBeInTheDocument();
   });
 
   it('renders the subtitle and the header action when given them', () => {
-    renderPanel({ subtitle: 'What a human has to touch.', action: <button type="button">All runs</button> });
+    renderPanel({
+      subtitle: 'What a human has to touch.',
+      action: <button type="button">All runs</button>,
+    });
 
     expect(screen.getByText('What a human has to touch.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'All runs' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'All runs' }),
+    ).toBeInTheDocument();
   });
 
   describe('state to body mapping', () => {

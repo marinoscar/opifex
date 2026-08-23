@@ -13,7 +13,15 @@ const BASE = 'a3f91c2000000000000000000000000000000000';
 const validateRunEvent = (() => {
   const schema = JSON.parse(
     readFileSync(
-      join(__dirname, '..', '..', '..', '..', 'schemas', 'run-event.schema.json'),
+      join(
+        __dirname,
+        '..',
+        '..',
+        '..',
+        '..',
+        'schemas',
+        'run-event.schema.json',
+      ),
       'utf8',
     ),
   );
@@ -36,11 +44,17 @@ function run(overrides: Partial<WatchedRun> = {}): WatchedRun {
   };
 }
 
-function commit(sha: string, minutesAfterStart: number, message = 'feat: work') {
+function commit(
+  sha: string,
+  minutesAfterStart: number,
+  message = 'feat: work',
+) {
   return {
     sha,
     message,
-    authoredAt: new Date(new Date('2026-08-21T10:00:00Z').getTime() + minutesAfterStart * 60_000),
+    authoredAt: new Date(
+      new Date('2026-08-21T10:00:00Z').getTime() + minutesAfterStart * 60_000,
+    ),
   };
 }
 
@@ -95,7 +109,9 @@ describe('deriveGitLiveness', () => {
 
   describe('detecting progress', () => {
     it('emits run.progress for a commit past base', () => {
-      const result = deriveGitLiveness(observation({ commits: [commit('7c1d9ab', 14)] }));
+      const result = deriveGitLiveness(
+        observation({ commits: [commit('7c1d9ab', 14)] }),
+      );
 
       expect(result.events[0]).toMatchObject({
         type: 'run.progress',
@@ -130,7 +146,13 @@ describe('deriveGitLiveness', () => {
 
     it('emits one event per new commit', () => {
       const result = deriveGitLiveness(
-        observation({ commits: [commit('ccc3333', 30), commit('bbb2222', 20), commit('aaa1111', 10)] }),
+        observation({
+          commits: [
+            commit('ccc3333', 30),
+            commit('bbb2222', 20),
+            commit('aaa1111', 10),
+          ],
+        }),
       );
 
       expect(result.events).toHaveLength(3);
@@ -145,7 +167,11 @@ describe('deriveGitLiveness', () => {
       const result = deriveGitLiveness(
         observation({
           run: run({ lastKnownHeadCommit: 'bbb2222' }),
-          commits: [commit('ccc3333', 30), commit('bbb2222', 20), commit('aaa1111', 10)],
+          commits: [
+            commit('ccc3333', 30),
+            commit('bbb2222', 20),
+            commit('aaa1111', 10),
+          ],
         }),
       );
 
@@ -217,10 +243,15 @@ describe('deriveGitLiveness', () => {
 
     it('does not re-emit a pull request Opifex already knows about', () => {
       const result = deriveGitLiveness(
-        observation({ run: run({ pullRequestUrl: pullRequest.url }), pullRequest }),
+        observation({
+          run: run({ pullRequestUrl: pullRequest.url }),
+          pullRequest,
+        }),
       );
 
-      expect(result.events.filter((e) => e.type === 'run.completed')).toEqual([]);
+      expect(result.events.filter((e) => e.type === 'run.completed')).toEqual(
+        [],
+      );
     });
   });
 
@@ -235,7 +266,9 @@ describe('deriveGitLiveness', () => {
     });
 
     it('reports null when the only commit is the base', () => {
-      const result = deriveGitLiveness(observation({ commits: [commit(BASE, 0)] }));
+      const result = deriveGitLiveness(
+        observation({ commits: [commit(BASE, 0)] }),
+      );
 
       expect(result.lastActivityAt).toBeNull();
     });
@@ -249,7 +282,14 @@ describe('deriveGitLiveness', () => {
       const result = deriveGitLiveness(
         observation({
           commits: [commit('7c1d9ab', 14)],
-          checks: [{ name: 'Test API', status: 'completed', conclusion: 'success', completedAt }],
+          checks: [
+            {
+              name: 'Test API',
+              status: 'completed',
+              conclusion: 'success',
+              completedAt,
+            },
+          ],
         }),
       );
 
@@ -263,7 +303,14 @@ describe('deriveGitLiveness', () => {
       const result = deriveGitLiveness(
         observation({
           commits: [commit('7c1d9ab', 14)],
-          checks: [{ name: 'Test API', status: 'in_progress', conclusion: null, completedAt: null }],
+          checks: [
+            {
+              name: 'Test API',
+              status: 'in_progress',
+              conclusion: null,
+              completedAt: null,
+            },
+          ],
         }),
       );
 
@@ -281,8 +328,12 @@ describe('deriveGitLiveness', () => {
     it('gives a commit a stable event id, so re-observation deduplicates', () => {
       // #53 dedupes on `eventId`. A random id would store the same commit
       // twice on every tick.
-      const first = deriveGitLiveness(observation({ commits: [commit('7c1d9ab', 14)] }));
-      const second = deriveGitLiveness(observation({ commits: [commit('7c1d9ab', 14)] }));
+      const first = deriveGitLiveness(
+        observation({ commits: [commit('7c1d9ab', 14)] }),
+      );
+      const second = deriveGitLiveness(
+        observation({ commits: [commit('7c1d9ab', 14)] }),
+      );
 
       expect(first.events[0].eventId).toBe(second.events[0].eventId);
       expect(first.events[0].eventId).toContain('7c1d9ab');

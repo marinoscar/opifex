@@ -41,7 +41,9 @@ describe('SpecFeedbackExecutor', () => {
 
     executor = new SpecFeedbackExecutor(
       { postGeneralComment } as unknown as GitHubWriteService,
-      { issueSpecRejection: { findUnique, upsert } } as unknown as PrismaService,
+      {
+        issueSpecRejection: { findUnique, upsert },
+      } as unknown as PrismaService,
     );
   });
 
@@ -73,7 +75,9 @@ describe('SpecFeedbackExecutor', () => {
       // An author reading this needs to know whether they must undo something.
       await executor.report([rejection()]);
 
-      expect(postGeneralComment.mock.calls[0][2]).toMatch(/nothing has been dispatched/i);
+      expect(postGeneralComment.mock.calls[0][2]).toMatch(
+        /nothing has been dispatched/i,
+      );
     });
 
     it('tells them no label change is needed', async () => {
@@ -81,7 +85,9 @@ describe('SpecFeedbackExecutor', () => {
       // which does nothing — the reconciler recomputes from scratch anyway.
       await executor.report([rejection()]);
 
-      expect(postGeneralComment.mock.calls[0][2]).toMatch(/no label change is needed/i);
+      expect(postGeneralComment.mock.calls[0][2]).toMatch(
+        /no label change is needed/i,
+      );
     });
 
     it('carries no opifex marker, because it is not a record', async () => {
@@ -100,7 +106,8 @@ describe('SpecFeedbackExecutor', () => {
         repositoryId: 'repo-uuid',
         issueNumber: 312,
         bodyDigest: 'digest-v1',
-        commentUrl: 'https://github.com/marinoscar/opifex/issues/312#issuecomment-1',
+        commentUrl:
+          'https://github.com/marinoscar/opifex/issues/312#issuecomment-1',
       });
     });
   });
@@ -125,7 +132,9 @@ describe('SpecFeedbackExecutor', () => {
       // answer to somebody doing exactly what was asked.
       findUnique.mockResolvedValue({ bodyDigest: 'digest-v1' });
 
-      const outcome = await executor.report([rejection({ bodyDigest: 'digest-v2' })]);
+      const outcome = await executor.report([
+        rejection({ bodyDigest: 'digest-v2' }),
+      ]);
 
       expect(postGeneralComment).toHaveBeenCalledTimes(1);
       expect(outcome.posted).toBe(1);
@@ -136,16 +145,23 @@ describe('SpecFeedbackExecutor', () => {
 
       await executor.report([rejection({ bodyDigest: 'digest-v2' })]);
 
-      expect(upsert.mock.calls[0][0].update).toMatchObject({ bodyDigest: 'digest-v2' });
+      expect(upsert.mock.calls[0][0].update).toMatchObject({
+        bodyDigest: 'digest-v2',
+      });
       expect(upsert.mock.calls[0][0].where).toEqual({
-        repositoryId_issueNumber: { repositoryId: 'repo-uuid', issueNumber: 312 },
+        repositoryId_issueNumber: {
+          repositoryId: 'repo-uuid',
+          issueNumber: 312,
+        },
       });
     });
   });
 
   describe('a repository that has not opted in', () => {
     it('posts nothing', async () => {
-      const outcome = await executor.report([rejection({ feedbackEnabled: false })]);
+      const outcome = await executor.report([
+        rejection({ feedbackEnabled: false }),
+      ]);
 
       expect(postGeneralComment).not.toHaveBeenCalled();
       expect(outcome.suppressed).toBe(1);
@@ -216,6 +232,11 @@ describe('SpecFeedbackExecutor', () => {
     const outcome = await executor.report([]);
 
     expect(postGeneralComment).not.toHaveBeenCalled();
-    expect(outcome).toEqual({ posted: 0, alreadyTold: 0, suppressed: 0, failures: [] });
+    expect(outcome).toEqual({
+      posted: 0,
+      alreadyTold: 0,
+      suppressed: 0,
+      failures: [],
+    });
   });
 });

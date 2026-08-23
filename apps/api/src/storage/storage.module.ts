@@ -7,11 +7,7 @@ import { ObjectsService } from './objects/objects.service';
 import { StorageCleanupTask } from './tasks/storage-cleanup.task';
 
 @Module({
-  imports: [
-    StorageProvidersModule,
-    ObjectProcessingModule,
-    CommonModule,
-  ],
+  imports: [StorageProvidersModule, ObjectProcessingModule, CommonModule],
   controllers: [ObjectsController],
   providers: [ObjectsService, StorageCleanupTask],
   exports: [ObjectsService],

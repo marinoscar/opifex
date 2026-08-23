@@ -81,10 +81,18 @@ export function QueuePanel() {
               '&:last-of-type': { borderBottom: 'none' },
             }}
           >
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{ alignItems: 'baseline', flexWrap: 'wrap' }}
+            >
               {/* Tabular numerals so the position column does not jitter as
                   the queue re-orders under a poll. */}
-              <Typography variant="body2" className="opifex-num" color="text.secondary">
+              <Typography
+                variant="body2"
+                className="opifex-num"
+                color="text.secondary"
+              >
                 {entry.position}.
               </Typography>
               <Typography variant="body2" sx={{ flexGrow: 1 }}>

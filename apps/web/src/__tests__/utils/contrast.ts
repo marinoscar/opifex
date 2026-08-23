@@ -34,17 +34,29 @@
  */
 
 /** Parses `#rgb`, `#rrggbb`, `rgb(r,g,b)` and `rgba(r,g,b,a)` into 0–255 channels + alpha. */
-export function parseColor(input: string): { r: number; g: number; b: number; a: number } {
+export function parseColor(input: string): {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+} {
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(input.trim());
   if (hex) {
     const value = hex[1];
-    const full = value.length === 3 ? value.split('').map((c) => c + c).join('') : value;
+    const full =
+      value.length === 3
+        ? value
+            .split('')
+            .map((c) => c + c)
+            .join('')
+        : value;
     const num = Number.parseInt(full, 16);
     return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255, a: 1 };
   }
-  const fn = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/i.exec(
-    input.trim(),
-  );
+  const fn =
+    /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/i.exec(
+      input.trim(),
+    );
   if (fn) {
     return {
       r: Number.parseFloat(fn[1]),
@@ -66,7 +78,11 @@ export function flattenOver(
 }
 
 /** WCAG relative luminance of an sRGB color (0–255 channels). */
-export function relativeLuminance(color: { r: number; g: number; b: number }): number {
+export function relativeLuminance(color: {
+  r: number;
+  g: number;
+  b: number;
+}): number {
   const channel = (value: number) => {
     const c = value / 255;
     return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
@@ -91,8 +107,13 @@ export function contrastRatio(
   const fg = parseColor(foreground);
   const bg = parseColor(background);
   const flattenedFg =
-    fg.a < 1 && backgroundFallback ? flattenOver(fg, parseColor(backgroundFallback)) : fg;
-  const flattenedBg = bg.a < 1 && backgroundFallback ? flattenOver(bg, parseColor(backgroundFallback)) : bg;
+    fg.a < 1 && backgroundFallback
+      ? flattenOver(fg, parseColor(backgroundFallback))
+      : fg;
+  const flattenedBg =
+    bg.a < 1 && backgroundFallback
+      ? flattenOver(bg, parseColor(backgroundFallback))
+      : bg;
 
   const l1 = relativeLuminance(flattenedFg);
   const l2 = relativeLuminance(flattenedBg);

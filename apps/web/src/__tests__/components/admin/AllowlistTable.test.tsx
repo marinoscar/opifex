@@ -14,7 +14,15 @@
  * asserted as a real dialog with real buttons rather than as a stubbed global.
  */
 
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render, mockAdminUser, type MockUser } from '../../utils/test-utils';
@@ -98,9 +106,14 @@ function setHookState({
   });
 }
 
-function renderTable(permissions: string[] = mockAdminUser.permissions, width = 1400) {
+function renderTable(
+  permissions: string[] = mockAdminUser.permissions,
+  width = 1400,
+) {
   setInitialContainerWidth(width);
-  return render(<AllowlistTable />, { wrapperOptions: { user: userWith(permissions) } });
+  return render(<AllowlistTable />, {
+    wrapperOptions: { user: userWith(permissions) },
+  });
 }
 
 async function pickOption(
@@ -143,11 +156,15 @@ describe('AllowlistTable', () => {
       setHookState({ entries: [pendingEntry, claimedEntry], total: 2 });
       renderTable();
 
-      expect(await screen.findByText('pending@example.com')).toBeInTheDocument();
+      expect(
+        await screen.findByText('pending@example.com'),
+      ).toBeInTheDocument();
       expect(screen.getByText('claimed@example.com')).toBeInTheDocument();
       expect(screen.getByText('Pending')).toBeInTheDocument();
       expect(screen.getByText('Claimed')).toBeInTheDocument();
-      expect(screen.getAllByText('admin@example.com').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('admin@example.com').length).toBeGreaterThan(
+        0,
+      );
       expect(screen.getByText('Test note')).toBeInTheDocument();
     });
 
@@ -174,20 +191,28 @@ describe('AllowlistTable', () => {
       setHookState({ error: 'Failed to load allowlist' });
       renderTable();
 
-      expect(await screen.findByText('Failed to load allowlist')).toBeInTheDocument();
+      expect(
+        await screen.findByText('Failed to load allowlist'),
+      ).toBeInTheDocument();
     });
 
     it('shows the empty state', async () => {
       renderTable();
-      expect(await screen.findByText('No emails in allowlist')).toBeInTheDocument();
+      expect(
+        await screen.findByText('No emails in allowlist'),
+      ).toBeInTheDocument();
     });
 
     it('keeps rows on screen underneath the loading overlay', async () => {
       setHookState({ entries: [pendingEntry], total: 1, isLoading: true });
       renderTable();
 
-      expect(await screen.findByText('pending@example.com')).toBeInTheDocument();
-      expect(screen.getByTestId('datatable-loading-overlay')).toBeInTheDocument();
+      expect(
+        await screen.findByText('pending@example.com'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId('datatable-loading-overlay'),
+      ).toBeInTheDocument();
     });
   });
 
@@ -210,7 +235,10 @@ describe('AllowlistTable', () => {
       const user = userEvent.setup();
       renderTable();
 
-      await user.type(screen.getByRole('searchbox', { name: 'Search by email' }), 'ada');
+      await user.type(
+        screen.getByRole('searchbox', { name: 'Search by email' }),
+        'ada',
+      );
 
       await waitFor(
         () => {
@@ -259,7 +287,9 @@ describe('AllowlistTable', () => {
 
       await screen.findByText('pending@example.com');
       for (const label of ['Added By', 'Notes']) {
-        const header = screen.getByRole('columnheader', { name: new RegExp(`^${label}`) });
+        const header = screen.getByRole('columnheader', {
+          name: new RegExp(`^${label}`),
+        });
         expect(header).toHaveAttribute('aria-sort', 'none');
         expect(within(header).queryByRole('button')).not.toBeInTheDocument();
       }
@@ -282,13 +312,19 @@ describe('AllowlistTable', () => {
       );
 
       const dialog = await screen.findByRole('dialog');
-      expect(within(dialog).getByText('Remove from allowlist?')).toBeInTheDocument();
-      expect(within(dialog).getByText(/pending@example\.com will no longer/i)).toBeInTheDocument();
+      expect(
+        within(dialog).getByText('Remove from allowlist?'),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getByText(/pending@example\.com will no longer/i),
+      ).toBeInTheDocument();
       // Not yet — the dialog is a gate, not a receipt.
       expect(mockRemoveEmail).not.toHaveBeenCalled();
 
       await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
-      await waitFor(() => expect(mockRemoveEmail).toHaveBeenCalledWith('entry-1'));
+      await waitFor(() =>
+        expect(mockRemoveEmail).toHaveBeenCalledWith('entry-1'),
+      );
     });
 
     it('does not remove when the dialog is cancelled', async () => {
@@ -304,7 +340,9 @@ describe('AllowlistTable', () => {
       const dialog = await screen.findByRole('dialog');
       await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
-      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+      );
       expect(mockRemoveEmail).not.toHaveBeenCalled();
     });
 
@@ -315,7 +353,9 @@ describe('AllowlistTable', () => {
       await screen.findByText('claimed@example.com');
       // The control stays discoverable (and keeps its tooltip); the API refuses
       // this too, with a 400.
-      expect(screen.getByRole('button', { name: 'Remove for claimed@example.com' })).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: 'Remove for claimed@example.com' }),
+      ).toBeDisabled();
     });
 
     it('leaves the action enabled on a pending entry', async () => {
@@ -341,10 +381,14 @@ describe('AllowlistTable', () => {
       const addButton = screen.getByRole('button', { name: /add email/i });
       // It belongs to neither a row nor a selection, so it must not live inside
       // the table wrapper.
-      expect(screen.getByTestId('admin-allowlist-table')).not.toContainElement(addButton);
+      expect(screen.getByTestId('admin-allowlist-table')).not.toContainElement(
+        addButton,
+      );
 
       await user.click(addButton);
-      expect(await screen.findByRole('dialog')).toHaveTextContent('Add Email to Allowlist');
+      expect(await screen.findByRole('dialog')).toHaveTextContent(
+        'Add Email to Allowlist',
+      );
     });
 
     it('adds the email through the hook', async () => {
@@ -353,8 +397,13 @@ describe('AllowlistTable', () => {
 
       await user.click(screen.getByRole('button', { name: /add email/i }));
       const dialog = await screen.findByRole('dialog');
-      await user.type(within(dialog).getByLabelText(/email address/i), 'new@example.com');
-      await user.click(within(dialog).getByRole('button', { name: /^add email$/i }));
+      await user.type(
+        within(dialog).getByLabelText(/email address/i),
+        'new@example.com',
+      );
+      await user.click(
+        within(dialog).getByRole('button', { name: /^add email$/i }),
+      );
 
       await waitFor(() =>
         expect(mockAddEmail).toHaveBeenCalledWith('new@example.com', undefined),
@@ -373,9 +422,13 @@ describe('AllowlistTable', () => {
 
       await screen.findByText('pending@example.com');
       expect(
-        screen.queryByRole('button', { name: 'Remove for pending@example.com' }),
+        screen.queryByRole('button', {
+          name: 'Remove for pending@example.com',
+        }),
       ).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /add email/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /add email/i }),
+      ).not.toBeInTheDocument();
       // Not merely disabled — the whole Actions column is gone with the array.
       expect(
         screen.queryByRole('columnheader', { name: /^Actions/ }),

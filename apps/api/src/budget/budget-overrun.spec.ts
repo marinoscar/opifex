@@ -8,7 +8,9 @@ import { decideBudgetOverrun } from './budget-overrun';
  * not "exceeded and finished anyway".
  */
 describe('decideBudgetOverrun', () => {
-  const inputs = (overrides: Partial<Parameters<typeof decideBudgetOverrun>[0]> = {}) => ({
+  const inputs = (
+    overrides: Partial<Parameters<typeof decideBudgetOverrun>[0]> = {},
+  ) => ({
     costUsd: 10,
     ceilingUsd: 5,
     runIsLive: true,
@@ -27,28 +29,38 @@ describe('decideBudgetOverrun', () => {
     it('is not over when the order names no ceiling', () => {
       // Whether an order should be ALLOWED to name none is the admission
       // gate's question, asked before the run started.
-      expect(decideBudgetOverrun(inputs({ ceilingUsd: null })).over).toBe(false);
+      expect(decideBudgetOverrun(inputs({ ceilingUsd: null })).over).toBe(
+        false,
+      );
     });
 
     it('is not over when neither is known', () => {
-      expect(decideBudgetOverrun(inputs({ costUsd: null, ceilingUsd: null })).over).toBe(false);
+      expect(
+        decideBudgetOverrun(inputs({ costUsd: null, ceilingUsd: null })).over,
+      ).toBe(false);
     });
   });
 
   describe('the boundary', () => {
     it('is not over below the ceiling', () => {
-      expect(decideBudgetOverrun(inputs({ costUsd: 4.99, ceilingUsd: 5 })).over).toBe(false);
+      expect(
+        decideBudgetOverrun(inputs({ costUsd: 4.99, ceilingUsd: 5 })).over,
+      ).toBe(false);
     });
 
     it('is not over AT the ceiling', () => {
       // A ceiling of $5 authorizes spending $5; it forbids spending FROM $5.
       // Same rule as the admission gate's projection check, and deliberately
       // the opposite of its tally check.
-      expect(decideBudgetOverrun(inputs({ costUsd: 5, ceilingUsd: 5 })).over).toBe(false);
+      expect(
+        decideBudgetOverrun(inputs({ costUsd: 5, ceilingUsd: 5 })).over,
+      ).toBe(false);
     });
 
     it('is over one cent past it', () => {
-      const verdict = decideBudgetOverrun(inputs({ costUsd: 5.01, ceilingUsd: 5 }));
+      const verdict = decideBudgetOverrun(
+        inputs({ costUsd: 5.01, ceilingUsd: 5 }),
+      );
 
       expect(verdict.over).toBe(true);
       expect(verdict.over === true && verdict.overspendUsd).toBe(0.01);
@@ -57,8 +69,12 @@ describe('decideBudgetOverrun', () => {
     it('handles a zero ceiling, which means spend nothing', () => {
       // "$0" is an instruction, not an absence -- the same distinction
       // `parseHardCeiling` makes. Any reported spend passes it.
-      expect(decideBudgetOverrun(inputs({ costUsd: 0.01, ceilingUsd: 0 })).over).toBe(true);
-      expect(decideBudgetOverrun(inputs({ costUsd: 0, ceilingUsd: 0 })).over).toBe(false);
+      expect(
+        decideBudgetOverrun(inputs({ costUsd: 0.01, ceilingUsd: 0 })).over,
+      ).toBe(true);
+      expect(
+        decideBudgetOverrun(inputs({ costUsd: 0, ceilingUsd: 0 })).over,
+      ).toBe(false);
     });
   });
 
@@ -67,7 +83,9 @@ describe('decideBudgetOverrun', () => {
       // #65's first acceptance criterion: the record names the figure that
       // triggered it. "Over budget" alone would send an operator to the
       // source to find out by how much.
-      const verdict = decideBudgetOverrun(inputs({ costUsd: 40, ceilingUsd: 5 }));
+      const verdict = decideBudgetOverrun(
+        inputs({ costUsd: 40, ceilingUsd: 5 }),
+      );
 
       expect(verdict.over === true && verdict.costUsd).toBe(40);
       expect(verdict.over === true && verdict.ceilingUsd).toBe(5);
@@ -104,11 +122,15 @@ describe('decideBudgetOverrun', () => {
       expect(done.over === true && done.stoppable).toBe(false);
       // The overspend is the same either way — liveness changes what can be
       // done, never what happened.
-      expect(live.over === true && live.reason).toBe(done.over === true && done.reason);
+      expect(live.over === true && live.reason).toBe(
+        done.over === true && done.reason,
+      );
     });
 
     it('rounds the overspend to cents rather than showing a float tail', () => {
-      const verdict = decideBudgetOverrun(inputs({ costUsd: 0.3, ceilingUsd: 0.1 }));
+      const verdict = decideBudgetOverrun(
+        inputs({ costUsd: 0.3, ceilingUsd: 0.1 }),
+      );
 
       expect(verdict.over === true && verdict.overspendUsd).toBe(0.2);
     });

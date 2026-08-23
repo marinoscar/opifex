@@ -1,5 +1,11 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { Auth } from '../auth/decorators/auth.decorator';
 import { PERMISSIONS } from '../common/constants/roles.constants';
@@ -36,7 +42,12 @@ export class WorkOrdersController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
   @ApiQuery({ name: 'status', required: false, type: String })
-  @ApiQuery({ name: 'repository', required: false, type: String, description: 'owner/name' })
+  @ApiQuery({
+    name: 'repository',
+    required: false,
+    type: String,
+    description: 'owner/name',
+  })
   @ApiDataResponse(WorkOrderListItemDto, {
     pagination: 'flat',
     description: 'Paginated work orders',
@@ -60,9 +71,14 @@ export class WorkOrdersController {
       'meant to be checked out.',
   })
   @ApiParam({ name: 'idOrIdentity', type: String })
-  @ApiDataResponse(WorkOrderDetailDto, { description: 'The work order and its document' })
+  @ApiDataResponse(WorkOrderDetailDto, {
+    description: 'The work order and its document',
+  })
   @ApiResponse({ status: 404, description: 'Work order not found' })
-  @ApiResponse({ status: 422, description: 'The stored row disagrees with itself' })
+  @ApiResponse({
+    status: 422,
+    description: 'The stored row disagrees with itself',
+  })
   async findOne(@Param('idOrIdentity') idOrIdentity: string) {
     return this.workOrders.findOne(idOrIdentity);
   }

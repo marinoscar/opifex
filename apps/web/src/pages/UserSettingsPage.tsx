@@ -15,13 +15,7 @@
  *     fire on the render where the theme card actually exists, not on mount.
  */
 
-import {
-  Container,
-  Typography,
-  Box,
-  Alert,
-  Snackbar,
-} from '@mui/material';
+import { Container, Typography, Box, Alert, Snackbar } from '@mui/material';
 import { useState } from 'react';
 import { UserProfileCard } from '../components/user/UserProfileCard';
 import { ThemeSettings } from '../components/settings/ThemeSettings';
@@ -33,14 +27,8 @@ import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useHashScroll } from '../hooks/useHashScroll';
 
 export default function UserSettingsPage() {
-  const {
-    settings,
-    isLoading,
-    error,
-    isSaving,
-    updateTheme,
-    updateProfile,
-  } = useUserSettings();
+  const { settings, isLoading, error, isSaving, updateTheme, updateProfile } =
+    useUserSettings();
 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -56,18 +44,22 @@ export default function UserSettingsPage() {
       await updateTheme(theme);
       setSuccessMessage('Theme updated');
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : 'Failed to update theme');
+      setLocalError(
+        err instanceof Error ? err.message : 'Failed to update theme',
+      );
     }
   };
 
   const handleProfileSave = async (
-    profile: NonNullable<typeof settings>['profile']
+    profile: NonNullable<typeof settings>['profile'],
   ) => {
     try {
       await updateProfile(profile);
       setSuccessMessage('Profile updated');
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : 'Failed to update profile');
+      setLocalError(
+        err instanceof Error ? err.message : 'Failed to update profile',
+      );
     }
   };
 

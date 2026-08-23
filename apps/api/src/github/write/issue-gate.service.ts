@@ -2,14 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { GitHubHttpService } from '../github-http.service';
-import { GitHubReadService, type RepositoryRef } from '../read/github-read.service';
+import {
+  GitHubReadService,
+  type RepositoryRef,
+} from '../read/github-read.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GitHubWriteService, type WriteResult } from './github-write.service';
 import { checkConformance, type ConformanceFailure } from './issue-conformance';
-import {
-  DUPLICATE_THRESHOLD,
-  similarity,
-} from './issue-similarity';
+import { DUPLICATE_THRESHOLD, similarity } from './issue-similarity';
 import { ISSUE_TEMPLATES, type IssueKind } from './issue-templates';
 import { WriteAction } from './reversibility';
 
@@ -70,7 +70,10 @@ export class GitHubIssueGateService {
     private readonly prisma: PrismaService,
   ) {}
 
-  async createIssue(repo: RepositoryRef, candidate: IssueCandidate): Promise<GateOutcome> {
+  async createIssue(
+    repo: RepositoryRef,
+    candidate: IssueCandidate,
+  ): Promise<GateOutcome> {
     const template = ISSUE_TEMPLATES[candidate.kind];
 
     // Conformance first: it costs nothing, while the dedupe check reads every
@@ -90,7 +93,9 @@ export class GitHubIssueGateService {
       return { accepted: false, refusal: duplicate };
     }
 
-    const labels = [...new Set([...template.labels, ...(candidate.labels ?? [])])];
+    const labels = [
+      ...new Set([...template.labels, ...(candidate.labels ?? [])]),
+    ];
 
     // The single POST to an issues endpoint in the entire codebase. Routed
     // through `guardedWrite` so the VISION §12 kill switch applies here too:
@@ -101,13 +106,13 @@ export class GitHubIssueGateService {
       WriteAction.CreateIssue,
       `Open a ${candidate.kind} issue in ${repo.owner}/${repo.name}: ${candidate.title}`,
       async () => {
-        const { data } = await this.http.request<{ number?: number; html_url?: string }>(
-          `/repos/${repo.owner}/${repo.name}/issues`,
-          {
-            method: 'POST',
-            body: { title: candidate.title, body: candidate.body, labels },
-          },
-        );
+        const { data } = await this.http.request<{
+          number?: number;
+          html_url?: string;
+        }>(`/repos/${repo.owner}/${repo.name}/issues`, {
+          method: 'POST',
+          body: { title: candidate.title, body: candidate.body, labels },
+        });
         issueNumber = data?.number ?? null;
         return { url: data?.html_url ?? null, noop: false };
       },
@@ -131,9 +136,13 @@ export class GitHubIssueGateService {
   ): Promise<Extract<GateRefusal, { reason: 'duplicate' }> | null> {
     const { issues } = await this.read.listIssues(repo, { state: 'open' });
 
-    let best: { issueNumber: number; score: number; title: string } | null = null;
+    let best: { issueNumber: number; score: number; title: string } | null =
+      null;
     for (const issue of issues) {
-      const score = similarity(candidate, { title: issue.title, body: issue.body ?? '' });
+      const score = similarity(candidate, {
+        title: issue.title,
+        body: issue.body ?? '',
+      });
       if (!best || score > best.score) {
         best = { issueNumber: issue.number, score, title: issue.title };
       }
@@ -163,14 +172,18 @@ export class GitHubIssueGateService {
     refusal: GateRefusal | null,
     issueNumber?: number | null,
   ): Promise<void> {
-    const action = refusal ? 'issue_creation.refused' : 'issue_creation.accepted';
+    const action = refusal
+      ? 'issue_creation.refused'
+      : 'issue_creation.accepted';
 
     if (refusal) {
       this.logger.warn(
         `Refused a ${candidate.kind} issue for ${repo.owner}/${repo.name} from ${candidate.proposedBy}: ` +
           (refusal.reason === 'duplicate'
             ? `near-duplicate of #${refusal.issueNumber} (${refusal.score.toFixed(2)})`
-            : refusal.failures.map((f) => `${f.reason}:${f.section}`).join(', ')),
+            : refusal.failures
+                .map((f) => `${f.reason}:${f.section}`)
+                .join(', ')),
       );
     }
 

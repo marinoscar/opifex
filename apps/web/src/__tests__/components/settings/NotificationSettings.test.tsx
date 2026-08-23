@@ -18,7 +18,11 @@ import type { UsePushNotificationsResult } from '../../../hooks/usePushNotificat
 
 function hookResult(overrides: Partial<UsePushNotificationsResult> = {}) {
   return {
-    config: { vapidPublicKey: 'pub', pushConfigured: true, fallbackConfigured: true },
+    config: {
+      vapidPublicKey: 'pub',
+      pushConfigured: true,
+      fallbackConfigured: true,
+    },
     subscriptions: [],
     currentEndpoint: null,
     isSubscribed: false,
@@ -70,8 +74,12 @@ describe('NotificationSettings', () => {
 
       render(<NotificationSettings />);
 
-      expect(await screen.findByText(new RegExp(phrase, 'i'))).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /notify this device/i })).toBeNull();
+      expect(
+        await screen.findByText(new RegExp(phrase, 'i')),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /notify this device/i }),
+      ).toBeNull();
     });
   });
 
@@ -81,15 +89,21 @@ describe('NotificationSettings', () => {
 
       render(<NotificationSettings />);
 
-      expect(screen.getByRole('button', { name: /notify this device/i })).toBeEnabled();
+      expect(
+        screen.getByRole('button', { name: /notify this device/i }),
+      ).toBeEnabled();
     });
 
     it('offers to STOP when this device is already subscribed', async () => {
-      spy.mockReturnValue(hookResult({ isSubscribed: true, currentEndpoint: 'e' }));
+      spy.mockReturnValue(
+        hookResult({ isSubscribed: true, currentEndpoint: 'e' }),
+      );
 
       render(<NotificationSettings />);
 
-      expect(screen.getByRole('button', { name: /stop notifying this device/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /stop notifying this device/i }),
+      ).toBeInTheDocument();
     });
 
     it('calls subscribe when pressed', async () => {
@@ -97,7 +111,9 @@ describe('NotificationSettings', () => {
       spy.mockReturnValue(result);
 
       render(<NotificationSettings />);
-      await userEvent.click(screen.getByRole('button', { name: /notify this device/i }));
+      await userEvent.click(
+        screen.getByRole('button', { name: /notify this device/i }),
+      );
 
       await waitFor(() => expect(result.subscribe).toHaveBeenCalled());
     });
@@ -107,7 +123,9 @@ describe('NotificationSettings', () => {
 
       render(<NotificationSettings />);
 
-      expect(screen.getByRole('button', { name: /notify this device/i })).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: /notify this device/i }),
+      ).toBeDisabled();
     });
   });
 
@@ -119,13 +137,18 @@ describe('NotificationSettings', () => {
 
       render(<NotificationSettings />);
 
-      expect(screen.getByText(/no devices are subscribed/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/no devices are subscribed/i),
+      ).toBeInTheDocument();
     });
 
     it('marks which one is THIS device', async () => {
       spy.mockReturnValue(
         hookResult({
-          subscriptions: [device(), device({ id: 'sub-2', endpoint: 'https://push.example/other' })],
+          subscriptions: [
+            device(),
+            device({ id: 'sub-2', endpoint: 'https://push.example/other' }),
+          ],
           currentEndpoint: 'https://push.example/abc',
         }),
       );
@@ -139,11 +162,15 @@ describe('NotificationSettings', () => {
       // A subscription with a non-zero failure count is a phone that is not
       // going to ring. Hiding that is the same class of problem as not
       // sending at all.
-      spy.mockReturnValue(hookResult({ subscriptions: [device({ failureCount: 3 })] }));
+      spy.mockReturnValue(
+        hookResult({ subscriptions: [device({ failureCount: 3 })] }),
+      );
 
       render(<NotificationSettings />);
 
-      expect(screen.getByText(/3 failed delivery attempt/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/3 failed delivery attempt/i),
+      ).toBeInTheDocument();
     });
 
     it('distinguishes never-reached from last-reached', async () => {
@@ -151,7 +178,9 @@ describe('NotificationSettings', () => {
 
       render(<NotificationSettings />);
 
-      expect(screen.getByText(/never successfully notified/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/never successfully notified/i),
+      ).toBeInTheDocument();
     });
 
     it('removes a device when asked', async () => {
@@ -159,7 +188,9 @@ describe('NotificationSettings', () => {
       spy.mockReturnValue(result);
 
       render(<NotificationSettings />);
-      await userEvent.click(screen.getByRole('button', { name: /remove device sub-1/i }));
+      await userEvent.click(
+        screen.getByRole('button', { name: /remove device sub-1/i }),
+      );
 
       await waitFor(() => expect(result.remove).toHaveBeenCalledWith('sub-1'));
     });
@@ -171,12 +202,20 @@ describe('NotificationSettings', () => {
       // SAYING, because the day the phone is the thing that breaks is the day
       // the operator wishes they had known.
       spy.mockReturnValue(
-        hookResult({ config: { vapidPublicKey: 'p', pushConfigured: true, fallbackConfigured: false } }),
+        hookResult({
+          config: {
+            vapidPublicKey: 'p',
+            pushConfigured: true,
+            fallbackConfigured: false,
+          },
+        }),
       );
 
       render(<NotificationSettings />);
 
-      expect(screen.getByText(/no fallback path is configured/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/no fallback path is configured/i),
+      ).toBeInTheDocument();
     });
 
     it('stays quiet when one exists', async () => {

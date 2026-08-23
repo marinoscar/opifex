@@ -43,7 +43,9 @@ describe('parseSections', () => {
   });
 
   it('ignores preamble before the first heading', () => {
-    expect(parseSections('some intro\n\n## One\n\nfirst').get('one')).toBe('first');
+    expect(parseSections('some intro\n\n## One\n\nfirst').get('one')).toBe(
+      'first',
+    );
   });
 });
 
@@ -86,7 +88,10 @@ describe('checkConformance', () => {
     });
 
     it('is case-insensitive about headings', () => {
-      const body = featureBody().replace('## Problem statement', '## PROBLEM STATEMENT');
+      const body = featureBody().replace(
+        '## Problem statement',
+        '## PROBLEM STATEMENT',
+      );
 
       expect(checkConformance('feature', body)).toEqual([]);
     });
@@ -144,7 +149,8 @@ describe('checkConformance', () => {
 
     it('accepts when at least one item is real, even beside a placeholder', () => {
       const body = featureBody({
-        'Acceptance criteria': '- [ ] TBD\n- [ ] Given a request, when X, then Y happens',
+        'Acceptance criteria':
+          '- [ ] TBD\n- [ ] Given a request, when X, then Y happens',
       });
 
       expect(checkConformance('feature', body)).toEqual([]);
@@ -153,9 +159,14 @@ describe('checkConformance', () => {
     it('does not double-report a section that is missing entirely', () => {
       // One mistake, one failure. Reporting "missing" and "untestable" for the
       // same absent heading reads as two separate problems.
-      const failures = checkConformance('feature', featureBody({ 'Acceptance criteria': undefined }));
+      const failures = checkConformance(
+        'feature',
+        featureBody({ 'Acceptance criteria': undefined }),
+      );
 
-      expect(failures.filter((f) => f.section === 'Acceptance criteria')).toEqual([
+      expect(
+        failures.filter((f) => f.section === 'Acceptance criteria'),
+      ).toEqual([
         { reason: 'missing-section', section: 'Acceptance criteria' },
       ]);
     });

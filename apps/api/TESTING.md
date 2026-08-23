@@ -5,12 +5,14 @@ This document describes the testing approach and commands for the API.
 ## Test Types
 
 ### Unit Tests
+
 - Located in `src/**/*.spec.ts` (colocated with source files)
 - Mock all external dependencies (database, external services)
 - Fast execution, no external dependencies required
 - **Default for `npm test`**
 
 ### E2E Tests (Integration Tests)
+
 - Located in `test/**/*.e2e.spec.ts`
 - Test full application with real database
 - Require PostgreSQL database to be running
@@ -19,34 +21,43 @@ This document describes the testing approach and commands for the API.
 ## Test Commands
 
 ### Run Unit Tests Only (Default)
+
 ```bash
 npm test
 ```
+
 This is the default command and runs only unit tests. **No database required.**
 
 ### Run E2E Tests
+
 ```bash
 npm run test:e2e
 ```
+
 **Requires a PostgreSQL database to be running.** See "Running E2E Tests" section below.
 
 ### Run All Tests (Unit + E2E)
+
 ```bash
 npm run test:all
 ```
+
 **Requires a PostgreSQL database to be running.**
 
 ### Watch Mode (Unit Tests)
+
 ```bash
 npm run test:watch
 ```
 
 ### Coverage (Unit Tests)
+
 ```bash
 npm run test:cov
 ```
 
 ### Debug Mode
+
 ```bash
 npm run test:debug
 ```
@@ -56,6 +67,7 @@ npm run test:debug
 E2E tests require a PostgreSQL database. You have several options:
 
 ### Option 1: Use Docker Compose (Recommended)
+
 ```bash
 # Start test database
 cd ../../infra/compose
@@ -71,6 +83,7 @@ docker compose -f base.compose.yml down
 ```
 
 ### Option 2: Use Local PostgreSQL
+
 Ensure you have a test database configured and set the `DATABASE_URL` environment variable:
 
 ```bash
@@ -85,11 +98,13 @@ npm run test:e2e
 ```
 
 ### Option 3: CI/CD Pipeline
+
 In CI environments, E2E tests should be run with a dedicated test database service.
 
 ## Test Structure
 
 ### Unit Test Example
+
 ```typescript
 // src/auth/auth.service.spec.ts
 import { Test } from '@nestjs/testing';
@@ -119,6 +134,7 @@ describe('AuthService', () => {
 ```
 
 ### E2E Test Example
+
 ```typescript
 // test/auth/auth.e2e.spec.ts
 import request from 'supertest';
@@ -153,12 +169,14 @@ describe('Auth (e2e)', () => {
 ## Test Helpers
 
 ### Database Helpers
+
 - `test/helpers/database.helper.ts` - Database cleanup and seeding utilities
 - `resetDatabase(prisma)` - Cleans and re-seeds the database
 - `cleanDatabase(prisma)` - Removes all data from the database
 - `seedBaseData(prisma)` - Seeds roles, permissions, and default settings
 
 ### Auth Helpers
+
 - `test/helpers/auth.helper.ts` - User creation and authentication utilities
 - `createTestUser(context, options)` - Creates a user with JWT token
 - `createAdminUser(context)` - Creates an admin user
@@ -167,11 +185,13 @@ describe('Auth (e2e)', () => {
 - `authHeader(token)` - Returns Authorization header object
 
 ### App Helpers
+
 - `test/helpers/test-app.helper.ts` - Application setup utilities
 - `createTestApp()` - Creates a full NestJS application instance
 - `closeTestApp(context)` - Closes the application and disconnects from database
 
 ### Mocks
+
 - `test/mocks/prisma.mock.ts` - Mock PrismaService for unit tests
 - `test/mocks/google-oauth.mock.ts` - Mock Google OAuth profiles
 
@@ -188,16 +208,20 @@ describe('Auth (e2e)', () => {
 ## Troubleshooting
 
 ### "Can't reach database server" Error
+
 This means you're trying to run E2E tests without a database. Either:
+
 - Run unit tests only: `npm test`
 - Start a database and then run: `npm run test:e2e`
 
 ### Tests Timing Out
+
 - Increase timeout in `test/jest.config.js` (currently 30 seconds)
 - Check if database is slow or unresponsive
 - Consider running tests in parallel: `jest --maxWorkers=4`
 
 ### Mock Not Returning Expected Data
+
 - Check that you're using `mockPrisma.method.mockResolvedValue(data)` in your test
 - Ensure the mock is reset between tests with `beforeEach()`
 - Verify the mock type matches the real Prisma client

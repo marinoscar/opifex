@@ -43,7 +43,8 @@ export const RUN_EVENT_TYPES: readonly RunEventTypeName[] = [
  * runner told me it was blocked" from "I decided it looked blocked" will
  * eventually make an unrecoverable decision on its own guess.
  */
-export type RunEventSourceName = 'runner-reported' | 'git-derived' | 'control-plane-synthesized';
+export type RunEventSourceName =
+  'runner-reported' | 'git-derived' | 'control-plane-synthesized';
 
 export const RUN_EVENT_SOURCES: readonly RunEventSourceName[] = [
   'runner-reported',

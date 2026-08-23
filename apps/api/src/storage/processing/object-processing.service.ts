@@ -3,8 +3,14 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { STORAGE_PROVIDER, StorageProvider } from '../providers';
-import { OBJECT_UPLOADED_EVENT, ObjectUploadedEvent } from './events/object-uploaded.event';
-import { OBJECT_PROCESSOR, ObjectProcessor } from './object-processor.interface';
+import {
+  OBJECT_UPLOADED_EVENT,
+  ObjectUploadedEvent,
+} from './events/object-uploaded.event';
+import {
+  OBJECT_PROCESSOR,
+  ObjectProcessor,
+} from './object-processor.interface';
 
 @Injectable()
 export class ObjectProcessingService {
@@ -25,7 +31,9 @@ export class ObjectProcessingService {
 
     this.logger.log(`Initialized with ${this.processors.length} processors`);
     if (this.processors.length > 0) {
-      this.logger.debug(`Processors: ${this.processors.map(p => p.name).join(', ')}`);
+      this.logger.debug(
+        `Processors: ${this.processors.map((p) => p.name).join(', ')}`,
+      );
     }
   }
 
@@ -43,7 +51,9 @@ export class ObjectProcessingService {
     this.logger.log(`Processing object: ${object.id} (${object.name})`);
 
     // Get applicable processors
-    const applicableProcessors = this.processors.filter(p => p.canProcess(object));
+    const applicableProcessors = this.processors.filter((p) =>
+      p.canProcess(object),
+    );
 
     if (applicableProcessors.length === 0) {
       this.logger.debug(`No processors applicable for object ${object.id}`);
@@ -62,14 +72,15 @@ export class ObjectProcessingService {
       try {
         this.logger.debug(`Running processor: ${processor.name}`);
 
-        const result = await processor.process(
-          object,
-          () => this.storageProvider.download(object.storageKey),
+        const result = await processor.process(object, () =>
+          this.storageProvider.download(object.storageKey),
         );
 
         if (result.success && result.metadata) {
           allMetadata[processor.name] = result.metadata;
-          this.logger.debug(`Processor ${processor.name} completed successfully`);
+          this.logger.debug(
+            `Processor ${processor.name} completed successfully`,
+          );
         } else if (!result.success) {
           this.logger.warn(
             `Processor ${processor.name} failed: ${result.error}`,
@@ -78,7 +89,8 @@ export class ObjectProcessingService {
           hasError = true;
         }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error';
         this.logger.error(
           `Processor ${processor.name} threw exception: ${errorMessage}`,
         );
@@ -105,7 +117,7 @@ export class ObjectProcessingService {
     });
 
     const mergedMetadata = {
-      ...(existing?.metadata as Record<string, unknown> || {}),
+      ...((existing?.metadata as Record<string, unknown>) || {}),
       _processing: processingMetadata,
       _processedAt: new Date().toISOString(),
     };
@@ -131,7 +143,7 @@ export class ObjectProcessingService {
     });
 
     const mergedMetadata = {
-      ...(existing?.metadata as Record<string, unknown> || {}),
+      ...((existing?.metadata as Record<string, unknown>) || {}),
       _processing: processingMetadata,
       _processingFailed: true,
       _processedAt: new Date().toISOString(),

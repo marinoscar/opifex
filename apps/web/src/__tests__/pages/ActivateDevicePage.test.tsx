@@ -12,10 +12,7 @@ const API_BASE = '*/api';
 
 // Helper to create API error responses
 function createErrorResponse(message: string, status: number, code?: string) {
-  return HttpResponse.json(
-    { message, code },
-    { status }
-  );
+  return HttpResponse.json({ message, code }, { status });
 }
 
 describe('ActivateDevicePage', () => {
@@ -43,20 +40,26 @@ describe('ActivateDevicePage', () => {
     it('should render page title', () => {
       render(<ActivateDevicePage />);
 
-      expect(screen.getByRole('heading', { name: /authorize device/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: /authorize device/i }),
+      ).toBeInTheDocument();
     });
 
     it('should render page description', () => {
       render(<ActivateDevicePage />);
 
-      expect(screen.getByText(/link a device to your account/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/link a device to your account/i),
+      ).toBeInTheDocument();
     });
 
     it('should render device code input in initial step', () => {
       render(<ActivateDevicePage />);
 
       expect(screen.getByLabelText(/device code/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /verify code/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /verify code/i }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -100,7 +103,9 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText(/a device is requesting access/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/a device is requesting access/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -140,7 +145,9 @@ describe('ActivateDevicePage', () => {
       await user.click(verifyButton);
 
       await waitFor(() => {
-        expect(screen.getByText(/a device is requesting access/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/a device is requesting access/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -168,11 +175,11 @@ describe('ActivateDevicePage', () => {
       // Mock a delayed response
       server.use(
         http.get(`${API_BASE}/auth/device/activate`, async () => {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
           return HttpResponse.json({
             data: mockDeviceInfo,
           });
-        })
+        }),
       );
 
       render(<ActivateDevicePage />);
@@ -187,7 +194,9 @@ describe('ActivateDevicePage', () => {
       expect(verifyButton).toBeDisabled();
 
       await waitFor(() => {
-        expect(screen.getByText(/a device is requesting access/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/a device is requesting access/i),
+        ).toBeInTheDocument();
       });
     });
   });
@@ -199,7 +208,7 @@ describe('ActivateDevicePage', () => {
       server.use(
         http.get(`${API_BASE}/auth/device/activate`, () => {
           return createErrorResponse('Not found', 404, 'DEVICE_CODE_NOT_FOUND');
-        })
+        }),
       );
 
       render(<ActivateDevicePage />);
@@ -211,7 +220,9 @@ describe('ActivateDevicePage', () => {
       await user.click(verifyButton);
 
       await waitFor(() => {
-        expect(screen.getByText(/invalid code.*please check and try again/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/invalid code.*please check and try again/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -220,8 +231,12 @@ describe('ActivateDevicePage', () => {
 
       server.use(
         http.get(`${API_BASE}/auth/device/activate`, () => {
-          return createErrorResponse('Code expired', 410, 'DEVICE_CODE_EXPIRED');
-        })
+          return createErrorResponse(
+            'Code expired',
+            410,
+            'DEVICE_CODE_EXPIRED',
+          );
+        }),
       );
 
       render(<ActivateDevicePage />);
@@ -233,7 +248,9 @@ describe('ActivateDevicePage', () => {
       await user.click(verifyButton);
 
       await waitFor(() => {
-        expect(screen.getByText(/this code has expired.*please request a new one/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/this code has expired.*please request a new one/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -243,7 +260,7 @@ describe('ActivateDevicePage', () => {
       server.use(
         http.get(`${API_BASE}/auth/device/activate`, () => {
           return createErrorResponse('Bad request', 400);
-        })
+        }),
       );
 
       render(<ActivateDevicePage />);
@@ -255,7 +272,9 @@ describe('ActivateDevicePage', () => {
       await user.click(verifyButton);
 
       await waitFor(() => {
-        expect(screen.getByText(/invalid code.*please check and try again/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/invalid code.*please check and try again/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -265,7 +284,7 @@ describe('ActivateDevicePage', () => {
       server.use(
         http.get(`${API_BASE}/auth/device/activate`, () => {
           return createErrorResponse('Internal server error', 500);
-        })
+        }),
       );
 
       render(<ActivateDevicePage />);
@@ -287,7 +306,7 @@ describe('ActivateDevicePage', () => {
       server.use(
         http.get(`${API_BASE}/auth/device/activate`, () => {
           return HttpResponse.error();
-        })
+        }),
       );
 
       render(<ActivateDevicePage />);
@@ -299,7 +318,9 @@ describe('ActivateDevicePage', () => {
       await user.click(verifyButton);
 
       await waitFor(() => {
-        expect(screen.getByText(/network error.*please check your connection/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/network error.*please check your connection/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -310,7 +331,7 @@ describe('ActivateDevicePage', () => {
       server.use(
         http.get(`${API_BASE}/auth/device/activate`, () => {
           return createErrorResponse('Not found', 404);
-        })
+        }),
       );
 
       render(<ActivateDevicePage />);
@@ -337,7 +358,9 @@ describe('ActivateDevicePage', () => {
 
       await waitFor(() => {
         expect(screen.queryByText(/invalid code/i)).not.toBeInTheDocument();
-        expect(screen.getByText(/a device is requesting access/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/a device is requesting access/i),
+        ).toBeInTheDocument();
       });
     });
   });
@@ -354,15 +377,21 @@ describe('ActivateDevicePage', () => {
 
       // Wait for auto-verification
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /approve/i }),
+        ).toBeInTheDocument();
       });
 
       const approveButton = screen.getByRole('button', { name: /approve/i });
       await user.click(approveButton);
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /authorization complete/i })).toBeInTheDocument();
-        expect(screen.getByText(/device authorized successfully!/i)).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /authorization complete/i }),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByText(/device authorized successfully!/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -372,11 +401,11 @@ describe('ActivateDevicePage', () => {
       // Mock a delayed response
       server.use(
         http.post(`${API_BASE}/auth/device/authorize`, async () => {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
           return HttpResponse.json({
             data: { success: true, message: 'Success' },
           });
-        })
+        }),
       );
 
       render(<ActivateDevicePage />, {
@@ -386,7 +415,9 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /approve/i }),
+        ).toBeInTheDocument();
       });
 
       const approveButton = screen.getByRole('button', { name: /approve/i });
@@ -396,7 +427,9 @@ describe('ActivateDevicePage', () => {
       expect(approveButton).toBeDisabled();
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /authorization complete/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /authorization complete/i }),
+        ).toBeInTheDocument();
       });
     });
 
@@ -406,7 +439,7 @@ describe('ActivateDevicePage', () => {
       server.use(
         http.post(`${API_BASE}/auth/device/authorize`, () => {
           return createErrorResponse('Failed to authorize', 500);
-        })
+        }),
       );
 
       render(<ActivateDevicePage />, {
@@ -416,7 +449,9 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /approve/i }),
+        ).toBeInTheDocument();
       });
 
       const approveButton = screen.getByRole('button', { name: /approve/i });
@@ -427,7 +462,9 @@ describe('ActivateDevicePage', () => {
       });
 
       // Should still be on review step
-      expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /approve/i }),
+      ).toBeInTheDocument();
     });
 
     it('should handle network error during approval', async () => {
@@ -436,7 +473,7 @@ describe('ActivateDevicePage', () => {
       server.use(
         http.post(`${API_BASE}/auth/device/authorize`, () => {
           return HttpResponse.error();
-        })
+        }),
       );
 
       render(<ActivateDevicePage />, {
@@ -446,14 +483,18 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /approve/i }),
+        ).toBeInTheDocument();
       });
 
       const approveButton = screen.getByRole('button', { name: /approve/i });
       await user.click(approveButton);
 
       await waitFor(() => {
-        expect(screen.getByText(/network error.*please check your connection/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/network error.*please check your connection/i),
+        ).toBeInTheDocument();
       });
     });
   });
@@ -470,17 +511,23 @@ describe('ActivateDevicePage', () => {
 
       // Wait for auto-verification
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /deny/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /deny/i }),
+        ).toBeInTheDocument();
       });
 
       const denyButton = screen.getByRole('button', { name: /deny/i });
       await user.click(denyButton);
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /authorization complete/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /authorization complete/i }),
+        ).toBeInTheDocument();
       });
 
-      expect(screen.getByRole('heading', { name: /device access denied/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: /device access denied/i }),
+      ).toBeInTheDocument();
     });
 
     it('should show loading state while denying', async () => {
@@ -489,11 +536,11 @@ describe('ActivateDevicePage', () => {
       // Mock a delayed response
       server.use(
         http.post(`${API_BASE}/auth/device/authorize`, async () => {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
           return HttpResponse.json({
             data: { success: false, message: 'Denied' },
           });
-        })
+        }),
       );
 
       render(<ActivateDevicePage />, {
@@ -503,7 +550,9 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /deny/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /deny/i }),
+        ).toBeInTheDocument();
       });
 
       const denyButton = screen.getByRole('button', { name: /deny/i });
@@ -513,7 +562,9 @@ describe('ActivateDevicePage', () => {
       expect(denyButton).toBeDisabled();
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /authorization complete/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /authorization complete/i }),
+        ).toBeInTheDocument();
       });
     });
 
@@ -523,7 +574,7 @@ describe('ActivateDevicePage', () => {
       server.use(
         http.post(`${API_BASE}/auth/device/authorize`, () => {
           return createErrorResponse('Failed to process', 500);
-        })
+        }),
       );
 
       render(<ActivateDevicePage />, {
@@ -533,7 +584,9 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /deny/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /deny/i }),
+        ).toBeInTheDocument();
       });
 
       const denyButton = screen.getByRole('button', { name: /deny/i });
@@ -559,15 +612,21 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /approve/i }),
+        ).toBeInTheDocument();
       });
 
       const approveButton = screen.getByRole('button', { name: /approve/i });
       await user.click(approveButton);
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /device authorized!/i })).toBeInTheDocument();
-        expect(screen.getByText(/device authorized successfully!/i)).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /device authorized!/i }),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByText(/device authorized successfully!/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -581,14 +640,18 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /deny/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /deny/i }),
+        ).toBeInTheDocument();
       });
 
       const denyButton = screen.getByRole('button', { name: /deny/i });
       await user.click(denyButton);
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /device access denied/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /device access denied/i }),
+        ).toBeInTheDocument();
       });
     });
 
@@ -602,14 +665,18 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /approve/i }),
+        ).toBeInTheDocument();
       });
 
       const approveButton = screen.getByRole('button', { name: /approve/i });
       await user.click(approveButton);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /go to home/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /go to home/i }),
+        ).toBeInTheDocument();
       });
     });
 
@@ -623,14 +690,18 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /deny/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /deny/i }),
+        ).toBeInTheDocument();
       });
 
       const denyButton = screen.getByRole('button', { name: /deny/i });
       await user.click(denyButton);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /try another code/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /try another code/i }),
+        ).toBeInTheDocument();
       });
     });
 
@@ -646,7 +717,7 @@ describe('ActivateDevicePage', () => {
               message: customMessage,
             },
           });
-        })
+        }),
       );
 
       render(<ActivateDevicePage />, {
@@ -656,7 +727,9 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /approve/i }),
+        ).toBeInTheDocument();
       });
 
       const approveButton = screen.getByRole('button', { name: /approve/i });
@@ -685,7 +758,9 @@ describe('ActivateDevicePage', () => {
 
       // Step 2: Review
       await waitFor(() => {
-        expect(screen.getByText(/a device is requesting access/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/a device is requesting access/i),
+        ).toBeInTheDocument();
       });
 
       const approveButton = screen.getByRole('button', { name: /approve/i });
@@ -693,7 +768,9 @@ describe('ActivateDevicePage', () => {
 
       // Step 3: Complete
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /authorization complete/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /authorization complete/i }),
+        ).toBeInTheDocument();
       });
     });
 
@@ -707,15 +784,21 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /authorize device/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /authorize device/i }),
+        ).toBeInTheDocument();
       });
 
       const approveButton = screen.getByRole('button', { name: /approve/i });
       await user.click(approveButton);
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /authorization complete/i })).toBeInTheDocument();
-        expect(screen.queryByRole('heading', { name: /authorize device/i })).not.toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /authorization complete/i }),
+        ).toBeInTheDocument();
+        expect(
+          screen.queryByRole('heading', { name: /authorize device/i }),
+        ).not.toBeInTheDocument();
       });
     });
 
@@ -729,14 +812,18 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText(/link a device to your account/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/link a device to your account/i),
+        ).toBeInTheDocument();
       });
 
       const approveButton = screen.getByRole('button', { name: /approve/i });
       await user.click(approveButton);
 
       await waitFor(() => {
-        expect(screen.queryByText(/link a device to your account/i)).not.toBeInTheDocument();
+        expect(
+          screen.queryByText(/link a device to your account/i),
+        ).not.toBeInTheDocument();
       });
     });
   });
@@ -749,7 +836,7 @@ describe('ActivateDevicePage', () => {
       server.use(
         http.post(`${API_BASE}/auth/device/authorize`, () => {
           return new Promise(() => {}); // Never resolves
-        })
+        }),
       );
 
       render(<ActivateDevicePage />, {
@@ -759,7 +846,9 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /approve/i }),
+        ).toBeInTheDocument();
       });
 
       const approveButton = screen.getByRole('button', { name: /approve/i });
@@ -780,7 +869,7 @@ describe('ActivateDevicePage', () => {
       server.use(
         http.post(`${API_BASE}/auth/device/authorize`, () => {
           return createErrorResponse('Failed', 500);
-        })
+        }),
       );
 
       render(<ActivateDevicePage />, {
@@ -790,7 +879,9 @@ describe('ActivateDevicePage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('button', { name: /approve/i }),
+        ).toBeInTheDocument();
       });
 
       let approveButton = screen.getByRole('button', { name: /approve/i });

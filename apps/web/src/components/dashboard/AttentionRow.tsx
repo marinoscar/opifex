@@ -89,7 +89,11 @@ export function AttentionRow({ run, now }: AttentionRowProps) {
 
       <Typography variant="body2" color="text.primary">
         {run.pullRequestUrl ? (
-          <Link href={run.pullRequestUrl} target="_blank" rel="noopener noreferrer">
+          <Link
+            href={run.pullRequestUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             {run.workOrder.title}
           </Link>
         ) : (

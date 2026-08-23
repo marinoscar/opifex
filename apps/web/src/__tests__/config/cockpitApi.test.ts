@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { COCKPIT_ENDPOINTS, COCKPIT_POLL_INTERVAL_MS } from '../../config/cockpitApi';
+import {
+  COCKPIT_ENDPOINTS,
+  COCKPIT_POLL_INTERVAL_MS,
+} from '../../config/cockpitApi';
 import type { CockpitResourceKey } from '../../config/cockpitApi';
 
 /**
@@ -32,7 +35,12 @@ describe('COCKPIT_ENDPOINTS', () => {
    * of that work, asserted rather than deleted — a fifth resource added
    * tomorrow must be classified, not defaulted.
    */
-  const WIRED: CockpitResourceKey[] = ['queue', 'attention', 'metrics', 'activity'];
+  const WIRED: CockpitResourceKey[] = [
+    'queue',
+    'attention',
+    'metrics',
+    'activity',
+  ];
   const NOT_WIRED: CockpitResourceKey[] = [];
 
   it('accounts for every resource as either wired or not', () => {

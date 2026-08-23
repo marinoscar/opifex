@@ -18,7 +18,9 @@ describe('LoginPage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /welcome/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /welcome/i }),
+        ).toBeInTheDocument();
       });
     });
 
@@ -106,7 +108,9 @@ describe('LoginPage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText(/no authentication providers configured/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/no authentication providers configured/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -123,7 +127,9 @@ describe('LoginPage', () => {
 
       await waitFor(() => {
         // Should still render the page, just with no providers
-        expect(screen.getByRole('heading', { name: /welcome/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /welcome/i }),
+        ).toBeInTheDocument();
       });
     });
   });
@@ -139,7 +145,9 @@ describe('LoginPage', () => {
       // We verify the component renders without crashing
       await waitFor(() => {
         // Component renders but should have called navigate
-        expect(screen.getByRole('heading', { name: /welcome/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /welcome/i }),
+        ).toBeInTheDocument();
       });
     });
 
@@ -149,7 +157,9 @@ describe('LoginPage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /welcome/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole('heading', { name: /welcome/i }),
+        ).toBeInTheDocument();
       });
     });
   });

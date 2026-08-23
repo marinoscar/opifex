@@ -128,11 +128,7 @@ export class UsersService {
   /**
    * Update user (admin actions)
    */
-  async updateUser(
-    id: string,
-    dto: UpdateUserDto,
-    adminUserId: string,
-  ) {
+  async updateUser(id: string, dto: UpdateUserDto, adminUserId: string) {
     // Prevent admin from deactivating themselves
     if (dto.isActive === false && id === adminUserId) {
       throw new ForbiddenException('Cannot deactivate your own account');

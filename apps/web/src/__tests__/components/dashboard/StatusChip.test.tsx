@@ -31,55 +31,90 @@ import { lightTheme, darkTheme } from '../../../theme';
 import { RUN_STATUSES } from '../../../types/cockpit';
 
 const renderIn = (mode: 'light' | 'dark', ui: ReactElement) =>
-  render(<ThemeProvider theme={mode === 'dark' ? darkTheme : lightTheme}>{ui}</ThemeProvider>);
+  render(
+    <ThemeProvider theme={mode === 'dark' ? darkTheme : lightTheme}>
+      {ui}
+    </ThemeProvider>,
+  );
 
 describe('StatusChip', () => {
-  it.each([...RUN_STATUSES])('%s: renders the label AND an icon, never colour alone', (status) => {
-    const { container } = renderIn('light', <StatusChip status={status} showTooltip={false} />);
+  it.each([...RUN_STATUSES])(
+    '%s: renders the label AND an icon, never colour alone',
+    (status) => {
+      const { container } = renderIn(
+        'light',
+        <StatusChip status={status} showTooltip={false} />,
+      );
 
-    const chip = container.querySelector('.MuiChip-root') as HTMLElement;
-    expect(chip).not.toBeNull();
-    expect(within(chip).getByText(RUN_STATUS_DESCRIPTORS[status].label)).toBeInTheDocument();
-    // MUI marks the icon slot with `.MuiChip-icon`. Its presence is the second
-    // of the three channels; without it the chip is colour + text only, which
-    // is not what the palette was justified on.
-    expect(chip.querySelector('.MuiChip-icon')).not.toBeNull();
-  });
+      const chip = container.querySelector('.MuiChip-root') as HTMLElement;
+      expect(chip).not.toBeNull();
+      expect(
+        within(chip).getByText(RUN_STATUS_DESCRIPTORS[status].label),
+      ).toBeInTheDocument();
+      // MUI marks the icon slot with `.MuiChip-icon`. Its presence is the second
+      // of the three channels; without it the chip is colour + text only, which
+      // is not what the palette was justified on.
+      expect(chip.querySelector('.MuiChip-icon')).not.toBeNull();
+    },
+  );
 
-  it.each([...RUN_STATUSES])('%s: exposes the status on a stable data attribute', (status) => {
-    // Tests and future CSS hook on `data-status`, not on the label wording or
-    // the colour — both of which are allowed to change.
-    const { container } = renderIn('light', <StatusChip status={status} showTooltip={false} />);
-    expect(container.querySelector(`[data-status="${status}"]`)).not.toBeNull();
-  });
+  it.each([...RUN_STATUSES])(
+    '%s: exposes the status on a stable data attribute',
+    (status) => {
+      // Tests and future CSS hook on `data-status`, not on the label wording or
+      // the colour — both of which are allowed to change.
+      const { container } = renderIn(
+        'light',
+        <StatusChip status={status} showTooltip={false} />,
+      );
+      expect(
+        container.querySelector(`[data-status="${status}"]`),
+      ).not.toBeNull();
+    },
+  );
 
-  it.each([...RUN_STATUSES])('%s: paints from the light token in light mode', (status) => {
-    const { container } = renderIn('light', <StatusChip status={status} showTooltip={false} />);
-    const chip = container.querySelector('.MuiChip-root') as HTMLElement;
-    const token = statusTokens.light[RUN_STATUS_DESCRIPTORS[status].token];
-    const styles = getComputedStyle(chip);
-    // jsdom normalises hex to `rgb()`, so compare through the computed style
-    // rather than against the token string.
-    expect(styles.color).toBe(hexToRgb(token.fg));
-    expect(styles.backgroundColor).toBe(hexToRgb(token.surface));
-    // The outline is the FULL foreground colour on purpose — it inherits the
-    // same 4.5:1 floor as the label, so the chip's boundary can never be the
-    // part that fails contrast while the text passes.
-    expect(styles.borderColor).toBe(hexToRgb(token.fg));
-  });
+  it.each([...RUN_STATUSES])(
+    '%s: paints from the light token in light mode',
+    (status) => {
+      const { container } = renderIn(
+        'light',
+        <StatusChip status={status} showTooltip={false} />,
+      );
+      const chip = container.querySelector('.MuiChip-root') as HTMLElement;
+      const token = statusTokens.light[RUN_STATUS_DESCRIPTORS[status].token];
+      const styles = getComputedStyle(chip);
+      // jsdom normalises hex to `rgb()`, so compare through the computed style
+      // rather than against the token string.
+      expect(styles.color).toBe(hexToRgb(token.fg));
+      expect(styles.backgroundColor).toBe(hexToRgb(token.surface));
+      // The outline is the FULL foreground colour on purpose — it inherits the
+      // same 4.5:1 floor as the label, so the chip's boundary can never be the
+      // part that fails contrast while the text passes.
+      expect(styles.borderColor).toBe(hexToRgb(token.fg));
+    },
+  );
 
-  it.each([...RUN_STATUSES])('%s: paints from the dark token in dark mode', (status) => {
-    const { container } = renderIn('dark', <StatusChip status={status} showTooltip={false} />);
-    const chip = container.querySelector('.MuiChip-root') as HTMLElement;
-    const token = statusTokens.dark[RUN_STATUS_DESCRIPTORS[status].token];
-    expect(getComputedStyle(chip).color).toBe(hexToRgb(token.fg));
-  });
+  it.each([...RUN_STATUSES])(
+    '%s: paints from the dark token in dark mode',
+    (status) => {
+      const { container } = renderIn(
+        'dark',
+        <StatusChip status={status} showTooltip={false} />,
+      );
+      const chip = container.querySelector('.MuiChip-root') as HTMLElement;
+      const token = statusTokens.dark[RUN_STATUS_DESCRIPTORS[status].token];
+      expect(getComputedStyle(chip).color).toBe(hexToRgb(token.fg));
+    },
+  );
 
   it('labels blocked and stalled differently — the distinction IS the point', () => {
     // VISION §9: `blocked` parks and auto-resumes, `stalled` must be killed.
     // Two states that look and read the same would undo the reason there are
     // two of them.
-    const { unmount } = renderIn('light', <StatusChip status="blocked" showTooltip={false} />);
+    const { unmount } = renderIn(
+      'light',
+      <StatusChip status="blocked" showTooltip={false} />,
+    );
     expect(screen.getByText('Blocked')).toBeInTheDocument();
     unmount();
 

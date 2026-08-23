@@ -59,7 +59,8 @@ export interface WorkOrderCoordinates {
  * violation at generation, not silent cross-repository work.
  */
 export function workOrderIdentity(coordinates: WorkOrderCoordinates): string {
-  const { repository, issueNumber, baseCommit, attempt } = validate(coordinates);
+  const { repository, issueNumber, baseCommit, attempt } =
+    validate(coordinates);
 
   return `wo_${slug(repository)}_${issueNumber}_${shortCommit(baseCommit)}_a${attempt}`;
 }
@@ -87,7 +88,9 @@ export function workOrderBranch(coordinates: WorkOrderCoordinates): string {
  * deliberately strict — a string that does not parse returns null rather than
  * a half-filled object somebody then treats as real.
  */
-export function parseWorkOrderIdentity(identity: string): WorkOrderCoordinates | null {
+export function parseWorkOrderIdentity(
+  identity: string,
+): WorkOrderCoordinates | null {
   const match = /^wo_(.+)_(\d+)_([0-9a-f]{7})_a(\d+)$/.exec(identity);
   if (!match) return null;
 
@@ -107,7 +110,9 @@ export function parseWorkOrderIdentity(identity: string): WorkOrderCoordinates |
  * Separate from generation so the retry policy (#66) has one obvious way to
  * say "again" without re-deriving coordinates and risking a different base.
  */
-export function nextAttempt(coordinates: WorkOrderCoordinates): WorkOrderCoordinates {
+export function nextAttempt(
+  coordinates: WorkOrderCoordinates,
+): WorkOrderCoordinates {
   return { ...coordinates, attempt: coordinates.attempt + 1 };
 }
 
@@ -141,16 +146,22 @@ function validate(coordinates: WorkOrderCoordinates): WorkOrderCoordinates {
   const { repository, issueNumber, baseCommit, attempt } = coordinates;
 
   if (!slug(repository)) {
-    throw new Error(`Repository name ${JSON.stringify(repository)} has no usable characters`);
+    throw new Error(
+      `Repository name ${JSON.stringify(repository)} has no usable characters`,
+    );
   }
   if (!Number.isInteger(issueNumber) || issueNumber < 1) {
-    throw new Error(`Issue number must be a positive integer, got ${issueNumber}`);
+    throw new Error(
+      `Issue number must be a positive integer, got ${issueNumber}`,
+    );
   }
   if (!/^[0-9a-f]{40}$/i.test(baseCommit)) {
     // The full SHA, not an abbreviation. An abbreviated base is ambiguous the
     // moment the repository grows, and this identity has to still resolve to
     // one commit in a year.
-    throw new Error(`Base commit must be a full 40-character SHA, got ${JSON.stringify(baseCommit)}`);
+    throw new Error(
+      `Base commit must be a full 40-character SHA, got ${JSON.stringify(baseCommit)}`,
+    );
   }
   if (!Number.isInteger(attempt) || attempt < 1) {
     throw new Error(`Attempt must be a positive integer, got ${attempt}`);

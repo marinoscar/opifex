@@ -15,7 +15,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockAdminUser,
           },
-        }
+        },
       );
 
       expect(screen.getByText('Admin Content')).toBeInTheDocument();
@@ -35,7 +35,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockAdminUser,
           },
-        }
+        },
       );
 
       expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
@@ -54,7 +54,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockAdminUser,
           },
-        }
+        },
       );
 
       expect(screen.getByText('First Element')).toBeInTheDocument();
@@ -62,15 +62,12 @@ describe('AdminOnly', () => {
     });
 
     it('should render string children when user is admin', () => {
-      render(
-        <AdminOnly>Admin Only Text</AdminOnly>,
-        {
-          wrapperOptions: {
-            authenticated: true,
-            user: mockAdminUser,
-          },
-        }
-      );
+      render(<AdminOnly>Admin Only Text</AdminOnly>, {
+        wrapperOptions: {
+          authenticated: true,
+          user: mockAdminUser,
+        },
+      });
 
       expect(screen.getByText('Admin Only Text')).toBeInTheDocument();
     });
@@ -87,7 +84,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockUser, // viewer role
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -109,7 +106,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: contributorUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -131,7 +128,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: viewerUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -149,7 +146,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -173,13 +170,15 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
       expect(screen.getByText('Insufficient Permissions')).toBeInTheDocument();
       expect(
-        screen.getByText('You need administrator privileges to view this content.')
+        screen.getByText(
+          'You need administrator privileges to view this content.',
+        ),
       ).toBeInTheDocument();
     });
 
@@ -193,7 +192,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockAdminUser,
           },
-        }
+        },
       );
 
       expect(screen.getByText('Admin Content')).toBeInTheDocument();
@@ -210,7 +209,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -229,7 +228,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -247,7 +246,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -264,7 +263,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -283,7 +282,7 @@ describe('AdminOnly', () => {
             authenticated: false,
             user: null,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -299,7 +298,7 @@ describe('AdminOnly', () => {
             authenticated: false,
             user: null,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -321,7 +320,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: multiRoleUser,
           },
-        }
+        },
       );
 
       expect(screen.getByText('Admin Content')).toBeInTheDocument();
@@ -342,7 +341,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: multiRoleUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -363,7 +362,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: noRolesUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -385,7 +384,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: nullDataUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -407,7 +406,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: inactiveAdminUser,
           },
-        }
+        },
       );
 
       // Component only checks isAdmin, not isActive
@@ -429,11 +428,13 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByTestId('sensitive-data')).not.toBeInTheDocument();
-      expect(screen.queryByText('Confidential Information')).not.toBeInTheDocument();
+      expect(
+        screen.queryByText('Confidential Information'),
+      ).not.toBeInTheDocument();
       expect(screen.queryByDisplayValue('secret')).not.toBeInTheDocument();
       // Ensure nothing is rendered
       expect(container.textContent).toBe('');
@@ -452,7 +453,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockAdminUser,
           },
-        }
+        },
       );
 
       expect(screen.getByTestId('sensitive-data')).toBeInTheDocument();
@@ -473,13 +474,15 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockAdminUser,
           },
-        }
+        },
       );
 
       expect(screen.getByText('Content 1')).toBeInTheDocument();
       expect(screen.getByText('Content 2')).toBeInTheDocument();
       // Both elements should be in the container
-      expect(container.querySelectorAll('div').length).toBeGreaterThanOrEqual(2);
+      expect(container.querySelectorAll('div').length).toBeGreaterThanOrEqual(
+        2,
+      );
     });
 
     it('should return React Fragment containing fallback for non-admin', () => {
@@ -492,7 +495,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Admin Content')).not.toBeInTheDocument();
@@ -511,7 +514,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockUser,
           },
-        }
+        },
       );
 
       const wrapper = screen.getByTestId('wrapper');
@@ -531,7 +534,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockAdminUser,
           },
-        }
+        },
       );
 
       const link = screen.getByText('Admin Panel');
@@ -549,7 +552,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockUser,
           },
-        }
+        },
       );
 
       expect(screen.queryByText('Delete User')).not.toBeInTheDocument();
@@ -571,7 +574,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockUser,
           },
-        }
+        },
       );
 
       expect(screen.getByText('User Profile')).toBeInTheDocument();
@@ -595,7 +598,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockAdminUser,
           },
-        }
+        },
       );
 
       expect(screen.getByText('Admin Section')).toBeInTheDocument();
@@ -614,7 +617,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockAdminUser,
           },
-        }
+        },
       );
 
       expect(screen.getByText('Admin Content')).toBeInTheDocument();
@@ -623,7 +626,7 @@ describe('AdminOnly', () => {
       rerender(
         <AdminOnly>
           <div>Admin Content</div>
-        </AdminOnly>
+        </AdminOnly>,
       );
 
       // Content should still be rendered (since we didn't change the wrapper)
@@ -640,7 +643,7 @@ describe('AdminOnly', () => {
             authenticated: true,
             user: mockAdminUser,
           },
-        }
+        },
       );
 
       expect(screen.getByText('Content 1')).toBeInTheDocument();
@@ -648,7 +651,7 @@ describe('AdminOnly', () => {
       rerender(
         <AdminOnly>
           <div>Content 2</div>
-        </AdminOnly>
+        </AdminOnly>,
       );
 
       expect(screen.queryByText('Content 1')).not.toBeInTheDocument();

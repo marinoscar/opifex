@@ -17,15 +17,15 @@ The issue names three candidates — Web Push, ntfy, Pushover — and asks for o
 to be picked and the reason recorded. It also sets two bars that narrow the
 field more than the candidate list suggests:
 
-- **Delivery receipts are not optional.** *"An escalation that silently failed
+- **Delivery receipts are not optional.** _"An escalation that silently failed
   to send is indistinguishable from no escalation — it reintroduces exactly the
   failure this project exists to eliminate, while appearing on a dashboard as
-  handled."*
+  handled."_
 - **A delivery failure must itself escalate through a different path.**
 - **Secrets via environment variables only.**
 
-VISION §8 sets the bar for content: *"one tap from a phone, with enough context
-to decide — what, why, blast radius, and what happens if ignored."*
+VISION §8 sets the bar for content: _"one tap from a phone, with enough context
+to decide — what, why, blast radius, and what happens if ignored."_
 
 ## Decision
 
@@ -45,19 +45,19 @@ into `delivered`.
 both fail the same test: they put a third party between Opifex and the operator
 for no capability Web Push lacks.
 
-| | Account needed | Credential | Payload visible to a third party |
-|---|---|---|---|
-| Web Push | none | a VAPID key pair you generate | **no** — encrypted end to end |
-| ntfy (hosted) | none for a public topic | the topic name, which *is* the secret | yes |
-| ntfy (self-hosted) | a server to run and keep running | server credentials | no |
-| Pushover | yes, paid | an app token and a user key | yes |
+|                    | Account needed                   | Credential                            | Payload visible to a third party |
+| ------------------ | -------------------------------- | ------------------------------------- | -------------------------------- |
+| Web Push           | none                             | a VAPID key pair you generate         | **no** — encrypted end to end    |
+| ntfy (hosted)      | none for a public topic          | the topic name, which _is_ the secret | yes                              |
+| ntfy (self-hosted) | a server to run and keep running | server credentials                    | no                               |
+| Pushover           | yes, paid                        | an app token and a user key           | yes                              |
 
 The encryption row is the one that decided it. Web Push encrypts the payload to
 the subscription's own key material, so the push service relays bytes it cannot
 read. That is what makes it acceptable to put the escalation's actual reason —
 repository, issue number, why the watchdog concluded what it did — in the
 notification body rather than a "something happened, open the app" stub. A stub
-fails VISION §8's *"enough context to decide"* outright, and an operator who has
+fails VISION §8's _"enough context to decide"_ outright, and an operator who has
 to open a laptop to find out whether to get up has not really been notified.
 
 The account row is the reason this could ship without asking anyone for

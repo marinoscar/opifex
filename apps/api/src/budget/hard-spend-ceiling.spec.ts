@@ -43,8 +43,12 @@ describe('the hard spend ceiling', () => {
       // `Number('')` is 0. Without the explicit empty check, an exported-but-
       // empty variable would silently become the strictest possible ceiling
       // and stop the factory, which is the wrong failure for a typo.
-      expect(parseHardCeiling({ [HARD_SPEND_CEILING_ENV]: '' }).limitUsd).toBeNull();
-      expect(parseHardCeiling({ [HARD_SPEND_CEILING_ENV]: '   ' }).limitUsd).toBeNull();
+      expect(
+        parseHardCeiling({ [HARD_SPEND_CEILING_ENV]: '' }).limitUsd,
+      ).toBeNull();
+      expect(
+        parseHardCeiling({ [HARD_SPEND_CEILING_ENV]: '   ' }).limitUsd,
+      ).toBeNull();
     });
 
     it('reports a malformed value as malformed, not as absent', () => {
@@ -58,14 +62,18 @@ describe('the hard spend ceiling', () => {
     });
 
     it('refuses a negative ceiling', () => {
-      expect(parseHardCeiling({ [HARD_SPEND_CEILING_ENV]: '-10' }).malformed).toBe('-10');
+      expect(
+        parseHardCeiling({ [HARD_SPEND_CEILING_ENV]: '-10' }).malformed,
+      ).toBe('-10');
     });
 
     it('refuses Infinity, which parses as a finite-looking number', () => {
       // `Number('Infinity')` is a number and is greater than every tally, so
       // an unguarded parse would turn a typo into "no limit at all" while
       // reporting that a ceiling was configured.
-      expect(parseHardCeiling({ [HARD_SPEND_CEILING_ENV]: 'Infinity' }).malformed).toBe('Infinity');
+      expect(
+        parseHardCeiling({ [HARD_SPEND_CEILING_ENV]: 'Infinity' }).malformed,
+      ).toBe('Infinity');
     });
 
     it('defaults the window and accepts an override', () => {
@@ -79,12 +87,13 @@ describe('the hard spend ceiling', () => {
       // A zero-day window would make every tally empty and the ceiling
       // unreachable -- the failure mode where the safety mechanism reports
       // success forever.
-      expect(parseHardCeiling({ [HARD_SPEND_CEILING_WINDOW_ENV]: '0' }).windowDays).toBe(
-        DEFAULT_CEILING_WINDOW_DAYS,
-      );
-      expect(parseHardCeiling({ [HARD_SPEND_CEILING_WINDOW_ENV]: 'soon' }).windowDays).toBe(
-        DEFAULT_CEILING_WINDOW_DAYS,
-      );
+      expect(
+        parseHardCeiling({ [HARD_SPEND_CEILING_WINDOW_ENV]: '0' }).windowDays,
+      ).toBe(DEFAULT_CEILING_WINDOW_DAYS);
+      expect(
+        parseHardCeiling({ [HARD_SPEND_CEILING_WINDOW_ENV]: 'soon' })
+          .windowDays,
+      ).toBe(DEFAULT_CEILING_WINDOW_DAYS);
     });
   });
 
@@ -130,7 +139,9 @@ describe('the hard spend ceiling', () => {
         ...Object.getOwnPropertyNames(Object.getPrototypeOf(service)),
       ];
 
-      expect(surface.filter((name) => /^set|^raise|^update|^configure/i.test(name))).toEqual([]);
+      expect(
+        surface.filter((name) => /^set|^raise|^update|^configure/i.test(name)),
+      ).toEqual([]);
       // And the one property it does expose is a getter with no companion
       // setter, so `service.value = ...` cannot work either.
       const descriptor = Object.getOwnPropertyDescriptor(

@@ -18,52 +18,49 @@ describe('UISettings', () => {
 
   describe('Rendering', () => {
     it('should render UI settings heading', () => {
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       expect(screen.getByText('User Interface')).toBeInTheDocument();
     });
 
     it('should render theme override switch with label', () => {
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       expect(
-        screen.getByLabelText(/allow users to override system theme/i)
+        screen.getByLabelText(/allow users to override system theme/i),
       ).toBeInTheDocument();
     });
 
     it('should show helper text explaining theme override', () => {
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       expect(
-        screen.getByText(/when disabled, all users will use the system-defined theme/i)
+        screen.getByText(
+          /when disabled, all users will use the system-defined theme/i,
+        ),
       ).toBeInTheDocument();
     });
 
     it('should render save button', () => {
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       expect(
-        screen.getByRole('button', { name: /save changes/i })
+        screen.getByRole('button', { name: /save changes/i }),
       ).toBeInTheDocument();
     });
 
     it('should display switch as checked when allowUserThemeOverride is true', () => {
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -77,7 +74,7 @@ describe('UISettings', () => {
           settings={{ allowUserThemeOverride: false }}
           onSave={mockOnSave}
         />,
-        { wrapperOptions: { user: mockAdminUser } }
+        { wrapperOptions: { user: mockAdminUser } },
       );
 
       const switchElement = screen.getByRole('switch', {
@@ -89,10 +86,9 @@ describe('UISettings', () => {
 
   describe('Initial State', () => {
     it('should disable save button when no changes made', () => {
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const saveButton = screen.getByRole('button', {
         name: /save changes/i,
@@ -103,7 +99,7 @@ describe('UISettings', () => {
     it('should update switch state when settings prop changes', async () => {
       const { rerender } = render(
         <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
+        { wrapperOptions: { user: mockAdminUser } },
       );
 
       const newSettings = {
@@ -125,10 +121,9 @@ describe('UISettings', () => {
     it('should toggle switch when clicked', async () => {
       const user = userEvent.setup();
 
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -144,10 +139,9 @@ describe('UISettings', () => {
     it('should enable save button when switch is toggled', async () => {
       const user = userEvent.setup();
 
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -166,10 +160,9 @@ describe('UISettings', () => {
     it('should disable save button when switch is toggled back to original value', async () => {
       const user = userEvent.setup();
 
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -192,10 +185,9 @@ describe('UISettings', () => {
     it('should call onSave with updated value when save button clicked', async () => {
       const user = userEvent.setup();
 
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -217,10 +209,9 @@ describe('UISettings', () => {
     it('should call onSave only once on button click', async () => {
       const user = userEvent.setup();
 
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -245,7 +236,7 @@ describe('UISettings', () => {
           settings={{ allowUserThemeOverride: false }}
           onSave={mockOnSave}
         />,
-        { wrapperOptions: { user: mockAdminUser } }
+        { wrapperOptions: { user: mockAdminUser } },
       );
 
       const switchElement = screen.getByRole('switch', {
@@ -270,13 +261,12 @@ describe('UISettings', () => {
     it('should show "Saving..." text when save is in progress', async () => {
       const user = userEvent.setup();
       const slowSave = vi.fn(
-        () => new Promise((resolve) => setTimeout(resolve, 100))
+        () => new Promise((resolve) => setTimeout(resolve, 100)),
       );
 
-      render(
-        <UISettings settings={defaultSettings} onSave={slowSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={slowSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -289,20 +279,19 @@ describe('UISettings', () => {
       await user.click(saveButton);
 
       expect(
-        screen.getByRole('button', { name: /saving\.\.\./i })
+        screen.getByRole('button', { name: /saving\.\.\./i }),
       ).toBeInTheDocument();
     });
 
     it('should disable save button while saving', async () => {
       const user = userEvent.setup();
       const slowSave = vi.fn(
-        () => new Promise((resolve) => setTimeout(resolve, 100))
+        () => new Promise((resolve) => setTimeout(resolve, 100)),
       );
 
-      render(
-        <UISettings settings={defaultSettings} onSave={slowSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={slowSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -314,17 +303,18 @@ describe('UISettings', () => {
       await user.click(switchElement);
       await user.click(saveButton);
 
-      const savingButton = screen.getByRole('button', { name: /saving\.\.\./i });
+      const savingButton = screen.getByRole('button', {
+        name: /saving\.\.\./i,
+      });
       expect(savingButton).toBeDisabled();
     });
 
     it('should return to "Save Changes" text after save completes', async () => {
       const user = userEvent.setup();
 
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -344,7 +334,7 @@ describe('UISettings', () => {
       // Button text should be back to "Save Changes"
       await waitFor(() => {
         expect(
-          screen.getByRole('button', { name: /save changes/i })
+          screen.getByRole('button', { name: /save changes/i }),
         ).toBeInTheDocument();
       });
     });
@@ -352,10 +342,9 @@ describe('UISettings', () => {
     it('should re-enable save button after save completes', async () => {
       const user = userEvent.setup();
 
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -386,13 +375,12 @@ describe('UISettings', () => {
     it('should re-enable save button after save completes successfully', async () => {
       const user = userEvent.setup();
       const slowSave = vi.fn(
-        () => new Promise((resolve) => setTimeout(resolve, 50))
+        () => new Promise((resolve) => setTimeout(resolve, 50)),
       );
 
-      render(
-        <UISettings settings={defaultSettings} onSave={slowSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={slowSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -426,7 +414,7 @@ describe('UISettings', () => {
           onSave={mockOnSave}
           disabled={true}
         />,
-        { wrapperOptions: { user: mockAdminUser } }
+        { wrapperOptions: { user: mockAdminUser } },
       );
 
       const switchElement = screen.getByRole('switch', {
@@ -442,7 +430,7 @@ describe('UISettings', () => {
           onSave={mockOnSave}
           disabled={true}
         />,
-        { wrapperOptions: { user: mockAdminUser } }
+        { wrapperOptions: { user: mockAdminUser } },
       );
 
       const saveButton = screen.getByRole('button', {
@@ -456,7 +444,7 @@ describe('UISettings', () => {
 
       const { rerender } = render(
         <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
+        { wrapperOptions: { user: mockAdminUser } },
       );
 
       const switchElement = screen.getByRole('switch', {
@@ -472,7 +460,7 @@ describe('UISettings', () => {
           settings={defaultSettings}
           onSave={mockOnSave}
           disabled={true}
-        />
+        />,
       );
 
       const saveButton = screen.getByRole('button', {
@@ -488,7 +476,7 @@ describe('UISettings', () => {
           onSave={mockOnSave}
           disabled={false}
         />,
-        { wrapperOptions: { user: mockAdminUser } }
+        { wrapperOptions: { user: mockAdminUser } },
       );
 
       const switchElement = screen.getByRole('switch', {
@@ -498,10 +486,9 @@ describe('UISettings', () => {
     });
 
     it('should not disable switch when disabled prop is undefined', () => {
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -516,7 +503,7 @@ describe('UISettings', () => {
           onSave={mockOnSave}
           disabled={true}
         />,
-        { wrapperOptions: { user: mockAdminUser } }
+        { wrapperOptions: { user: mockAdminUser } },
       );
 
       const switchElement = screen.getByRole('switch', {
@@ -542,10 +529,9 @@ describe('UISettings', () => {
     it('should preserve switch state across save operations', async () => {
       const user = userEvent.setup();
 
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -573,10 +559,9 @@ describe('UISettings', () => {
     it('should handle multiple rapid toggle clicks', async () => {
       const user = userEvent.setup();
 
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const switchElement = screen.getByRole('switch', {
         name: /allow users to override system theme/i,
@@ -605,12 +590,12 @@ describe('UISettings', () => {
         () =>
           new Promise<void>((resolve) => {
             resolveSave = resolve;
-          })
+          }),
       );
 
       const { rerender } = render(
         <UISettings settings={defaultSettings} onSave={slowSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
+        { wrapperOptions: { user: mockAdminUser } },
       );
 
       const switchElement = screen.getByRole('switch', {
@@ -628,7 +613,7 @@ describe('UISettings', () => {
         <UISettings
           settings={{ allowUserThemeOverride: false }}
           onSave={slowSave}
-        />
+        />,
       );
 
       // Resolve the save
@@ -649,7 +634,7 @@ describe('UISettings', () => {
 
       const { rerender } = render(
         <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
+        { wrapperOptions: { user: mockAdminUser } },
       );
 
       // Change from true to false
@@ -668,7 +653,7 @@ describe('UISettings', () => {
         <UISettings
           settings={{ allowUserThemeOverride: false }}
           onSave={mockOnSave}
-        />
+        />,
       );
 
       // Now there should be no changes
@@ -681,10 +666,9 @@ describe('UISettings', () => {
     });
 
     it('should not call onSave when save button is disabled due to no changes', () => {
-      render(
-        <UISettings settings={defaultSettings} onSave={mockOnSave} />,
-        { wrapperOptions: { user: mockAdminUser } }
-      );
+      render(<UISettings settings={defaultSettings} onSave={mockOnSave} />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       const saveButton = screen.getByRole('button', {
         name: /save changes/i,

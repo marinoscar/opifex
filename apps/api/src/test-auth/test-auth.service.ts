@@ -33,7 +33,9 @@ export class TestAuthService {
    * Login as test user - bypass OAuth and allowlist for testing
    */
   async loginAsTestUser(dto: TestLoginDto): Promise<TestAuthTokenResponse> {
-    this.logger.log(`Test login for email: ${dto.email} with role: ${dto.role}`);
+    this.logger.log(
+      `Test login for email: ${dto.email} with role: ${dto.role}`,
+    );
 
     const email = dto.email.toLowerCase();
 
@@ -134,7 +136,9 @@ export class TestAuthService {
     // Create refresh token
     const refreshToken = await this.createRefreshToken(user.id);
 
-    this.logger.log(`Test login successful for user: ${user.email} with roles: ${roles.join(', ')}`);
+    this.logger.log(
+      `Test login successful for user: ${user.email} with roles: ${roles.join(', ')}`,
+    );
 
     return {
       accessToken,

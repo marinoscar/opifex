@@ -8,7 +8,10 @@ import { AdminBootstrapService } from '../../src/common/services/admin-bootstrap
 import { ForbiddenException } from '@nestjs/common';
 import { resetPrismaMock, prismaMock } from '../mocks/prisma.mock';
 import { setupBaseMocks } from '../fixtures/mock-setup.helper';
-import { createMockUserWithRelations, mockRoles } from '../fixtures/test-data.factory';
+import {
+  createMockUserWithRelations,
+  mockRoles,
+} from '../fixtures/test-data.factory';
 import { GoogleProfile } from '../../src/auth/strategies/google.strategy';
 
 describe('Auth Service - Allowlist Enforcement', () => {
@@ -44,7 +47,13 @@ describe('Auth Service - Allowlist Enforcement', () => {
         AllowlistService,
         AdminBootstrapService,
         { provide: PrismaService, useValue: prismaMock },
-        { provide: JwtService, useValue: { sign: jest.fn(() => 'mock-jwt-token'), signAsync: jest.fn(() => 'mock-jwt-token') } },
+        {
+          provide: JwtService,
+          useValue: {
+            sign: jest.fn(() => 'mock-jwt-token'),
+            signAsync: jest.fn(() => 'mock-jwt-token'),
+          },
+        },
         { provide: ConfigService, useValue: mockConfigService },
       ],
     }).compile();
@@ -165,7 +174,9 @@ describe('Auth Service - Allowlist Enforcement', () => {
       });
       prismaMock.user.create.mockResolvedValue(newUser as any);
       // Mock the user.findUnique call in transaction when reloading user with admin role
-      prismaMock.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(newUser as any);
+      prismaMock.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(newUser as any);
       prismaMock.user.update.mockResolvedValue(newUser as any);
       prismaMock.userRole.upsert.mockResolvedValue({} as any);
       prismaMock.refreshToken.create.mockResolvedValue({} as any);
@@ -194,7 +205,9 @@ describe('Auth Service - Allowlist Enforcement', () => {
       };
 
       // Mock allowlist check - email is allowed
-      prismaMock.allowedEmail.findUnique.mockResolvedValue(allowlistEntry as any);
+      prismaMock.allowedEmail.findUnique.mockResolvedValue(
+        allowlistEntry as any,
+      );
 
       // Mock no existing identity
       prismaMock.userIdentity.findUnique.mockResolvedValue(null);
@@ -253,7 +266,9 @@ describe('Auth Service - Allowlist Enforcement', () => {
       };
 
       // Mock allowlist check
-      prismaMock.allowedEmail.findUnique.mockResolvedValue(allowlistEntry as any);
+      prismaMock.allowedEmail.findUnique.mockResolvedValue(
+        allowlistEntry as any,
+      );
 
       // Mock no existing identity
       prismaMock.userIdentity.findUnique.mockResolvedValue(null);

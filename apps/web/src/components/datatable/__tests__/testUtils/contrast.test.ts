@@ -7,7 +7,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { contrastRatio, flattenOver, parseColor, relativeLuminance } from './contrast';
+import {
+  contrastRatio,
+  flattenOver,
+  parseColor,
+  relativeLuminance,
+} from './contrast';
 
 describe('contrast.ts — parseColor', () => {
   it('parses 6-digit and 3-digit hex', () => {
@@ -18,8 +23,18 @@ describe('contrast.ts — parseColor', () => {
   });
 
   it('parses rgb() and rgba()', () => {
-    expect(parseColor('rgb(25, 118, 210)')).toEqual({ r: 25, g: 118, b: 210, a: 1 });
-    expect(parseColor('rgba(25, 118, 210, 0.06)')).toEqual({ r: 25, g: 118, b: 210, a: 0.06 });
+    expect(parseColor('rgb(25, 118, 210)')).toEqual({
+      r: 25,
+      g: 118,
+      b: 210,
+      a: 1,
+    });
+    expect(parseColor('rgba(25, 118, 210, 0.06)')).toEqual({
+      r: 25,
+      g: 118,
+      b: 210,
+      a: 0.06,
+    });
   });
 
   it('throws on an unrecognized format', () => {
@@ -36,7 +51,9 @@ describe('contrast.ts — relativeLuminance', () => {
 
 describe('contrast.ts — flattenOver', () => {
   it('a fully-opaque foreground is unaffected by the background', () => {
-    expect(flattenOver({ r: 10, g: 20, b: 30, a: 1 }, { r: 255, g: 255, b: 255 })).toEqual({
+    expect(
+      flattenOver({ r: 10, g: 20, b: 30, a: 1 }, { r: 255, g: 255, b: 255 }),
+    ).toEqual({
       r: 10,
       g: 20,
       b: 30,
@@ -44,7 +61,9 @@ describe('contrast.ts — flattenOver', () => {
   });
 
   it('a 50% foreground is the midpoint of the two colors', () => {
-    expect(flattenOver({ r: 0, g: 0, b: 0, a: 0.5 }, { r: 255, g: 255, b: 255 })).toEqual({
+    expect(
+      flattenOver({ r: 0, g: 0, b: 0, a: 0.5 }, { r: 255, g: 255, b: 255 }),
+    ).toEqual({
       r: 127.5,
       g: 127.5,
       b: 127.5,
@@ -78,8 +97,15 @@ describe('contrast.ts — contrastRatio', () => {
     // A very-low-alpha primary-blue tint over white is nearly white — should
     // have almost no contrast against white text, and strong contrast is
     // wrong here on purpose (proves the flattening step actually ran).
-    const flattenedRatio = contrastRatio('rgba(25, 118, 210, 0.06)', '#ffffff', '#ffffff');
-    const unflattenedRatio = contrastRatio('rgba(25, 118, 210, 0.06)', '#ffffff');
+    const flattenedRatio = contrastRatio(
+      'rgba(25, 118, 210, 0.06)',
+      '#ffffff',
+      '#ffffff',
+    );
+    const unflattenedRatio = contrastRatio(
+      'rgba(25, 118, 210, 0.06)',
+      '#ffffff',
+    );
     expect(flattenedRatio).toBeLessThan(1.2);
     // Without the fallback, the (near-transparent) rgba color's OWN channel
     // values are compared verbatim — a materially different, wrong answer.

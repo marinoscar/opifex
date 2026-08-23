@@ -1,10 +1,21 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { Auth } from '../auth/decorators/auth.decorator';
 import { PERMISSIONS } from '../common/constants/roles.constants';
 import { ApiDataResponse } from '../common/decorators/api-data-response.decorator';
-import { RunEventDto, RunEventsQueryDto, RunSummaryDto, RunsQueryDto } from './dto/runs.dto';
+import {
+  RunEventDto,
+  RunEventsQueryDto,
+  RunSummaryDto,
+  RunsQueryDto,
+} from './dto/runs.dto';
 import { RunsService } from './runs.service';
 
 /**
@@ -36,7 +47,10 @@ export class RunsController {
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
   @ApiQuery({ name: 'needsAttention', required: false, type: Boolean })
   @ApiQuery({ name: 'status', required: false, type: String })
-  @ApiDataResponse(RunSummaryDto, { pagination: 'flat', description: 'Paginated runs' })
+  @ApiDataResponse(RunSummaryDto, {
+    pagination: 'flat',
+    description: 'Paginated runs',
+  })
   async list(@Query() query: RunsQueryDto) {
     return this.runs.list(query);
   }
@@ -71,9 +85,15 @@ export class RunsController {
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
-  @ApiDataResponse(RunEventDto, { pagination: 'flat', description: 'Paginated event timeline' })
+  @ApiDataResponse(RunEventDto, {
+    pagination: 'flat',
+    description: 'Paginated event timeline',
+  })
   @ApiResponse({ status: 404, description: 'Run not found' })
-  async events(@Param('id', ParseUUIDPipe) id: string, @Query() query: RunEventsQueryDto) {
+  async events(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: RunEventsQueryDto,
+  ) {
     return this.runs.events(id, query);
   }
 }

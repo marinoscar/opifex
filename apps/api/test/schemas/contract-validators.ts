@@ -30,7 +30,11 @@ export const EVENT_TYPES = [
   'run.failed',
 ] as const;
 
-export const CONTRACTS = ['run-event', 'work-order', 'runner-capability'] as const;
+export const CONTRACTS = [
+  'run-event',
+  'work-order',
+  'runner-capability',
+] as const;
 export type Contract = (typeof CONTRACTS)[number];
 
 export function validatorFor(contract: Contract): ValidateFunction {
@@ -40,7 +44,9 @@ export function validatorFor(contract: Contract): ValidateFunction {
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   addFormats(ajv);
   return ajv.compile(
-    JSON.parse(readFileSync(join(SCHEMA_DIR, `${contract}.schema.json`), 'utf8')),
+    JSON.parse(
+      readFileSync(join(SCHEMA_DIR, `${contract}.schema.json`), 'utf8'),
+    ),
   );
 }
 

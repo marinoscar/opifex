@@ -68,26 +68,31 @@ function installLayoutStubs() {
       get: () => containerWidth,
     });
   }
-  for (const prop of ['clientHeight', 'offsetHeight', 'scrollHeight'] as const) {
+  for (const prop of [
+    'clientHeight',
+    'offsetHeight',
+    'scrollHeight',
+  ] as const) {
     Object.defineProperty(HTMLElement.prototype, prop, {
       configurable: true,
       get: () => VIEWPORT_HEIGHT,
     });
   }
 
-  HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
-    return {
-      width: containerWidth,
-      height: VIEWPORT_HEIGHT,
-      top: 0,
-      left: 0,
-      right: containerWidth,
-      bottom: VIEWPORT_HEIGHT,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    } as DOMRect;
-  };
+  HTMLElement.prototype.getBoundingClientRect =
+    function getBoundingClientRect() {
+      return {
+        width: containerWidth,
+        height: VIEWPORT_HEIGHT,
+        top: 0,
+        left: 0,
+        right: containerWidth,
+        bottom: VIEWPORT_HEIGHT,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      } as DOMRect;
+    };
 
   class ControllableResizeObserver {
     private readonly entry: FakeObserver;
@@ -122,7 +127,8 @@ function installLayoutStubs() {
     }
   }
 
-  global.ResizeObserver = ControllableResizeObserver as unknown as typeof ResizeObserver;
+  global.ResizeObserver =
+    ControllableResizeObserver as unknown as typeof ResizeObserver;
 
   // A fixed 1440px viewport, so a viewport media query never says "mobile".
   window.matchMedia = vi.fn().mockImplementation((query: string) => {
@@ -173,7 +179,13 @@ interface Job {
 }
 
 const JOBS: Job[] = [
-  { id: 'job-1', type: 'face_detection', status: 'succeeded', attempts: 1, lastError: null },
+  {
+    id: 'job-1',
+    type: 'face_detection',
+    status: 'succeeded',
+    attempts: 1,
+    lastError: null,
+  },
   {
     id: 'job-2',
     type: 'auto_tagging',
@@ -181,17 +193,31 @@ const JOBS: Job[] = [
     attempts: 3,
     lastError: 'rate limited by provider after three consecutive attempts',
   },
-  { id: 'job-3', type: 'geocode', status: 'pending', attempts: 0, lastError: null },
+  {
+    id: 'job-3',
+    type: 'geocode',
+    status: 'pending',
+    attempts: 0,
+    lastError: null,
+  },
 ];
 
 const COLUMNS: DataTableColumn<Job>[] = [
-  { id: 'type', label: 'Type', priority: 'primary', sortable: true, value: (r) => r.type },
+  {
+    id: 'type',
+    label: 'Type',
+    priority: 'primary',
+    sortable: true,
+    value: (r) => r.type,
+  },
   {
     id: 'status',
     label: 'Status',
     priority: 'primary',
     value: (r) => r.status,
-    render: (r) => <span data-testid={`status-chip-${r.id}`}>{r.status.toUpperCase()}</span>,
+    render: (r) => (
+      <span data-testid={`status-chip-${r.id}`}>{r.status.toUpperCase()}</span>
+    ),
   },
   {
     id: 'attempts',
@@ -274,7 +300,9 @@ describe('DataTable — container-driven renderer switching', () => {
     expect(screen.getByTestId('datatable-card-list')).toBeInTheDocument();
     expect(screen.getAllByTestId('datatable-card')).toHaveLength(3);
     // No grid at all.
-    expect(screen.queryByRole('columnheader', { name: /^type$/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: /^type$/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('renders the real grid in a tablet-width container, with detail columns folded away', () => {
@@ -283,9 +311,13 @@ describe('DataTable — container-driven renderer switching', () => {
     expect(layout()).toBe('tablet');
     // Still the grid renderer — tablet is a grid variant, not a third module.
     expect(renderer()).toBe('desktop');
-    expect(screen.getByRole('columnheader', { name: /^type$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: /^type$/i }),
+    ).toBeInTheDocument();
     // `detail` priority is hidden...
-    expect(screen.queryByRole('columnheader', { name: /last error/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: /last error/i }),
+    ).not.toBeInTheDocument();
     // ...but reachable, via the row expander.
     expect(screen.getAllByTestId('datatable-row-expander')).toHaveLength(3);
     expect(screen.queryByTestId('datatable-card-list')).not.toBeInTheDocument();
@@ -296,8 +328,12 @@ describe('DataTable — container-driven renderer switching', () => {
 
     expect(layout()).toBe('desktop');
     expect(renderer()).toBe('desktop');
-    expect(screen.getByRole('columnheader', { name: /last error/i })).toBeInTheDocument();
-    expect(screen.queryByTestId('datatable-row-expander')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: /last error/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-row-expander'),
+    ).not.toBeInTheDocument();
   });
 
   /**
@@ -343,7 +379,9 @@ describe('DataTable — container-driven renderer switching', () => {
   it('honours a forced tablet layout', () => {
     renderAtWidth(1400, { renderer: 'tablet' });
     expect(layout()).toBe('tablet');
-    expect(screen.queryByRole('columnheader', { name: /last error/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: /last error/i }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -357,8 +395,14 @@ describe('DataTable — container-driven renderer switching', () => {
  * architecture (state above the renderers) rather than about a renderer's
  * internals.
  */
-function StatefulTable({ initialSort }: { initialSort?: DataTableSortState | null }) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(['job-2']));
+function StatefulTable({
+  initialSort,
+}: {
+  initialSort?: DataTableSortState | null;
+}) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    new Set(['job-2']),
+  );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [sort, setSort] = useState<DataTableSortState | null>(
@@ -367,9 +411,13 @@ function StatefulTable({ initialSort }: { initialSort?: DataTableSortState | nul
 
   return (
     <>
-      <div data-testid="probe-selection">{Array.from(selectedIds).sort().join(',')}</div>
+      <div data-testid="probe-selection">
+        {Array.from(selectedIds).sort().join(',')}
+      </div>
       <div data-testid="probe-page">{page}</div>
-      <div data-testid="probe-sort">{sort ? `${sort.field}:${sort.direction}` : 'none'}</div>
+      <div data-testid="probe-sort">
+        {sort ? `${sort.field}:${sort.direction}` : 'none'}
+      </div>
       <DataTable<Job>
         columns={COLUMNS}
         rows={JOBS}
@@ -399,10 +447,9 @@ describe('DataTable — state survives a layout switch', () => {
     expect(screen.getByTestId('probe-selection')).toHaveTextContent('job-2');
     expect(screen.getByTestId('probe-page')).toHaveTextContent('1');
     expect(screen.getByTestId('probe-sort')).toHaveTextContent('attempts:desc');
-    expect(screen.getByRole('columnheader', { name: /attempts/i })).toHaveAttribute(
-      'aria-sort',
-      'descending',
-    );
+    expect(
+      screen.getByRole('columnheader', { name: /attempts/i }),
+    ).toHaveAttribute('aria-sort', 'descending');
 
     // --- to the card layout -------------------------------------------------
     setContainerWidth(400);
@@ -415,26 +462,32 @@ describe('DataTable — state survives a layout switch', () => {
       .find((card) => card.getAttribute('data-row-id') === 'job-2');
     expect(selectedCard).toHaveAttribute('data-selected', 'true');
     // "N of M selected" (issue #257): 1 of the 3 loaded rows.
-    expect(within(screen.getByTestId('datatable-bulk-action-bar')).getByText('1 of 3 selected'))
-      .toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('datatable-bulk-action-bar')).getByText(
+        '1 of 3 selected',
+      ),
+    ).toBeInTheDocument();
 
     // Page is intact: page 1 (zero-based) of 25 => rows 26-28 of 137.
     expect(screen.getByTestId('probe-page')).toHaveTextContent('1');
-    expect(screen.getByTestId('datatable-compact-pagination')).toHaveTextContent('26–28 of 137');
+    expect(
+      screen.getByTestId('datatable-compact-pagination'),
+    ).toHaveTextContent('26–28 of 137');
 
     // Sort is intact and still reachable, via the card sort control.
     expect(screen.getByTestId('probe-sort')).toHaveTextContent('attempts:desc');
-    expect(within(screen.getByTestId('datatable-card-sort')).getByText('Attempts')).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('datatable-card-sort')).getByText('Attempts'),
+    ).toBeInTheDocument();
 
     // --- back to the grid ---------------------------------------------------
     setContainerWidth(1400);
     expect(layout()).toBe('desktop');
     expect(screen.getByTestId('probe-selection')).toHaveTextContent('job-2');
     expect(screen.getByTestId('probe-page')).toHaveTextContent('1');
-    expect(screen.getByRole('columnheader', { name: /attempts/i })).toHaveAttribute(
-      'aria-sort',
-      'descending',
-    );
+    expect(
+      screen.getByRole('columnheader', { name: /attempts/i }),
+    ).toHaveAttribute('aria-sort', 'descending');
   });
 
   it('carries a selection MADE on the card layout back to the grid', () => {
@@ -442,19 +495,30 @@ describe('DataTable — state survives a layout switch', () => {
     render(<StatefulTable />);
 
     const cards = screen.getAllByTestId('datatable-card');
-    const firstCard = cards.find((card) => card.getAttribute('data-row-id') === 'job-1');
+    const firstCard = cards.find(
+      (card) => card.getAttribute('data-row-id') === 'job-1',
+    );
     // Named after the row it selects, not a bare "Select row" (issue #257) —
     // job-1's `type` is `face_detection`.
     fireEvent.click(
-      within(firstCard as HTMLElement).getByRole('checkbox', { name: 'Select face_detection' }),
+      within(firstCard as HTMLElement).getByRole('checkbox', {
+        name: 'Select face_detection',
+      }),
     );
 
-    expect(screen.getByTestId('probe-selection')).toHaveTextContent('job-1,job-2');
+    expect(screen.getByTestId('probe-selection')).toHaveTextContent(
+      'job-1,job-2',
+    );
 
     setContainerWidth(1400);
-    expect(screen.getByTestId('probe-selection')).toHaveTextContent('job-1,job-2');
-    expect(within(screen.getByTestId('datatable-bulk-action-bar')).getByText('2 of 3 selected'))
-      .toBeInTheDocument();
+    expect(screen.getByTestId('probe-selection')).toHaveTextContent(
+      'job-1,job-2',
+    );
+    expect(
+      within(screen.getByTestId('datatable-bulk-action-bar')).getByText(
+        '2 of 3 selected',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('keeps pagination controlled from the card layout', () => {
@@ -470,7 +534,9 @@ describe('DataTable — state survives a layout switch', () => {
     containerWidth = 400;
     render(<StatefulTable />);
 
-    await user.click(within(screen.getByTestId('datatable-card-sort')).getByRole('combobox'));
+    await user.click(
+      within(screen.getByTestId('datatable-card-sort')).getByRole('combobox'),
+    );
     await user.click(screen.getByRole('option', { name: 'Default' }));
 
     expect(screen.getByTestId('probe-sort')).toHaveTextContent('none');
@@ -490,11 +556,13 @@ describe('CardListRenderer — priority drives the card', () => {
       .find((c) => c.getAttribute('data-row-id') === 'job-2') as HTMLElement;
 
     // primary -> headline
-    expect(within(card).getByTestId('datatable-card-headline-type')).toHaveTextContent(
-      'auto_tagging',
-    );
+    expect(
+      within(card).getByTestId('datatable-card-headline-type'),
+    ).toHaveTextContent('auto_tagging');
     // primary with a `render` keeps its rich cell, unchanged from the grid.
-    expect(within(card).getByTestId('status-chip-job-2')).toHaveTextContent('FAILED');
+    expect(within(card).getByTestId('status-chip-job-2')).toHaveTextContent(
+      'FAILED',
+    );
     // secondary -> body label/value pair
     const attempts = within(card).getByTestId('datatable-card-field-attempts');
     expect(attempts).toHaveTextContent('Attempts');
@@ -513,8 +581,13 @@ describe('CardListRenderer — priority drives the card', () => {
       .find((c) => c.getAttribute('data-row-id') === 'job-2') as HTMLElement;
     const field = within(card).getByTestId('datatable-card-field-attempts');
 
-    for (const element of [field, ...Array.from(field.children)] as HTMLElement[]) {
-      expect(['right', 'center']).not.toContain(getComputedStyle(element).textAlign);
+    for (const element of [
+      field,
+      ...Array.from(field.children),
+    ] as HTMLElement[]) {
+      expect(['right', 'center']).not.toContain(
+        getComputedStyle(element).textAlign,
+      );
     }
   });
 
@@ -524,19 +597,29 @@ describe('CardListRenderer — priority drives the card', () => {
       .getAllByTestId('datatable-card')
       .find((c) => c.getAttribute('data-row-id') === 'job-1') as HTMLElement;
 
-    fireEvent.click(within(card).getByRole('button', { name: /more details/i }));
-    expect(within(card).getByTestId('datatable-card-field-lastError')).toHaveTextContent('—');
+    fireEvent.click(
+      within(card).getByRole('button', { name: /more details/i }),
+    );
+    expect(
+      within(card).getByTestId('datatable-card-field-lastError'),
+    ).toHaveTextContent('—');
   });
 
   it('keeps the detail region CLOSED by default', () => {
     renderAtWidth(400);
 
-    expect(screen.queryByTestId('datatable-card-detail-region')).not.toBeInTheDocument();
-    for (const toggle of screen.getAllByTestId('datatable-card-detail-toggle')) {
+    expect(
+      screen.queryByTestId('datatable-card-detail-region'),
+    ).not.toBeInTheDocument();
+    for (const toggle of screen.getAllByTestId(
+      'datatable-card-detail-toggle',
+    )) {
       expect(toggle).toHaveAttribute('aria-expanded', 'false');
     }
     // The detail column's value is genuinely not on screen while collapsed.
-    expect(screen.queryByText(/rate limited by provider/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/rate limited by provider/),
+    ).not.toBeInTheDocument();
   });
 
   it('opens the detail region on tap', () => {
@@ -545,15 +628,18 @@ describe('CardListRenderer — priority drives the card', () => {
       .getAllByTestId('datatable-card')
       .find((c) => c.getAttribute('data-row-id') === 'job-2') as HTMLElement;
 
-    fireEvent.click(within(card).getByRole('button', { name: /more details/i }));
+    fireEvent.click(
+      within(card).getByRole('button', { name: /more details/i }),
+    );
 
     const region = within(card).getByTestId('datatable-card-detail-region');
     expect(region).toHaveTextContent('Last error');
-    expect(region).toHaveTextContent('rate limited by provider after three consecutive attempts');
-    expect(within(card).getByTestId('datatable-card-detail-toggle')).toHaveAttribute(
-      'aria-expanded',
-      'true',
+    expect(region).toHaveTextContent(
+      'rate limited by provider after three consecutive attempts',
     );
+    expect(
+      within(card).getByTestId('datatable-card-detail-toggle'),
+    ).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('opens the detail region with Enter and closes it with Space', async () => {
@@ -577,12 +663,19 @@ describe('CardListRenderer — priority drives the card', () => {
     renderAtWidth(400);
 
     fireEvent.click(screen.getAllByTestId('datatable-card-detail-toggle')[0]);
-    expect(screen.getAllByTestId('datatable-card-detail-region')).toHaveLength(1);
+    expect(screen.getAllByTestId('datatable-card-detail-region')).toHaveLength(
+      1,
+    );
   });
 
   it('renders a compact pagination control instead of the desktop footer', () => {
     renderAtWidth(400, {
-      pagination: { page: 0, pageSize: 25, total: 137, onPaginationChange: vi.fn() },
+      pagination: {
+        page: 0,
+        pageSize: 25,
+        total: 137,
+        onPaginationChange: vi.fn(),
+      },
     });
 
     const compact = screen.getByTestId('datatable-compact-pagination');
@@ -593,9 +686,16 @@ describe('CardListRenderer — priority drives the card', () => {
 
   it('disables the previous-page control on the first page', () => {
     renderAtWidth(400, {
-      pagination: { page: 0, pageSize: 25, total: 137, onPaginationChange: vi.fn() },
+      pagination: {
+        page: 0,
+        pageSize: 25,
+        total: 137,
+        onPaginationChange: vi.fn(),
+      },
     });
-    expect(screen.getByRole('button', { name: /go to previous page/i })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: /go to previous page/i }),
+    ).toBeDisabled();
   });
 
   it('shows the caller-supplied empty state and the error alert', () => {
@@ -606,9 +706,13 @@ describe('CardListRenderer — priority drives the card', () => {
     });
 
     expect(
-      within(screen.getByTestId('datatable-empty-overlay')).getByText('No jobs match these filters'),
+      within(screen.getByTestId('datatable-empty-overlay')).getByText(
+        'No jobs match these filters',
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByTestId('datatable-error')).toHaveTextContent('Failed to load jobs');
+    expect(screen.getByTestId('datatable-error')).toHaveTextContent(
+      'Failed to load jobs',
+    );
   });
 });
 
@@ -629,8 +733,13 @@ describe('CardField — alignment is a grid-only concern', () => {
     render(<CardField column={centred} row={JOBS[1]} />);
 
     const field = screen.getByTestId('datatable-card-field-attempts');
-    for (const element of [field, ...Array.from(field.children)] as HTMLElement[]) {
-      expect(['right', 'center']).not.toContain(getComputedStyle(element).textAlign);
+    for (const element of [
+      field,
+      ...Array.from(field.children),
+    ] as HTMLElement[]) {
+      expect(['right', 'center']).not.toContain(
+        getComputedStyle(element).textAlign,
+      );
     }
   });
 
@@ -642,8 +751,13 @@ describe('CardField — alignment is a grid-only concern', () => {
     // override — a `button`'s UA default is centred — is not assertable here:
     // jsdom's naive cascade reports MUI's own class, not the `sx` rule.)
     const field = screen.getByTestId('datatable-card-field-attempts');
-    for (const element of [field, ...Array.from(field.children)] as HTMLElement[]) {
-      expect(['right', 'center']).not.toContain(getComputedStyle(element).textAlign);
+    for (const element of [
+      field,
+      ...Array.from(field.children),
+    ] as HTMLElement[]) {
+      expect(['right', 'center']).not.toContain(
+        getComputedStyle(element).textAlign,
+      );
     }
   });
 });
@@ -659,7 +773,9 @@ describe('CardListRenderer — truncated values', () => {
       .getAllByTestId('datatable-card')
       .find((c) => c.getAttribute('data-row-id') === 'job-2') as HTMLElement;
 
-    fireEvent.click(within(card).getByRole('button', { name: /more details/i }));
+    fireEvent.click(
+      within(card).getByRole('button', { name: /more details/i }),
+    );
 
     const value = within(card).getByTestId('datatable-card-expandable-value');
     expect(value).toHaveAttribute('data-expanded', 'false');
@@ -670,7 +786,9 @@ describe('CardListRenderer — truncated values', () => {
     expect(value).toHaveAttribute('aria-expanded', 'true');
     // The full text was in the DOM all along — the clamp is visual, so the
     // value can never be lost, only folded.
-    expect(value).toHaveTextContent('rate limited by provider after three consecutive attempts');
+    expect(value).toHaveTextContent(
+      'rate limited by provider after three consecutive attempts',
+    );
   });
 
   it('exposes the expander as a real button, so Enter works', async () => {
@@ -679,7 +797,9 @@ describe('CardListRenderer — truncated values', () => {
     const card = screen
       .getAllByTestId('datatable-card')
       .find((c) => c.getAttribute('data-row-id') === 'job-2') as HTMLElement;
-    fireEvent.click(within(card).getByRole('button', { name: /more details/i }));
+    fireEvent.click(
+      within(card).getByRole('button', { name: /more details/i }),
+    );
 
     const value = within(card).getByTestId('datatable-card-expandable-value');
     value.focus();
@@ -694,7 +814,9 @@ describe('CardListRenderer — truncated values', () => {
       .find((c) => c.getAttribute('data-row-id') === 'job-2') as HTMLElement;
     // Only `lastError` declares truncate, and it is behind the closed detail
     // region — so no expandable value is on screen yet.
-    expect(within(card).queryByTestId('datatable-card-expandable-value')).not.toBeInTheDocument();
+    expect(
+      within(card).queryByTestId('datatable-card-expandable-value'),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -705,30 +827,39 @@ describe('CardListRenderer — truncated values', () => {
 describe('CardListRenderer — selection parity', () => {
   it('toggles a single row and reports the same id set the grid would', () => {
     const onSelectionChange = vi.fn();
-    renderAtWidth(400, { selection: { selectedIds: new Set<string>(), onSelectionChange } });
+    renderAtWidth(400, {
+      selection: { selectedIds: new Set<string>(), onSelectionChange },
+    });
 
     // job-1's `type` is `face_detection`; the checkbox is named after it
     // rather than a bare "Select row" (issue #257).
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Select face_detection' }));
-    expect(Array.from(onSelectionChange.mock.calls[0][0] as Set<string>)).toEqual(['job-1']);
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Select face_detection' }),
+    );
+    expect(
+      Array.from(onSelectionChange.mock.calls[0][0] as Set<string>),
+    ).toEqual(['job-1']);
   });
 
   it('offers the same page-scoped select-all as the grid header checkbox', () => {
     const onSelectionChange = vi.fn();
-    renderAtWidth(400, { selection: { selectedIds: new Set<string>(), onSelectionChange } });
+    renderAtWidth(400, {
+      selection: { selectedIds: new Set<string>(), onSelectionChange },
+    });
 
     fireEvent.click(screen.getByRole('checkbox', { name: /select all rows/i }));
-    expect(Array.from(onSelectionChange.mock.calls[0][0] as Set<string>).sort()).toEqual([
-      'job-1',
-      'job-2',
-      'job-3',
-    ]);
+    expect(
+      Array.from(onSelectionChange.mock.calls[0][0] as Set<string>).sort(),
+    ).toEqual(['job-1', 'job-2', 'job-3']);
   });
 
   it('deselects everything when select-all is toggled off', () => {
     const onSelectionChange = vi.fn();
     renderAtWidth(400, {
-      selection: { selectedIds: new Set(['job-1', 'job-2', 'job-3']), onSelectionChange },
+      selection: {
+        selectedIds: new Set(['job-1', 'job-2', 'job-3']),
+        onSelectionChange,
+      },
     });
 
     fireEvent.click(screen.getByRole('checkbox', { name: /select all rows/i }));
@@ -738,7 +869,10 @@ describe('CardListRenderer — selection parity', () => {
   it('reuses the shared BulkActionBar verbatim', () => {
     const archive = vi.fn();
     renderAtWidth(400, {
-      selection: { selectedIds: new Set(['job-1', 'job-2']), onSelectionChange: vi.fn() },
+      selection: {
+        selectedIds: new Set(['job-1', 'job-2']),
+        onSelectionChange: vi.fn(),
+      },
       bulkActions: [{ id: 'archive', label: 'Archive', onClick: archive }],
     });
 
@@ -753,7 +887,9 @@ describe('CardListRenderer — selection parity', () => {
   it('renders no checkboxes without a selection config', () => {
     renderAtWidth(400);
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('datatable-bulk-action-bar')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-bulk-action-bar'),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -764,21 +900,33 @@ describe('CardListRenderer — selection parity', () => {
 describe('CardListRenderer — row actions', () => {
   it('collapses even a SINGLE action into the card header overflow menu', () => {
     const retry = vi.fn();
-    renderAtWidth(400, { rowActions: [{ id: 'retry', label: 'Retry', onClick: retry }] });
+    renderAtWidth(400, {
+      rowActions: [{ id: 'retry', label: 'Retry', onClick: retry }],
+    });
 
     // No bare icon button; the affordance is always the same menu.
-    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Retry' }),
+    ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Row actions for face_detection' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Row actions for face_detection' }),
+    );
     fireEvent.click(screen.getByRole('menuitem', { name: 'Retry' }));
     expect(retry).toHaveBeenCalledWith(JOBS[0]);
   });
 
   it('names each card menu button after its row headline', () => {
-    renderAtWidth(400, { rowActions: [{ id: 'retry', label: 'Retry', onClick: vi.fn() }] });
+    renderAtWidth(400, {
+      rowActions: [{ id: 'retry', label: 'Retry', onClick: vi.fn() }],
+    });
 
-    expect(screen.getByRole('button', { name: 'Row actions for auto_tagging' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Row actions for geocode' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Row actions for auto_tagging' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Row actions for geocode' }),
+    ).toBeInTheDocument();
   });
 
   it('disables an action per row inside the menu', () => {
@@ -793,8 +941,13 @@ describe('CardListRenderer — row actions', () => {
       ],
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Row actions for geocode' }));
-    expect(screen.getByRole('menuitem', { name: 'Retry' })).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Row actions for geocode' }),
+    );
+    expect(screen.getByRole('menuitem', { name: 'Retry' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 
   it('gates a destructive action behind the SAME confirmation dialog as the grid', () => {
@@ -806,19 +959,26 @@ describe('CardListRenderer — row actions', () => {
           id: 'delete',
           label: 'Delete',
           destructive: true,
-          confirm: { title: 'Delete job?', description: 'This removes the job row permanently.' },
+          confirm: {
+            title: 'Delete job?',
+            description: 'This removes the job row permanently.',
+          },
           onClick: destroy,
         },
       ],
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Row actions for auto_tagging' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Row actions for auto_tagging' }),
+    );
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
     expect(destroy).not.toHaveBeenCalled();
 
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByText('Delete job?')).toBeInTheDocument();
-    expect(within(dialog).getByText('This removes the job row permanently.')).toBeInTheDocument();
+    expect(
+      within(dialog).getByText('This removes the job row permanently.'),
+    ).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
     expect(destroy).toHaveBeenCalledWith(JOBS[1]);
@@ -828,13 +988,25 @@ describe('CardListRenderer — row actions', () => {
     const destroy = vi.fn();
     renderAtWidth(400, {
       rowActions: [
-        { id: 'delete', label: 'Delete', destructive: true, confirm: true, onClick: destroy },
+        {
+          id: 'delete',
+          label: 'Delete',
+          destructive: true,
+          confirm: true,
+          onClick: destroy,
+        },
       ],
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Row actions for face_detection' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Row actions for face_detection' }),
+    );
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Cancel',
+      }),
+    );
     expect(destroy).not.toHaveBeenCalled();
   });
 });
@@ -847,8 +1019,12 @@ describe('DesktopGridRenderer — tablet row expansion', () => {
   it('reveals the hidden detail columns as label/value pairs', () => {
     renderAtWidth(800);
 
-    expect(screen.queryByRole('columnheader', { name: /last error/i })).not.toBeInTheDocument();
-    expect(screen.queryByTestId('datatable-row-detail-panel')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: /last error/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-row-detail-panel'),
+    ).not.toBeInTheDocument();
 
     // Row 2 is `auto_tagging`, the one with a lastError.
     const expanders = screen.getAllByTestId('datatable-row-expander');
@@ -857,7 +1033,9 @@ describe('DesktopGridRenderer — tablet row expansion', () => {
 
     const panel = screen.getByTestId('datatable-row-detail-panel');
     expect(within(panel).getByText('Last error')).toBeInTheDocument();
-    expect(panel).toHaveTextContent('rate limited by provider after three consecutive attempts');
+    expect(panel).toHaveTextContent(
+      'rate limited by provider after three consecutive attempts',
+    );
     expect(screen.getAllByTestId('datatable-row-expander')[1]).toHaveAttribute(
       'aria-expanded',
       'true',
@@ -868,15 +1046,21 @@ describe('DesktopGridRenderer — tablet row expansion', () => {
     renderAtWidth(800);
 
     fireEvent.click(screen.getAllByTestId('datatable-row-expander')[1]);
-    expect(screen.getByTestId('datatable-row-detail-panel')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('datatable-row-detail-panel'),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByTestId('datatable-row-expander')[1]);
-    expect(screen.queryByTestId('datatable-row-detail-panel')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-row-detail-panel'),
+    ).not.toBeInTheDocument();
   });
 
   it('keeps the real rows intact and selectable while a row is expanded', () => {
     const onSelectionChange = vi.fn();
-    renderAtWidth(800, { selection: { selectedIds: new Set<string>(), onSelectionChange } });
+    renderAtWidth(800, {
+      selection: { selectedIds: new Set<string>(), onSelectionChange },
+    });
 
     fireEvent.click(screen.getAllByTestId('datatable-row-expander')[0]);
 
@@ -889,7 +1073,9 @@ describe('DesktopGridRenderer — tablet row expansion', () => {
     expect(rowCheckboxes).toHaveLength(3);
 
     fireEvent.click(rowCheckboxes[0]);
-    expect(Array.from(onSelectionChange.mock.calls[0][0] as Set<string>)).toEqual(['job-1']);
+    expect(
+      Array.from(onSelectionChange.mock.calls[0][0] as Set<string>),
+    ).toEqual(['job-1']);
   });
 
   it('adds no expander when the table declares no detail columns', () => {
@@ -897,7 +1083,9 @@ describe('DesktopGridRenderer — tablet row expansion', () => {
     renderAtWidth(800, { columns: noDetail });
 
     expect(layout()).toBe('tablet');
-    expect(screen.queryByTestId('datatable-row-expander')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('datatable-row-expander'),
+    ).not.toBeInTheDocument();
   });
 
   it('gives the expander a comfortable touch target, except at compact density', () => {
@@ -906,14 +1094,16 @@ describe('DesktopGridRenderer — tablet row expansion', () => {
     const { unmount } = renderAtWidth(800);
     expect(
       Number.parseFloat(
-        getComputedStyle(screen.getAllByTestId('datatable-row-expander')[0]).minHeight || '0',
+        getComputedStyle(screen.getAllByTestId('datatable-row-expander')[0])
+          .minHeight || '0',
       ),
     ).toBeGreaterThanOrEqual(44);
     unmount();
 
     renderAtWidth(800, { density: 'compact' });
     expect(
-      getComputedStyle(screen.getAllByTestId('datatable-row-expander')[0]).minHeight,
+      getComputedStyle(screen.getAllByTestId('datatable-row-expander')[0])
+        .minHeight,
     ).not.toBe('44px');
   });
 
@@ -923,7 +1113,9 @@ describe('DesktopGridRenderer — tablet row expansion', () => {
     renderAtWidth(600);
     expect(layout()).toBe('tablet');
     expect(screen.queryByTestId('datatable-card-list')).not.toBeInTheDocument();
-    expect(screen.getAllByTestId('datatable-row-expander').length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByTestId('datatable-row-expander').length,
+    ).toBeGreaterThan(0);
   });
 });
 
@@ -947,15 +1139,28 @@ describe('DesktopGridRenderer — tablet row expansion', () => {
 describe('DataTable — no invisible-but-tappable controls (issue #243 guard)', () => {
   it('holds for the card layout, with everything on screen', () => {
     renderAtWidth(400, {
-      selection: { selectedIds: new Set(['job-1']), onSelectionChange: vi.fn() },
+      selection: {
+        selectedIds: new Set(['job-1']),
+        onSelectionChange: vi.fn(),
+      },
       bulkActions: [{ id: 'archive', label: 'Archive', onClick: vi.fn() }],
       rowActions: [{ id: 'retry', label: 'Retry', onClick: vi.fn() }],
-      pagination: { page: 0, pageSize: 25, total: 137, onPaginationChange: vi.fn() },
-      sort: { sort: { field: 'attempts', direction: 'desc' }, onSortChange: vi.fn() },
+      pagination: {
+        page: 0,
+        pageSize: 25,
+        total: 137,
+        onPaginationChange: vi.fn(),
+      },
+      sort: {
+        sort: { field: 'attempts', direction: 'desc' },
+        onSortChange: vi.fn(),
+      },
     });
 
     // Open every collapsible region so nothing escapes the sweep.
-    for (const toggle of screen.getAllByTestId('datatable-card-detail-toggle')) {
+    for (const toggle of screen.getAllByTestId(
+      'datatable-card-detail-toggle',
+    )) {
       fireEvent.click(toggle);
     }
 
@@ -964,7 +1169,10 @@ describe('DataTable — no invisible-but-tappable controls (issue #243 guard)', 
 
   it('holds for the tablet layout with a row expanded', () => {
     renderAtWidth(800, {
-      selection: { selectedIds: new Set(['job-1']), onSelectionChange: vi.fn() },
+      selection: {
+        selectedIds: new Set(['job-1']),
+        onSelectionChange: vi.fn(),
+      },
       rowActions: [{ id: 'retry', label: 'Retry', onClick: vi.fn() }],
     });
 
@@ -976,7 +1184,12 @@ describe('DataTable — no invisible-but-tappable controls (issue #243 guard)', 
     renderAtWidth(400, {
       selection: { selectedIds: new Set<string>(), onSelectionChange: vi.fn() },
       rowActions: [{ id: 'retry', label: 'Retry', onClick: vi.fn() }],
-      pagination: { page: 1, pageSize: 25, total: 137, onPaginationChange: vi.fn() },
+      pagination: {
+        page: 1,
+        pageSize: 25,
+        total: 137,
+        onPaginationChange: vi.fn(),
+      },
     });
 
     const mustBeTouchSized = [
@@ -990,9 +1203,12 @@ describe('DataTable — no invisible-but-tappable controls (issue #243 guard)', 
 
     for (const control of mustBeTouchSized) {
       // The checkbox input is wrapped; the sizing lives on the labelled span.
-      const sized = control.closest<HTMLElement>('[class*="MuiCheckbox-root"]') ?? control;
+      const sized =
+        control.closest<HTMLElement>('[class*="MuiCheckbox-root"]') ?? control;
       const style = getComputedStyle(sized);
-      expect(Number.parseFloat(style.minHeight || '0')).toBeGreaterThanOrEqual(44);
+      expect(Number.parseFloat(style.minHeight || '0')).toBeGreaterThanOrEqual(
+        44,
+      );
     }
   });
 

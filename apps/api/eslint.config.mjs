@@ -30,7 +30,13 @@ import globals from 'globals';
  */
 export default tseslint.config(
   {
-    ignores: ['dist', 'coverage', 'node_modules', 'generated', 'prisma/migrations'],
+    ignores: [
+      'dist',
+      'coverage',
+      'node_modules',
+      'generated',
+      'prisma/migrations',
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
@@ -43,7 +49,11 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-unused-vars': [
         'error',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
       ],
 
       // Off, not absent: there are ~30 pre-existing `any`s in src/, most of

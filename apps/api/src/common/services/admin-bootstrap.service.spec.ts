@@ -3,7 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { AdminBootstrapService } from './admin-bootstrap.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { createMockPrismaService, MockPrismaService } from '../../../test/mocks/prisma.mock';
+import {
+  createMockPrismaService,
+  MockPrismaService,
+} from '../../../test/mocks/prisma.mock';
 
 describe('AdminBootstrapService', () => {
   let service: AdminBootstrapService;
@@ -49,7 +52,7 @@ describe('AdminBootstrapService', () => {
       await service.onModuleInit();
 
       expect(Logger.prototype.log).toHaveBeenCalledWith(
-        'Admin bootstrap disabled in production'
+        'Admin bootstrap disabled in production',
       );
     });
 
@@ -63,7 +66,7 @@ describe('AdminBootstrapService', () => {
       await service.onModuleInit();
 
       expect(Logger.prototype.log).toHaveBeenCalledWith(
-        'Admin bootstrap configured for: admin@example.com'
+        'Admin bootstrap configured for: admin@example.com',
       );
     });
 
@@ -77,7 +80,7 @@ describe('AdminBootstrapService', () => {
       await service.onModuleInit();
 
       expect(Logger.prototype.warn).toHaveBeenCalledWith(
-        'INITIAL_ADMIN_EMAIL not set - no admin will be auto-assigned'
+        'INITIAL_ADMIN_EMAIL not set - no admin will be auto-assigned',
       );
     });
 
@@ -91,7 +94,7 @@ describe('AdminBootstrapService', () => {
       await service.onModuleInit();
 
       expect(Logger.prototype.log).toHaveBeenCalledWith(
-        'Admin bootstrap configured for: admin@test.com'
+        'Admin bootstrap configured for: admin@test.com',
       );
     });
   });
@@ -269,7 +272,7 @@ describe('AdminBootstrapService', () => {
       await service.shouldGrantAdminRole(adminEmail);
 
       expect(Logger.prototype.log).toHaveBeenCalledWith(
-        `Granting admin role to initial admin: ${adminEmail}`
+        `Granting admin role to initial admin: ${adminEmail}`,
       );
     });
   });
@@ -317,7 +320,7 @@ describe('AdminBootstrapService', () => {
       prismaService.role.findUnique.mockResolvedValue(null);
 
       await expect(service.assignAdminRole(userId)).rejects.toThrow(
-        'Admin role not found - run seeds first'
+        'Admin role not found - run seeds first',
       );
 
       expect(prismaService.userRole.upsert).not.toHaveBeenCalled();
@@ -341,7 +344,7 @@ describe('AdminBootstrapService', () => {
       await service.assignAdminRole(userId);
 
       expect(Logger.prototype.log).toHaveBeenCalledWith(
-        `Admin role assigned to user: ${userId}`
+        `Admin role assigned to user: ${userId}`,
       );
     });
 

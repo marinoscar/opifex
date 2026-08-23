@@ -1,4 +1,8 @@
-import { ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
@@ -42,7 +46,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       const token = authHeader.slice(7); // Remove "Bearer "
       const user = await this.patService.validateToken(token);
       if (!user) {
-        throw new UnauthorizedException('Invalid or expired personal access token');
+        throw new UnauthorizedException(
+          'Invalid or expired personal access token',
+        );
       }
       // Set the full AuthenticatedUser on request.user so RolesGuard/PermissionsGuard
       // can call toRequestUser() on it (same format as JWT strategy validate() returns)

@@ -208,7 +208,9 @@ describe('System Settings Integration', () => {
         .expect(200);
 
       expect(response.body.data.ui.allowUserThemeOverride).toBe(false);
-      expect(response.body.data.features).toEqual(DEFAULT_SYSTEM_SETTINGS.features);
+      expect(response.body.data.features).toEqual(
+        DEFAULT_SYSTEM_SETTINGS.features,
+      );
       expect(response.body.data.version).toBe(2);
     });
 

@@ -9,10 +9,7 @@ import {
   setupBaseMocks,
   setupMockUserSettings,
 } from '../fixtures/mock-setup.helper';
-import {
-  createMockTestUser,
-  authHeader,
-} from '../helpers/auth-mock.helper';
+import { createMockTestUser, authHeader } from '../helpers/auth-mock.helper';
 import {
   DEFAULT_USER_SETTINGS,
   UserSettingsValue,
@@ -284,7 +281,9 @@ describe('User Settings Integration', () => {
         version: 1,
         updatedAt: new Date(),
       };
-      context.prismaMock.userSettings.findUnique.mockResolvedValue(mockSettings);
+      context.prismaMock.userSettings.findUnique.mockResolvedValue(
+        mockSettings,
+      );
     });
 
     it('should return 401 without auth', async () => {
