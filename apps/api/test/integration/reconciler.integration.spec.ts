@@ -13,6 +13,7 @@ import { ReconcileLogService } from '../../src/reconciler/log/reconcile-log.serv
 import { ReconcilerService } from '../../src/reconciler/reconciler.service';
 import { TickLeaseService } from '../../src/reconciler/tick-lease.service';
 import type { RepositoriesService } from '../../src/repositories/repositories.service';
+import { WorkOrderProjectionService } from '../../src/work-orders/work-order-projection.service';
 import { rawIssue, rawLabel, rawLabeledEvent } from '../fixtures/github/issues.fixture';
 
 /**
@@ -29,12 +30,27 @@ const REPO = {
   id: 'repo-uuid',
   owner: 'acme',
   name: 'app',
+  defaultBranch: 'main',
   observeEnabled: true,
   dispatchEnabled: true,
   mirrorLabelsEnabled: false,
+  specFeedbackEnabled: false,
   budgetCeilingUsd: null,
+  wallClockTimeoutMinutes: null,
   lastObservedAt: null,
 };
+
+const HEAD = 'a3f91c2000000000000000000000000000000000';
+
+/** The raw shape GitHub's commits endpoint returns, reduced to what is read. */
+function rawCommit(sha = HEAD) {
+  return {
+    sha,
+    html_url: `https://github.com/acme/app/commit/${sha}`,
+    author: { login: 'someone' },
+    commit: { message: 'Merge pull request #9', author: { date: '2026-08-23T01:00:00Z' } },
+  };
+}
 
 function githubJson(body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -54,15 +70,21 @@ describe('reconciler ticks against a mocked GitHub', () => {
   let fetchMock: jest.SpyInstance;
   let prisma: {
     repository: { update: jest.Mock };
-    workOrder: { findMany: jest.Mock };
+    workOrder: {
+      findMany: jest.Mock;
+      findUnique: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+    };
   };
   let reconciler: ReconcilerService;
 
   /** Route by URL so a tick can make several different calls in any order. */
-  function respond(routes: { issues: unknown[]; timeline?: unknown[] }) {
+  function respond(routes: { issues: unknown[]; timeline?: unknown[]; commits?: unknown[] }) {
     fetchMock.mockImplementation(async (url: string) => {
       if (url.includes('/timeline')) return githubJson(routes.timeline ?? []);
       if (url.includes('/issues')) return githubJson(routes.issues);
+      if (url.includes('/commits')) return githubJson(routes.commits ?? [rawCommit()]);
       return githubJson([]);
     });
   }
@@ -99,6 +121,11 @@ describe('reconciler ticks against a mocked GitHub', () => {
       rateLimit,
       prisma as unknown as PrismaService,
       { record: jest.fn().mockResolvedValue(undefined) } as unknown as ReconcileLogService,
+      // The REAL projection service, against the Prisma double. #51 asks for
+      // whole ticks: substituting a mock here would leave the join between
+      // raw GitHub JSON and a work order row — the thing #155 built —
+      // untested end to end.
+      new WorkOrderProjectionService(prisma as unknown as PrismaService),
     );
   }
 
@@ -106,7 +133,12 @@ describe('reconciler ticks against a mocked GitHub', () => {
     fetchMock = jest.spyOn(globalThis, 'fetch');
     prisma = {
       repository: { update: jest.fn().mockResolvedValue({}) },
-      workOrder: { findMany: jest.fn().mockResolvedValue([]) },
+      workOrder: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({}),
+      },
     };
     reconciler = build();
   });
@@ -421,6 +453,157 @@ describe('reconciler ticks against a mocked GitHub', () => {
       expect(second.allFromCache).toBe(true);
       // And the projection is still complete — a 304 must not mean "no data".
       expect(second.projections[0].issues).toHaveLength(1);
+    });
+  });
+
+  describe('an eligible issue becomes a work order (#155)', () => {
+    /** A body that passes #108's conformance gate and #62's criteria check. */
+    const READY_BODY = `## Problem statement
+
+Operators export reports by hand, twenty minutes at a time.
+
+## Proposed solution
+
+Add a CSV export button to the reports page, backed by the existing report
+query, streaming the rows rather than buffering them.
+
+## Acceptance criteria
+
+- [ ] Clicking export downloads a CSV of the current filter selection
+- [ ] A report with no rows downloads a file with only the header row
+- [ ] The export path is covered by an integration test
+
+## Affected component
+
+\`apps/web/src/reports/**\`
+
+## Priority
+
+P1
+`;
+
+    function readyIssue(overrides: Record<string, unknown> = {}) {
+      return rawIssue({
+        body: READY_BODY,
+        labels: [rawLabel(INPUT_LABELS.READY)],
+        ...overrides,
+      });
+    }
+
+    it('writes a queued row from raw GitHub JSON', async () => {
+      // The whole join #155 built, end to end: raw issue JSON in, a work order
+      // row out. Every layer between is real — the HTTP pipeline, the read
+      // adapter, the projection, the generator and the writer.
+      respond({ issues: [readyIssue()] });
+
+      const record = await build().tick();
+
+      expect(prisma.workOrder.create).toHaveBeenCalledTimes(1);
+      expect(prisma.workOrder.create.mock.calls[0][0].data).toMatchObject({
+        repositoryId: 'repo-uuid',
+        issueNumber: 312,
+        status: 'queued',
+        baseCommit: HEAD,
+      });
+      expect(record.workOrdersCreated).toBe(1);
+    });
+
+    it('pins the tip of the default branch the tick actually read', async () => {
+      const other = 'b'.repeat(40);
+      respond({ issues: [readyIssue()], commits: [rawCommit(other)] });
+
+      await build().tick();
+
+      expect(prisma.workOrder.create.mock.calls[0][0].data.baseCommit).toBe(other);
+    });
+
+    it('derives the identity and branch from those coordinates', async () => {
+      respond({ issues: [readyIssue()] });
+
+      await build().tick();
+
+      const data = prisma.workOrder.create.mock.calls[0][0].data;
+      expect(data.identity).toBe('wo_app_312_a3f91c2_a1');
+      expect(data.branch).toBe('factory/312-a3f91c2-a1');
+    });
+
+    it('writes the fields a stored work order needs to be rebuilt', async () => {
+      // #154's round trip is only real if the writer populates them.
+      respond({ issues: [readyIssue()] });
+
+      await build().tick();
+
+      expect(prisma.workOrder.create.mock.calls[0][0].data).toMatchObject({
+        issueUrl: 'https://github.com/acme/app/issues/312',
+        issueTitle: 'Add CSV export to the reports page',
+        needs: [],
+      });
+    });
+
+    it('writes a held row when factory:hold is also present', async () => {
+      respond({
+        issues: [
+          readyIssue({ labels: [rawLabel(INPUT_LABELS.READY), rawLabel(INPUT_LABELS.HOLD)] }),
+        ],
+      });
+
+      await build().tick();
+
+      expect(prisma.workOrder.create.mock.calls[0][0].data.status).toBe('held');
+    });
+
+    it('writes nothing, and reads no commits, for an issue without factory:ready', async () => {
+      respond({ issues: [rawIssue({ body: READY_BODY })] });
+
+      await build().tick();
+
+      expect(prisma.workOrder.create).not.toHaveBeenCalled();
+      expect(
+        fetchMock.mock.calls.filter(([url]: [string]) => url.includes('/commits')),
+      ).toHaveLength(0);
+    });
+
+    it('rejects a placeholder spec and carries the reason off the tick', async () => {
+      // VISION §10: spec quality is the throughput ceiling, so this is the
+      // normal case to handle well — the reason has to reach the author.
+      const placeholder = READY_BODY.replace(
+        /## Acceptance criteria[\s\S]*?(?=## Affected)/,
+        '## Acceptance criteria\n\n- [ ] TBD\n- [ ] It works nicely\n\n',
+      );
+      respond({ issues: [readyIssue({ body: placeholder })] });
+
+      const record = await build().tick();
+
+      expect(prisma.workOrder.create).not.toHaveBeenCalled();
+      expect(record.rejections).toHaveLength(1);
+      expect(record.rejections[0]).toMatchObject({
+        issueNumber: 312,
+        repository: { owner: 'acme', name: 'app' },
+        feedbackEnabled: false,
+      });
+    });
+
+    it('does not project again once a work order exists', async () => {
+      // The tick recomputes from scratch every 60 seconds. Re-projecting at
+      // the current HEAD would mint a new identity on every merge to main.
+      prisma.workOrder.findMany.mockResolvedValue([
+        {
+          id: 'wo',
+          identity: 'wo_app_312_a3f91c2_a1',
+          issueNumber: 312,
+          attempt: 1,
+          status: 'queued',
+          runs: [],
+        },
+      ]);
+      respond({ issues: [readyIssue()] });
+
+      await build().tick();
+
+      expect(prisma.workOrder.create).not.toHaveBeenCalled();
+      expect(
+        fetchMock.mock.calls.filter(([url]: [string]) => url.includes('/commits')),
+      ).toHaveLength(0);
     });
   });
 });

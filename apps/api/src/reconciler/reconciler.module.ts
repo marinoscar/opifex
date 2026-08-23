@@ -8,6 +8,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { WatchdogModule } from '../watchdog/watchdog.module';
 import { WorkOrdersModule } from '../work-orders/work-orders.module';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
+import { SpecFeedbackExecutor } from './execute/spec-feedback.executor';
 import { RepositoriesModule } from '../repositories/repositories.module';
 import { ReconcileLogCleanupTask } from './log/reconcile-log.cleanup.task';
 import { ReconcileLogService } from './log/reconcile-log.service';
@@ -74,6 +75,10 @@ import { TickLeaseService } from './tick-lease.service';
     ReconcileLogCleanupTask,
     ReconcilerService,
     MirrorLabelExecutor,
+    // The other write the task may make: telling an issue author why their
+    // spec was refused (#155). On the same side of the compute/act line as
+    // the label executor, behind its own per-repository flag.
+    SpecFeedbackExecutor,
     ReconcilerTask,
   ],
   exports: [ReconcilerService, ReconcileLogService],

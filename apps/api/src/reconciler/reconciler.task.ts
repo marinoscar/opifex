@@ -8,7 +8,9 @@ import { EscalationDispatcher } from '../notifications/escalation-dispatcher.ser
 import { WatchdogService, type WatchdogSweepResult } from '../watchdog/watchdog.service';
 import type { ReconcileAction } from './diff/actions.types';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
+import { SpecFeedbackExecutor } from './execute/spec-feedback.executor';
 import { ReconcilerService } from './reconciler.service';
+import type { TickRecord } from './reconciler.types';
 import { RepositoriesService } from '../repositories/repositories.service';
 
 const INTERVAL_NAME = 'reconciler-tick';
@@ -37,6 +39,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     private readonly scheduler: SchedulerRegistry,
     private readonly reconciler: ReconcilerService,
     private readonly executor: MirrorLabelExecutor,
+    private readonly specFeedback: SpecFeedbackExecutor,
     private readonly repositories: RepositoriesService,
     private readonly liveness: GitLivenessService,
     private readonly watchdog: WatchdogService,
@@ -248,6 +251,38 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Tell issue authors why their specs were refused.
+   *
+   * Independently caught, like every other outward step: a GitHub outage while
+   * commenting must not stop the label executor below, and vice versa.
+   *
+   * Runs BEFORE the mirror-label gate and outside `actions.length === 0`,
+   * because a rejection produces no action — the issue never became a work
+   * order, so there is nothing for the diff engine to have an opinion about.
+   * Folding it in behind that early return would mean the one repository with
+   * nothing else happening is the one whose authors never hear back.
+   */
+  private async reportSpecRejections(record: TickRecord): Promise<void> {
+    if (record.rejections.length === 0) return;
+
+    try {
+      const outcome = await this.specFeedback.report(record.rejections);
+      if (outcome.failures.length > 0) {
+        this.logger.error(
+          `Spec feedback: ${outcome.failures.length} comment(s) could not be posted — ` +
+            outcome.failures.map((f) => `${f.repository}#${f.issueNumber}: ${f.reason}`).join('; '),
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Reporting spec rejections failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   private async runOnce(): Promise<void> {
     try {
       // Liveness FIRST, so the tick's projection sees the freshest run state.
@@ -285,6 +320,12 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // escalation raised while the push service was down is picked up here
       // on a later tick, which a dispatch gated on new work never would.
       await this.dispatchEscalations();
+
+      // Also before the early return: a rejected issue produces no ACTION —
+      // it never became a work order — so gating this on the action list
+      // would silence feedback in exactly the repository where nothing else
+      // is happening.
+      await this.reportSpecRejections(record);
 
       if (actions.length === 0) return;
 
