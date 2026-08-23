@@ -270,6 +270,52 @@ export function checkCommit(commit, patterns) {
   return problems;
 }
 
+/**
+ * Every ADR names the discussion issue it came out of (#114).
+ *
+ * VISION §5 splits the two on purpose — "Decisions are files, not issues" — and
+ * that split only pays off if the file still points back at the conversation.
+ * The PR's closing keyword establishes the same edge at merge time, but it
+ * lives in a PR body on one vendor's servers; the header lives in the file and
+ * still resolves in a clone. This enforces the durable half.
+ *
+ * Checked across the whole directory rather than only the ADRs a pull request
+ * touches, because the edge that goes missing is the one nobody is looking at.
+ * The cost is that an unrelated pull request fails for someone else's ADR —
+ * acceptable while the count is small and every existing ADR already complies.
+ *
+ * `0000-template.md` is exempt: it is the template, and `ADR-0000` resolves to
+ * nothing by design.
+ */
+export function checkAdrDiscussionIssues(dir = join(REPO_ROOT, 'docs/adr')) {
+  if (!existsSync(dir)) return [];
+
+  const label = dir === join(REPO_ROOT, 'docs/adr') ? 'docs/adr' : dir;
+  const problems = [];
+  for (const file of readdirSync(dir).sort()) {
+    if (!/^\d{4}-.*\.md$/.test(file) || file.startsWith('0000-')) continue;
+
+    // The header block only — an `Issue:` mentioned in the prose below is
+    // discussion about issues, not the field.
+    const header =
+      readFileSync(join(dir, file), 'utf8').split(/\n\s*\n/)[1] ?? '';
+    const issue = /^- Issue: (\S+)$/m.exec(header);
+
+    if (!issue) {
+      problems.push(
+        `${label}/${file} has no \`- Issue:\` header — every ADR names the discussion ` +
+          'issue it came out of, so the decision stays walkable back to its reasoning ' +
+          '(docs/adr/README.md, "Closing the discussion")',
+      );
+    } else if (!/^#\d+$/.test(issue[1])) {
+      problems.push(
+        `${label}/${file} has \`- Issue: ${issue[1]}\`, which is not of the form #123`,
+      );
+    }
+  }
+  return problems;
+}
+
 function commitsBetween(base, head) {
   const RECORD = '';
   const FIELD = '';
@@ -331,6 +377,14 @@ function main() {
         '  Add one of: Fixes #123 / Closes #123 / Resolves #123\n' +
         '  VISION §5: "No PR without one — a single orphan puts a hole in the graph,\n' +
         '  and holes are not detectable after the fact."',
+    );
+  }
+
+  const adrProblems = checkAdrDiscussionIssues();
+  if (adrProblems.length > 0) {
+    failures.push(
+      'docs/adr/ has a decision that does not name its discussion issue.\n' +
+        adrProblems.map((p) => `    ${p}`).join('\n'),
     );
   }
 

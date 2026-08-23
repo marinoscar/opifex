@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /**
@@ -33,7 +35,8 @@ interface Commit {
 
 type Task =
   | { fn: 'checkCommit'; commit: Commit }
-  | { fn: 'parseTrailers'; message: string };
+  | { fn: 'parseTrailers'; message: string }
+  | { fn: 'checkAdrDiscussionIssues'; dir: string };
 
 type CheckCommitResult = { problems: string[] };
 type ParseTrailersResult = {
@@ -65,6 +68,35 @@ function checkCommit(
     CheckCommitResult,
   ];
   return result.problems;
+}
+
+function checkAdrs(files: Record<string, string>): string[] {
+  const dir = mkdtempSync(join(tmpdir(), 'adr-'));
+  try {
+    mkdirSync(dir, { recursive: true });
+    for (const [name, body] of Object.entries(files)) {
+      writeFileSync(join(dir, name), body);
+    }
+    const [result] = runTasks([{ fn: 'checkAdrDiscussionIssues', dir }]) as [
+      CheckCommitResult,
+    ];
+    return result.problems;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** An ADR whose header block is complete. */
+function adr(headerLines: string[]): string {
+  return [
+    '# 12. Do the thing',
+    '',
+    ...headerLines,
+    '',
+    '## Context',
+    '',
+    'Because.',
+  ].join('\n');
 }
 
 function parseTrailers(message: string): ParseTrailersResult {
@@ -257,6 +289,93 @@ describe('check-provenance.mjs', () => {
         'Decision: ADR-0001',
       ].join('\n');
       expect(checkCommit(message)).toEqual([]);
+    });
+  });
+
+  describe('every ADR names its discussion issue', () => {
+    // #114: the ADR's PR closes the discussion issue, and the merged ADR names
+    // it. The closing keyword lives in a PR body on one vendor's servers; the
+    // header lives in the file, so this enforces the durable half.
+
+    it('passes an ADR with a well-formed Issue: header', () => {
+      expect(
+        checkAdrs({
+          '0012-do-the-thing.md': adr([
+            '- Status: Accepted',
+            '- Date: 2026-08-23',
+            '- Issue: #114',
+          ]),
+        }),
+      ).toEqual([]);
+    });
+
+    it('fails an ADR with no Issue: header at all', () => {
+      const problems = checkAdrs({
+        '0012-do-the-thing.md': adr([
+          '- Status: Accepted',
+          '- Date: 2026-08-23',
+        ]),
+      });
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toContain('0012-do-the-thing.md');
+      expect(problems[0]).toContain('discussion issue');
+    });
+
+    it('fails an Issue: header that is not of the form #123', () => {
+      const problems = checkAdrs({
+        '0012-do-the-thing.md': adr([
+          '- Status: Accepted',
+          '- Issue: https://github.com/marinoscar/opifex/issues/114',
+        ]),
+      });
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toContain('not of the form #123');
+    });
+
+    it('exempts 0000-template.md, which is the template rather than a decision', () => {
+      expect(
+        checkAdrs({
+          '0000-template.md': adr(['- Status: Proposed', '- Issue: #N']),
+        }),
+      ).toEqual([]);
+    });
+
+    it('ignores files that are not numbered ADRs, such as the index', () => {
+      expect(
+        checkAdrs({ 'README.md': '# Architecture Decision Records\n' }),
+      ).toEqual([]);
+    });
+
+    it('does not read an Issue: mentioned in the prose as the header field', () => {
+      // ADR-0006 discusses the `Issue:` trailer at length in its body. A
+      // checker that scanned the whole file would find that and call the ADR
+      // compliant when its header is empty.
+      const body = [
+        '# 12. Do the thing',
+        '',
+        '- Status: Accepted',
+        '',
+        '## Context',
+        '',
+        'The vocabulary includes a trailer written as',
+        '- Issue: #312',
+        'which is not this header.',
+      ].join('\n');
+      const problems = checkAdrs({ '0012-do-the-thing.md': body });
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toContain('no `- Issue:` header');
+    });
+
+    it("passes this repository's real docs/adr/ directory", () => {
+      // The rule is enforced repo-wide on every run, so every ADR that exists
+      // today has to comply or this check lands red on unrelated PRs.
+      const [result] = runTasks([
+        {
+          fn: 'checkAdrDiscussionIssues',
+          dir: join(__dirname, '..', '..', '..', '..', 'docs', 'adr'),
+        },
+      ]) as [CheckCommitResult];
+      expect(result.problems).toEqual([]);
     });
   });
 
