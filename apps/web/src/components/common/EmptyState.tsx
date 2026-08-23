@@ -73,7 +73,11 @@ export function EmptyState({
       </Typography>
 
       {detail && (
-        <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 480 }}>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ maxWidth: 480 }}
+        >
           {detail}
         </Typography>
       )}

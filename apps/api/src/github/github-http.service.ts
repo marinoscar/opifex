@@ -82,9 +82,11 @@ export class GitHubHttpService {
     ).replace(/\/$/, '');
     this.token = this.config.get<string>('github.token') || undefined;
     this.userAgent = this.config.get<string>('github.userAgent') ?? 'opifex';
-    this.timeoutMs = this.config.get<number>('github.requestTimeoutMs') ?? 15000;
+    this.timeoutMs =
+      this.config.get<number>('github.requestTimeoutMs') ?? 15000;
     this.maxRetries = this.config.get<number>('github.maxRetries') ?? 3;
-    this.rateLimitReserve = this.config.get<number>('github.rateLimitReserve') ?? 100;
+    this.rateLimitReserve =
+      this.config.get<number>('github.rateLimitReserve') ?? 100;
 
     if (!this.token) {
       // Not a throw: the API must boot without GitHub configured so the
@@ -110,7 +112,10 @@ export class GitHubHttpService {
    * up by a reconciler that decides scheduling, not by the adapter that made
    * the call.
    */
-  async request<T>(path: string, options: GitHubRequestOptions = {}): Promise<GitHubResponse<T>> {
+  async request<T>(
+    path: string,
+    options: GitHubRequestOptions = {},
+  ): Promise<GitHubResponse<T>> {
     const method = options.method ?? 'GET';
     const url = this.buildUrl(path, options.query);
     const conditional = options.conditional ?? method === 'GET';
@@ -150,7 +155,10 @@ export class GitHubHttpService {
       }
     }
 
-    throw lastTransient ?? new GitHubTransientError('Request failed', null, method, path);
+    throw (
+      lastTransient ??
+      new GitHubTransientError('Request failed', null, method, path)
+    );
   }
 
   /**
@@ -179,22 +187,29 @@ export class GitHubHttpService {
        */
       extract?: (page: unknown) => T[];
     } = {},
-  ): Promise<{ items: T[]; pages: number; truncated: boolean; allFromCache: boolean }> {
+  ): Promise<{
+    items: T[];
+    pages: number;
+    truncated: boolean;
+    allFromCache: boolean;
+  }> {
     const perPage = options.perPage ?? 100;
     const maxPages = options.maxPages ?? 10;
     const extract =
-      options.extract ?? ((page: unknown) => (Array.isArray(page) ? (page as T[]) : []));
+      options.extract ??
+      ((page: unknown) => (Array.isArray(page) ? (page as T[]) : []));
 
     const items: T[] = [];
-    let next: string | null = this.buildUrl(path, { ...options.query, per_page: perPage });
+    let next: string | null = this.buildUrl(path, {
+      ...options.query,
+      per_page: perPage,
+    });
     let pages = 0;
     let allFromCache = true;
 
     while (next && pages < maxPages) {
-      const response: GitHubResponse<unknown> = await this.requestAbsolute<unknown>(
-        next,
-        options,
-      );
+      const response: GitHubResponse<unknown> =
+        await this.requestAbsolute<unknown>(next, options);
       pages += 1;
       allFromCache = allFromCache && response.fromCache;
 
@@ -216,7 +231,9 @@ export class GitHubHttpService {
     // `paginate` already resolved the absolute URL (GitHub's Link header gives
     // absolute next-page URLs), so strip the base back off rather than
     // re-encoding the query it built.
-    const path = url.startsWith(this.baseUrl) ? url.slice(this.baseUrl.length) : url;
+    const path = url.startsWith(this.baseUrl)
+      ? url.slice(this.baseUrl.length)
+      : url;
     return this.request<T>(path, { ...options, query: undefined });
   }
 
@@ -245,7 +262,8 @@ export class GitHubHttpService {
       response = await fetch(url, {
         method,
         headers,
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        body:
+          options.body === undefined ? undefined : JSON.stringify(options.body),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error) {
@@ -283,7 +301,12 @@ export class GitHubHttpService {
       const data = (await parseBody(response)) as T;
 
       if (etag && (options.conditional ?? method === 'GET')) {
-        this.etags.set(method, url, { etag, body: data, link, storedAt: new Date() });
+        this.etags.set(method, url, {
+          etag,
+          body: data,
+          link,
+          storedAt: new Date(),
+        });
       }
 
       return { data, status: response.status, fromCache: false, link, etag };
@@ -297,11 +320,21 @@ export class GitHubHttpService {
     const message = extractMessage(body) ?? response.statusText;
 
     if (response.status === 401) {
-      return new GitHubAuthError(`GitHub rejected the credential: ${message}`, 401, method, path);
+      return new GitHubAuthError(
+        `GitHub rejected the credential: ${message}`,
+        401,
+        method,
+        path,
+      );
     }
 
     if (response.status === 403 || response.status === 429) {
-      const rateLimitError = this.asRateLimitError(response, method, path, message);
+      const rateLimitError = this.asRateLimitError(
+        response,
+        method,
+        path,
+        message,
+      );
       if (rateLimitError) return rateLimitError;
 
       // A 403 that is not a rate limit is a permissions problem: the token
@@ -364,7 +397,10 @@ export class GitHubHttpService {
     path: string,
     message: string,
   ): GitHubRateLimitError | null {
-    const retryAfter = Number.parseInt(response.headers.get('retry-after') ?? '', 10);
+    const retryAfter = Number.parseInt(
+      response.headers.get('retry-after') ?? '',
+      10,
+    );
     if (!Number.isNaN(retryAfter)) {
       return new GitHubRateLimitError(
         `Secondary rate limit on ${method} ${path}: ${message}`,
@@ -376,8 +412,14 @@ export class GitHubHttpService {
       );
     }
 
-    const remaining = Number.parseInt(response.headers.get('x-ratelimit-remaining') ?? '', 10);
-    const reset = Number.parseInt(response.headers.get('x-ratelimit-reset') ?? '', 10);
+    const remaining = Number.parseInt(
+      response.headers.get('x-ratelimit-remaining') ?? '',
+      10,
+    );
+    const reset = Number.parseInt(
+      response.headers.get('x-ratelimit-reset') ?? '',
+      10,
+    );
     if (remaining === 0 && !Number.isNaN(reset)) {
       return new GitHubRateLimitError(
         `Rate limit exhausted on ${method} ${path}: ${message}`,
@@ -404,7 +446,9 @@ export class GitHubHttpService {
     path: string,
     query?: Record<string, string | number | boolean | undefined>,
   ): string {
-    const url = new URL(path.startsWith('http') ? path : `${this.baseUrl}${path}`);
+    const url = new URL(
+      path.startsWith('http') ? path : `${this.baseUrl}${path}`,
+    );
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined) {
         url.searchParams.set(key, String(value));

@@ -13,7 +13,9 @@ import { useRunQueue } from '../../../hooks/useRunQueue';
 
 const mockHook = vi.mocked(useRunQueue);
 
-function hookResult(overrides: Partial<UseRunQueueResult> = {}): UseRunQueueResult {
+function hookResult(
+  overrides: Partial<UseRunQueueResult> = {},
+): UseRunQueueResult {
   return {
     data: null,
     state: 'unwired',
@@ -53,15 +55,24 @@ describe('QueuePanel', () => {
   it('titles itself and links to the full queue', () => {
     render(<QueuePanel />);
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Queue' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Full queue' })).toHaveAttribute('href', '/queue');
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Queue' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Full queue' })).toHaveAttribute(
+      'href',
+      '/queue',
+    );
   });
 
   it('names Phase 4 as the phase that fills it', () => {
     render(<QueuePanel />);
 
-    expect(screen.getByText(/The queue appears here once dispatch exists/)).toBeInTheDocument();
-    expect(screen.getByText(/Arrives in Phase 4 — Execution/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/The queue appears here once dispatch exists/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Arrives in Phase 4 — Execution/),
+    ).toBeInTheDocument();
   });
 
   /**
@@ -85,9 +96,15 @@ describe('QueuePanel', () => {
       render(<QueuePanel />);
 
       expect(screen.getByText('1.')).toHaveClass('opifex-num');
-      expect(screen.getByText('Wire the metrics summary endpoint')).toBeInTheDocument();
-      expect(screen.getByText('wo_opifex_401_b7c2d10_a1')).toHaveClass('opifex-mono');
-      expect(screen.getByText('Waiting on quota reset at 14:00')).toBeInTheDocument();
+      expect(
+        screen.getByText('Wire the metrics summary endpoint'),
+      ).toBeInTheDocument();
+      expect(screen.getByText('wo_opifex_401_b7c2d10_a1')).toHaveClass(
+        'opifex-mono',
+      );
+      expect(
+        screen.getByText('Waiting on quota reset at 14:00'),
+      ).toBeInTheDocument();
     });
 
     /**
@@ -98,7 +115,10 @@ describe('QueuePanel', () => {
     it('distinguishes an entry held for approval from one merely waiting', () => {
       mockHook.mockReturnValue(
         hookResult({
-          data: [entry, { ...entry, id: 'queue-2', state: 'held', position: 2 }],
+          data: [
+            entry,
+            { ...entry, id: 'queue-2', state: 'held', position: 2 },
+          ],
           state: 'ready',
         }),
       );

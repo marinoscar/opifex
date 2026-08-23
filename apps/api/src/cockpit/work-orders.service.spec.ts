@@ -1,4 +1,7 @@
-import { NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { serializeWorkOrder } from '../work-orders/work-order-document';
@@ -94,21 +97,29 @@ describe('WorkOrdersService', () => {
       // The assertion the whole endpoint exists for. A document that merely
       // LOOKS right would pass a field-by-field comparison and still make
       // #84's authorization-record view an illustration rather than a check.
-      return service.findOne('11111111-1111-1111-1111-111111111111').then((detail) => {
-        const expected = serializeWorkOrder(generated());
-        expect(`${JSON.stringify(detail.document, null, 2)}\n`).toBe(expected);
-      });
+      return service
+        .findOne('11111111-1111-1111-1111-111111111111')
+        .then((detail) => {
+          const expected = serializeWorkOrder(generated());
+          expect(`${JSON.stringify(detail.document, null, 2)}\n`).toBe(
+            expected,
+          );
+        });
     });
 
     it('carries the schema version, so a reader knows what shape they have', async () => {
-      const detail = await service.findOne('11111111-1111-1111-1111-111111111111');
+      const detail = await service.findOne(
+        '11111111-1111-1111-1111-111111111111',
+      );
       expect(detail.document.schemaVersion).toBeTruthy();
     });
 
     it('refuses a row whose identity its own coordinates do not derive', async () => {
       // Serving the raw columns anyway would put a document in front of an
       // operator that nothing ever authorized.
-      findFirst.mockResolvedValue(row({ identity: 'wo_something-else_312_a3f91c2_a1' }));
+      findFirst.mockResolvedValue(
+        row({ identity: 'wo_something-else_312_a3f91c2_a1' }),
+      );
 
       await expect(service.findOne('anything')).rejects.toBeInstanceOf(
         UnprocessableEntityException,
@@ -122,7 +133,9 @@ describe('WorkOrdersService', () => {
     });
 
     it('names the row in the refusal, since the caller has only an id', async () => {
-      findFirst.mockResolvedValue(row({ identity: 'wo_something-else_312_a3f91c2_a1' }));
+      findFirst.mockResolvedValue(
+        row({ identity: 'wo_something-else_312_a3f91c2_a1' }),
+      );
 
       await expect(service.findOne('anything')).rejects.toThrow(
         /wo_something-else_312_a3f91c2_a1/,
@@ -153,7 +166,9 @@ describe('WorkOrdersService', () => {
     it('404s rather than returning null', async () => {
       findFirst.mockResolvedValue(null);
 
-      await expect(service.findOne('missing')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.findOne('missing')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 
@@ -161,7 +176,9 @@ describe('WorkOrdersService', () => {
     it('is returned IN FULL on the detail, because it is meant to be checked out', async () => {
       // A 7-character prefix is not a git ref you can rely on resolving in a
       // repository with enough history.
-      const detail = await service.findOne('11111111-1111-1111-1111-111111111111');
+      const detail = await service.findOne(
+        '11111111-1111-1111-1111-111111111111',
+      );
 
       expect(detail.baseCommit).toBe(BASE);
       expect(detail.baseCommit).toHaveLength(40);
@@ -179,7 +196,10 @@ describe('WorkOrdersService', () => {
       // The traversable edge VISION §5 rests on. Reconstructing it from the
       // issue URL would be a guess about where dispatch posted.
       findFirst.mockResolvedValue(
-        row({ authorizationCommentUrl: 'https://github.com/o/r/issues/312#issuecomment-9' }),
+        row({
+          authorizationCommentUrl:
+            'https://github.com/o/r/issues/312#issuecomment-9',
+        }),
       );
 
       const detail = await service.findOne('x');
@@ -190,7 +210,9 @@ describe('WorkOrdersService', () => {
     });
 
     it('is null before dispatch has posted it, not an empty string', async () => {
-      const detail = await service.findOne('11111111-1111-1111-1111-111111111111');
+      const detail = await service.findOne(
+        '11111111-1111-1111-1111-111111111111',
+      );
       expect(detail.authorizationCommentUrl).toBeNull();
     });
   });
@@ -212,7 +234,9 @@ describe('WorkOrdersService', () => {
     it('filters by status when asked', async () => {
       await service.list({ status: 'quarantined' });
 
-      expect(findMany.mock.calls[0][0].where).toEqual({ status: 'quarantined' });
+      expect(findMany.mock.calls[0][0].where).toEqual({
+        status: 'quarantined',
+      });
     });
 
     it('splits owner/name for a repository filter', async () => {
@@ -234,7 +258,9 @@ describe('WorkOrdersService', () => {
     it('counts against the SAME filter it queried with', async () => {
       await service.list({ status: 'failed' });
 
-      expect(count.mock.calls[0][0].where).toEqual(findMany.mock.calls[0][0].where);
+      expect(count.mock.calls[0][0].where).toEqual(
+        findMany.mock.calls[0][0].where,
+      );
     });
 
     it('falls back to the issue number when there is no title', async () => {

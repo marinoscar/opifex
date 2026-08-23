@@ -67,7 +67,8 @@ export class FactoryMetrics {
   private readonly detectLatency: Histogram = this.meter.createHistogram(
     'opifex.detection.detect_latency',
     {
-      description: 'Milliseconds from a run ceasing to make progress to Opifex noticing',
+      description:
+        'Milliseconds from a run ceasing to make progress to Opifex noticing',
       unit: 'ms',
     },
   );
@@ -83,15 +84,21 @@ export class FactoryMetrics {
     },
   );
 
-  private readonly raised = this.meter.createCounter('opifex.escalations.raised', {
-    description: 'Escalations recorded',
-  });
+  private readonly raised = this.meter.createCounter(
+    'opifex.escalations.raised',
+    {
+      description: 'Escalations recorded',
+    },
+  );
 
-  private readonly notified = this.meter.createCounter('opifex.escalations.notified', {
-    description:
-      'Escalations a transport confirmed delivered. The gap against ' +
-      'opifex.escalations.raised is how many stalls nobody was told about.',
-  });
+  private readonly notified = this.meter.createCounter(
+    'opifex.escalations.notified',
+    {
+      description:
+        'Escalations a transport confirmed delivered. The gap against ' +
+        'opifex.escalations.raised is how many stalls nobody was told about.',
+    },
+  );
 
   /**
    * Record that Opifex noticed a stop, and emit the span that shows it.
@@ -100,7 +107,10 @@ export class FactoryMetrics {
    * is visible next to the run's own events rather than only as a percentile.
    */
   recordDetected(measurement: DetectionMeasurement): void {
-    const latencyMs = elapsed(measurement.progressStoppedAt, measurement.raisedAt);
+    const latencyMs = elapsed(
+      measurement.progressStoppedAt,
+      measurement.raisedAt,
+    );
 
     this.detectLatency.record(latencyMs, this.attributes(measurement));
     this.raised.add(1, this.attributes(measurement));
@@ -132,8 +142,13 @@ export class FactoryMetrics {
    * the point. The detector cannot know, and a metric that let it guess would
    * be measuring stop-to-detected under the other name.
    */
-  recordNotified(measurement: DetectionMeasurement & { deliveredAt: Date }): void {
-    const latencyMs = elapsed(measurement.progressStoppedAt, measurement.deliveredAt);
+  recordNotified(
+    measurement: DetectionMeasurement & { deliveredAt: Date },
+  ): void {
+    const latencyMs = elapsed(
+      measurement.progressStoppedAt,
+      measurement.deliveredAt,
+    );
 
     this.notifyLatency.record(latencyMs, this.attributes(measurement));
     this.notified.add(1, this.attributes(measurement));
@@ -189,15 +204,27 @@ export class FactoryMetrics {
           'opifex.work_order.identity': event.workOrderIdentity,
           'opifex.run_event.type': event.type,
           'opifex.run_event.source': event.source,
-          ...(event.repository ? { 'opifex.repository': event.repository } : {}),
-          ...(event.toolSignature ? { 'opifex.tool.signature': event.toolSignature } : {}),
-          ...(event.summary ? { 'opifex.run_event.summary': event.summary } : {}),
+          ...(event.repository
+            ? { 'opifex.repository': event.repository }
+            : {}),
+          ...(event.toolSignature
+            ? { 'opifex.tool.signature': event.toolSignature }
+            : {}),
+          ...(event.summary
+            ? { 'opifex.run_event.summary': event.summary }
+            : {}),
           // Omitted rather than zeroed when not reported. VISION §6 makes cost
           // reporting a DECLARED capability, so "unknown" and "zero" are
           // genuinely different and a dashboard that sums them is wrong.
-          ...(event.costUsd != null ? { 'opifex.cost.usd': event.costUsd } : {}),
-          ...(event.tokensInput != null ? { 'opifex.tokens.input': event.tokensInput } : {}),
-          ...(event.tokensOutput != null ? { 'opifex.tokens.output': event.tokensOutput } : {}),
+          ...(event.costUsd != null
+            ? { 'opifex.cost.usd': event.costUsd }
+            : {}),
+          ...(event.tokensInput != null
+            ? { 'opifex.tokens.input': event.tokensInput }
+            : {}),
+          ...(event.tokensOutput != null
+            ? { 'opifex.tokens.output': event.tokensOutput }
+            : {}),
         },
       },
       workOrderContext(event.workOrderIdentity),
@@ -212,7 +239,9 @@ export class FactoryMetrics {
       : { traceId: null, spanId: null };
   }
 
-  private attributes(measurement: DetectionMeasurement): Record<string, string> {
+  private attributes(
+    measurement: DetectionMeasurement,
+  ): Record<string, string> {
     return {
       'opifex.repository': measurement.repository,
       'opifex.escalation.kind': measurement.kind,

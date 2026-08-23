@@ -7,7 +7,12 @@ import { ApiProperty } from '@nestjs/swagger';
 export class DeviceTokenErrorDto {
   @ApiProperty({
     description: 'Error code',
-    enum: ['authorization_pending', 'slow_down', 'expired_token', 'access_denied'],
+    enum: [
+      'authorization_pending',
+      'slow_down',
+      'expired_token',
+      'access_denied',
+    ],
     example: 'authorization_pending',
   })
   error!: string;

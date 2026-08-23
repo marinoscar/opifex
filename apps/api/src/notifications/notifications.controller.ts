@@ -52,7 +52,9 @@ export class NotificationsController {
       'UI uses `pushConfigured` to say "notifications are not set up on this server" rather ' +
       'than offering a button that silently does nothing.',
   })
-  @ApiDataResponse(NotificationConfigResponseDto, { description: 'Notification configuration' })
+  @ApiDataResponse(NotificationConfigResponseDto, {
+    description: 'Notification configuration',
+  })
   config() {
     return {
       vapidPublicKey: this.push.getPublicKey(),
@@ -80,8 +82,13 @@ export class NotificationsController {
       'Idempotent on the endpoint: a browser re-subscribing with the same key material gets ' +
       'the same endpoint back, and a second row for it would push twice to one phone.',
   })
-  @ApiDataResponse(PushSubscriptionResponseDto, { description: 'The registered device' })
-  subscribe(@CurrentUser('id') userId: string, @Body() body: CreatePushSubscriptionDto) {
+  @ApiDataResponse(PushSubscriptionResponseDto, {
+    description: 'The registered device',
+  })
+  subscribe(
+    @CurrentUser('id') userId: string,
+    @Body() body: CreatePushSubscriptionDto,
+  ) {
     return this.subscriptions.subscribe(userId, body);
   }
 
@@ -92,7 +99,10 @@ export class NotificationsController {
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: 204, description: 'Removed' })
   @ApiResponse({ status: 404, description: 'Not one of your devices' })
-  async unsubscribe(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) {
+  async unsubscribe(
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     await this.subscriptions.unsubscribe(userId, id);
   }
 

@@ -12,7 +12,7 @@ import {
   createMockViewerUser,
   authHeader,
 } from '../helpers/auth-mock.helper';
-import { createMockUserSettings, mockRoles } from '../fixtures/test-data.factory';
+import { createMockUserSettings } from '../fixtures/test-data.factory';
 
 describe('RBAC System (Integration)', () => {
   let context: TestContext;
@@ -73,7 +73,9 @@ describe('RBAC System (Integration)', () => {
           updatedAt: new Date(),
         };
 
-        context.prismaMock.systemSettings.update.mockResolvedValue(updatedSettings);
+        context.prismaMock.systemSettings.update.mockResolvedValue(
+          updatedSettings,
+        );
 
         const response = await request(context.app.getHttpServer())
           .patch('/api/system-settings')

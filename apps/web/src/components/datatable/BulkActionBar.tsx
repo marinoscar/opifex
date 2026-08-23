@@ -35,11 +35,17 @@ function isActionDisabled(action: DataTableBulkAction, ids: string[]): boolean {
   return action.disabled ?? false;
 }
 
-export function BulkActionBar({ ids, actions, onClear, total }: BulkActionBarProps) {
+export function BulkActionBar({
+  ids,
+  actions,
+  onClear,
+  total,
+}: BulkActionBarProps) {
   const count = ids.length;
   if (count === 0) return null;
 
-  const countText = total != null ? `${count} of ${total} selected` : `${count} selected`;
+  const countText =
+    total != null ? `${count} of ${total} selected` : `${count} selected`;
 
   return (
     <Paper
@@ -63,20 +69,38 @@ export function BulkActionBar({ ids, actions, onClear, total }: BulkActionBarPro
         // epic #19 repainted `primary` — a selection highlight that no longer
         // matches the thing it is highlighting.
         bgcolor: (theme) =>
-          alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08),
+          alpha(
+            theme.palette.primary.main,
+            theme.palette.mode === 'dark' ? 0.16 : 0.08,
+          ),
       }}
     >
-      <Typography variant="body2" sx={{ fontWeight: 600 }} aria-live="polite" role="status">
+      <Typography
+        variant="body2"
+        sx={{ fontWeight: 600 }}
+        aria-live="polite"
+        role="status"
+      >
         {countText}
       </Typography>
 
-      <Button size="small" startIcon={<CloseIcon />} onClick={onClear} aria-label="Clear selection">
+      <Button
+        size="small"
+        startIcon={<CloseIcon />}
+        onClick={onClear}
+        aria-label="Clear selection"
+      >
         Clear
       </Button>
 
       <Box sx={{ flexGrow: 1 }} />
 
-      <Stack direction="row" spacing={1} useFlexGap sx={{ minWidth: 0, flexWrap: 'wrap' }}>
+      <Stack
+        direction="row"
+        spacing={1}
+        useFlexGap
+        sx={{ minWidth: 0, flexWrap: 'wrap' }}
+      >
         {(actions ?? []).map((action) => (
           <Button
             key={action.id}

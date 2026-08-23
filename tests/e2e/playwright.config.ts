@@ -18,10 +18,13 @@ export default defineConfig({
     },
   ],
   // Start local dev server if not running
-  webServer: process.env.CI ? undefined : {
-    command: 'cd ../../infra/compose && docker compose -f base.compose.yml -f dev.compose.yml up',
-    url: 'http://localhost:3535/api/health/live',
-    reuseExistingServer: true,
-    timeout: 120000,
-  },
+  webServer: process.env.CI
+    ? undefined
+    : {
+        command:
+          'cd ../../infra/compose && docker compose -f base.compose.yml -f dev.compose.yml up',
+        url: 'http://localhost:3535/api/health/live',
+        reuseExistingServer: true,
+        timeout: 120000,
+      },
 });

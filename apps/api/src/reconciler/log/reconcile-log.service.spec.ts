@@ -62,7 +62,9 @@ describe('ReconcileLogService', () => {
     });
 
     it('writes a row even for a skipped tick', async () => {
-      await service.record(tick({ outcome: 'skipped-locked', repositoriesObserved: 0 }));
+      await service.record(
+        tick({ outcome: 'skipped-locked', repositoriesObserved: 0 }),
+      );
 
       const [{ data }] = prisma.reconcileTick.create.mock.calls[0];
       expect(data.outcome).toBe('skipped-locked');
@@ -92,7 +94,10 @@ describe('ReconcileLogService', () => {
     it('keeps the payload when the tick had failures, even with no actions', async () => {
       // A failing tick is exactly the one worth reading later.
       await service.record(
-        tick({ actions: [], failures: [{ repository: 'acme/app', reason: 'boom' }] }),
+        tick({
+          actions: [],
+          failures: [{ repository: 'acme/app', reason: 'boom' }],
+        }),
       );
 
       const [{ data }] = prisma.reconcileTick.create.mock.calls[0];

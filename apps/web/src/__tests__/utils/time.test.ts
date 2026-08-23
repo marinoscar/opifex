@@ -10,14 +10,18 @@ describe('formatRelativeTime', () => {
   const now = new Date('2026-08-19T12:00:00.000Z');
 
   it('renders compact ages', () => {
-    expect(formatRelativeTime('2026-08-19T11:59:30.000Z', now)).toBe('just now');
+    expect(formatRelativeTime('2026-08-19T11:59:30.000Z', now)).toBe(
+      'just now',
+    );
     expect(formatRelativeTime('2026-08-19T11:57:00.000Z', now)).toBe('3m ago');
     expect(formatRelativeTime('2026-08-19T09:00:00.000Z', now)).toBe('3h ago');
     expect(formatRelativeTime('2026-08-17T12:00:00.000Z', now)).toBe('2d ago');
   });
 
   it('accepts a Date as well as an ISO string', () => {
-    expect(formatRelativeTime(new Date('2026-08-19T11:55:00.000Z'), now)).toBe('5m ago');
+    expect(formatRelativeTime(new Date('2026-08-19T11:55:00.000Z'), now)).toBe(
+      '5m ago',
+    );
   });
 
   /**
@@ -27,7 +31,9 @@ describe('formatRelativeTime', () => {
    */
   it('phrases a future timestamp as the future', () => {
     expect(formatRelativeTime('2026-08-19T12:05:00.000Z', now)).toBe('in 5m');
-    expect(formatRelativeTime('2026-08-19T12:00:30.000Z', now)).toBe('in a moment');
+    expect(formatRelativeTime('2026-08-19T12:00:30.000Z', now)).toBe(
+      'in a moment',
+    );
   });
 
   /**

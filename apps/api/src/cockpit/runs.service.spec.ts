@@ -85,9 +85,15 @@ describe('RunsService', () => {
       // run nobody will be told about, or hides one somebody already was.
       await service.list({ needsAttention: true });
 
-      const statuses = findMany.mock.calls[0][0].where.escalations.some.status.in;
+      const statuses =
+        findMany.mock.calls[0][0].where.escalations.some.status.in;
       expect(statuses).toBe(UNRESOLVED);
-      expect([...statuses].sort()).toEqual(['delivered', 'dispatched', 'failed', 'raised']);
+      expect([...statuses].sort()).toEqual([
+        'delivered',
+        'dispatched',
+        'failed',
+        'raised',
+      ]);
     });
 
     it('orders by longest silence first, never-reported at the very top', async () => {
@@ -107,7 +113,9 @@ describe('RunsService', () => {
       // are different questions and must not share an order.
       await service.list({});
 
-      expect(findMany.mock.calls[0][0].orderBy).toEqual([{ startedAt: 'desc' }]);
+      expect(findMany.mock.calls[0][0].orderBy).toEqual([
+        { startedAt: 'desc' },
+      ]);
     });
 
     it('applies no escalation filter when not asked for', async () => {
@@ -124,7 +132,9 @@ describe('RunsService', () => {
       // attentionReason and the panel would never drain.
       await service.list({ needsAttention: true });
 
-      expect(JSON.stringify(findMany.mock.calls[0][0].where)).not.toContain('attentionReason');
+      expect(JSON.stringify(findMany.mock.calls[0][0].where)).not.toContain(
+        'attentionReason',
+      );
     });
 
     it('combines with a status filter', async () => {
@@ -205,14 +215,18 @@ describe('RunsService', () => {
 
   describe('one run', () => {
     it('returns it', async () => {
-      const run = await service.findById('11111111-1111-1111-1111-111111111111');
+      const run = await service.findById(
+        '11111111-1111-1111-1111-111111111111',
+      );
       expect(run.id).toBe('11111111-1111-1111-1111-111111111111');
     });
 
     it('404s rather than returning null', async () => {
       findUnique.mockResolvedValue(null);
 
-      await expect(service.findById('missing')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.findById('missing')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 
@@ -221,7 +235,10 @@ describe('RunsService', () => {
       // #80: RunEvent is high-volume (#39) and an unpaginated timeline "will
       // not survive a real run" — one run emits a progress event per tool call
       // plus heartbeats.
-      await service.events('11111111-1111-1111-1111-111111111111', { page: 2, pageSize: 10 });
+      await service.events('11111111-1111-1111-1111-111111111111', {
+        page: 2,
+        pageSize: 10,
+      });
 
       expect(eventFindMany.mock.calls[0][0].skip).toBe(10);
       expect(eventFindMany.mock.calls[0][0].take).toBe(10);
@@ -252,7 +269,10 @@ describe('RunsService', () => {
       // front of an operator that appears nowhere in the documents.
       eventFindMany.mockResolvedValue([eventRow({ type: 'run_started' })]);
 
-      const { items } = await service.events('11111111-1111-1111-1111-111111111111', {});
+      const { items } = await service.events(
+        '11111111-1111-1111-1111-111111111111',
+        {},
+      );
 
       expect(items[0].type).toBe('run.started');
     });
@@ -260,14 +280,20 @@ describe('RunsService', () => {
     it('translates the source too, which is spelled differently again', async () => {
       eventFindMany.mockResolvedValue([eventRow({ source: 'control_plane' })]);
 
-      const { items } = await service.events('11111111-1111-1111-1111-111111111111', {});
+      const { items } = await service.events(
+        '11111111-1111-1111-1111-111111111111',
+        {},
+      );
 
       expect(items[0].source).toBe('control-plane');
     });
 
     it('shows the work order IDENTITY, not its row id', async () => {
       // Rendered to a human in the mono token. A uuid tells them nothing.
-      const { items } = await service.events('11111111-1111-1111-1111-111111111111', {});
+      const { items } = await service.events(
+        '11111111-1111-1111-1111-111111111111',
+        {},
+      );
 
       expect(items[0].workOrderId).toBe('wo_opifex_312_a3f91c2_a1');
     });
@@ -278,7 +304,9 @@ describe('RunsService', () => {
       // never started.
       findUnique.mockResolvedValue(null);
 
-      await expect(service.events('missing', {})).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.events('missing', {})).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
       expect(eventFindMany).not.toHaveBeenCalled();
     });
 
@@ -286,7 +314,10 @@ describe('RunsService', () => {
       eventFindMany.mockResolvedValue([]);
       eventCount.mockResolvedValue(0);
 
-      const page = await service.events('11111111-1111-1111-1111-111111111111', {});
+      const page = await service.events(
+        '11111111-1111-1111-1111-111111111111',
+        {},
+      );
 
       expect(page.items).toEqual([]);
       expect(page.total).toBe(0);
@@ -308,7 +339,9 @@ describe('RunsService', () => {
       // off the end of the results.
       await service.list({ needsAttention: true });
 
-      expect(count.mock.calls[0][0].where).toEqual(findMany.mock.calls[0][0].where);
+      expect(count.mock.calls[0][0].where).toEqual(
+        findMany.mock.calls[0][0].where,
+      );
     });
   });
 });

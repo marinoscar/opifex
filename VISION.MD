@@ -1,6 +1,6 @@
 # Opifex — Vision
 
-> *opifex* (Latin): a maker, a craftsman, one who works at a craft.
+> _opifex_ (Latin): a maker, a craftsman, one who works at a craft.
 >
 > **Opifex supervises AI coding agents so that a single engineer can run a large software project without being the monitoring system.**
 
@@ -24,7 +24,7 @@ manually every few hours. That is the entire problem, and everything in Opifex
 follows from taking it seriously.
 
 The second motivation is provenance. Agent-written code accumulates fast and its
-*reasoning* evaporates. A design decision made by an agent three weeks ago, never
+_reasoning_ evaporates. A design decision made by an agent three weeks ago, never
 recorded, is gone permanently — intent cannot be reconstructed from a diff. Lost hours
 can be recovered by working faster. Lost provenance cannot be recovered at all.
 
@@ -69,8 +69,8 @@ Being explicit here prevents scope drift more effectively than any roadmap.
 - **Not a replacement for GitHub Projects.** Project tracking is a read model, not a
   second place to manage work.
 - **Not a multi-tenant SaaS.** Single-operator by design (see §11).
-- **Not an autonomous software engineer.** The ambition is *reduced supervision cost*,
-  not *zero human judgment*.
+- **Not an autonomous software engineer.** The ambition is _reduced supervision cost_,
+  not _zero human judgment_.
 - **Not a plugin platform.** No dynamic loading, no runner marketplace, no extension
   registry. Two runners and a switch statement is the correct amount of machinery.
 
@@ -99,7 +99,7 @@ The single deliberate exception is high-volume telemetry (§8).
 
 ### 3.3 The orchestrator owns execution state
 
-GitHub holds the *record of work*. Opifex holds the *state of execution* — queue
+GitHub holds the _record of work_. Opifex holds the _state of execution_ — queue
 position, run status, heartbeats, cost, quota timers, retry counters. This state is
 authoritative and lives in Postgres, because modelling a work queue in issue labels
 produces race conditions and API-rate-limit problems for no benefit.
@@ -124,8 +124,8 @@ flag. Allowed. Never load-bearing.
 
 ### 3.5 Gate on reversibility, not importance
 
-Approval fatigue comes from gating things that are *significant* rather than things
-that are *hard to undo*. A commit to a factory branch is fully reversible — never ask.
+Approval fatigue comes from gating things that are _significant_ rather than things
+that are _hard to undo_. A commit to a factory branch is fully reversible — never ask.
 A force-push, a merge, a Slack post, or money spent is not.
 
 Sorting actions by reversibility rather than significance reduces interruption volume
@@ -139,7 +139,7 @@ right has no safety property at all.
 
 ### 3.7 Claude Code first, vendor-neutral by construction
 
-Build one runner well. Build the *seam* correctly from day one. Do not build the
+Build one runner well. Build the _seam_ correctly from day one. Do not build the
 second runner until it is needed.
 
 ---
@@ -196,8 +196,8 @@ factory/<issue>-<base_commit[0:7]>-a<attempt>
 — which makes re-runs idempotent: a runner checks whether its branch already exists
 before doing anything.
 
-The work order is posted to the issue as a fenced JSON comment (the *authorization
-record*) and committed to the branch as its first commit (the *execution record*).
+The work order is posted to the issue as a fenced JSON comment (the _authorization
+record_) and committed to the branch as its first commit (the _execution record_).
 
 Schema: `schemas/work-order.schema.json`.
 
@@ -208,17 +208,17 @@ Schema: `schemas/work-order.schema.json`.
 The goal is that in two years, "why does this module work this way?" is a graph
 traversal rather than an archaeology session.
 
-| Artifact | Where it lives |
-|---|---|
-| Design decision | `docs/adr/NNNN-*.md` — versioned, diffable, reviewable |
-| Decision discussion & approval | Issue, closed when the ADR merges |
-| Feature request / bug | Issue, typed by label |
-| Requirement / story | Issue, linked to an epic |
-| Work order authorization | Issue comment, fenced JSON |
-| Code | Commits on `factory/*` branches |
-| Run narrative | PR comment: runner, cost, duration, attempts, why it stopped |
-| Review | PR review threads |
-| Event stream, heartbeats, token detail | **Postgres only** |
+| Artifact                               | Where it lives                                               |
+| -------------------------------------- | ------------------------------------------------------------ |
+| Design decision                        | `docs/adr/NNNN-*.md` — versioned, diffable, reviewable       |
+| Decision discussion & approval         | Issue, closed when the ADR merges                            |
+| Feature request / bug                  | Issue, typed by label                                        |
+| Requirement / story                    | Issue, linked to an epic                                     |
+| Work order authorization               | Issue comment, fenced JSON                                   |
+| Code                                   | Commits on `factory/*` branches                              |
+| Run narrative                          | PR comment: runner, cost, duration, attempts, why it stopped |
+| Review                                 | PR review threads                                            |
+| Event stream, heartbeats, token detail | **Postgres only**                                            |
 
 Decisions are **files, not issues**. An ADR is a durable artifact that should be
 reviewed, versioned, and survive GitHub itself. An issue is a conversation. Conflating
@@ -249,7 +249,7 @@ into a knowledge graph:
 Decision --informed--> Issue --generated--> WorkOrder --produced--> PR --contains--> Commit
 ```
 
-This is a natural PROV-O shape. Designing the trailer vocabulary *before* there is
+This is a natural PROV-O shape. Designing the trailer vocabulary _before_ there is
 history to migrate is the single cheapest high-leverage decision in this project.
 
 ### The gap most systems miss
@@ -310,14 +310,14 @@ Schema: `schemas/runner-capability.schema.json`.
 
 ### Planned runners
 
-| Runner | Locus | Role |
-|---|---|---|
-| `claude-code-local` | own infrastructure | v1 — full streaming, local filesystem, private services |
-| `claude-code-cloud` | vendor cloud | v1.1 — free compute, real parallelism, near-zero streaming |
-| `claude-code-api` | own infrastructure | overflow when subscription quota is exhausted |
-| others | — | capabilities verified at build time, not designed for now |
+| Runner              | Locus              | Role                                                       |
+| ------------------- | ------------------ | ---------------------------------------------------------- |
+| `claude-code-local` | own infrastructure | v1 — full streaming, local filesystem, private services    |
+| `claude-code-cloud` | vendor cloud       | v1.1 — free compute, real parallelism, near-zero streaming |
+| `claude-code-api`   | own infrastructure | overflow when subscription quota is exhausted              |
+| others              | —                  | capabilities verified at build time, not designed for now  |
 
-Routing matches a work order's declared *needs* against advertised capabilities. Work
+Routing matches a work order's declared _needs_ against advertised capabilities. Work
 orders never name a runner.
 
 ### Why the seam earns itself immediately
@@ -333,19 +333,19 @@ abstraction existing on day one.
 The ambition is an AI agent that operates the coding agents. The trap is recursion: a
 non-deterministic supervisor that can itself stall, exhaust quota, and behave
 unpredictably, supervising components that stall and exhaust quota — leaving a human
-to supervise *it*. That is the original problem, one level up.
+to supervise _it_. That is the original problem, one level up.
 
 **Governing test: if the AI supervisor is offline, the factory keeps running.** Dumber
 about diagnosis. Still correct about execution.
 
-| Deterministic — hot path, always on | Advisory agent — async, off path |
-|---|---|
-| Dispatch decisions | Failure diagnosis and root-cause narration |
-| Stall detection (event-age thresholds) | Issue shaping → acceptance criteria |
-| Rate-limit parking and auto-resume | Decomposition of oversized work orders |
-| Budget and timeout enforcement | Daily brief, ranked by what needs attention |
-| Retry counters, quarantine | Spec-quality feedback |
-| State transitions | Anomaly explanation |
+| Deterministic — hot path, always on    | Advisory agent — async, off path            |
+| -------------------------------------- | ------------------------------------------- |
+| Dispatch decisions                     | Failure diagnosis and root-cause narration  |
+| Stall detection (event-age thresholds) | Issue shaping → acceptance criteria         |
+| Rate-limit parking and auto-resume     | Decomposition of oversized work orders      |
+| Budget and timeout enforcement         | Daily brief, ranked by what needs attention |
+| Retry counters, quarantine             | Spec-quality feedback                       |
+| State transitions                      | Anomaly explanation                         |
 
 The left column must be fast, cheap, testable, and never fail — a model makes it
 slower, costlier, and less reliable with no upside. The right column is judgment work
@@ -432,7 +432,7 @@ the same reason, it cannot clear its own quarantine.
 
 ### The digest replaces the interruptions
 
-Auto-approved actions still record what *would* have been asked. Instead of
+Auto-approved actions still record what _would_ have been asked. Instead of
 interruptions, a daily rollup: what ran under trust, what it cost, what it changed,
 what looked unusual. This is what makes the promotion ladder honest — grants stay
 visible while they earn themselves.
@@ -483,14 +483,14 @@ eliminate. Notification is a reconciler output, on the same footing as dispatch.
 
 Six metrics. The web application exists primarily to show them.
 
-| # | Metric | Why |
-|---|---|---|
-| 1 | **Detection latency** — stop → notified | The original complaint, quantified. Target: seconds. |
-| 2 | **Dead time per day** — hours parked or stalled | Direct measure of recovered productivity |
-| 3 | **First-pass acceptance rate** — PRs merged without rework | Spec quality |
-| 4 | **Attempts per work order** | Decomposition quality |
-| 5 | **Cost per merged PR** | Economic viability |
-| 6 | **Quota burn vs. reset window** | Scheduling health |
+| #   | Metric                                                     | Why                                                  |
+| --- | ---------------------------------------------------------- | ---------------------------------------------------- |
+| 1   | **Detection latency** — stop → notified                    | The original complaint, quantified. Target: seconds. |
+| 2   | **Dead time per day** — hours parked or stalled            | Direct measure of recovered productivity             |
+| 3   | **First-pass acceptance rate** — PRs merged without rework | Spec quality                                         |
+| 4   | **Attempts per work order**                                | Decomposition quality                                |
+| 5   | **Cost per merged PR**                                     | Economic viability                                   |
+| 6   | **Quota burn vs. reset window**                            | Scheduling health                                    |
 
 ### Metric 3 decides the roadmap
 
@@ -531,7 +531,7 @@ Throughput ceiling is spec quality, not token budget.
 
 ## 12. Roadmap
 
-Ordered by *what cannot be backfilled* first, not by what is most visible.
+Ordered by _what cannot be backfilled_ first, not by what is most visible.
 
 **Phase 0 — Conventions.** Issue templates, ADR structure, trailer vocabulary, CI
 provenance check. Almost no code. Highest half-life: everything downstream inherits it,
@@ -545,7 +545,7 @@ for a week. This is not caution theatre — it surfaces every wrong assumption a
 state transitions before anything can write to a repository.
 
 **Phase 3 — Liveness and escalation.** Git watcher, event ingestion, watchdog,
-notification path to phone. *This is the phase that solves the original problem.*
+notification path to phone. _This is the phase that solves the original problem._
 Everything after it is leverage.
 
 **Phase 4 — Execution.** `claude-code-local` runner, dispatch, budget ceilings,
@@ -581,16 +581,16 @@ effort, and they capture most of the value.
 
 ## 14. Glossary
 
-| Term | Meaning |
-|---|---|
-| **Work Order** | Vendor-neutral, self-contained unit of executable work; a projection of an issue pinned to a commit |
-| **Runner** | Anything that can accept a work order and produce a branch |
-| **Capability manifest** | A runner's honest declaration of what it can and cannot do |
-| **Reconciler** | The control loop that derives desired state and acts, rather than consuming a queue |
-| **Detection latency** | Elapsed time between a run stopping and a human knowing |
-| **Trust grant** | A scoped, expiring, budget-capped, self-revoking authorization to skip an approval |
-| **Action class** | The unit at which autonomy is granted — never "the agent" as a whole |
-| **Provenance chain** | Decision → Issue → Work Order → PR → Commit, machine-traversable via trailers |
+| Term                    | Meaning                                                                                             |
+| ----------------------- | --------------------------------------------------------------------------------------------------- |
+| **Work Order**          | Vendor-neutral, self-contained unit of executable work; a projection of an issue pinned to a commit |
+| **Runner**              | Anything that can accept a work order and produce a branch                                          |
+| **Capability manifest** | A runner's honest declaration of what it can and cannot do                                          |
+| **Reconciler**          | The control loop that derives desired state and acts, rather than consuming a queue                 |
+| **Detection latency**   | Elapsed time between a run stopping and a human knowing                                             |
+| **Trust grant**         | A scoped, expiring, budget-capped, self-revoking authorization to skip an approval                  |
+| **Action class**        | The unit at which autonomy is granted — never "the agent" as a whole                                |
+| **Provenance chain**    | Decision → Issue → Work Order → PR → Commit, machine-traversable via trailers                       |
 
 ---
 

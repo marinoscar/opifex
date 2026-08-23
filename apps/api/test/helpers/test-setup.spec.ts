@@ -42,14 +42,20 @@ describe('Test Framework Setup', () => {
     });
 
     it('should have role fixtures available', () => {
-      const { roleFixtures, permissionFixtures } = require('../fixtures/roles.fixture');
+      const {
+        roleFixtures,
+        permissionFixtures,
+      } = require('../fixtures/roles.fixture');
       expect(roleFixtures).toBeDefined();
       expect(roleFixtures.admin).toBeDefined();
       expect(permissionFixtures).toBeDefined();
     });
 
     it('should have settings fixtures available', () => {
-      const { userSettingsFixtures, systemSettingsFixtures } = require('../fixtures/settings.fixture');
+      const {
+        userSettingsFixtures,
+        systemSettingsFixtures,
+      } = require('../fixtures/settings.fixture');
       expect(userSettingsFixtures).toBeDefined();
       expect(systemSettingsFixtures).toBeDefined();
     });

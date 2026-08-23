@@ -48,7 +48,9 @@ export function useNavigationPrefs(): UseNavigationPrefsResult {
   // quietly make the STORED theme authoritative on every page load and stamp
   // over the AppBar's local light/dark toggle on the next navigation. The
   // opt-out exists on `useUserSettings` for precisely this caller.
-  const { settings, isLoading, updateSettings } = useUserSettings({ syncTheme: false });
+  const { settings, isLoading, updateSettings } = useUserSettings({
+    syncTheme: false,
+  });
   const isMounted = useIsMounted();
 
   // What the server currently says. Absent anywhere in the chain collapses to

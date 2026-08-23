@@ -31,18 +31,23 @@ describe('GitBranchService', () => {
 
   /** Responses for the happy path, in the order the service asks for them. */
   function mockCreation(options: { refExists?: string | null } = {}) {
-    http.request.mockImplementation(async (path: string, opts?: { method?: string }) => {
-      if (path.includes('/git/ref/heads/')) {
-        if (options.refExists) return { data: { object: { sha: options.refExists } } };
-        throw new GitHubNotFoundError('Not Found', 404, 'GET', String(path));
-      }
-      if (path.endsWith('/git/commits/' + BASE)) return { data: { tree: { sha: 'tree-base' } } };
-      if (path.endsWith('/git/blobs')) return { data: { sha: 'blob-1' } };
-      if (path.endsWith('/git/trees')) return { data: { sha: 'tree-1' } };
-      if (path.endsWith('/git/commits')) return { data: { sha: 'commit-1' } };
-      if (path.endsWith('/git/refs') && opts?.method === 'POST') return { data: {} };
-      throw new Error(`Unexpected request: ${opts?.method ?? 'GET'} ${path}`);
-    });
+    http.request.mockImplementation(
+      async (path: string, opts?: { method?: string }) => {
+        if (path.includes('/git/ref/heads/')) {
+          if (options.refExists)
+            return { data: { object: { sha: options.refExists } } };
+          throw new GitHubNotFoundError('Not Found', 404, 'GET', String(path));
+        }
+        if (path.endsWith('/git/commits/' + BASE))
+          return { data: { tree: { sha: 'tree-base' } } };
+        if (path.endsWith('/git/blobs')) return { data: { sha: 'blob-1' } };
+        if (path.endsWith('/git/trees')) return { data: { sha: 'tree-1' } };
+        if (path.endsWith('/git/commits')) return { data: { sha: 'commit-1' } };
+        if (path.endsWith('/git/refs') && opts?.method === 'POST')
+          return { data: {} };
+        throw new Error(`Unexpected request: ${opts?.method ?? 'GET'} ${path}`);
+      },
+    );
   }
 
   function build(writesEnabled = true) {
@@ -50,14 +55,23 @@ describe('GitBranchService', () => {
       enabled: writesEnabled,
       guardedWrite: jest.fn(async (action, description, execute) => {
         if (!writesEnabled) {
-          return { action, performed: false, noop: false, url: null, description } as never;
+          return {
+            action,
+            performed: false,
+            noop: false,
+            url: null,
+            description,
+          } as never;
         }
         const { url, noop } = await execute();
         return { action, performed: true, noop, url, description } as never;
       }),
     } as unknown as GitHubWriteService;
 
-    service = new GitBranchService(http as unknown as GitHubHttpService, writes);
+    service = new GitBranchService(
+      http as unknown as GitHubHttpService,
+      writes,
+    );
     jest.spyOn(service['logger'], 'log').mockImplementation(() => undefined);
   }
 
@@ -74,9 +88,9 @@ describe('GitBranchService', () => {
         // The whole justification for this service existing. A caller passing
         // `main` must fail here rather than at GitHub, where the answer would
         // depend on whether branch protection happened to be configured.
-        await expect(service.createFactoryBranch(input({ branch }))).rejects.toThrow(
-          /may only create branches under factory\//,
-        );
+        await expect(
+          service.createFactoryBranch(input({ branch })),
+        ).rejects.toThrow(/may only create branches under factory\//);
         expect(http.request).not.toHaveBeenCalled();
       },
     );
@@ -113,16 +127,27 @@ describe('GitBranchService', () => {
       // Comments stripped: the file legitimately QUOTES the forbidden paths
       // while explaining why it exists, and a scan that could not tell code
       // from prose would force the explanation out of the file.
-      const code = SOURCE.replace(/\/\*\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+      const code = SOURCE.replace(/\/\*\*[\s\S]*?\*\//g, '').replace(
+        /\/\/.*$/gm,
+        '',
+      );
 
-      for (const forbidden of ['/actions/', '/merge', '/secrets', '/branches/']) {
+      for (const forbidden of [
+        '/actions/',
+        '/merge',
+        '/secrets',
+        '/branches/',
+      ]) {
         expect(code).not.toContain(forbidden);
       }
     });
 
     it('exposes only creation and lookup', () => {
-      const methods = Object.getOwnPropertyNames(GitBranchService.prototype)
-        .filter((name) => name !== 'constructor' && !name.startsWith('commitAndPoint'));
+      const methods = Object.getOwnPropertyNames(
+        GitBranchService.prototype,
+      ).filter(
+        (name) => name !== 'constructor' && !name.startsWith('commitAndPoint'),
+      );
 
       expect(methods.sort()).toEqual(['createFactoryBranch', 'findRef']);
     });
@@ -181,7 +206,10 @@ describe('GitBranchService', () => {
 
       const result = await service.createFactoryBranch(input());
 
-      expect(result).toMatchObject({ commitSha: 'existing-commit', created: false });
+      expect(result).toMatchObject({
+        commitSha: 'existing-commit',
+        created: false,
+      });
       expect(result.write.noop).toBe(true);
     });
 
@@ -190,7 +218,9 @@ describe('GitBranchService', () => {
 
       await service.createFactoryBranch(input());
 
-      const posted = http.request.mock.calls.filter(([, opts]) => opts?.method === 'POST');
+      const posted = http.request.mock.calls.filter(
+        ([, opts]) => opts?.method === 'POST',
+      );
       expect(posted).toEqual([]);
     });
 
@@ -200,7 +230,9 @@ describe('GitBranchService', () => {
       // cannot.
       mockCreation({ refExists: 'abc123' });
 
-      expect((await service.createFactoryBranch(input())).commitSha).toBe('abc123');
+      expect((await service.createFactoryBranch(input())).commitSha).toBe(
+        'abc123',
+      );
     });
   });
 
@@ -213,7 +245,9 @@ describe('GitBranchService', () => {
       const result = await service.createFactoryBranch(input());
 
       expect(result.write.performed).toBe(false);
-      expect(http.request.mock.calls.filter(([, o]) => o?.method === 'POST')).toEqual([]);
+      expect(
+        http.request.mock.calls.filter(([, o]) => o?.method === 'POST'),
+      ).toEqual([]);
     });
 
     it('names no commit it did not create', async () => {
@@ -234,7 +268,9 @@ describe('GitBranchService', () => {
     it('propagates anything that is not a 404', async () => {
       http.request.mockRejectedValue(new Error('boom'));
 
-      await expect(service.findRef(REPO, 'factory/312-a3f91c2-a1')).rejects.toThrow('boom');
+      await expect(
+        service.findRef(REPO, 'factory/312-a3f91c2-a1'),
+      ).rejects.toThrow('boom');
     });
   });
 
@@ -247,7 +283,13 @@ describe('GitBranchService', () => {
         'utf8',
       );
 
-      for (const forbidden of ['/git/refs', '/branches', '/actions/', '/merge', '/secrets']) {
+      for (const forbidden of [
+        '/git/refs',
+        '/branches',
+        '/actions/',
+        '/merge',
+        '/secrets',
+      ]) {
         expect(writeSource).not.toContain(forbidden);
       }
     });

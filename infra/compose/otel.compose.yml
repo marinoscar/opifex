@@ -35,8 +35,8 @@ services:
     environment:
       - UPTRACE_PROJECT1_TOKEN=${UPTRACE_PROJECT1_TOKEN:-project1_secret_token}
     ports:
-      - "4327:4317"   # OTLP gRPC receiver (remapped to avoid conflict)
-      - "4328:4318"   # OTLP HTTP receiver (remapped to avoid conflict)
+      - "4327:4317" # OTLP gRPC receiver (remapped to avoid conflict)
+      - "4328:4318" # OTLP HTTP receiver (remapped to avoid conflict)
     depends_on:
       - uptrace
     networks:
@@ -52,8 +52,8 @@ services:
       - ../otel/uptrace.yml:/etc/uptrace/config.yml:ro
       - uptrace-data:/var/lib/uptrace
     ports:
-      - "14317:14317"  # OTLP gRPC
-      - "14318:14318"  # Uptrace UI
+      - "14317:14317" # OTLP gRPC
+      - "14318:14318" # Uptrace UI
     environment:
       - UPTRACE_PGHOST=uptrace-pg
       - UPTRACE_PGUSER=uptrace

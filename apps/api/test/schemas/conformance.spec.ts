@@ -50,7 +50,8 @@ function examplesIn(contract: Contract, subdirectory = ''): string[] {
     .map((file) => join(dir, file));
 }
 
-const load = (path: string) => JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+const load = (path: string) =>
+  JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
 
 describe('contract conformance', () => {
   describe('every schema compiles under draft 2020-12 in strict mode', () => {
@@ -70,7 +71,9 @@ describe('contract conformance', () => {
 
     it.each(
       CONTRACTS.flatMap((contract) =>
-        examplesIn(contract).map((path) => [contract, basename(path), path] as const),
+        examplesIn(contract).map(
+          (path) => [contract, basename(path), path] as const,
+        ),
       ),
     )('%s/%s', (contract, _name, path) => {
       // An example is a promise: it is what a runner author copies. One that
@@ -84,7 +87,9 @@ describe('contract conformance', () => {
 
   describe('every invalid fixture is rejected, for its own reason', () => {
     const invalid = CONTRACTS.flatMap((contract) =>
-      examplesIn(contract, 'invalid').map((path) => [contract, basename(path), path] as const),
+      examplesIn(contract, 'invalid').map(
+        (path) => [contract, basename(path), path] as const,
+      ),
     );
 
     it('there are invalid fixtures at all', () => {
@@ -119,14 +124,22 @@ describe('contract conformance', () => {
         const validate = validatorFor(contract);
         validate(load(path));
 
-        expect(validate.errors?.map((error) => error.keyword)).toContain(REJECTED_BY[name]);
+        expect(validate.errors?.map((error) => error.keyword)).toContain(
+          REJECTED_BY[name],
+        );
       },
     );
 
     it('every invalid fixture has a documented reason', () => {
       // A fixture nobody explained is one nobody can maintain.
       const documented = readFileSync(
-        join(SCHEMA_DIR, 'examples', 'runner-capability', 'invalid', 'README.md'),
+        join(
+          SCHEMA_DIR,
+          'examples',
+          'runner-capability',
+          'invalid',
+          'README.md',
+        ),
         'utf8',
       );
 
@@ -138,7 +151,9 @@ describe('contract conformance', () => {
   });
 
   describe('the six run-event types are covered exhaustively', () => {
-    const covered = examplesIn('run-event').map((path) => load(path).type as string);
+    const covered = examplesIn('run-event').map(
+      (path) => load(path).type as string,
+    );
 
     it.each(EVENT_TYPES)('%s has a worked example', (type) => {
       expect(covered).toContain(type);
@@ -157,7 +172,9 @@ describe('contract conformance', () => {
     it('covers a control-plane-synthesized event', () => {
       // VISION §9 forbids a synthesized event masquerading as a report, so the
       // third source has to be exercised too.
-      const sources = examplesIn('run-event').map((path) => load(path).source as string);
+      const sources = examplesIn('run-event').map(
+        (path) => load(path).source as string,
+      );
 
       expect(sources).toContain('control-plane-synthesized');
       expect(sources).toContain('runner-reported');
@@ -188,7 +205,9 @@ describe('contract conformance', () => {
     });
 
     it('can express a preview tier, which routing refuses to lean on', () => {
-      const tiers = examplesIn('runner-capability').map((path) => load(path).stabilityTier);
+      const tiers = examplesIn('runner-capability').map(
+        (path) => load(path).stabilityTier,
+      );
 
       expect(tiers).toContain('experimental');
     });
@@ -210,14 +229,22 @@ describe('contract conformance', () => {
       const parsed = parseWorkOrderIdentity(identity);
 
       expect(parsed).not.toBeNull();
-      expect(workOrderIdentity({ ...coordinates, ...parsed!, baseCommit: coordinates.baseCommit })).toBe(
-        identity,
-      );
+      expect(
+        workOrderIdentity({
+          ...coordinates,
+          ...parsed!,
+          baseCommit: coordinates.baseCommit,
+        }),
+      ).toBe(identity);
     });
 
     it('round-trips every worked work-order example', () => {
       for (const path of examplesIn('work-order')) {
-        const example = load(path) as { identity: string; branch: string; baseCommit: string };
+        const example = load(path) as {
+          identity: string;
+          branch: string;
+          baseCommit: string;
+        };
         const parsed = parseWorkOrderIdentity(example.identity);
 
         expect(parsed).not.toBeNull();
@@ -231,7 +258,11 @@ describe('contract conformance', () => {
       // The two are derived from the same coordinates, and a divergence would
       // mean a runner checking out one commit and reporting another.
       for (const path of examplesIn('work-order')) {
-        const example = load(path) as { identity: string; branch: string; baseCommit: string };
+        const example = load(path) as {
+          identity: string;
+          branch: string;
+          baseCommit: string;
+        };
         const short = example.baseCommit.slice(0, 7);
 
         expect(example.identity).toContain(short);

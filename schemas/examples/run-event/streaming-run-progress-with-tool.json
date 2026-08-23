@@ -8,7 +8,10 @@
   "occurredAt": "2026-08-21T10:04:12.000Z",
   "summary": "Ran the api test suite",
   "runner": "claude-code-local@2.1.223",
-  "trace": { "traceId": "4bf92f3577b34da6a3ce929d0e0e4736", "spanId": "b7ad6b7169203331" },
+  "trace": {
+    "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "spanId": "b7ad6b7169203331"
+  },
   "tool": {
     "name": "Bash",
     "signature": "sha256:9f2c4a1b8e7d6c5f",

@@ -1,7 +1,10 @@
 import { NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { MAX_CONSECUTIVE_FAILURES, PushSubscriptionsService } from './push-subscriptions.service';
+import {
+  MAX_CONSECUTIVE_FAILURES,
+  PushSubscriptionsService,
+} from './push-subscriptions.service';
 
 const USER = 'user-1';
 const OTHER_USER = 'user-2';
@@ -72,7 +75,11 @@ describe('PushSubscriptionsService', () => {
     it('re-points a shared machine at whoever is subscribing now', async () => {
       // A machine changing hands must not keep notifying the previous
       // operator.
-      await service.subscribe(OTHER_USER, { endpoint: 'e', p256dh: 'k', auth: 'a' });
+      await service.subscribe(OTHER_USER, {
+        endpoint: 'e',
+        p256dh: 'k',
+        auth: 'a',
+      });
 
       const [{ update }] = prisma.pushSubscription.upsert.mock.calls[0];
       expect(update.userId).toBe(OTHER_USER);
@@ -81,7 +88,11 @@ describe('PushSubscriptionsService', () => {
     it('NEVER returns the encryption secrets', async () => {
       // The browser already has them. Handing them back would turn a listing
       // into a way to push arbitrary content to somebody's phone.
-      const result = await service.subscribe(USER, { endpoint: 'e', p256dh: 'k', auth: 'a' });
+      const result = await service.subscribe(USER, {
+        endpoint: 'e',
+        p256dh: 'k',
+        auth: 'a',
+      });
 
       expect(result).not.toHaveProperty('p256dh');
       expect(result).not.toHaveProperty('auth');
@@ -119,7 +130,9 @@ describe('PushSubscriptionsService', () => {
     it('404s when it deleted nothing', async () => {
       prisma.pushSubscription.deleteMany.mockResolvedValue({ count: 0 });
 
-      await expect(service.unsubscribe(USER, 'sub-9')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.unsubscribe(USER, 'sub-9')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 
@@ -171,7 +184,9 @@ describe('PushSubscriptionsService', () => {
       // failure, and the real devices' results get lost in the noise.
       await service.recordFailure('sub-1', true);
 
-      expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({ where: { id: 'sub-1' } });
+      expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'sub-1' },
+      });
       expect(prisma.pushSubscription.updateMany).not.toHaveBeenCalled();
     });
 

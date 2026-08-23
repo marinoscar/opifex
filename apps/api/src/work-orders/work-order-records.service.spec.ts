@@ -2,8 +2,14 @@ import { GitBranchService } from '../github/git/git-branch.service';
 import { GitHubReadService } from '../github/read/github-read.service';
 import { GitHubWriteService } from '../github/write/github-write.service';
 import { EXECUTION_RECORD_PATH } from './work-order-document';
-import { generateWorkOrder, type IssueProjection } from './work-order-generator';
-import { AUTHORIZATION_MARKER, WorkOrderRecordsService } from './work-order-records.service';
+import {
+  generateWorkOrder,
+  type IssueProjection,
+} from './work-order-generator';
+import {
+  AUTHORIZATION_MARKER,
+  WorkOrderRecordsService,
+} from './work-order-records.service';
 
 const BASE = 'a3f91c2000000000000000000000000000000000';
 
@@ -22,7 +28,11 @@ function issue(overrides: Partial<IssueProjection> = {}): IssueProjection {
 }
 
 function workOrder(attempt = 1) {
-  const result = generateWorkOrder({ issue: issue(), baseCommit: BASE, attempt });
+  const result = generateWorkOrder({
+    issue: issue(),
+    baseCommit: BASE,
+    attempt,
+  });
   if (!result.ok) throw new Error('unreachable');
   return result.workOrder;
 }
@@ -42,9 +52,11 @@ describe('WorkOrderRecordsService', () => {
   beforeEach(() => {
     reads = { listIssueComments: jest.fn().mockResolvedValue([]) };
     writes = {
-      postAuthorizationRecord: jest
-        .fn()
-        .mockResolvedValue({ action: 'comment.authorization-record', performed: true, noop: false }),
+      postAuthorizationRecord: jest.fn().mockResolvedValue({
+        action: 'comment.authorization-record',
+        performed: true,
+        noop: false,
+      }),
       guardedWrite: jest.fn(async (action, description, execute) => ({
         action,
         description,
@@ -53,9 +65,11 @@ describe('WorkOrderRecordsService', () => {
       })),
     };
     branches = {
-      createFactoryBranch: jest
-        .fn()
-        .mockResolvedValue({ write: { noop: false, performed: true }, commitSha: 'c1', created: true }),
+      createFactoryBranch: jest.fn().mockResolvedValue({
+        write: { noop: false, performed: true },
+        commitSha: 'c1',
+        created: true,
+      }),
     };
 
     service = new WorkOrderRecordsService(
@@ -68,7 +82,10 @@ describe('WorkOrderRecordsService', () => {
 
   describe('both records, from one serialization', () => {
     it('writes the authorization record and the execution record', async () => {
-      const result = await service.write({ workOrder: workOrder(), ...DISPATCH });
+      const result = await service.write({
+        workOrder: workOrder(),
+        ...DISPATCH,
+      });
 
       expect(writes.postAuthorizationRecord).toHaveBeenCalled();
       expect(branches.createFactoryBranch).toHaveBeenCalled();
@@ -80,7 +97,10 @@ describe('WorkOrderRecordsService', () => {
       // structural if one function produces the string and both writes use
       // it — two call sites serializing independently would break on key
       // order, silently, because both documents would still look right.
-      const result = await service.write({ workOrder: workOrder(), ...DISPATCH });
+      const result = await service.write({
+        workOrder: workOrder(),
+        ...DISPATCH,
+      });
 
       const [, , posted] = writes.postAuthorizationRecord.mock.calls[0];
       const [{ content }] = branches.createFactoryBranch.mock.calls[0];
@@ -129,7 +149,10 @@ describe('WorkOrderRecordsService', () => {
         },
       ]);
 
-      const result = await service.write({ workOrder: workOrder(), ...DISPATCH });
+      const result = await service.write({
+        workOrder: workOrder(),
+        ...DISPATCH,
+      });
 
       expect(writes.postAuthorizationRecord).not.toHaveBeenCalled();
       expect(result.authorization.noop).toBe(true);
@@ -140,7 +163,13 @@ describe('WorkOrderRecordsService', () => {
       // did not happen because it was already true is a different fact from
       // one that was never attempted.
       reads.listIssueComments.mockResolvedValue([
-        { id: 1, body: `${AUTHORIZATION_MARKER} wo_opifex_312_a3f91c2_a1`, url: 'u', author: null, createdAt: '' },
+        {
+          id: 1,
+          body: `${AUTHORIZATION_MARKER} wo_opifex_312_a3f91c2_a1`,
+          url: 'u',
+          author: null,
+          createdAt: '',
+        },
       ]);
 
       await service.write({ workOrder: workOrder(), ...DISPATCH });
@@ -152,7 +181,13 @@ describe('WorkOrderRecordsService', () => {
       // Scoped to the identity, not the issue: attempt 2 is a different work
       // order and deserves its own authorization.
       reads.listIssueComments.mockResolvedValue([
-        { id: 1, body: `${AUTHORIZATION_MARKER} wo_opifex_312_a3f91c2_a1`, url: 'u', author: null, createdAt: '' },
+        {
+          id: 1,
+          body: `${AUTHORIZATION_MARKER} wo_opifex_312_a3f91c2_a1`,
+          url: 'u',
+          author: null,
+          createdAt: '',
+        },
       ]);
 
       await service.write({ workOrder: workOrder(2), ...DISPATCH });
@@ -162,7 +197,13 @@ describe('WorkOrderRecordsService', () => {
 
     it('ignores an unrelated comment carrying the marker', async () => {
       reads.listIssueComments.mockResolvedValue([
-        { id: 1, body: `${AUTHORIZATION_MARKER} wo_opifex_999_bbbbbbb_a1`, url: 'u', author: null, createdAt: '' },
+        {
+          id: 1,
+          body: `${AUTHORIZATION_MARKER} wo_opifex_999_bbbbbbb_a1`,
+          url: 'u',
+          author: null,
+          createdAt: '',
+        },
       ]);
 
       await service.write({ workOrder: workOrder(), ...DISPATCH });
@@ -174,7 +215,13 @@ describe('WorkOrderRecordsService', () => {
       // A human discussing the work order in prose is not an authorization
       // record. The marker is what makes it one.
       reads.listIssueComments.mockResolvedValue([
-        { id: 1, body: 'I think wo_opifex_312_a3f91c2_a1 looks wrong', url: 'u', author: 'a', createdAt: '' },
+        {
+          id: 1,
+          body: 'I think wo_opifex_312_a3f91c2_a1 looks wrong',
+          url: 'u',
+          author: 'a',
+          createdAt: '',
+        },
       ]);
 
       await service.write({ workOrder: workOrder(), ...DISPATCH });
@@ -186,7 +233,13 @@ describe('WorkOrderRecordsService', () => {
       // Substring rather than a parse: posting a second one would not fix a
       // comment somebody mangled.
       reads.listIssueComments.mockResolvedValue([
-        { id: 1, body: `${AUTHORIZATION_MARKER}\n\`\`\`json\n{ broken wo_opifex_312_a3f91c2_a1`, url: 'u', author: null, createdAt: '' },
+        {
+          id: 1,
+          body: `${AUTHORIZATION_MARKER}\n\`\`\`json\n{ broken wo_opifex_312_a3f91c2_a1`,
+          url: 'u',
+          author: null,
+          createdAt: '',
+        },
       ]);
 
       await service.write({ workOrder: workOrder(), ...DISPATCH });
@@ -198,7 +251,13 @@ describe('WorkOrderRecordsService', () => {
   describe('re-dispatching the same work order', () => {
     it('reports that nothing needed writing', async () => {
       reads.listIssueComments.mockResolvedValue([
-        { id: 1, body: `${AUTHORIZATION_MARKER} wo_opifex_312_a3f91c2_a1`, url: 'u', author: null, createdAt: '' },
+        {
+          id: 1,
+          body: `${AUTHORIZATION_MARKER} wo_opifex_312_a3f91c2_a1`,
+          url: 'u',
+          author: null,
+          createdAt: '',
+        },
       ]);
       branches.createFactoryBranch.mockResolvedValue({
         write: { noop: true, performed: true },
@@ -206,7 +265,10 @@ describe('WorkOrderRecordsService', () => {
         created: false,
       });
 
-      const result = await service.write({ workOrder: workOrder(), ...DISPATCH });
+      const result = await service.write({
+        workOrder: workOrder(),
+        ...DISPATCH,
+      });
 
       expect(result.alreadyRecorded).toBe(true);
       expect(result.executionCommitSha).toBe('existing');
@@ -222,9 +284,10 @@ describe('WorkOrderRecordsService', () => {
         created: false,
       });
 
-      expect((await service.write({ workOrder: workOrder(), ...DISPATCH })).alreadyRecorded).toBe(
-        false,
-      );
+      expect(
+        (await service.write({ workOrder: workOrder(), ...DISPATCH }))
+          .alreadyRecorded,
+      ).toBe(false);
     });
   });
 });

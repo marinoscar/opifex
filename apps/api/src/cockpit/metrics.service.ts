@@ -84,7 +84,11 @@ export class MetricsService {
    * outage would drag a mean into meaninglessness, and the question the tile
    * answers is "what is detection normally like".
    */
-  private async detectionLatency(from: Date, to: Date, days: number): Promise<MetricSample> {
+  private async detectionLatency(
+    from: Date,
+    to: Date,
+    days: number,
+  ): Promise<MetricSample> {
     const rows = await this.prisma.escalation.findMany({
       where: {
         raisedAt: { gte: from, lte: to },
@@ -129,7 +133,11 @@ export class MetricsService {
    * Null when nothing landed — which is the honest state today, since no run
    * has ever completed.
    */
-  private async attemptsPerWorkOrder(from: Date, to: Date, days: number): Promise<MetricSample> {
+  private async attemptsPerWorkOrder(
+    from: Date,
+    to: Date,
+    days: number,
+  ): Promise<MetricSample> {
     const landed = await this.prisma.workOrder.findMany({
       where: { status: 'succeeded', updatedAt: { gte: from, lte: to } },
       select: { updatedAt: true, _count: { select: { runs: true } } },

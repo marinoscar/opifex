@@ -42,7 +42,9 @@ describe('work-order trace ids', () => {
     // Different slices of the digest. Overlapping them would make the root
     // span id predictable from the trace id in a way nothing needs and some
     // backends dislike.
-    expect(traceIdForWorkOrder(IDENTITY)).not.toContain(rootSpanIdForWorkOrder(IDENTITY));
+    expect(traceIdForWorkOrder(IDENTITY)).not.toContain(
+      rootSpanIdForWorkOrder(IDENTITY),
+    );
   });
 
   it('builds a context OpenTelemetry will accept as a parent', () => {
@@ -59,6 +61,8 @@ describe('work-order trace ids', () => {
   it('marks the parent remote, because it is', () => {
     // Not cosmetic: the parent really was not created in this process, and
     // sampling treats a remote parent differently.
-    expect(trace.getSpanContext(workOrderContext(IDENTITY))?.isRemote).toBe(true);
+    expect(trace.getSpanContext(workOrderContext(IDENTITY))?.isRemote).toBe(
+      true,
+    );
   });
 });

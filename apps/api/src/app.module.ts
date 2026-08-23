@@ -125,8 +125,6 @@ import configuration from './config/configuration';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(RequestIdMiddleware)
-      .forRoutes('*');
+    consumer.apply(RequestIdMiddleware).forRoutes('*');
   }
 }

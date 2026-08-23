@@ -64,7 +64,10 @@ describe('useCockpitMetrics', () => {
     endpoints.metrics.available = true;
     mockGet.mockResolvedValue({
       generatedAt: '2026-08-19T12:00:00.000Z',
-      window: { from: '2026-08-12T12:00:00.000Z', to: '2026-08-19T12:00:00.000Z' },
+      window: {
+        from: '2026-08-12T12:00:00.000Z',
+        to: '2026-08-19T12:00:00.000Z',
+      },
       metrics: {
         detectionLatency: { value: 45, trend: [] },
         deadTimePerDay: { value: 1, trend: [] },

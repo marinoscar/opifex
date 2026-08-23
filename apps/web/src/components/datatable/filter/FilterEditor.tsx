@@ -29,14 +29,23 @@
 
 import { Box, Button, MenuItem, Stack, TextField } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
-import type { DataTableColumn, DataTableFilter, DataTableFilterValue } from '../types';
+import type {
+  DataTableColumn,
+  DataTableFilter,
+  DataTableFilterValue,
+} from '../types';
 import {
   filterTypeOf,
   operatorArity,
   operatorLabel,
   operatorsForColumn,
 } from './operators';
-import { blankValueFor, columnForFilter, draftFilterFor, isFilterComplete } from './filterModel';
+import {
+  blankValueFor,
+  columnForFilter,
+  draftFilterFor,
+  isFilterComplete,
+} from './filterModel';
 
 export interface FilterEditorProps<Row> {
   /** Filterable columns only. */
@@ -86,7 +95,8 @@ export function FilterEditor<Row>({
     });
   };
 
-  const changeValue = (value: DataTableFilterValue) => onDraftChange({ ...draft, value });
+  const changeValue = (value: DataTableFilterValue) =>
+    onDraftChange({ ...draft, value });
 
   const changePairEntry = (index: 0 | 1, raw: string) => {
     const pair = Array.isArray(draft.value) ? [...draft.value] : ['', ''];
@@ -123,7 +133,10 @@ export function FilterEditor<Row>({
         direction={stacked ? 'column' : 'row'}
         spacing={1}
         useFlexGap
-        sx={{ flexWrap: stacked ? 'nowrap' : 'wrap', alignItems: stacked ? 'stretch' : 'center' }}
+        sx={{
+          flexWrap: stacked ? 'nowrap' : 'wrap',
+          alignItems: stacked ? 'stretch' : 'center',
+        }}
       >
         <TextField
           select
@@ -131,7 +144,11 @@ export function FilterEditor<Row>({
           label="Column"
           value={column.id}
           onChange={(event) => changeColumn(event.target.value)}
-          sx={{ minWidth: 160, ...(stacked ? {} : { flex: '0 1 200px' }), ...CONTROL_SX }}
+          sx={{
+            minWidth: 160,
+            ...(stacked ? {} : { flex: '0 1 200px' }),
+            ...CONTROL_SX,
+          }}
         >
           {columns.map((entry) => (
             <MenuItem key={entry.id} value={entry.id}>
@@ -146,7 +163,11 @@ export function FilterEditor<Row>({
           label="Operator"
           value={draft.operator}
           onChange={(event) => changeOperator(event.target.value)}
-          sx={{ minWidth: 150, ...(stacked ? {} : { flex: '0 1 180px' }), ...CONTROL_SX }}
+          sx={{
+            minWidth: 150,
+            ...(stacked ? {} : { flex: '0 1 180px' }),
+            ...CONTROL_SX,
+          }}
         >
           {operators.map((operator) => (
             <MenuItem key={operator} value={operator} data-operator={operator}>
@@ -183,13 +204,18 @@ export function FilterEditor<Row>({
             onChange={(event) => {
               const raw = event.target.value;
               changeValue(
-                (typeof raw === 'string' ? raw.split(',') : (raw as unknown as string[])).filter(
-                  Boolean,
-                ),
+                (typeof raw === 'string'
+                  ? raw.split(',')
+                  : (raw as unknown as string[])
+                ).filter(Boolean),
               );
             }}
             slotProps={{ select: { multiple: true } }}
-            sx={{ minWidth: 180, ...(stacked ? {} : { flex: '1 1 220px' }), ...CONTROL_SX }}
+            sx={{
+              minWidth: 180,
+              ...(stacked ? {} : { flex: '1 1 220px' }),
+              ...CONTROL_SX,
+            }}
           >
             {(column.enumValues ?? []).map((option) => (
               <MenuItem key={option.value} value={option.value}>
@@ -291,12 +317,20 @@ function ValueField<Row>({
     <TextField
       size="small"
       label={label}
-      type={filterType === 'number' ? 'number' : filterType === 'date' ? 'date' : 'text'}
+      type={
+        filterType === 'number'
+          ? 'number'
+          : filterType === 'date'
+            ? 'date'
+            : 'text'
+      }
       value={value}
       onChange={(event) => onChange(event.target.value)}
       // A native date input renders its own placeholder text, which overlaps a
       // floating label unless the label is pinned shrunk.
-      slotProps={filterType === 'date' ? { inputLabel: { shrink: true } } : undefined}
+      slotProps={
+        filterType === 'date' ? { inputLabel: { shrink: true } } : undefined
+      }
       sx={sx}
     />
   );

@@ -7,7 +7,10 @@
  */
 
 import { useCallback } from 'react';
-import { COCKPIT_ENDPOINTS, COCKPIT_POLL_INTERVAL_MS } from '../config/cockpitApi';
+import {
+  COCKPIT_ENDPOINTS,
+  COCKPIT_POLL_INTERVAL_MS,
+} from '../config/cockpitApi';
 import { getRunQueue } from '../services/api';
 import type { QueueEntry } from '../types/cockpit';
 import { usePolledResource } from './usePolledResource';
@@ -16,16 +19,21 @@ import type { UsePolledResourceResult } from './usePolledResource';
 /** Rows the dashboard panel shows before deferring to `/queue`. */
 export const QUEUE_PANEL_LIMIT = 5;
 
-export interface UseRunQueueResult extends UsePolledResourceResult<QueueEntry[]> {
+export interface UseRunQueueResult extends UsePolledResourceResult<
+  QueueEntry[]
+> {
   phase: string;
 }
 
-export function useRunQueue(limit: number = QUEUE_PANEL_LIMIT): UseRunQueueResult {
+export function useRunQueue(
+  limit: number = QUEUE_PANEL_LIMIT,
+): UseRunQueueResult {
   const endpoint = COCKPIT_ENDPOINTS.queue;
 
-  const fetcher = useCallback((signal: AbortSignal) => getRunQueue({ limit }, signal), [
-    limit,
-  ]);
+  const fetcher = useCallback(
+    (signal: AbortSignal) => getRunQueue({ limit }, signal),
+    [limit],
+  );
 
   const resource = usePolledResource<QueueEntry[]>({
     fetcher,

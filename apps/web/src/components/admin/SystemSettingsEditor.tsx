@@ -1,11 +1,5 @@
 import { useState, useEffect } from 'react';
-import {
-  Box,
-  Typography,
-  TextField,
-  Button,
-  Alert,
-} from '@mui/material';
+import { Box, Typography, TextField, Button, Alert } from '@mui/material';
 import { SystemSettings } from '../../types';
 
 interface SystemSettingsEditorProps {
@@ -31,7 +25,9 @@ export function SystemSettingsEditor({
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    setJsonValue(JSON.stringify(editableSettings, null, 2));
+    setJsonValue(
+      JSON.stringify({ ui: settings.ui, features: settings.features }, null, 2),
+    );
   }, [settings]);
 
   const validateJson = (): Record<string, unknown> | null => {
@@ -78,7 +74,8 @@ export function SystemSettingsEditor({
       </Typography>
 
       <Alert severity="info" sx={{ mb: 2 }}>
-        Edit the raw JSON settings. Be careful - invalid values may cause issues.
+        Edit the raw JSON settings. Be careful - invalid values may cause
+        issues.
       </Alert>
 
       {error && (

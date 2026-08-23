@@ -42,14 +42,14 @@ OPIFEX is a production-grade web application template that establishes:
 
 ### Key Characteristics
 
-| Aspect | Description |
-|--------|-------------|
-| **Architecture Style** | Monorepo with API-first design |
-| **Hosting Model** | Same-origin (UI and API share base URL) |
-| **Auth Strategy** | OAuth 2.0 + JWT with refresh token rotation |
-| **Access Control** | Email allowlist + RBAC (Admin/Contributor/Viewer) |
-| **Data Storage** | PostgreSQL with Prisma ORM |
-| **Extensibility** | JSONB settings, modular NestJS structure |
+| Aspect                 | Description                                       |
+| ---------------------- | ------------------------------------------------- |
+| **Architecture Style** | Monorepo with API-first design                    |
+| **Hosting Model**      | Same-origin (UI and API share base URL)           |
+| **Auth Strategy**      | OAuth 2.0 + JWT with refresh token rotation       |
+| **Access Control**     | Email allowlist + RBAC (Admin/Contributor/Viewer) |
+| **Data Storage**       | PostgreSQL with Prisma ORM                        |
+| **Extensibility**      | JSONB settings, modular NestJS structure          |
 
 ### Target Audience
 
@@ -153,13 +153,13 @@ OPIFEX is a production-grade web application template that establishes:
 
 ### 3.1 Separation of Concerns
 
-| Layer | Responsibility | Location |
-|-------|---------------|----------|
-| **Presentation** | User interaction, rendering, UX | `apps/web/` |
-| **API Gateway** | HTTP handling, validation, auth | `apps/api/src/*/controllers/` |
-| **Business Logic** | Domain rules, orchestration | `apps/api/src/*/services/` |
-| **Data Access** | Database operations, queries | Prisma via services |
-| **Infrastructure** | Routing, containers, config | `infra/` |
+| Layer              | Responsibility                  | Location                      |
+| ------------------ | ------------------------------- | ----------------------------- |
+| **Presentation**   | User interaction, rendering, UX | `apps/web/`                   |
+| **API Gateway**    | HTTP handling, validation, auth | `apps/api/src/*/controllers/` |
+| **Business Logic** | Domain rules, orchestration     | `apps/api/src/*/services/`    |
+| **Data Access**    | Database operations, queries    | Prisma via services           |
+| **Infrastructure** | Routing, containers, config     | `infra/`                      |
 
 **Rule**: Frontend handles presentation only. All business logic resides in the API.
 
@@ -167,12 +167,12 @@ OPIFEX is a production-grade web application template that establishes:
 
 All components served from the same base URL via Nginx reverse proxy:
 
-| Path | Component | Purpose |
-|------|-----------|---------|
-| `/` | Frontend (React) | User interface |
-| `/api/*` | Backend (NestJS) | REST API |
-| `/api/docs` | Scalar API reference | Interactive API documentation |
-| `/api/openapi.json` | OpenAPI spec | Machine-readable API schema |
+| Path                | Component            | Purpose                       |
+| ------------------- | -------------------- | ----------------------------- |
+| `/`                 | Frontend (React)     | User interface                |
+| `/api/*`            | Backend (NestJS)     | REST API                      |
+| `/api/docs`         | Scalar API reference | Interactive API documentation |
+| `/api/openapi.json` | OpenAPI spec         | Machine-readable API schema   |
 
 **Benefits**: No CORS complexity, simplified cookie handling, unified deployment.
 
@@ -205,49 +205,50 @@ All components served from the same base URL via Nginx reverse proxy:
 
 ### 4.1 Core Technologies
 
-| Component | Technology | Version | Purpose |
-|-----------|------------|---------|---------|
-| **Runtime** | Node.js | 24+ (LTS) | Server runtime |
-| **Language** | TypeScript | 6.x | Type safety |
-| **Backend Framework** | NestJS | 11.x | API structure |
-| **HTTP Adapter** | Fastify | 5.x | High-performance HTTP |
-| **Frontend Framework** | React | 19.x | UI rendering |
-| **UI Library** | Material UI (MUI) | 9.x | Component library |
-| **Database** | PostgreSQL | 16+ | Data persistence |
-| **ORM** | Prisma | 7.x | Database access |
+| Component              | Technology        | Version   | Purpose               |
+| ---------------------- | ----------------- | --------- | --------------------- |
+| **Runtime**            | Node.js           | 24+ (LTS) | Server runtime        |
+| **Language**           | TypeScript        | 6.x       | Type safety           |
+| **Backend Framework**  | NestJS            | 11.x      | API structure         |
+| **HTTP Adapter**       | Fastify           | 5.x       | High-performance HTTP |
+| **Frontend Framework** | React             | 19.x      | UI rendering          |
+| **UI Library**         | Material UI (MUI) | 9.x       | Component library     |
+| **Database**           | PostgreSQL        | 16+       | Data persistence      |
+| **ORM**                | Prisma            | 7.x       | Database access       |
 
 ### 4.2 Authentication & Security
 
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **OAuth Strategy** | Passport.js | OAuth flow handling |
-| **OAuth Provider** | Google OAuth 2.0 | Primary identity provider |
-| **Token Format** | JWT (HS256) | Stateless authentication |
-| **Validation** | Zod | Runtime schema validation |
-| **Security Headers** | Helmet (via Nginx) | HTTP security headers |
+| Component            | Technology         | Purpose                   |
+| -------------------- | ------------------ | ------------------------- |
+| **OAuth Strategy**   | Passport.js        | OAuth flow handling       |
+| **OAuth Provider**   | Google OAuth 2.0   | Primary identity provider |
+| **Token Format**     | JWT (HS256)        | Stateless authentication  |
+| **Validation**       | Zod                | Runtime schema validation |
+| **Security Headers** | Helmet (via Nginx) | HTTP security headers     |
 
 ### 4.3 Infrastructure
 
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **Containerization** | Docker | Application packaging |
-| **Orchestration** | Docker Compose | Local development environment |
-| **Reverse Proxy** | Nginx | Routing, SSL termination, headers |
-| **Observability** | OpenTelemetry + Uptrace | Traces, metrics, logs |
-| **Logging** | Pino | Structured JSON logging |
+| Component            | Technology              | Purpose                           |
+| -------------------- | ----------------------- | --------------------------------- |
+| **Containerization** | Docker                  | Application packaging             |
+| **Orchestration**    | Docker Compose          | Local development environment     |
+| **Reverse Proxy**    | Nginx                   | Routing, SSL termination, headers |
+| **Observability**    | OpenTelemetry + Uptrace | Traces, metrics, logs             |
+| **Logging**          | Pino                    | Structured JSON logging           |
 
 ### 4.4 Testing
 
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **Backend Unit Tests** | Jest + jest-mock-extended | Service/guard testing with mocked Prisma |
-| **Backend Integration** | Jest + Supertest | HTTP endpoint testing with mocked database |
-| **Prisma Mocking** | jest-mock-extended (DeepMockProxy) | Type-safe database mocking |
-| **Frontend Tests** | Vitest + React Testing Library | Component and context testing |
-| **Frontend API Mocking** | MSW (Mock Service Worker) | Network request interception |
-| **E2E (Optional)** | Playwright | Full system testing |
+| Component                | Technology                         | Purpose                                    |
+| ------------------------ | ---------------------------------- | ------------------------------------------ |
+| **Backend Unit Tests**   | Jest + jest-mock-extended          | Service/guard testing with mocked Prisma   |
+| **Backend Integration**  | Jest + Supertest                   | HTTP endpoint testing with mocked database |
+| **Prisma Mocking**       | jest-mock-extended (DeepMockProxy) | Type-safe database mocking                 |
+| **Frontend Tests**       | Vitest + React Testing Library     | Component and context testing              |
+| **Frontend API Mocking** | MSW (Mock Service Worker)          | Network request interception               |
+| **E2E (Optional)**       | Playwright                         | Full system testing                        |
 
 **Key Testing Characteristics:**
+
 - Backend tests use **mocked PrismaService** by default (no real database required)
 - Integration tests verify full HTTP request/response cycle with mocked data layer
 - Frontend tests run in jsdom environment with MSW intercepting API calls
@@ -401,16 +402,18 @@ The storage system uses a provider abstraction pattern to support multiple cloud
 #### Upload Flow
 
 **1. Resumable Upload (Large Files)**:
-   - Client calls `/api/storage/objects/upload/init` with file metadata
-   - Server creates DB record, initializes S3 multipart, returns presigned URLs
-   - Client uploads parts directly to S3 (bypasses application server)
-   - Client calls `/api/storage/objects/:id/upload/complete` with part ETags
-   - Server finalizes upload with S3, triggers processing pipeline
+
+- Client calls `/api/storage/objects/upload/init` with file metadata
+- Server creates DB record, initializes S3 multipart, returns presigned URLs
+- Client uploads parts directly to S3 (bypasses application server)
+- Client calls `/api/storage/objects/:id/upload/complete` with part ETags
+- Server finalizes upload with S3, triggers processing pipeline
 
 **2. Simple Upload (Small Files < 100MB)**:
-   - Client sends file via multipart/form-data to `/api/storage/objects`
-   - Server streams directly to S3
-   - Processing pipeline triggered on completion
+
+- Client sends file via multipart/form-data to `/api/storage/objects`
+- Server streams directly to S3
+- Processing pipeline triggered on completion
 
 #### Processing Pipeline
 
@@ -429,6 +432,7 @@ Status updated: ready | failed
 ```
 
 **Key Features:**
+
 - Pluggable processor architecture
 - Priority-based execution order
 - Processors run asynchronously (non-blocking)
@@ -438,11 +442,13 @@ Status updated: ready | failed
 #### Database Schema
 
 **storage_objects**:
+
 - File metadata, status, storage key
 - Owner reference (user_id)
 - Processing results in JSONB metadata field
 
 **storage_object_chunks**:
+
 - Tracks multipart upload progress
 - Part number, ETag, upload status
 - Enables resume capability
@@ -609,14 +615,14 @@ apps/api/src/storage/
 
 ### 6.3 Database Design Principles
 
-| Principle | Implementation |
-|-----------|---------------|
-| **UUID Primary Keys** | All tables use UUID v4 for primary keys |
-| **Timestamptz** | All timestamps use `timestamptz` for timezone awareness |
-| **JSONB for Flexibility** | Settings stored as JSONB for schema-less extensibility |
-| **Cascade Deletes** | Foreign keys cascade on user deletion |
-| **Soft Deletes** | Users deactivated via `is_active` flag, not hard deleted |
-| **Audit Trail** | `audit_events` table logs all security-relevant actions |
+| Principle                 | Implementation                                           |
+| ------------------------- | -------------------------------------------------------- |
+| **UUID Primary Keys**     | All tables use UUID v4 for primary keys                  |
+| **Timestamptz**           | All timestamps use `timestamptz` for timezone awareness  |
+| **JSONB for Flexibility** | Settings stored as JSONB for schema-less extensibility   |
+| **Cascade Deletes**       | Foreign keys cascade on user deletion                    |
+| **Soft Deletes**          | Users deactivated via `is_active` flag, not hard deleted |
+| **Audit Trail**           | `audit_events` table logs all security-relevant actions  |
 
 ---
 
@@ -671,12 +677,13 @@ apps/api/src/storage/
 
 ### 7.2 Token Strategy
 
-| Token Type | Storage (Client) | Storage (Server) | Lifetime | Purpose |
-|------------|-----------------|------------------|----------|---------|
-| **Access Token** | Memory only | None (stateless) | 15 min | API authorization |
-| **Refresh Token** | HttpOnly cookie | SHA256 hash in DB | 14 days | Obtain new access tokens |
+| Token Type        | Storage (Client) | Storage (Server)  | Lifetime | Purpose                  |
+| ----------------- | ---------------- | ----------------- | -------- | ------------------------ |
+| **Access Token**  | Memory only      | None (stateless)  | 15 min   | API authorization        |
+| **Refresh Token** | HttpOnly cookie  | SHA256 hash in DB | 14 days  | Obtain new access tokens |
 
 **Security Properties:**
+
 - Access tokens never touch localStorage (XSS protection)
 - Refresh tokens in HttpOnly cookies (JavaScript cannot access)
 - Refresh token rotation on each use (reuse detection)
@@ -746,6 +753,7 @@ Before OAuth authentication completes:
 5. Mark allowlist entry as "claimed" with user ID
 
 **Management:**
+
 - Admins add emails via `/api/allowlist` before users can login
 - Claimed entries cannot be removed (protects existing users)
 - Use user deactivation (`is_active: false`) to revoke access
@@ -756,76 +764,76 @@ Before OAuth authentication completes:
 
 ### 8.1 Endpoint Categories
 
-| Category | Base Path | Auth Required | Description |
-|----------|-----------|---------------|-------------|
-| **Health** | `/api/health/*` | No | Liveness/readiness probes |
-| **Auth** | `/api/auth/*` | Varies | OAuth, JWT, sessions |
-| **Users** | `/api/users/*` | Yes (Admin) | User management |
-| **Settings** | `/api/user-settings/*` | Yes | User preferences |
-| **System Settings** | `/api/system-settings/*` | Yes (Admin) | App configuration |
-| **Allowlist** | `/api/allowlist/*` | Yes (Admin) | Access control |
+| Category            | Base Path                | Auth Required | Description               |
+| ------------------- | ------------------------ | ------------- | ------------------------- |
+| **Health**          | `/api/health/*`          | No            | Liveness/readiness probes |
+| **Auth**            | `/api/auth/*`            | Varies        | OAuth, JWT, sessions      |
+| **Users**           | `/api/users/*`           | Yes (Admin)   | User management           |
+| **Settings**        | `/api/user-settings/*`   | Yes           | User preferences          |
+| **System Settings** | `/api/system-settings/*` | Yes (Admin)   | App configuration         |
+| **Allowlist**       | `/api/allowlist/*`       | Yes (Admin)   | Access control            |
 
 ### 8.2 Complete Endpoint Reference
 
 #### Authentication Endpoints
 
-| Method | Path | Auth | Purpose |
-|--------|------|------|---------|
-| `GET` | `/api/auth/providers` | Public | List enabled OAuth providers |
-| `GET` | `/api/auth/google` | Public | Initiate Google OAuth |
-| `GET` | `/api/auth/google/callback` | Public | OAuth callback handler |
-| `POST` | `/api/auth/refresh` | Cookie | Refresh access token |
-| `POST` | `/api/auth/logout` | JWT | Single session logout |
-| `POST` | `/api/auth/logout-all` | JWT | All sessions logout |
-| `GET` | `/api/auth/me` | JWT | Current user info |
-| `POST` | `/api/auth/test/login` | Public | Test login bypass (dev only) |
+| Method | Path                        | Auth   | Purpose                      |
+| ------ | --------------------------- | ------ | ---------------------------- |
+| `GET`  | `/api/auth/providers`       | Public | List enabled OAuth providers |
+| `GET`  | `/api/auth/google`          | Public | Initiate Google OAuth        |
+| `GET`  | `/api/auth/google/callback` | Public | OAuth callback handler       |
+| `POST` | `/api/auth/refresh`         | Cookie | Refresh access token         |
+| `POST` | `/api/auth/logout`          | JWT    | Single session logout        |
+| `POST` | `/api/auth/logout-all`      | JWT    | All sessions logout          |
+| `GET`  | `/api/auth/me`              | JWT    | Current user info            |
+| `POST` | `/api/auth/test/login`      | Public | Test login bypass (dev only) |
 
 #### Device Authorization (RFC 8628)
 
-| Method | Path | Auth | Purpose |
-|--------|------|------|---------|
-| `POST` | `/api/auth/device/code` | Public | Generate device code |
-| `POST` | `/api/auth/device/token` | Public | Poll for authorization |
-| `GET` | `/api/auth/device/activate` | JWT | Get activation info |
-| `POST` | `/api/auth/device/authorize` | JWT | Approve/deny device |
-| `GET` | `/api/auth/device/sessions` | JWT | List device sessions |
-| `DELETE` | `/api/auth/device/sessions/:id` | JWT | Revoke device session |
+| Method   | Path                            | Auth   | Purpose                |
+| -------- | ------------------------------- | ------ | ---------------------- |
+| `POST`   | `/api/auth/device/code`         | Public | Generate device code   |
+| `POST`   | `/api/auth/device/token`        | Public | Poll for authorization |
+| `GET`    | `/api/auth/device/activate`     | JWT    | Get activation info    |
+| `POST`   | `/api/auth/device/authorize`    | JWT    | Approve/deny device    |
+| `GET`    | `/api/auth/device/sessions`     | JWT    | List device sessions   |
+| `DELETE` | `/api/auth/device/sessions/:id` | JWT    | Revoke device session  |
 
 #### User Management (Admin)
 
-| Method | Path | Permission | Purpose |
-|--------|------|------------|---------|
-| `GET` | `/api/users` | `users:read` | List users (paginated) |
-| `GET` | `/api/users/:id` | `users:read` | Get user details |
-| `PATCH` | `/api/users/:id` | `users:write` | Update user |
-| `PUT` | `/api/users/:id/roles` | `rbac:manage` | Update user roles |
+| Method  | Path                   | Permission    | Purpose                |
+| ------- | ---------------------- | ------------- | ---------------------- |
+| `GET`   | `/api/users`           | `users:read`  | List users (paginated) |
+| `GET`   | `/api/users/:id`       | `users:read`  | Get user details       |
+| `PATCH` | `/api/users/:id`       | `users:write` | Update user            |
+| `PUT`   | `/api/users/:id/roles` | `rbac:manage` | Update user roles      |
 
 #### Settings
 
-| Method | Path | Permission | Purpose |
-|--------|------|------------|---------|
-| `GET` | `/api/user-settings` | `user_settings:read` | Get user settings |
-| `PUT` | `/api/user-settings` | `user_settings:write` | Replace settings |
-| `PATCH` | `/api/user-settings` | `user_settings:write` | Partial update |
-| `GET` | `/api/system-settings` | `system_settings:read` | Get system settings |
-| `PUT` | `/api/system-settings` | `system_settings:write` | Replace settings |
-| `PATCH` | `/api/system-settings` | `system_settings:write` | Partial update |
+| Method  | Path                   | Permission              | Purpose             |
+| ------- | ---------------------- | ----------------------- | ------------------- |
+| `GET`   | `/api/user-settings`   | `user_settings:read`    | Get user settings   |
+| `PUT`   | `/api/user-settings`   | `user_settings:write`   | Replace settings    |
+| `PATCH` | `/api/user-settings`   | `user_settings:write`   | Partial update      |
+| `GET`   | `/api/system-settings` | `system_settings:read`  | Get system settings |
+| `PUT`   | `/api/system-settings` | `system_settings:write` | Replace settings    |
+| `PATCH` | `/api/system-settings` | `system_settings:write` | Partial update      |
 
 #### Allowlist (Admin)
 
-| Method | Path | Permission | Purpose |
-|--------|------|------------|---------|
-| `GET` | `/api/allowlist` | `allowlist:read` | List allowlisted emails |
-| `POST` | `/api/allowlist` | `allowlist:write` | Add email |
+| Method   | Path                 | Permission        | Purpose                   |
+| -------- | -------------------- | ----------------- | ------------------------- |
+| `GET`    | `/api/allowlist`     | `allowlist:read`  | List allowlisted emails   |
+| `POST`   | `/api/allowlist`     | `allowlist:write` | Add email                 |
 | `DELETE` | `/api/allowlist/:id` | `allowlist:write` | Remove email (if pending) |
 
 #### Health
 
-| Method | Path | Auth | Purpose |
-|--------|------|------|---------|
-| `GET` | `/api/health` | Public | Full health check |
-| `GET` | `/api/health/live` | Public | Liveness probe |
-| `GET` | `/api/health/ready` | Public | Readiness probe (+ DB) |
+| Method | Path                | Auth   | Purpose                |
+| ------ | ------------------- | ------ | ---------------------- |
+| `GET`  | `/api/health`       | Public | Full health check      |
+| `GET`  | `/api/health/live`  | Public | Liveness probe         |
+| `GET`  | `/api/health/ready` | Public | Readiness probe (+ DB) |
 
 ### 8.3 Response Format
 
@@ -865,16 +873,16 @@ Before OAuth authentication completes:
 
 ### 9.1 Page Structure
 
-| Page | Route | Auth | Role | Purpose |
-|------|-------|------|------|---------|
-| Login | `/login` | Public | - | OAuth provider selection |
-| Auth Callback | `/auth/callback` | Public | - | Token handling |
-| Home | `/` | Required | Any | Dashboard |
-| User Settings | `/settings` | Required | Any | User preferences |
-| System Settings | `/admin/settings` | Required | Admin | App configuration |
-| User Management | `/admin/users` | Required | Admin | User/allowlist mgmt |
-| Device Activation | `/device` | Required | Any | Device auth approval |
-| Test Login | `/testing/login` | Public | - | Test auth bypass (dev only) |
+| Page              | Route             | Auth     | Role  | Purpose                     |
+| ----------------- | ----------------- | -------- | ----- | --------------------------- |
+| Login             | `/login`          | Public   | -     | OAuth provider selection    |
+| Auth Callback     | `/auth/callback`  | Public   | -     | Token handling              |
+| Home              | `/`               | Required | Any   | Dashboard                   |
+| User Settings     | `/settings`       | Required | Any   | User preferences            |
+| System Settings   | `/admin/settings` | Required | Admin | App configuration           |
+| User Management   | `/admin/users`    | Required | Admin | User/allowlist mgmt         |
+| Device Activation | `/device`         | Required | Any   | Device auth approval        |
+| Test Login        | `/testing/login`  | Public   | -     | Test auth bypass (dev only) |
 
 **Note:** The `/testing/login` route is excluded from production builds via `import.meta.env.PROD` check.
 
@@ -882,10 +890,18 @@ Before OAuth authentication completes:
 
 ```tsx
 <App>
-  <ThemeProvider>        {/* MUI theme + dark mode */}
-    <AuthProvider>       {/* Authentication state */}
-      <SettingsProvider> {/* User settings */}
-        <RouterProvider> {/* React Router */}
+  <ThemeProvider>
+    {' '}
+    {/* MUI theme + dark mode */}
+    <AuthProvider>
+      {' '}
+      {/* Authentication state */}
+      <SettingsProvider>
+        {' '}
+        {/* User settings */}
+        <RouterProvider>
+          {' '}
+          {/* React Router */}
           <Layout>
             <Pages />
           </Layout>
@@ -913,11 +929,14 @@ interface AuthContext {
 ### 9.4 Protected Routes
 
 ```tsx
-<Route path="/admin/*" element={
-  <ProtectedRoute requiredRole="admin">
-    <AdminLayout />
-  </ProtectedRoute>
-} />
+<Route
+  path="/admin/*"
+  element={
+    <ProtectedRoute requiredRole="admin">
+      <AdminLayout />
+    </ProtectedRoute>
+  }
+/>
 ```
 
 ---
@@ -929,18 +948,18 @@ interface AuthContext {
 ```yaml
 # Core Services (base.compose.yml)
 services:
-  nginx:        # Reverse proxy (port 3535)
-  api:          # NestJS backend (port 3000)
-  web:          # React frontend (port 5173)
+  nginx: # Reverse proxy (port 3535)
+  api: # NestJS backend (port 3000)
+  web: # React frontend (port 5173)
 
 # PostgreSQL is not bundled in base.compose.yml - it runs as a separate
 # instance reached via POSTGRES_HOST/POSTGRES_PORT (see infra/compose/.env.example)
 
 # Observability (otel.compose.yml)
 services:
-  otel-collector:  # OpenTelemetry Collector
-  uptrace:         # Trace/metric visualization (port 14318)
-  clickhouse:      # Uptrace storage backend
+  otel-collector: # OpenTelemetry Collector
+  uptrace: # Trace/metric visualization (port 14318)
+  clickhouse: # Uptrace storage backend
 ```
 
 ### 10.2 Network Topology
@@ -1017,11 +1036,11 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 
 ### 11.1 Signal Types
 
-| Signal | Collection | Storage | Purpose |
-|--------|------------|---------|---------|
-| **Traces** | OTEL SDK auto-instrumentation | Uptrace/ClickHouse | Request flow tracking |
-| **Metrics** | OTEL SDK | Uptrace/ClickHouse | Performance monitoring |
-| **Logs** | Pino structured logs | Uptrace/ClickHouse | Debugging, audit |
+| Signal      | Collection                    | Storage            | Purpose                |
+| ----------- | ----------------------------- | ------------------ | ---------------------- |
+| **Traces**  | OTEL SDK auto-instrumentation | Uptrace/ClickHouse | Request flow tracking  |
+| **Metrics** | OTEL SDK                      | Uptrace/ClickHouse | Performance monitoring |
+| **Logs**    | Pino structured logs          | Uptrace/ClickHouse | Debugging, audit       |
 
 ### 11.2 Trace Propagation
 
@@ -1048,9 +1067,9 @@ Request → Nginx → API → Database
 
 ### 11.4 Health Checks
 
-| Endpoint | Purpose | Checks |
-|----------|---------|--------|
-| `/api/health/live` | Kubernetes liveness | Process running |
+| Endpoint            | Purpose              | Checks                  |
+| ------------------- | -------------------- | ----------------------- |
+| `/api/health/live`  | Kubernetes liveness  | Process running         |
 | `/api/health/ready` | Kubernetes readiness | Process + DB connection |
 
 ---
@@ -1174,15 +1193,15 @@ The `createTestApp()` helper creates a fully configured NestJS application with 
 ```typescript
 // test/helpers/test-app.helper.ts
 export async function createTestApp(
-  options: { useMockDatabase?: boolean } = {}
+  options: { useMockDatabase?: boolean } = {},
 ): Promise<TestContext> {
-  const shouldUseMock = options.useMockDatabase ?? true;  // Default: MOCKED
+  const shouldUseMock = options.useMockDatabase ?? true; // Default: MOCKED
 
   const moduleFixture = await Test.createTestingModule({
     imports: [AppModule],
   })
     .overrideProvider(PrismaService)
-    .useValue(prismaMock)  // Inject mock instead of real Prisma
+    .useValue(prismaMock) // Inject mock instead of real Prisma
     .compile();
 
   // ... app configuration
@@ -1206,12 +1225,12 @@ describe('Auth Controller (Integration)', () => {
   });
 
   beforeEach(async () => {
-    resetPrismaMock();      // Clear all mock calls
-    setupBaseMocks();        // Set up default mock responses
+    resetPrismaMock(); // Clear all mock calls
+    setupBaseMocks(); // Set up default mock responses
   });
 
   it('should return current user for authenticated request', async () => {
-    const user = await createMockTestUser(context);  // Creates user + JWT
+    const user = await createMockTestUser(context); // Creates user + JWT
 
     const response = await request(context.app.getHttpServer())
       .get('/api/auth/me')
@@ -1309,12 +1328,17 @@ import { afterEach, beforeAll, afterAll, vi } from 'vitest';
 import { server } from './mocks/server';
 
 // Browser API mocks
-Object.defineProperty(window, 'matchMedia', { /* ... */ });
-global.ResizeObserver = class ResizeObserverMock { /* ... */ };
+Object.defineProperty(window, 'matchMedia', {/* ... */});
+global.ResizeObserver = class ResizeObserverMock {
+  /* ... */
+};
 
 // MSW lifecycle
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
-afterEach(() => { cleanup(); server.resetHandlers(); });
+afterEach(() => {
+  cleanup();
+  server.resetHandlers();
+});
 afterAll(() => server.close());
 ```
 
@@ -1400,7 +1424,10 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     coverage: {
       thresholds: {
-        lines: 70, branches: 70, functions: 70, statements: 70,
+        lines: 70,
+        branches: 70,
+        functions: 70,
+        statements: 70,
       },
     },
     testTimeout: 10000,
@@ -1410,14 +1437,14 @@ export default defineConfig({
 
 ### 12.8 Key Testing Patterns
 
-| Pattern | Backend | Frontend |
-|---------|---------|----------|
-| **Database** | Mocked via jest-mock-extended | N/A |
-| **API Calls** | Direct HTTP via Supertest | MSW network interception |
-| **Authentication** | Mock JWT tokens generated | MSW handlers return user |
-| **Test Isolation** | `resetPrismaMock()` in beforeEach | `server.resetHandlers()` in afterEach |
-| **Async Handling** | `async/await` with Jest | `waitFor()` from RTL |
-| **User Interactions** | N/A | `userEvent` from @testing-library |
+| Pattern               | Backend                           | Frontend                              |
+| --------------------- | --------------------------------- | ------------------------------------- |
+| **Database**          | Mocked via jest-mock-extended     | N/A                                   |
+| **API Calls**         | Direct HTTP via Supertest         | MSW network interception              |
+| **Authentication**    | Mock JWT tokens generated         | MSW handlers return user              |
+| **Test Isolation**    | `resetPrismaMock()` in beforeEach | `server.resetHandlers()` in afterEach |
+| **Async Handling**    | `async/await` with Jest           | `waitFor()` from RTL                  |
+| **User Interactions** | N/A                               | `userEvent` from @testing-library     |
 
 ### 12.9 Important Notes
 
@@ -1425,7 +1452,7 @@ export default defineConfig({
 2. **Test File Naming**:
    - Backend unit: `*.spec.ts` (co-located with source)
    - Backend integration: `*.integration.spec.ts` (in test/ directory)
-   - Frontend: `*.test.tsx` (in __tests__/ directory)
+   - Frontend: `*.test.tsx` (in **tests**/ directory)
 3. **Coverage Thresholds**: Frontend enforces 70% minimum coverage
 4. **MSW Strict Mode**: Unhandled API requests fail tests (`onUnhandledRequest: 'error'`)
 5. **Type Safety**: Prisma mocks are fully typed via `DeepMockProxy<PrismaClient>`
@@ -1438,25 +1465,25 @@ export default defineConfig({
 
 This project uses specialized AI coding agents for different domains:
 
-| Agent | File | Domain | Responsibilities |
-|-------|------|--------|------------------|
-| `backend-dev` | `.claude/agents/backend-dev.md` | API Layer | NestJS controllers, services, guards, OAuth, JWT |
-| `frontend-dev` | `.claude/agents/frontend-dev.md` | UI Layer | React components, pages, hooks, MUI theming |
-| `database-dev` | `.claude/agents/database-dev.md` | Data Layer | Prisma schema, migrations, seeds, queries |
-| `testing-dev` | `.claude/agents/testing-dev.md` | Quality | Jest, Supertest, Vitest, RTL, type checking |
-| `docs-dev` | `.claude/agents/docs-dev.md` | Documentation | Architecture, API, security docs |
+| Agent          | File                             | Domain        | Responsibilities                                 |
+| -------------- | -------------------------------- | ------------- | ------------------------------------------------ |
+| `backend-dev`  | `.claude/agents/backend-dev.md`  | API Layer     | NestJS controllers, services, guards, OAuth, JWT |
+| `frontend-dev` | `.claude/agents/frontend-dev.md` | UI Layer      | React components, pages, hooks, MUI theming      |
+| `database-dev` | `.claude/agents/database-dev.md` | Data Layer    | Prisma schema, migrations, seeds, queries        |
+| `testing-dev`  | `.claude/agents/testing-dev.md`  | Quality       | Jest, Supertest, Vitest, RTL, type checking      |
+| `docs-dev`     | `.claude/agents/docs-dev.md`     | Documentation | Architecture, API, security docs                 |
 
 ### 13.2 Agent Invocation Rules
 
 **MANDATORY**: All development tasks MUST be delegated to the appropriate agent.
 
-| Task Type | Required Agent | Example |
-|-----------|---------------|---------|
-| Add API endpoint | `backend-dev` | "Implement user search endpoint" |
-| Create component | `frontend-dev` | "Build user avatar component" |
-| Schema change | `database-dev` | "Add email verification table" |
-| Write tests | `testing-dev` | "Add integration tests for auth" |
-| Update docs | `docs-dev` | "Document new endpoint in API.md" |
+| Task Type        | Required Agent | Example                           |
+| ---------------- | -------------- | --------------------------------- |
+| Add API endpoint | `backend-dev`  | "Implement user search endpoint"  |
+| Create component | `frontend-dev` | "Build user avatar component"     |
+| Schema change    | `database-dev` | "Add email verification table"    |
+| Write tests      | `testing-dev`  | "Add integration tests for auth"  |
+| Update docs      | `docs-dev`     | "Document new endpoint in API.md" |
 
 ### 13.3 Multi-Agent Workflow
 
@@ -1475,6 +1502,7 @@ Feature: "Add user notification preferences"
 ### 13.4 Agent Context
 
 Each agent has full context of:
+
 - System specification document
 - Technology stack requirements
 - Code patterns and conventions
@@ -1484,6 +1512,7 @@ Each agent has full context of:
 ### 13.5 Orchestration Responsibilities
 
 The orchestrating agent (Claude) handles:
+
 - Reading files to understand context
 - Answering questions about the codebase
 - Planning and coordinating between agents
@@ -1491,6 +1520,7 @@ The orchestrating agent (Claude) handles:
 - Reviewing agent outputs
 
 **What NOT to do directly:**
+
 - Write NestJS code (use `backend-dev`)
 - Create React components (use `frontend-dev`)
 - Modify Prisma schema (use `database-dev`)
@@ -1584,12 +1614,12 @@ cd apps/web && npm run typecheck
 
 #### Service URLs (Development)
 
-| Service | URL |
-|---------|-----|
-| Application | http://localhost:3535 |
+| Service                | URL                            |
+| ---------------------- | ------------------------------ |
+| Application            | http://localhost:3535          |
 | API Reference (Scalar) | http://localhost:3535/api/docs |
-| Uptrace | http://localhost:14318 |
-| PostgreSQL | localhost:5432 |
+| Uptrace                | http://localhost:14318         |
+| PostgreSQL             | localhost:5432                 |
 
 #### Key Commands
 
@@ -1613,32 +1643,32 @@ cd apps/web && npm test
 
 ### 15.2 Related Documents
 
-| Document | Purpose |
-|----------|---------|
-| [System_Specification_Document.md](System_Specification_Document.md) | Full system requirements |
-| [SECURITY-ARCHITECTURE.md](SECURITY-ARCHITECTURE.md) | Detailed security documentation |
-| [API.md](API.md) | API endpoint reference |
-| [DEVELOPMENT.md](DEVELOPMENT.md) | Development guide |
-| [TESTING.md](TESTING.md) | Testing framework guide |
-| [DEVICE-AUTH.md](DEVICE-AUTH.md) | Device authorization guide |
-| [CLAUDE.md](../CLAUDE.md) | AI assistant guidance |
+| Document                                                             | Purpose                         |
+| -------------------------------------------------------------------- | ------------------------------- |
+| [System_Specification_Document.md](System_Specification_Document.md) | Full system requirements        |
+| [SECURITY-ARCHITECTURE.md](SECURITY-ARCHITECTURE.md)                 | Detailed security documentation |
+| [API.md](API.md)                                                     | API endpoint reference          |
+| [DEVELOPMENT.md](DEVELOPMENT.md)                                     | Development guide               |
+| [TESTING.md](TESTING.md)                                             | Testing framework guide         |
+| [DEVICE-AUTH.md](DEVICE-AUTH.md)                                     | Device authorization guide      |
+| [CLAUDE.md](../CLAUDE.md)                                            | AI assistant guidance           |
 
 ### 15.3 Specification Index
 
 Implementation specs in `docs/specs/`:
 
-| Phase | Specs | Description |
-|-------|-------|-------------|
-| Foundation | 01-03 | Project setup, database schema, seeds |
-| API Core | 04-07 | NestJS setup, OAuth, JWT, RBAC |
-| API Features | 08-12 | Users, settings, health, observability |
-| Frontend | 13-18 | React setup, pages, components |
-| Testing | 19-24 | Test frameworks, unit/integration tests |
+| Phase        | Specs | Description                             |
+| ------------ | ----- | --------------------------------------- |
+| Foundation   | 01-03 | Project setup, database schema, seeds   |
+| API Core     | 04-07 | NestJS setup, OAuth, JWT, RBAC          |
+| API Features | 08-12 | Users, settings, health, observability  |
+| Frontend     | 13-18 | React setup, pages, components          |
+| Testing      | 19-24 | Test frameworks, unit/integration tests |
 
 ---
 
 ## Document History
 
-| Version | Date | Author | Changes |
-|---------|------|--------|---------|
-| 1.0 | January 2026 | AI Assistant | Initial comprehensive architecture document |
+| Version | Date         | Author       | Changes                                     |
+| ------- | ------------ | ------------ | ------------------------------------------- |
+| 1.0     | January 2026 | AI Assistant | Initial comprehensive architecture document |

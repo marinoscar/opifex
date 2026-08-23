@@ -1,6 +1,9 @@
 import { ConfigService } from '@nestjs/config';
 
-import { FallbackWebhookTransport, WEBHOOK_TARGET } from './fallback-webhook.transport';
+import {
+  FallbackWebhookTransport,
+  WEBHOOK_TARGET,
+} from './fallback-webhook.transport';
 import type { NotificationPayload } from './notification-payload';
 
 const PAYLOAD = {
@@ -59,7 +62,12 @@ describe('FallbackWebhookTransport', () => {
       await transport().send(WEBHOOK_TARGET, PAYLOAD);
 
       const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-      for (const field of [PAYLOAD.body, PAYLOAD.why, PAYLOAD.blastRadius, PAYLOAD.ifIgnored]) {
+      for (const field of [
+        PAYLOAD.body,
+        PAYLOAD.why,
+        PAYLOAD.blastRadius,
+        PAYLOAD.ifIgnored,
+      ]) {
         expect(body.message).toContain(field);
       }
     });
@@ -110,7 +118,11 @@ describe('FallbackWebhookTransport', () => {
 
       const outcome = await transport().send(WEBHOOK_TARGET, PAYLOAD);
 
-      expect(outcome).toMatchObject({ accepted: false, gone: false, error: 'ECONNREFUSED' });
+      expect(outcome).toMatchObject({
+        accepted: false,
+        gone: false,
+        error: 'ECONNREFUSED',
+      });
     });
 
     it('never reports the webhook GONE', async () => {
@@ -118,7 +130,9 @@ describe('FallbackWebhookTransport', () => {
       // subscription, and deleting it is the operator's decision.
       fetchMock.mockResolvedValue(new Response(null, { status: 410 }));
 
-      expect((await transport().send(WEBHOOK_TARGET, PAYLOAD)).gone).toBe(false);
+      expect((await transport().send(WEBHOOK_TARGET, PAYLOAD)).gone).toBe(
+        false,
+      );
     });
   });
 });

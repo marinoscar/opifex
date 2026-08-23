@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render, mockUser, mockAdminUser } from '../../utils/test-utils';
 import { UserProfileCard } from '../../../components/user/UserProfileCard';
@@ -38,7 +38,9 @@ describe('UserProfileCard', () => {
     it('should render settings button', () => {
       render(<UserProfileCard />);
 
-      const settingsButton = screen.getByRole('button', { name: /account settings/i });
+      const settingsButton = screen.getByRole('button', {
+        name: /account settings/i,
+      });
       expect(settingsButton).toBeInTheDocument();
     });
 
@@ -92,7 +94,8 @@ describe('UserProfileCard', () => {
     });
 
     it('should display long names correctly', () => {
-      const longName = 'Alexander Christopher Montgomery Wellington Smith-Johnson';
+      const longName =
+        'Alexander Christopher Montgomery Wellington Smith-Johnson';
       render(<UserProfileCard />, {
         wrapperOptions: {
           user: {
@@ -322,7 +325,11 @@ describe('UserProfileCard', () => {
         wrapperOptions: {
           user: {
             ...mockUser,
-            roles: [{ name: 'Admin' }, { name: 'VIEWER' }, { name: 'Contributor' }],
+            roles: [
+              { name: 'Admin' },
+              { name: 'VIEWER' },
+              { name: 'Contributor' },
+            ],
           },
         },
       });
@@ -372,7 +379,9 @@ describe('UserProfileCard', () => {
 
       // Should still render other elements
       expect(screen.getByText(mockUser.email)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /account settings/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /account settings/i }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -430,7 +439,9 @@ describe('UserProfileCard', () => {
 
       render(<UserProfileCard />);
 
-      const settingsButton = screen.getByRole('button', { name: /account settings/i });
+      const settingsButton = screen.getByRole('button', {
+        name: /account settings/i,
+      });
       await user.click(settingsButton);
 
       expect(mockNavigate).toHaveBeenCalledWith('/settings');
@@ -441,7 +452,9 @@ describe('UserProfileCard', () => {
 
       render(<UserProfileCard />);
 
-      const settingsButton = screen.getByRole('button', { name: /account settings/i });
+      const settingsButton = screen.getByRole('button', {
+        name: /account settings/i,
+      });
       await user.click(settingsButton);
 
       expect(mockNavigate).toHaveBeenCalledTimes(1);
@@ -452,7 +465,9 @@ describe('UserProfileCard', () => {
     it('should render settings icon in button', () => {
       render(<UserProfileCard />);
 
-      const settingsButton = screen.getByRole('button', { name: /account settings/i });
+      const settingsButton = screen.getByRole('button', {
+        name: /account settings/i,
+      });
 
       // Check that button has icon (Settings icon is rendered via MUI)
       expect(settingsButton.querySelector('svg')).toBeInTheDocument();
@@ -461,14 +476,18 @@ describe('UserProfileCard', () => {
     it('should render outlined button variant', () => {
       render(<UserProfileCard />);
 
-      const settingsButton = screen.getByRole('button', { name: /account settings/i });
+      const settingsButton = screen.getByRole('button', {
+        name: /account settings/i,
+      });
       expect(settingsButton).toHaveClass('MuiButton-outlined');
     });
 
     it('should render full width button', () => {
       render(<UserProfileCard />);
 
-      const settingsButton = screen.getByRole('button', { name: /account settings/i });
+      const settingsButton = screen.getByRole('button', {
+        name: /account settings/i,
+      });
       expect(settingsButton).toHaveClass('MuiButton-fullWidth');
     });
 
@@ -559,7 +578,9 @@ describe('UserProfileCard', () => {
         },
       });
 
-      expect(screen.getByText('user+tag@sub-domain.example.co.uk')).toBeInTheDocument();
+      expect(
+        screen.getByText('user+tag@sub-domain.example.co.uk'),
+      ).toBeInTheDocument();
     });
 
     it('should handle displayName with extra spaces', () => {
@@ -584,14 +605,14 @@ describe('UserProfileCard', () => {
         wrapperOptions: {
           user: {
             ...mockUser,
-            roles: [
-              { name: 'super-administrator-with-full-permissions' },
-            ],
+            roles: [{ name: 'super-administrator-with-full-permissions' }],
           },
         },
       });
 
-      expect(screen.getByText('super-administrator-with-full-permissions')).toBeInTheDocument();
+      expect(
+        screen.getByText('super-administrator-with-full-permissions'),
+      ).toBeInTheDocument();
     });
   });
 
@@ -665,7 +686,9 @@ describe('UserProfileCard', () => {
   describe('showSettingsAction', () => {
     it('shows the settings button by default', () => {
       render(<UserProfileCard />);
-      expect(screen.getByRole('button', { name: /account settings/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /account settings/i }),
+      ).toBeInTheDocument();
     });
 
     it('hides it when the host page IS the settings page', () => {
@@ -682,5 +705,4 @@ describe('UserProfileCard', () => {
       expect(screen.getByText(mockUser.email)).toBeInTheDocument();
     });
   });
-
 });

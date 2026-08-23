@@ -28,12 +28,12 @@ describe('AppModule — TestAuthModule registration', () => {
     let registered = false;
 
     jest.isolateModules(() => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { AppModule } = require('./app.module');
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+
       const { TestAuthModule } = require('./test-auth/test-auth.module');
 
-      const imports: unknown[] = Reflect.getMetadata('imports', AppModule) ?? [];
+      const imports: unknown[] =
+        Reflect.getMetadata('imports', AppModule) ?? [];
       registered = imports.includes(TestAuthModule);
     });
 

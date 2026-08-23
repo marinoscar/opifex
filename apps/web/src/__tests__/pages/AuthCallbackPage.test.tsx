@@ -57,7 +57,9 @@ describe('AuthCallbackPage', () => {
 
       // Should show loading immediately
       expect(screen.getByRole('progressbar')).toBeInTheDocument();
-      expect(screen.getByText(/completing authentication/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/completing authentication/i),
+      ).toBeInTheDocument();
     });
   });
 
@@ -67,7 +69,6 @@ describe('AuthCallbackPage', () => {
       mockSearchParams.set('token', mockToken);
 
       const setAccessTokenSpy = vi.spyOn(api, 'setAccessToken');
-      const mockRefreshUser = vi.fn().mockResolvedValue(undefined);
 
       render(<AuthCallbackPage />, {
         wrapperOptions: {
@@ -167,7 +168,9 @@ describe('AuthCallbackPage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText(/no authentication token received/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/no authentication token received/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -183,7 +186,9 @@ describe('AuthCallbackPage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText(/failed to complete authentication/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/failed to complete authentication/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -214,7 +219,9 @@ describe('AuthCallbackPage', () => {
       });
 
       await waitFor(() => {
-        const loginLink = screen.getByRole('link', { name: /return to login/i });
+        const loginLink = screen.getByRole('link', {
+          name: /return to login/i,
+        });
         expect(loginLink).toBeInTheDocument();
         expect(loginLink).toHaveAttribute('href', '/login');
       });
@@ -231,9 +238,15 @@ describe('AuthCallbackPage', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText(/user not authorized to access this application/i)).toBeInTheDocument();
-        expect(screen.getByText(/if you believe this is an error/i)).toBeInTheDocument();
-        expect(screen.getByText(/contact your system administrator/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/user not authorized to access this application/i),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByText(/if you believe this is an error/i),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByText(/contact your system administrator/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -247,7 +260,9 @@ describe('AuthCallbackPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/not authorized/i)).toBeInTheDocument();
-        expect(screen.getByText(/contact your system administrator/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/contact your system administrator/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -261,7 +276,9 @@ describe('AuthCallbackPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/not authorized/i)).toBeInTheDocument();
-        expect(screen.getByText(/contact your system administrator/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/contact your system administrator/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -275,7 +292,9 @@ describe('AuthCallbackPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/invalid oauth state/i)).toBeInTheDocument();
-        expect(screen.queryByText(/contact your system administrator/i)).not.toBeInTheDocument();
+        expect(
+          screen.queryByText(/contact your system administrator/i),
+        ).not.toBeInTheDocument();
       });
     });
   });
@@ -348,7 +367,9 @@ describe('AuthCallbackPage', () => {
 
       await waitFor(() => {
         // Empty token treated as missing token
-        expect(screen.getByText(/no authentication token received/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/no authentication token received/i),
+        ).toBeInTheDocument();
       });
     });
 
@@ -400,7 +421,7 @@ describe('AuthCallbackPage', () => {
       await waitFor(() => {
         expect(mockNavigate).toHaveBeenCalledWith(
           expect.any(String),
-          expect.objectContaining({ replace: true })
+          expect.objectContaining({ replace: true }),
         );
       });
     });
@@ -426,8 +447,12 @@ describe('AuthCallbackPage', () => {
         });
 
         await waitFor(() => {
-          expect(screen.getByText(new RegExp(errorMessage, 'i'))).toBeInTheDocument();
-          expect(screen.getByText(/contact your system administrator/i)).toBeInTheDocument();
+          expect(
+            screen.getByText(new RegExp(errorMessage, 'i')),
+          ).toBeInTheDocument();
+          expect(
+            screen.getByText(/contact your system administrator/i),
+          ).toBeInTheDocument();
         });
 
         unmount();
@@ -452,8 +477,12 @@ describe('AuthCallbackPage', () => {
         });
 
         await waitFor(() => {
-          expect(screen.getByText(new RegExp(errorMessage, 'i'))).toBeInTheDocument();
-          expect(screen.queryByText(/contact your system administrator/i)).not.toBeInTheDocument();
+          expect(
+            screen.getByText(new RegExp(errorMessage, 'i')),
+          ).toBeInTheDocument();
+          expect(
+            screen.queryByText(/contact your system administrator/i),
+          ).not.toBeInTheDocument();
         });
 
         unmount();

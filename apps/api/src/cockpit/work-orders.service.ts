@@ -1,10 +1,17 @@
-import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { toNumberOrNull } from '../common/decimal';
 import { toWorkOrderDocument } from '../work-orders/work-order-document';
-import { RehydrationError, rehydrateWorkOrder } from '../work-orders/work-order-rehydrate';
+import {
+  RehydrationError,
+  rehydrateWorkOrder,
+} from '../work-orders/work-order-rehydrate';
 import {
   WORK_ORDERS_DEFAULT_PAGE_SIZE,
   type WorkOrderDetail,
@@ -47,13 +54,22 @@ export class WorkOrdersService {
     pageSize?: number;
     status?: string;
     repository?: string;
-  }): Promise<{ items: WorkOrderListItem[]; total: number; page: number; pageSize: number }> {
+  }): Promise<{
+    items: WorkOrderListItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? WORK_ORDERS_DEFAULT_PAGE_SIZE;
 
     const where: Prisma.WorkOrderWhereInput = {
-      ...(query.status ? { status: query.status as Prisma.WorkOrderWhereInput['status'] } : {}),
-      ...(query.repository ? { repository: splitRepository(query.repository) } : {}),
+      ...(query.status
+        ? { status: query.status as Prisma.WorkOrderWhereInput['status'] }
+        : {}),
+      ...(query.repository
+        ? { repository: splitRepository(query.repository) }
+        : {}),
     };
 
     const [rows, total] = await Promise.all([
@@ -104,11 +120,14 @@ export class WorkOrdersService {
    */
   async findOne(idOrIdentity: string): Promise<WorkOrderDetail> {
     const row = await this.prisma.workOrder.findFirst({
-      where: isUuid(idOrIdentity) ? { id: idOrIdentity } : { identity: idOrIdentity },
+      where: isUuid(idOrIdentity)
+        ? { id: idOrIdentity }
+        : { identity: idOrIdentity },
       select: DETAIL_SELECT,
     });
 
-    if (!row) throw new NotFoundException(`Work order ${idOrIdentity} not found`);
+    if (!row)
+      throw new NotFoundException(`Work order ${idOrIdentity} not found`);
 
     let document;
     try {

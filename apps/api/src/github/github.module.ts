@@ -28,7 +28,9 @@ import { RateLimitService } from './rate-limit.service';
       // ConfigService dependency would make it awkward to construct in a test
       // at a size a test can actually fill.
       useFactory: (config: ConfigService) =>
-        new EtagCacheService(config.get<number>('github.etagCacheMaxEntries') ?? 2000),
+        new EtagCacheService(
+          config.get<number>('github.etagCacheMaxEntries') ?? 2000,
+        ),
       inject: [ConfigService],
     },
     GitHubHttpService,

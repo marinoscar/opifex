@@ -51,8 +51,10 @@ import useForkRef from '@mui/utils/useForkRef';
  * off it does not care which one it actually is at runtime. */
 type CheckboxRootElement = HTMLButtonElement;
 
-export interface IndeterminateCheckboxProps
-  extends Omit<ComponentProps<typeof Checkbox>, 'slotProps'> {
+export interface IndeterminateCheckboxProps extends Omit<
+  ComponentProps<typeof Checkbox>,
+  'slotProps'
+> {
   slotProps?: ComponentProps<typeof Checkbox>['slotProps'] & {
     /** MUI X's `base*` slot convention (see the module docblock). */
     htmlInput?: InputHTMLAttributes<HTMLInputElement>;
@@ -69,12 +71,18 @@ export interface IndeterminateCheckboxProps
   ref?: Ref<CheckboxRootElement>;
 }
 
-export function IndeterminateCheckbox({ slotProps, ref: externalRef, ...rest }: IndeterminateCheckboxProps) {
+export function IndeterminateCheckbox({
+  slotProps,
+  ref: externalRef,
+  ...rest
+}: IndeterminateCheckboxProps) {
   const queryRef = useRef<CheckboxRootElement | null>(null);
   const rootRef = useForkRef(queryRef, externalRef);
 
   useEffect(() => {
-    const input = queryRef.current?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const input = queryRef.current?.querySelector<HTMLInputElement>(
+      'input[type="checkbox"]',
+    );
     if (input) input.indeterminate = Boolean(rest.indeterminate);
   }, [rest.indeterminate]);
 

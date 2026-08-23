@@ -13,7 +13,10 @@ const workOrder = (overrides: Partial<WorkOrderSpec> = {}): WorkOrderSpec => ({
   baseCommit: 'a3f91c2000000000000000000000000000000000',
   branch: 'factory/312-a3f91c2-a1',
   taskSpec: 'Add a permit search prompt builder.',
-  acceptanceCriteria: ['Searching by address returns permits', 'Empty results render an empty state'],
+  acceptanceCriteria: [
+    'Searching by address returns permits',
+    'Empty results render an empty state',
+  ],
   pathConstraints: [],
   budgetCeilingUsd: null,
   wallClockTimeoutMinutes: null,
@@ -28,7 +31,10 @@ describe('claude-code invocation', () => {
       // only a final result, and per-tool detail is what loop detection (#55)
       // and event-age watchdogs (#54) are built on. Dropping it would quietly
       // reduce the runner's observability to a single line at the end.
-      const args = buildInvocationArgs({ permissionMode: 'acceptEdits', sessionId: 'abc' });
+      const args = buildInvocationArgs({
+        permissionMode: 'acceptEdits',
+        sessionId: 'abc',
+      });
 
       expect(args).toContain('--print');
       expect(args).toContain('--verbose');
@@ -51,7 +57,14 @@ describe('claude-code invocation', () => {
       // A typo in configuration should fail at startup, not as an unusable
       // exit code on the first real dispatch.
       expect([...PERMISSION_MODES].sort()).toEqual(
-        ['acceptEdits', 'auto', 'bypassPermissions', 'dontAsk', 'manual', 'plan'].sort(),
+        [
+          'acceptEdits',
+          'auto',
+          'bypassPermissions',
+          'dontAsk',
+          'manual',
+          'plan',
+        ].sort(),
       );
     });
   });
@@ -66,7 +79,9 @@ describe('claude-code invocation', () => {
     it('names the pinned base commit rather than a branch tip', () => {
       // VISION §3.4: recovery is abandon-and-re-run FROM THE PINNED BASE. The
       // agent being told which commit it is on is part of that being true.
-      expect(buildPrompt(workOrder())).toContain('a3f91c2000000000000000000000000000000000');
+      expect(buildPrompt(workOrder())).toContain(
+        'a3f91c2000000000000000000000000000000000',
+      );
     });
 
     it('numbers the acceptance criteria so they can be referred to', () => {
@@ -79,7 +94,9 @@ describe('claude-code invocation', () => {
     it('asks for unverified criteria to be named', () => {
       // A run that claims more than it ran is worse than one that admits a
       // gap, because the gap is then invisible to the reviewer too.
-      expect(buildPrompt(workOrder())).toContain('which ones you could not verify');
+      expect(buildPrompt(workOrder())).toContain(
+        'which ones you could not verify',
+      );
     });
 
     it('omits the paths section entirely when nothing constrains them', () => {
@@ -89,7 +106,9 @@ describe('claude-code invocation', () => {
     });
 
     it('lists path constraints when there are any', () => {
-      const prompt = buildPrompt(workOrder({ pathConstraints: ['apps/api/**', 'docs/**'] }));
+      const prompt = buildPrompt(
+        workOrder({ pathConstraints: ['apps/api/**', 'docs/**'] }),
+      );
       expect(prompt).toContain('## Paths');
       expect(prompt).toContain('`apps/api/**`');
       expect(prompt).toContain('`docs/**`');
@@ -113,10 +132,18 @@ describe('claude-code invocation', () => {
     });
 
     it('includes a budget without a timeout, and the other way round', () => {
-      expect(buildPrompt(workOrder({ budgetCeilingUsd: 2.5 }))).toContain('$2.50');
-      expect(buildPrompt(workOrder({ budgetCeilingUsd: 2.5 }))).not.toContain('wall clock');
-      expect(buildPrompt(workOrder({ wallClockTimeoutMinutes: 15 }))).toContain('15 minutes');
-      expect(buildPrompt(workOrder({ wallClockTimeoutMinutes: 15 }))).not.toContain('$');
+      expect(buildPrompt(workOrder({ budgetCeilingUsd: 2.5 }))).toContain(
+        '$2.50',
+      );
+      expect(buildPrompt(workOrder({ budgetCeilingUsd: 2.5 }))).not.toContain(
+        'wall clock',
+      );
+      expect(buildPrompt(workOrder({ wallClockTimeoutMinutes: 15 }))).toContain(
+        '15 minutes',
+      );
+      expect(
+        buildPrompt(workOrder({ wallClockTimeoutMinutes: 15 })),
+      ).not.toContain('$');
     });
 
     it('passes the task spec through rather than rewriting it', () => {

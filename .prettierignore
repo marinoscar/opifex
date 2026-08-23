@@ -1,0 +1,25 @@
+# Generated, vendored, or not ours to format.
+node_modules
+dist
+build
+coverage
+*.lcov
+junit.xml
+
+# Prisma owns the formatting of both. `prisma format` writes schema.prisma,
+# and a migration's SQL is a historical record of what was applied — editing
+# one after the fact makes the checksum in _prisma_migrations disagree with
+# the file.
+apps/api/prisma/migrations
+apps/api/prisma/schema.prisma
+
+# Lockfiles are written by npm, and reformatting one produces a diff nobody
+# can review against the registry.
+package-lock.json
+
+# Generated API surface, dumped by `npm run openapi:dump`.
+openapi.json
+
+# A stale vitest JSON report committed by accident (its first lines are npm
+# banner text, so it is not even valid JSON). Generated output, not source.
+apps/web/test-results.json

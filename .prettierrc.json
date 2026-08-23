@@ -1,0 +1,12 @@
+{
+  "singleQuote": true,
+  "trailingComma": "all",
+  "printWidth": 80,
+  "proseWrap": "preserve",
+  "overrides": [
+    {
+      "files": ["*.yml", "*.yaml"],
+      "options": { "singleQuote": false }
+    }
+  ]
+}

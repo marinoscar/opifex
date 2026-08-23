@@ -5,6 +5,7 @@ This directory contains processor implementations for the storage object process
 ## Overview
 
 Processors are pluggable components that run asynchronously after a file is uploaded. They can:
+
 - Extract metadata (dimensions, duration, etc.)
 - Generate thumbnails or previews
 - Scan for viruses
@@ -171,6 +172,7 @@ Each processor's results are stored in the object's metadata field:
 See `example-metadata.processor.ts` for a basic implementation example.
 
 Common processor types:
+
 - **Metadata Extraction**: Extract file properties (dimensions, duration, etc.)
 - **Preview Generation**: Create thumbnails, previews, or transcoded versions
 - **Content Analysis**: OCR, image recognition, content classification

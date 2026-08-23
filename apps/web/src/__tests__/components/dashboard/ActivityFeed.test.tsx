@@ -13,7 +13,9 @@ import { useActivityFeed } from '../../../hooks/useActivityFeed';
 
 const mockHook = vi.mocked(useActivityFeed);
 
-function hookResult(overrides: Partial<UseActivityFeedResult> = {}): UseActivityFeedResult {
+function hookResult(
+  overrides: Partial<UseActivityFeedResult> = {},
+): UseActivityFeedResult {
   return {
     data: null,
     state: 'unwired',
@@ -50,8 +52,12 @@ describe('ActivityFeed', () => {
   it('names Phase 2, the earliest of the four panels', () => {
     render(<ActivityFeed />);
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Activity' })).toBeInTheDocument();
-    expect(screen.getByText(/Arrives in Phase 2 — Reconciler, read-only/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Activity' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Arrives in Phase 2 — Reconciler, read-only/),
+    ).toBeInTheDocument();
   });
 
   it('reports an empty window neutrally', () => {
@@ -72,8 +78,12 @@ describe('ActivityFeed', () => {
       // The wire form is a protocol identifier; six of them stacked in a
       // column read as noise.
       expect(screen.queryByText('run.blocked')).not.toBeInTheDocument();
-      expect(screen.getByText('wo_opifex_312_a3f91c2_a1')).toHaveClass('opifex-mono');
-      expect(screen.getByText('Rate limited; resets at 14:00.')).toBeInTheDocument();
+      expect(screen.getByText('wo_opifex_312_a3f91c2_a1')).toHaveClass(
+        'opifex-mono',
+      );
+      expect(
+        screen.getByText('Rate limited; resets at 14:00.'),
+      ).toBeInTheDocument();
     });
 
     /**
@@ -108,7 +118,9 @@ describe('ActivityFeed', () => {
 
       render(<ActivityFeed />);
 
-      expect(screen.queryByText('Blocked', { selector: '.MuiChip-label' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByText('Blocked', { selector: '.MuiChip-label' }),
+      ).not.toBeInTheDocument();
     });
   });
 });

@@ -1,11 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { createMockPrismaService, MockPrismaService } from '../../test/mocks/prisma.mock';
+import {
+  createMockPrismaService,
+  MockPrismaService,
+} from '../../test/mocks/prisma.mock';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserRolesDto } from './dto/update-user-roles.dto';
-import { ROLES } from '../common/constants/roles.constants';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -100,11 +106,11 @@ describe('UsersService', () => {
         };
 
         await expect(
-          service.updateUser(mockAdminUser.id, dto, mockAdminUser.id)
+          service.updateUser(mockAdminUser.id, dto, mockAdminUser.id),
         ).rejects.toThrow(ForbiddenException);
 
         await expect(
-          service.updateUser(mockAdminUser.id, dto, mockAdminUser.id)
+          service.updateUser(mockAdminUser.id, dto, mockAdminUser.id),
         ).rejects.toThrow('Cannot deactivate your own account');
 
         // Should not reach database
@@ -131,7 +137,7 @@ describe('UsersService', () => {
         const result = await service.updateUser(
           mockOtherUser.id,
           dto,
-          mockAdminUser.id
+          mockAdminUser.id,
         );
 
         expect(result.isActive).toBe(false);
@@ -168,7 +174,7 @@ describe('UsersService', () => {
         const result = await service.updateUser(
           mockAdminUser.id,
           dto,
-          mockAdminUser.id
+          mockAdminUser.id,
         );
 
         expect(result.displayName).toBe('New Display Name');
@@ -201,7 +207,7 @@ describe('UsersService', () => {
         mockPrisma.auditEvent.create.mockResolvedValue({} as any);
 
         await expect(
-          service.updateUser(mockAdminUser.id, dto, mockAdminUser.id)
+          service.updateUser(mockAdminUser.id, dto, mockAdminUser.id),
         ).resolves.toBeTruthy();
       });
 
@@ -221,7 +227,7 @@ describe('UsersService', () => {
         mockPrisma.auditEvent.create.mockResolvedValue({} as any);
 
         await expect(
-          service.updateUser(mockAdminUser.id, dto, mockAdminUser.id)
+          service.updateUser(mockAdminUser.id, dto, mockAdminUser.id),
         ).resolves.toBeTruthy();
       });
     });
@@ -235,11 +241,11 @@ describe('UsersService', () => {
         mockPrisma.user.findUnique.mockResolvedValue(null);
 
         await expect(
-          service.updateUser('non-existent-id', dto, mockAdminUser.id)
+          service.updateUser('non-existent-id', dto, mockAdminUser.id),
         ).rejects.toThrow(NotFoundException);
 
         await expect(
-          service.updateUser('non-existent-id', dto, mockAdminUser.id)
+          service.updateUser('non-existent-id', dto, mockAdminUser.id),
         ).rejects.toThrow('User with ID non-existent-id not found');
       });
     });
@@ -377,7 +383,12 @@ describe('UsersService', () => {
               OR: [
                 { email: { contains: 'admin', mode: 'insensitive' } },
                 { displayName: { contains: 'admin', mode: 'insensitive' } },
-                { providerDisplayName: { contains: 'admin', mode: 'insensitive' } },
+                {
+                  providerDisplayName: {
+                    contains: 'admin',
+                    mode: 'insensitive',
+                  },
+                },
               ],
             },
           }),
@@ -390,7 +401,9 @@ describe('UsersService', () => {
           displayName: 'Custom Name',
         };
 
-        mockPrisma.user.findMany.mockResolvedValue([userWithDisplayName] as any);
+        mockPrisma.user.findMany.mockResolvedValue([
+          userWithDisplayName,
+        ] as any);
         mockPrisma.user.count.mockResolvedValue(1);
 
         const result = await service.listUsers({
@@ -523,7 +536,9 @@ describe('UsersService', () => {
           ],
         };
 
-        mockPrisma.user.findUnique.mockResolvedValue(mockUserWithIdentities as any);
+        mockPrisma.user.findUnique.mockResolvedValue(
+          mockUserWithIdentities as any,
+        );
 
         const result = await service.getUserById(mockAdminUser.id);
 
@@ -554,13 +569,13 @@ describe('UsersService', () => {
       it('should throw NotFoundException', async () => {
         mockPrisma.user.findUnique.mockResolvedValue(null);
 
-        await expect(
-          service.getUserById('non-existent-id')
-        ).rejects.toThrow(NotFoundException);
+        await expect(service.getUserById('non-existent-id')).rejects.toThrow(
+          NotFoundException,
+        );
 
-        await expect(
-          service.getUserById('non-existent-id')
-        ).rejects.toThrow('User with ID non-existent-id not found');
+        await expect(service.getUserById('non-existent-id')).rejects.toThrow(
+          'User with ID non-existent-id not found',
+        );
       });
     });
   });
@@ -573,11 +588,11 @@ describe('UsersService', () => {
         };
 
         await expect(
-          service.updateUserRoles(mockAdminUser.id, dto, mockAdminUser.id)
+          service.updateUserRoles(mockAdminUser.id, dto, mockAdminUser.id),
         ).rejects.toThrow(ForbiddenException);
 
         await expect(
-          service.updateUserRoles(mockAdminUser.id, dto, mockAdminUser.id)
+          service.updateUserRoles(mockAdminUser.id, dto, mockAdminUser.id),
         ).rejects.toThrow('Cannot remove admin role from yourself');
 
         // Should not reach database
@@ -591,11 +606,11 @@ describe('UsersService', () => {
         };
 
         await expect(
-          service.updateUserRoles(mockAdminUser.id, dto, mockAdminUser.id)
+          service.updateUserRoles(mockAdminUser.id, dto, mockAdminUser.id),
         ).rejects.toThrow(ForbiddenException);
 
         await expect(
-          service.updateUserRoles(mockAdminUser.id, dto, mockAdminUser.id)
+          service.updateUserRoles(mockAdminUser.id, dto, mockAdminUser.id),
         ).rejects.toThrow('Cannot remove admin role from yourself');
       });
     });
@@ -634,7 +649,7 @@ describe('UsersService', () => {
         const result = await service.updateUserRoles(
           mockAdminUser.id,
           dto,
-          mockAdminUser.id
+          mockAdminUser.id,
         );
 
         expect(mockPrisma.$transaction).toHaveBeenCalled();
@@ -685,7 +700,7 @@ describe('UsersService', () => {
         const result = await service.updateUserRoles(
           mockOtherUser.id,
           dto,
-          mockAdminUser.id
+          mockAdminUser.id,
         );
 
         expect(mockPrisma.$transaction).toHaveBeenCalled();
@@ -716,7 +731,9 @@ describe('UsersService', () => {
         mockPrisma.user.findUnique
           .mockResolvedValueOnce(mockOtherUser as any) // First call for validation
           .mockResolvedValueOnce(updatedUser as any); // Second call in getUserById
-        mockPrisma.role.findMany.mockResolvedValue([mockRoles.contributor] as any);
+        mockPrisma.role.findMany.mockResolvedValue([
+          mockRoles.contributor,
+        ] as any);
         mockPrisma.$transaction.mockImplementation(async (callback) => {
           return callback(mockPrisma);
         });
@@ -725,7 +742,7 @@ describe('UsersService', () => {
         const result = await service.updateUserRoles(
           mockOtherUser.id,
           dto,
-          mockAdminUser.id
+          mockAdminUser.id,
         );
 
         expect(result.roles).toEqual(['contributor']);
@@ -741,11 +758,11 @@ describe('UsersService', () => {
         mockPrisma.user.findUnique.mockResolvedValue(null);
 
         await expect(
-          service.updateUserRoles('non-existent-id', dto, mockAdminUser.id)
+          service.updateUserRoles('non-existent-id', dto, mockAdminUser.id),
         ).rejects.toThrow(NotFoundException);
 
         await expect(
-          service.updateUserRoles('non-existent-id', dto, mockAdminUser.id)
+          service.updateUserRoles('non-existent-id', dto, mockAdminUser.id),
         ).rejects.toThrow('User with ID non-existent-id not found');
       });
 
@@ -758,11 +775,11 @@ describe('UsersService', () => {
         mockPrisma.role.findMany.mockResolvedValue([]); // No roles found
 
         await expect(
-          service.updateUserRoles(mockOtherUser.id, dto, mockAdminUser.id)
+          service.updateUserRoles(mockOtherUser.id, dto, mockAdminUser.id),
         ).rejects.toThrow(BadRequestException);
 
         await expect(
-          service.updateUserRoles(mockOtherUser.id, dto, mockAdminUser.id)
+          service.updateUserRoles(mockOtherUser.id, dto, mockAdminUser.id),
         ).rejects.toThrow('Invalid roles: invalid-role');
       });
 
@@ -775,11 +792,11 @@ describe('UsersService', () => {
         mockPrisma.role.findMany.mockResolvedValue([mockRoles.admin] as any);
 
         await expect(
-          service.updateUserRoles(mockOtherUser.id, dto, mockAdminUser.id)
+          service.updateUserRoles(mockOtherUser.id, dto, mockAdminUser.id),
         ).rejects.toThrow(BadRequestException);
 
         await expect(
-          service.updateUserRoles(mockOtherUser.id, dto, mockAdminUser.id)
+          service.updateUserRoles(mockOtherUser.id, dto, mockAdminUser.id),
         ).rejects.toThrow('Invalid roles: invalid-role, another-invalid');
       });
     });

@@ -3,7 +3,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { GitHubHttpService } from '../github-http.service';
 import { GitHubNotFoundError } from '../github.errors';
 import type { RepositoryRef } from '../read/github-read.service';
-import { GitHubWriteService, type WriteResult } from '../write/github-write.service';
+import {
+  GitHubWriteService,
+  type WriteResult,
+} from '../write/github-write.service';
 import { WriteAction } from '../write/reversibility';
 
 /**
@@ -56,7 +59,9 @@ export class GitBranchService {
    * and what lets a runner tell "dispatched, nothing done" from "already
    * worked" by comparing that SHA against HEAD (ADR-0005).
    */
-  async createFactoryBranch(input: CreateFactoryBranchInput): Promise<CreateFactoryBranchResult> {
+  async createFactoryBranch(
+    input: CreateFactoryBranchInput,
+  ): Promise<CreateFactoryBranchResult> {
     assertFactoryBranch(input.branch);
 
     const existing = await this.findRef(input.repo, input.branch);
@@ -97,37 +102,50 @@ export class GitBranchService {
    * way through leaves unreferenced objects that git garbage-collects rather
    * than a branch in a half-built state.
    */
-  private async commitAndPoint(input: CreateFactoryBranchInput): Promise<string> {
+  private async commitAndPoint(
+    input: CreateFactoryBranchInput,
+  ): Promise<string> {
     const base = `/repos/${input.repo.owner}/${input.repo.name}`;
 
     // The base commit's tree, so the branch carries the repository as it was
     // at the pinned commit plus one file — rather than a branch containing
     // only the record.
-    const { data: baseCommit } = await this.http.request<{ tree: { sha: string } }>(
-      `${base}/git/commits/${input.baseCommit}`,
+    const { data: baseCommit } = await this.http.request<{
+      tree: { sha: string };
+    }>(`${base}/git/commits/${input.baseCommit}`);
+
+    const { data: blob } = await this.http.request<{ sha: string }>(
+      `${base}/git/blobs`,
+      {
+        method: 'POST',
+        body: { content: input.content, encoding: 'utf-8' },
+      },
     );
 
-    const { data: blob } = await this.http.request<{ sha: string }>(`${base}/git/blobs`, {
-      method: 'POST',
-      body: { content: input.content, encoding: 'utf-8' },
-    });
-
-    const { data: tree } = await this.http.request<{ sha: string }>(`${base}/git/trees`, {
-      method: 'POST',
-      body: {
-        base_tree: baseCommit.tree.sha,
-        tree: [{ path: input.path, mode: '100644', type: 'blob', sha: blob.sha }],
+    const { data: tree } = await this.http.request<{ sha: string }>(
+      `${base}/git/trees`,
+      {
+        method: 'POST',
+        body: {
+          base_tree: baseCommit.tree.sha,
+          tree: [
+            { path: input.path, mode: '100644', type: 'blob', sha: blob.sha },
+          ],
+        },
       },
-    });
+    );
 
-    const { data: commit } = await this.http.request<{ sha: string }>(`${base}/git/commits`, {
-      method: 'POST',
-      body: {
-        message: input.commitMessage,
-        tree: tree.sha,
-        parents: [input.baseCommit],
+    const { data: commit } = await this.http.request<{ sha: string }>(
+      `${base}/git/commits`,
+      {
+        method: 'POST',
+        body: {
+          message: input.commitMessage,
+          tree: tree.sha,
+          parents: [input.baseCommit],
+        },
       },
-    });
+    );
 
     await this.http.request(`${base}/git/refs`, {
       method: 'POST',
@@ -203,6 +221,8 @@ export function assertFactoryBranch(branch: string): void {
     );
   }
   if (branch.includes('..') || branch.includes(' ')) {
-    throw new Error(`Refusing to touch ${JSON.stringify(branch)}: not a valid branch name`);
+    throw new Error(
+      `Refusing to touch ${JSON.stringify(branch)}: not a valid branch name`,
+    );
   }
 }

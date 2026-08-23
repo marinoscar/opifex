@@ -19,7 +19,15 @@
  * which is possible precisely because the switch is labelled correctly.
  */
 
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../../utils/test-utils';
@@ -44,12 +52,17 @@ function renderFlags(
   const onSave = props.onSave ?? vi.fn().mockResolvedValue(undefined);
   setInitialContainerWidth(width);
   const result = render(
-    <FeatureFlagsList flags={props.flags ?? defaultFlags} onSave={onSave} disabled={props.disabled} />,
+    <FeatureFlagsList
+      flags={props.flags ?? defaultFlags}
+      onSave={onSave}
+      disabled={props.disabled}
+    />,
   );
   return { ...result, onSave };
 }
 
-const switchFor = (key: string) => screen.getByRole('switch', { name: `Toggle ${key}` });
+const switchFor = (key: string) =>
+  screen.getByRole('switch', { name: `Toggle ${key}` });
 const deleteFor = (key: string) =>
   screen.getByRole('button', { name: `Delete flag for ${key}` });
 
@@ -80,8 +93,12 @@ describe('FeatureFlagsList', () => {
       renderFlags();
 
       expect(screen.getByText('Feature Flags')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /add flag/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /save changes/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /add flag/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /save changes/i }),
+      ).toBeInTheDocument();
     });
 
     it('renders one row per flag, in alphabetical order', async () => {
@@ -119,13 +136,19 @@ describe('FeatureFlagsList', () => {
     it('shows the empty state and still offers Add Flag with no flags configured', async () => {
       renderFlags({ flags: {} });
 
-      expect(await screen.findByText('No feature flags configured')).toBeInTheDocument();
+      expect(
+        await screen.findByText('No feature flags configured'),
+      ).toBeInTheDocument();
       expect(screen.queryByRole('switch')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /add flag/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /add flag/i }),
+      ).toBeInTheDocument();
     });
 
     it('handles keys with special characters', async () => {
-      renderFlags({ flags: { 'feature-with-dash': true, 'feature.with.dots': false } });
+      renderFlags({
+        flags: { 'feature-with-dash': true, 'feature.with.dots': false },
+      });
 
       await screen.findByText('feature-with-dash');
       expect(switchFor('feature-with-dash')).toBeChecked();
@@ -143,11 +166,15 @@ describe('FeatureFlagsList', () => {
       renderFlags();
 
       await screen.findByText('alpha_feature');
-      expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: /save changes/i }),
+      ).toBeDisabled();
 
       await user.click(switchFor('alpha_feature'));
       expect(switchFor('alpha_feature')).toBeChecked();
-      expect(screen.getByRole('button', { name: /save changes/i })).toBeEnabled();
+      expect(
+        screen.getByRole('button', { name: /save changes/i }),
+      ).toBeEnabled();
 
       await user.click(switchFor('zebra_mode'));
       expect(switchFor('zebra_mode')).not.toBeChecked();
@@ -194,13 +221,20 @@ describe('FeatureFlagsList', () => {
 
       // Wait for the dialog to unmount too: while it is open MUI marks the
       // rest of the tree `aria-hidden`, so a role query would not see Save.
-      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+      );
       expect(screen.queryByText('alpha_feature')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /save changes/i })).toBeEnabled();
+      expect(
+        screen.getByRole('button', { name: /save changes/i }),
+      ).toBeEnabled();
 
       await user.click(screen.getByRole('button', { name: /save changes/i }));
       await waitFor(() =>
-        expect(onSave).toHaveBeenCalledWith({ zebra_mode: true, beta_feature: true }),
+        expect(onSave).toHaveBeenCalledWith({
+          zebra_mode: true,
+          beta_feature: true,
+        }),
       );
     });
 
@@ -213,7 +247,9 @@ describe('FeatureFlagsList', () => {
       const dialog = await screen.findByRole('dialog');
       await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
-      expect(await screen.findByText('No feature flags configured')).toBeInTheDocument();
+      expect(
+        await screen.findByText('No feature flags configured'),
+      ).toBeInTheDocument();
     });
   });
 
@@ -235,7 +271,9 @@ describe('FeatureFlagsList', () => {
       await user.type(within(dialog).getByLabelText(/flag name/i), 'new_flag');
       await user.click(within(dialog).getByRole('button', { name: 'Add' }));
 
-      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+      );
       expect(switchFor('new_flag')).not.toBeChecked();
     });
 
@@ -244,10 +282,15 @@ describe('FeatureFlagsList', () => {
       renderFlags();
 
       const dialog = await openDialog(user);
-      await user.type(within(dialog).getByLabelText(/flag name/i), 'my new flag');
+      await user.type(
+        within(dialog).getByLabelText(/flag name/i),
+        'my new flag',
+      );
       await user.click(within(dialog).getByRole('button', { name: 'Add' }));
 
-      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+      );
       expect(switchFor('my_new_flag')).toBeInTheDocument();
     });
 
@@ -256,7 +299,10 @@ describe('FeatureFlagsList', () => {
       renderFlags();
 
       const dialog = await openDialog(user);
-      await user.type(within(dialog).getByLabelText(/flag name/i), 'zebra_mode');
+      await user.type(
+        within(dialog).getByLabelText(/flag name/i),
+        'zebra_mode',
+      );
       await user.click(within(dialog).getByRole('button', { name: 'Add' }));
 
       expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -268,14 +314,20 @@ describe('FeatureFlagsList', () => {
       renderFlags();
 
       const dialog = await openDialog(user);
-      expect(within(dialog).getByRole('button', { name: 'Add' })).toBeDisabled();
+      expect(
+        within(dialog).getByRole('button', { name: 'Add' }),
+      ).toBeDisabled();
 
       await user.type(within(dialog).getByLabelText(/flag name/i), 'x');
       expect(within(dialog).getByRole('button', { name: 'Add' })).toBeEnabled();
 
       await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-      expect(screen.queryByRole('switch', { name: 'Toggle x' })).not.toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+      );
+      expect(
+        screen.queryByRole('switch', { name: 'Toggle x' }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -287,19 +339,28 @@ describe('FeatureFlagsList', () => {
     it('shows "Saving..." and disables Save while the write is in flight', async () => {
       const user = userEvent.setup();
       let resolve!: () => void;
-      const onSave = vi.fn(() => new Promise<void>((r) => { resolve = r; }));
+      const onSave = vi.fn(
+        () =>
+          new Promise<void>((r) => {
+            resolve = r;
+          }),
+      );
       renderFlags({ onSave });
 
       await screen.findByText('alpha_feature');
       await user.click(switchFor('alpha_feature'));
       await user.click(screen.getByRole('button', { name: /save changes/i }));
 
-      const saving = await screen.findByRole('button', { name: /saving\.\.\./i });
+      const saving = await screen.findByRole('button', {
+        name: /saving\.\.\./i,
+      });
       expect(saving).toBeDisabled();
 
       resolve();
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: /save changes/i })).toBeInTheDocument(),
+        expect(
+          screen.getByRole('button', { name: /save changes/i }),
+        ).toBeInTheDocument(),
       );
     });
 
@@ -310,13 +371,17 @@ describe('FeatureFlagsList', () => {
 
       await screen.findByText('alpha_feature');
       await user.click(switchFor('alpha_feature'));
-      await user.click(screen.getByRole('button', { name: /save changes/i })).catch(() => {});
+      await user
+        .click(screen.getByRole('button', { name: /save changes/i }))
+        .catch(() => {});
 
       await waitFor(() => expect(onSave).toHaveBeenCalled());
       // The edit survives, and Save is offered again.
       expect(switchFor('alpha_feature')).toBeChecked();
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: /save changes/i })).toBeEnabled(),
+        expect(
+          screen.getByRole('button', { name: /save changes/i }),
+        ).toBeEnabled(),
       );
     });
   });
@@ -341,7 +406,9 @@ describe('FeatureFlagsList', () => {
         expect(deleteFor(key)).toBeDisabled();
       }
       expect(screen.getByRole('button', { name: /add flag/i })).toBeDisabled();
-      expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: /save changes/i }),
+      ).toBeDisabled();
     });
 
     it('leaves the controls live when disabled is false or absent', async () => {

@@ -103,7 +103,9 @@ export function buildPrompt(workOrder: WorkOrderSpec): string {
     '',
     // Numbered rather than bulleted so a run summary can refer to "criterion
     // 3" and mean something stable.
-    ...workOrder.acceptanceCriteria.map((criterion, index) => `${index + 1}. ${criterion}`),
+    ...workOrder.acceptanceCriteria.map(
+      (criterion, index) => `${index + 1}. ${criterion}`,
+    ),
     '',
     'These are the definition of done. Do not consider the task complete until every ' +
       'one of them holds, and say explicitly which ones you could not verify.',
@@ -125,10 +127,14 @@ export function buildPrompt(workOrder: WorkOrderSpec): string {
   // more gracefully than one that gets killed at the ceiling.
   const limits: string[] = [];
   if (workOrder.budgetCeilingUsd !== null) {
-    limits.push(`- A budget of about $${workOrder.budgetCeilingUsd.toFixed(2)}.`);
+    limits.push(
+      `- A budget of about $${workOrder.budgetCeilingUsd.toFixed(2)}.`,
+    );
   }
   if (workOrder.wallClockTimeoutMinutes !== null) {
-    limits.push(`- About ${workOrder.wallClockTimeoutMinutes} minutes of wall clock.`);
+    limits.push(
+      `- About ${workOrder.wallClockTimeoutMinutes} minutes of wall clock.`,
+    );
   }
   if (limits.length > 0) {
     sections.push(
@@ -151,7 +157,9 @@ export function buildPrompt(workOrder: WorkOrderSpec): string {
  * whatever authenticates the CLI), and everything added here is either a
  * correlation id or a thing that must be off.
  */
-export function buildInvocationEnv(workOrder: WorkOrderSpec): NodeJS.ProcessEnv {
+export function buildInvocationEnv(
+  workOrder: WorkOrderSpec,
+): NodeJS.ProcessEnv {
   return {
     // Correlation for anything the run itself logs or reports.
     OPIFEX_WORK_ORDER: workOrder.identity,

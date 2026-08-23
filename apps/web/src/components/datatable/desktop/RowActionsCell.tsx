@@ -139,7 +139,9 @@ export function RowActionsCell<Row>({
             }}
           >
             {action.icon && (
-              <ListItemIcon sx={action.destructive ? { color: 'error.main' } : undefined}>
+              <ListItemIcon
+                sx={action.destructive ? { color: 'error.main' } : undefined}
+              >
                 {action.icon}
               </ListItemIcon>
             )}

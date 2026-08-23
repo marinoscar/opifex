@@ -36,9 +36,7 @@ const mockSystemSettings = {
   version: 1,
 };
 
-const mockProviders = [
-  { name: 'google', authUrl: '/api/auth/google' },
-];
+const mockProviders = [{ name: 'google', authUrl: '/api/auth/google' }];
 
 export const handlers = [
   // Auth endpoints
@@ -157,11 +155,15 @@ export const handlers = [
       return HttpResponse.json({
         id: mockUser.id,
         email: mockUser.email,
-        displayName: (body.displayName as string | null) ?? mockUser.displayName,
+        displayName:
+          (body.displayName as string | null) ?? mockUser.displayName,
         providerDisplayName: 'Test User (Provider)',
         profileImageUrl: mockUser.profileImageUrl,
         providerProfileImageUrl: null,
-        isActive: body.isActive !== undefined ? (body.isActive as boolean) : mockUser.isActive,
+        isActive:
+          body.isActive !== undefined
+            ? (body.isActive as boolean)
+            : mockUser.isActive,
         roles: mockUser.roles.map((r) => r.name),
         createdAt: mockUser.createdAt,
         updatedAt: new Date().toISOString(),
@@ -213,7 +215,9 @@ export const handlers = [
    * them differently.
    */
   http.get(`${API_BASE}/runs`, () => {
-    return HttpResponse.json({ data: { items: [], total: 0, page: 1, pageSize: 25 } });
+    return HttpResponse.json({
+      data: { items: [], total: 0, page: 1, pageSize: 25 },
+    });
   }),
 
   /**
@@ -252,7 +256,9 @@ export const handlers = [
    * neither.
    */
   http.get(`${API_BASE}/events`, () => {
-    return HttpResponse.json({ data: { items: [], total: 0, page: 1, pageSize: 20 } });
+    return HttpResponse.json({
+      data: { items: [], total: 0, page: 1, pageSize: 20 },
+    });
   }),
 
   http.get(`${API_BASE}/health/live`, () => {
@@ -296,7 +302,10 @@ export const handlers = [
   }),
 
   http.post(`${API_BASE}/auth/device/authorize`, async ({ request }) => {
-    const body = (await request.json()) as { userCode: string; approve: boolean };
+    const body = (await request.json()) as {
+      userCode: string;
+      approve: boolean;
+    };
 
     return HttpResponse.json({
       data: {

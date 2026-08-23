@@ -30,7 +30,8 @@ describe('GoogleStrategy', () => {
         const config: Record<string, string> = {
           'google.clientId': 'test-client-id',
           'google.clientSecret': 'test-client-secret',
-          'google.callbackUrl': 'http://localhost:3000/api/auth/google/callback',
+          'google.callbackUrl':
+            'http://localhost:3000/api/auth/google/callback',
         };
         return config[key] || '';
       }),
@@ -56,12 +57,17 @@ describe('GoogleStrategy', () => {
         emails: [{ value: 'test@example.com', verified: true }],
       });
 
-      strategy.validate('access-token', 'refresh-token', mockProfile, (err, user) => {
-        expect(err).toBeNull();
-        expect(user).toBeDefined();
-        expect((user as GoogleProfile).email).toBe('test@example.com');
-        done();
-      });
+      strategy.validate(
+        'access-token',
+        'refresh-token',
+        mockProfile,
+        (err, user) => {
+          expect(err).toBeNull();
+          expect(user).toBeDefined();
+          expect((user as GoogleProfile).email).toBe('test@example.com');
+          done();
+        },
+      );
     });
 
     it('should extract displayName from Google profile', (done) => {
@@ -70,12 +76,17 @@ describe('GoogleStrategy', () => {
         emails: [{ value: 'john@example.com', verified: true }],
       });
 
-      strategy.validate('access-token', 'refresh-token', mockProfile, (err, user) => {
-        expect(err).toBeNull();
-        expect(user).toBeDefined();
-        expect((user as GoogleProfile).displayName).toBe('John Doe');
-        done();
-      });
+      strategy.validate(
+        'access-token',
+        'refresh-token',
+        mockProfile,
+        (err, user) => {
+          expect(err).toBeNull();
+          expect(user).toBeDefined();
+          expect((user as GoogleProfile).displayName).toBe('John Doe');
+          done();
+        },
+      );
     });
 
     it('should extract picture URL from Google profile', (done) => {
@@ -83,12 +94,19 @@ describe('GoogleStrategy', () => {
         photos: [{ value: 'https://lh3.googleusercontent.com/a/photo123' }],
       });
 
-      strategy.validate('access-token', 'refresh-token', mockProfile, (err, user) => {
-        expect(err).toBeNull();
-        expect(user).toBeDefined();
-        expect((user as GoogleProfile).picture).toBe('https://lh3.googleusercontent.com/a/photo123');
-        done();
-      });
+      strategy.validate(
+        'access-token',
+        'refresh-token',
+        mockProfile,
+        (err, user) => {
+          expect(err).toBeNull();
+          expect(user).toBeDefined();
+          expect((user as GoogleProfile).picture).toBe(
+            'https://lh3.googleusercontent.com/a/photo123',
+          );
+          done();
+        },
+      );
     });
 
     it('should handle profile with missing optional fields', (done) => {
@@ -96,14 +114,19 @@ describe('GoogleStrategy', () => {
         photos: [], // No photos
       });
 
-      strategy.validate('access-token', 'refresh-token', mockProfile, (err, user) => {
-        expect(err).toBeNull();
-        expect(user).toBeDefined();
-        const googleProfile = user as GoogleProfile;
-        expect(googleProfile.email).toBe('test@example.com');
-        expect(googleProfile.picture).toBeUndefined();
-        done();
-      });
+      strategy.validate(
+        'access-token',
+        'refresh-token',
+        mockProfile,
+        (err, user) => {
+          expect(err).toBeNull();
+          expect(user).toBeDefined();
+          const googleProfile = user as GoogleProfile;
+          expect(googleProfile.email).toBe('test@example.com');
+          expect(googleProfile.picture).toBeUndefined();
+          done();
+        },
+      );
     });
 
     it('should pass provider and providerId correctly', (done) => {
@@ -111,12 +134,17 @@ describe('GoogleStrategy', () => {
         id: 'google-unique-id-12345',
       });
 
-      strategy.validate('access-token', 'refresh-token', mockProfile, (err, user) => {
-        expect(err).toBeNull();
-        expect(user).toBeDefined();
-        expect((user as GoogleProfile).id).toBe('google-unique-id-12345');
-        done();
-      });
+      strategy.validate(
+        'access-token',
+        'refresh-token',
+        mockProfile,
+        (err, user) => {
+          expect(err).toBeNull();
+          expect(user).toBeDefined();
+          expect((user as GoogleProfile).id).toBe('google-unique-id-12345');
+          done();
+        },
+      );
     });
 
     it('should return error when no email found in profile', (done) => {
@@ -124,12 +152,19 @@ describe('GoogleStrategy', () => {
         emails: [], // No emails
       });
 
-      strategy.validate('access-token', 'refresh-token', mockProfile, (err, user) => {
-        expect(err).toBeDefined();
-        expect((err as Error).message).toContain('No email found in Google profile');
-        expect(user).toBe(false);
-        done();
-      });
+      strategy.validate(
+        'access-token',
+        'refresh-token',
+        mockProfile,
+        (err, user) => {
+          expect(err).toBeDefined();
+          expect((err as Error).message).toContain(
+            'No email found in Google profile',
+          );
+          expect(user).toBe(false);
+          done();
+        },
+      );
     });
 
     it('should return error when emails array is undefined', (done) => {
@@ -137,12 +172,19 @@ describe('GoogleStrategy', () => {
         emails: undefined as any,
       });
 
-      strategy.validate('access-token', 'refresh-token', mockProfile, (err, user) => {
-        expect(err).toBeDefined();
-        expect((err as Error).message).toContain('No email found in Google profile');
-        expect(user).toBe(false);
-        done();
-      });
+      strategy.validate(
+        'access-token',
+        'refresh-token',
+        mockProfile,
+        (err, user) => {
+          expect(err).toBeDefined();
+          expect((err as Error).message).toContain(
+            'No email found in Google profile',
+          );
+          expect(user).toBe(false);
+          done();
+        },
+      );
     });
 
     it('should handle multiple emails and use the first one', (done) => {
@@ -153,12 +195,17 @@ describe('GoogleStrategy', () => {
         ],
       });
 
-      strategy.validate('access-token', 'refresh-token', mockProfile, (err, user) => {
-        expect(err).toBeNull();
-        expect(user).toBeDefined();
-        expect((user as GoogleProfile).email).toBe('primary@example.com');
-        done();
-      });
+      strategy.validate(
+        'access-token',
+        'refresh-token',
+        mockProfile,
+        (err, user) => {
+          expect(err).toBeNull();
+          expect(user).toBeDefined();
+          expect((user as GoogleProfile).email).toBe('primary@example.com');
+          done();
+        },
+      );
     });
 
     it('should handle multiple photos and use the first one', (done) => {
@@ -169,12 +216,19 @@ describe('GoogleStrategy', () => {
         ],
       });
 
-      strategy.validate('access-token', 'refresh-token', mockProfile, (err, user) => {
-        expect(err).toBeNull();
-        expect(user).toBeDefined();
-        expect((user as GoogleProfile).picture).toBe('https://example.com/photo1.jpg');
-        done();
-      });
+      strategy.validate(
+        'access-token',
+        'refresh-token',
+        mockProfile,
+        (err, user) => {
+          expect(err).toBeNull();
+          expect(user).toBeDefined();
+          expect((user as GoogleProfile).picture).toBe(
+            'https://example.com/photo1.jpg',
+          );
+          done();
+        },
+      );
     });
   });
 });

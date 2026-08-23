@@ -8,7 +8,9 @@ describe('applyNullableFor31', () => {
     };
     applyNullableFor31(doc);
 
-    expect((doc.components as never as { schemas: { A: unknown } }).schemas.A).toEqual({
+    expect(
+      (doc.components as never as { schemas: { A: unknown } }).schemas.A,
+    ).toEqual({
       type: ['string', 'null'],
     });
   });
@@ -18,10 +20,16 @@ describe('applyNullableFor31', () => {
       paths: {
         '/api/thing': {
           get: {
-            parameters: [{ name: 'q', schema: { type: 'integer', nullable: true } }],
+            parameters: [
+              { name: 'q', schema: { type: 'integer', nullable: true } },
+            ],
             responses: {
               '200': {
-                content: { 'application/json': { schema: { type: 'boolean', nullable: true } } },
+                content: {
+                  'application/json': {
+                    schema: { type: 'boolean', nullable: true },
+                  },
+                },
               },
             },
           },
@@ -37,12 +45,16 @@ describe('applyNullableFor31', () => {
 
   it('adds null to an existing type union without duplicating it', () => {
     const doc: MutableDocument = {
-      components: { schemas: { A: { type: ['string', 'null'], nullable: true } } },
+      components: {
+        schemas: { A: { type: ['string', 'null'], nullable: true } },
+      },
     };
     applyNullableFor31(doc);
 
-    expect((doc.components as never as { schemas: { A: { type: string[] } } }).schemas.A.type)
-      .toEqual(['string', 'null']);
+    expect(
+      (doc.components as never as { schemas: { A: { type: string[] } } })
+        .schemas.A.type,
+    ).toEqual(['string', 'null']);
   });
 
   it('turns a nullable $ref into a one-of, the only form 3.1 honours', () => {
@@ -53,16 +65,22 @@ describe('applyNullableFor31', () => {
     };
     applyNullableFor31(doc);
 
-    expect((doc.components as never as { schemas: { A: unknown } }).schemas.A).toEqual({
+    expect(
+      (doc.components as never as { schemas: { A: unknown } }).schemas.A,
+    ).toEqual({
       oneOf: [{ $ref: '#/components/schemas/B' }, { type: 'null' }],
     });
   });
 
   it('drops the keyword when there is nothing to widen', () => {
-    const doc: MutableDocument = { components: { schemas: { A: { nullable: true } } } };
+    const doc: MutableDocument = {
+      components: { schemas: { A: { nullable: true } } },
+    };
     applyNullableFor31(doc);
 
-    expect((doc.components as never as { schemas: { A: unknown } }).schemas.A).toEqual({});
+    expect(
+      (doc.components as never as { schemas: { A: unknown } }).schemas.A,
+    ).toEqual({});
   });
 
   it('terminates on a cyclic document', () => {

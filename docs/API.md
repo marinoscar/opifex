@@ -10,6 +10,7 @@
 All endpoints require JWT Bearer token authentication unless explicitly marked as **Public**.
 
 **Authorization Header:**
+
 ```
 Authorization: Bearer <access_token>
 ```
@@ -40,6 +41,7 @@ Access tokens are short-lived (15 minutes by default). Use the refresh token flo
 ```
 
 For validation errors:
+
 ```json
 {
   "statusCode": 400,
@@ -52,12 +54,13 @@ For validation errors:
 
 Endpoints returning lists support pagination with the following query parameters:
 
-| Parameter | Type | Default | Max | Description |
-|-----------|------|---------|-----|-------------|
-| `page` | number | 1 | - | Page number (1-indexed) |
-| `pageSize` | number | 20 | 100 | Items per page |
+| Parameter  | Type   | Default | Max | Description             |
+| ---------- | ------ | ------- | --- | ----------------------- |
+| `page`     | number | 1       | -   | Page number (1-indexed) |
+| `pageSize` | number | 20      | 100 | Items per page          |
 
 **Paginated Response Format:**
+
 ```json
 {
   "data": [...],
@@ -77,9 +80,11 @@ Endpoints returning lists support pagination with the following query parameters
 ### Authentication
 
 #### GET /auth/providers
+
 **Public endpoint** - List enabled OAuth providers.
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -96,6 +101,7 @@ Endpoints returning lists support pagination with the following query parameters
 ---
 
 #### GET /auth/google
+
 **Public endpoint** - Initiate Google OAuth flow. Redirects to Google consent screen.
 
 **Response:** HTTP 302 redirect to Google
@@ -103,26 +109,32 @@ Endpoints returning lists support pagination with the following query parameters
 ---
 
 #### GET /auth/google/callback
+
 **Public endpoint** - OAuth callback handler (called by Google).
 
 **Query Parameters:**
+
 - `code` (string) - Authorization code from Google
 - `state` (string, optional) - CSRF protection state
 
 **Response:** HTTP 302 redirect to frontend with access token in query parameter
+
 - Sets HttpOnly refresh token cookie
 - Redirects to `/auth/callback?accessToken=<token>`
 
 **Error Cases:**
+
 - Email not in allowlist → Redirects to `/auth/error?error=not_authorized`
 - OAuth failure → Redirects to `/auth/error?error=oauth_failed`
 
 ---
 
 #### GET /auth/me
+
 **Requires Authentication** - Get current user profile.
 
 **Response:**
+
 ```json
 {
   "id": "uuid",
@@ -144,11 +156,13 @@ Endpoints returning lists support pagination with the following query parameters
 ---
 
 #### POST /auth/refresh
+
 **Public endpoint** - Refresh access token using refresh token cookie.
 
 **Request:** No body required (uses HttpOnly cookie)
 
 **Response:**
+
 ```json
 {
   "accessToken": "new_jwt_access_token",
@@ -159,28 +173,33 @@ Endpoints returning lists support pagination with the following query parameters
 Sets new refresh token in HttpOnly cookie (token rotation).
 
 **Error Cases:**
+
 - 401 Unauthorized - Missing or invalid refresh token
 - 403 Forbidden - User is disabled
 
 ---
 
 #### POST /auth/logout
+
 **Requires Authentication** - Logout and revoke refresh token.
 
 **Request:** No body required
 
 **Response:** HTTP 204 No Content
+
 - Clears refresh token cookie
 - Revokes refresh token in database
 
 ---
 
 #### POST /auth/logout-all
+
 **Requires Authentication** - Logout from all devices and revoke all refresh tokens.
 
 **Request:** No body required
 
 **Response:** HTTP 204 No Content
+
 - Clears refresh token cookie
 - Revokes ALL refresh tokens for the current user across all devices
 
@@ -193,9 +212,11 @@ Sets new refresh token in HttpOnly cookie (token rotation).
 The Device Authorization Flow enables input-constrained devices (CLI tools, IoT devices, Smart TVs) to obtain user authorization. See [DEVICE-AUTH.md](DEVICE-AUTH.md) for comprehensive guide and integration examples.
 
 #### POST /auth/device/code
+
 **Public endpoint** - Generate device code pair to initiate device authorization flow.
 
 **Request Body:**
+
 ```json
 {
   "clientInfo": {
@@ -207,14 +228,16 @@ The Device Authorization Flow enables input-constrained devices (CLI tools, IoT 
 ```
 
 **Fields:**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `clientInfo` | object | No | Optional metadata about client device |
-| `clientInfo.name` | string | No | Application name |
-| `clientInfo.version` | string | No | Application version |
-| `clientInfo.platform` | string | No | Platform identifier |
+
+| Field                 | Type   | Required | Description                           |
+| --------------------- | ------ | -------- | ------------------------------------- |
+| `clientInfo`          | object | No       | Optional metadata about client device |
+| `clientInfo.name`     | string | No       | Application name                      |
+| `clientInfo.version`  | string | No       | Application version                   |
+| `clientInfo.platform` | string | No       | Platform identifier                   |
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -229,21 +252,24 @@ The Device Authorization Flow enables input-constrained devices (CLI tools, IoT 
 ```
 
 **Response Fields:**
-| Field | Type | Description |
-|-------|------|-------------|
-| `deviceCode` | string | Opaque code for device polling (keep secret) |
-| `userCode` | string | Human-readable code for user entry (XXXX-XXXX format) |
-| `verificationUri` | string | URL where user should authorize |
-| `verificationUriComplete` | string | URL with user code pre-filled |
-| `expiresIn` | number | Code lifetime in seconds (default: 900) |
-| `interval` | number | Minimum polling interval in seconds (default: 5) |
+
+| Field                     | Type   | Description                                           |
+| ------------------------- | ------ | ----------------------------------------------------- |
+| `deviceCode`              | string | Opaque code for device polling (keep secret)          |
+| `userCode`                | string | Human-readable code for user entry (XXXX-XXXX format) |
+| `verificationUri`         | string | URL where user should authorize                       |
+| `verificationUriComplete` | string | URL with user code pre-filled                         |
+| `expiresIn`               | number | Code lifetime in seconds (default: 900)               |
+| `interval`                | number | Minimum polling interval in seconds (default: 5)      |
 
 ---
 
 #### POST /auth/device/token
+
 **Public endpoint** - Poll for authorization status and obtain tokens when approved.
 
 **Request Body:**
+
 ```json
 {
   "deviceCode": "a4f3b8c9d2e1f5a6b7c8d9e0f1a2b3c4"
@@ -251,6 +277,7 @@ The Device Authorization Flow enables input-constrained devices (CLI tools, IoT 
 ```
 
 **Response (200 OK - Authorized):**
+
 ```json
 {
   "data": {
@@ -265,6 +292,7 @@ The Device Authorization Flow enables input-constrained devices (CLI tools, IoT 
 **Error Responses (400 Bad Request):**
 
 While authorization is pending:
+
 ```json
 {
   "error": "authorization_pending",
@@ -273,6 +301,7 @@ While authorization is pending:
 ```
 
 Device polling too frequently:
+
 ```json
 {
   "error": "slow_down",
@@ -281,6 +310,7 @@ Device polling too frequently:
 ```
 
 Code has expired:
+
 ```json
 {
   "error": "expired_token",
@@ -289,6 +319,7 @@ Code has expired:
 ```
 
 User denied authorization:
+
 ```json
 {
   "error": "access_denied",
@@ -299,6 +330,7 @@ User denied authorization:
 **Error Response (401 Unauthorized):**
 
 Invalid device code:
+
 ```json
 {
   "error": "invalid_grant",
@@ -307,6 +339,7 @@ Invalid device code:
 ```
 
 **Usage:**
+
 1. Device requests code from `/auth/device/code`
 2. Device displays `userCode` and `verificationUri` to user
 3. Device polls this endpoint every `interval` seconds
@@ -316,20 +349,24 @@ Invalid device code:
 ---
 
 #### GET /auth/device/activate
+
 **Requires Authentication** - Get activation page information and validate user code.
 
 **Query Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `code` | string | No | User verification code to validate |
+
+| Parameter | Type   | Required | Description                        |
+| --------- | ------ | -------- | ---------------------------------- |
+| `code`    | string | No       | User verification code to validate |
 
 **Request (No Code):**
+
 ```http
 GET /auth/device/activate
 Authorization: Bearer <token>
 ```
 
 **Response (No Code):**
+
 ```json
 {
   "data": {
@@ -339,12 +376,14 @@ Authorization: Bearer <token>
 ```
 
 **Request (With Code):**
+
 ```http
 GET /auth/device/activate?code=ABCD-1234
 Authorization: Bearer <token>
 ```
 
 **Response (With Valid Code):**
+
 ```json
 {
   "data": {
@@ -361,15 +400,18 @@ Authorization: Bearer <token>
 ```
 
 **Error Cases:**
+
 - 404 Not Found - Invalid user code
 - 400 Bad Request - Code has expired or already been processed
 
 ---
 
 #### POST /auth/device/authorize
+
 **Requires Authentication** - Approve or deny device authorization request.
 
 **Request Body:**
+
 ```json
 {
   "userCode": "ABCD-1234",
@@ -378,12 +420,14 @@ Authorization: Bearer <token>
 ```
 
 **Fields:**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `userCode` | string | Yes | User code from the device |
-| `approve` | boolean | Yes | true to approve, false to deny |
+
+| Field      | Type    | Required | Description                    |
+| ---------- | ------- | -------- | ------------------------------ |
+| `userCode` | string  | Yes      | User code from the device      |
+| `approve`  | boolean | Yes      | true to approve, false to deny |
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -394,21 +438,25 @@ Authorization: Bearer <token>
 ```
 
 **Error Cases:**
+
 - 404 Not Found - Invalid user code
 - 400 Bad Request - Code has expired or already been processed
 
 ---
 
 #### GET /auth/device/sessions
+
 **Requires Authentication** - List current user's approved device sessions.
 
 **Query Parameters:**
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `page` | number | No | 1 | Page number |
-| `limit` | number | No | 10 | Items per page |
+
+| Parameter | Type   | Required | Default | Description    |
+| --------- | ------ | -------- | ------- | -------------- |
+| `page`    | number | No       | 1       | Page number    |
+| `limit`   | number | No       | 10      | Items per page |
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -438,12 +486,15 @@ Authorization: Bearer <token>
 ---
 
 #### DELETE /auth/device/sessions/:id
+
 **Requires Authentication** - Revoke a specific device session.
 
 **Parameters:**
+
 - `id` (UUID) - Session ID to revoke
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -454,6 +505,7 @@ Authorization: Bearer <token>
 ```
 
 **Error Cases:**
+
 - 404 Not Found - Session not found or doesn't belong to current user
 
 **Use Case:** Revoke access for lost or compromised devices.
@@ -465,11 +517,13 @@ Authorization: Bearer <token>
 **Security Notice:** These endpoints are completely disabled in production. They exist solely to enable automated E2E testing without requiring real OAuth credentials.
 
 #### POST /auth/test/login
+
 **Development/Test Only** - Authenticate as a test user without OAuth.
 
 **Availability:** Only when `NODE_ENV !== 'production'`
 
 **Request Body:**
+
 ```json
 {
   "email": "test@test.local",
@@ -479,17 +533,20 @@ Authorization: Bearer <token>
 ```
 
 **Fields:**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `email` | string | Yes | Email address for test user |
-| `role` | enum | No | Role to assign: `admin`, `contributor`, `viewer` (default: `viewer`) |
-| `displayName` | string | No | Display name for the user |
+
+| Field         | Type   | Required | Description                                                          |
+| ------------- | ------ | -------- | -------------------------------------------------------------------- |
+| `email`       | string | Yes      | Email address for test user                                          |
+| `role`        | enum   | No       | Role to assign: `admin`, `contributor`, `viewer` (default: `viewer`) |
+| `displayName` | string | No       | Display name for the user                                            |
 
 **Response:** HTTP 302 redirect to `/auth/callback?token=<accessToken>&expiresIn=900`
+
 - Sets HttpOnly refresh token cookie (same as OAuth flow)
 - Creates user if not exists, assigns specified role
 
 **Error Cases:**
+
 - 403 Forbidden - Endpoint disabled (production environment)
 - 400 Bad Request - Invalid email or role
 
@@ -502,20 +559,23 @@ Authorization: Bearer <token>
 **All user endpoints require Admin role (`users:read` or `users:write` permissions)**
 
 #### GET /users
+
 List all users with pagination and filtering.
 
 **Query Parameters:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | number | 1 | Page number |
-| `pageSize` | number | 20 | Items per page (max 100) |
-| `search` | string | - | Search by email or display name |
-| `isActive` | boolean | - | Filter by active status |
-| `role` | string | - | Filter by role name |
-| `sortBy` | enum | `createdAt` | Sort field: `email`, `createdAt`, `updatedAt` |
-| `sortOrder` | enum | `desc` | Sort order: `asc`, `desc` |
+
+| Parameter   | Type    | Default     | Description                                   |
+| ----------- | ------- | ----------- | --------------------------------------------- |
+| `page`      | number  | 1           | Page number                                   |
+| `pageSize`  | number  | 20          | Items per page (max 100)                      |
+| `search`    | string  | -           | Search by email or display name               |
+| `isActive`  | boolean | -           | Filter by active status                       |
+| `role`      | string  | -           | Filter by role name                           |
+| `sortBy`    | enum    | `createdAt` | Sort field: `email`, `createdAt`, `updatedAt` |
+| `sortOrder` | enum    | `desc`      | Sort order: `asc`, `desc`                     |
 
 **Response:**
+
 ```json
 {
   "data": [
@@ -550,12 +610,15 @@ List all users with pagination and filtering.
 ---
 
 #### GET /users/:id
+
 Get user by ID.
 
 **Parameters:**
+
 - `id` (UUID) - User ID
 
 **Response:**
+
 ```json
 {
   "id": "uuid",
@@ -586,19 +649,23 @@ Get user by ID.
 **Note:** `providerDisplayName` and `providerProfileImageUrl` may be null if not available from OAuth provider.
 
 **Error Cases:**
+
 - 404 Not Found - User not found
 
 ---
 
 #### PATCH /users/:id
+
 Update user properties (activation status, display name).
 
 **Requires:** `users:write` permission
 
 **Parameters:**
+
 - `id` (UUID) - User ID
 
 **Request Body:**
+
 ```json
 {
   "isActive": false,
@@ -607,12 +674,14 @@ Update user properties (activation status, display name).
 ```
 
 **Fields:**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `isActive` | boolean | No | Activate or deactivate user |
-| `displayName` | string | No | Update user's display name |
+
+| Field         | Type    | Required | Description                 |
+| ------------- | ------- | -------- | --------------------------- |
+| `isActive`    | boolean | No       | Activate or deactivate user |
+| `displayName` | string  | No       | Update user's display name  |
 
 **Response:**
+
 ```json
 {
   "id": "uuid",
@@ -629,19 +698,23 @@ Update user properties (activation status, display name).
 ```
 
 **Error Cases:**
+
 - 404 Not Found - User not found
 
 ---
 
 #### PUT /users/:id/roles
+
 Update user roles (replaces all current roles).
 
 **Requires:** `rbac:manage` permission
 
 **Parameters:**
+
 - `id` (UUID) - User ID
 
 **Request Body:**
+
 ```json
 {
   "roleNames": ["admin", "contributor"]
@@ -649,11 +722,13 @@ Update user roles (replaces all current roles).
 ```
 
 **Fields:**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `roleNames` | string[] | Yes | Array of role names to assign (min: 1) |
+
+| Field       | Type     | Required | Description                            |
+| ----------- | -------- | -------- | -------------------------------------- |
+| `roleNames` | string[] | Yes      | Array of role names to assign (min: 1) |
 
 **Response:**
+
 ```json
 {
   "id": "uuid",
@@ -676,11 +751,13 @@ Update user roles (replaces all current roles).
 ```
 
 **Validation Rules:**
+
 - Cannot remove own admin role (prevents accidental lockout)
 - At least one role must be assigned
 - Role names must exist in the system
 
 **Error Cases:**
+
 - 400 Bad Request - Invalid role names, empty array, or attempting to remove own admin role
 - 401 Unauthorized - Not authenticated
 - 403 Forbidden - Missing `rbac:manage` permission
@@ -695,19 +772,22 @@ Update user roles (replaces all current roles).
 The allowlist restricts application access to pre-authorized email addresses. Users must have their email in the allowlist before they can complete OAuth login.
 
 #### GET /allowlist
+
 List allowlisted emails with pagination, filtering, and sorting.
 
 **Query Parameters:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | number | 1 | Page number |
-| `pageSize` | number | 20 | Items per page (max 100) |
-| `search` | string | - | Search by email |
-| `status` | enum | `all` | Filter by status: `all`, `pending`, `claimed` |
-| `sortBy` | enum | `addedAt` | Sort by: `email`, `addedAt`, `claimedAt` |
-| `sortOrder` | enum | `desc` | Sort order: `asc`, `desc` |
+
+| Parameter   | Type   | Default   | Description                                   |
+| ----------- | ------ | --------- | --------------------------------------------- |
+| `page`      | number | 1         | Page number                                   |
+| `pageSize`  | number | 20        | Items per page (max 100)                      |
+| `search`    | string | -         | Search by email                               |
+| `status`    | enum   | `all`     | Filter by status: `all`, `pending`, `claimed` |
+| `sortBy`    | enum   | `addedAt` | Sort by: `email`, `addedAt`, `claimedAt`      |
+| `sortOrder` | enum   | `desc`    | Sort order: `asc`, `desc`                     |
 
 **Response:**
+
 ```json
 {
   "data": [
@@ -752,6 +832,7 @@ List allowlisted emails with pagination, filtering, and sorting.
 **Note:** `addedBy` object contains only `id` and `email` (no `displayName`). `claimedBy` object contains `id`, `email`, and `displayName` when not null.
 
 **Status Filters:**
+
 - `all` - All allowlist entries
 - `pending` - Emails not yet claimed by a user (claimedBy is null)
 - `claimed` - Emails claimed by registered users (claimedBy is not null)
@@ -759,11 +840,13 @@ List allowlisted emails with pagination, filtering, and sorting.
 ---
 
 #### POST /allowlist
+
 Add email to allowlist.
 
 **Requires:** `allowlist:write` permission
 
 **Request Body:**
+
 ```json
 {
   "email": "newuser@example.com",
@@ -772,12 +855,14 @@ Add email to allowlist.
 ```
 
 **Fields:**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `email` | string | Yes | Valid email address (case-insensitive) |
-| `notes` | string | No | Optional notes about this user |
+
+| Field   | Type   | Required | Description                            |
+| ------- | ------ | -------- | -------------------------------------- |
+| `email` | string | Yes      | Valid email address (case-insensitive) |
+| `notes` | string | No       | Optional notes about this user         |
 
 **Response:**
+
 ```json
 {
   "id": "uuid",
@@ -796,22 +881,26 @@ Add email to allowlist.
 **Note:** `addedBy` object contains only `id` and `email` (no `displayName`).
 
 **Error Cases:**
+
 - 409 Conflict - Email already exists in allowlist
 - 400 Bad Request - Invalid email format
 
 ---
 
 #### DELETE /allowlist/:id
+
 Remove email from allowlist.
 
 **Requires:** `allowlist:write` permission
 
 **Parameters:**
+
 - `id` (UUID) - Allowlist entry ID
 
 **Response:** HTTP 204 No Content
 
 **Error Cases:**
+
 - 404 Not Found - Allowlist entry not found
 - 400 Bad Request - Cannot remove entry that has been claimed by a user
 
@@ -822,9 +911,11 @@ Remove email from allowlist.
 ### Settings
 
 #### GET /user-settings
+
 **Requires Authentication** - Get current user's settings.
 
 **Response:**
+
 ```json
 {
   "theme": "light",
@@ -839,21 +930,24 @@ Remove email from allowlist.
 ```
 
 **Fields:**
-| Field | Type | Description |
-|-------|------|-------------|
-| `theme` | enum | UI theme: `light`, `dark`, `system` |
-| `profile.displayName` | string \| null | User's display name override |
-| `profile.useProviderImage` | boolean | Whether to use OAuth provider's profile image |
-| `profile.customImageUrl` | string \| null | Custom profile image URL |
-| `updatedAt` | string | ISO 8601 timestamp of last update |
-| `version` | number | Version number for optimistic concurrency control |
+
+| Field                      | Type           | Description                                       |
+| -------------------------- | -------------- | ------------------------------------------------- |
+| `theme`                    | enum           | UI theme: `light`, `dark`, `system`               |
+| `profile.displayName`      | string \| null | User's display name override                      |
+| `profile.useProviderImage` | boolean        | Whether to use OAuth provider's profile image     |
+| `profile.customImageUrl`   | string \| null | Custom profile image URL                          |
+| `updatedAt`                | string         | ISO 8601 timestamp of last update                 |
+| `version`                  | number         | Version number for optimistic concurrency control |
 
 ---
 
 #### PUT /user-settings
+
 **Requires Authentication** - Replace all user settings.
 
 **Request Body:**
+
 ```json
 {
   "theme": "dark",
@@ -866,6 +960,7 @@ Remove email from allowlist.
 ```
 
 **Response:**
+
 ```json
 {
   "theme": "dark",
@@ -884,9 +979,11 @@ Remove email from allowlist.
 ---
 
 #### PATCH /user-settings
+
 **Requires Authentication** - Partially update user settings.
 
 **Request Body:**
+
 ```json
 {
   "theme": "dark"
@@ -894,11 +991,13 @@ Remove email from allowlist.
 ```
 
 **Request Headers (Optional):**
+
 ```
 If-Match: 1
 ```
 
 **Response:**
+
 ```json
 {
   "theme": "dark",
@@ -913,6 +1012,7 @@ If-Match: 1
 ```
 
 **Optimistic Concurrency Control:**
+
 - Include `If-Match: <version>` header to ensure settings haven't been modified by another request
 - Returns **409 Conflict** if version mismatch detected
 - Prevents lost updates in concurrent scenarios
@@ -922,11 +1022,13 @@ If-Match: 1
 ---
 
 #### GET /system-settings
+
 **Requires:** `system_settings:read` permission (Admin only)
 
 Get system-wide settings.
 
 **Response:**
+
 ```json
 {
   "ui": {
@@ -947,24 +1049,27 @@ Get system-wide settings.
 ```
 
 **Fields:**
-| Field | Type | Description |
-|-------|------|-------------|
-| `ui.allowUserThemeOverride` | boolean | Allow users to override system theme |
-| `security.jwtAccessTtlMinutes` | number | JWT access token TTL in minutes |
-| `security.refreshTtlDays` | number | Refresh token TTL in days |
-| `features` | object | Feature flags (extensible) |
-| `updatedAt` | string | ISO 8601 timestamp of last update |
-| `updatedBy` | object | User who last updated settings |
-| `version` | number | Version number for optimistic concurrency control |
+
+| Field                          | Type    | Description                                       |
+| ------------------------------ | ------- | ------------------------------------------------- |
+| `ui.allowUserThemeOverride`    | boolean | Allow users to override system theme              |
+| `security.jwtAccessTtlMinutes` | number  | JWT access token TTL in minutes                   |
+| `security.refreshTtlDays`      | number  | Refresh token TTL in days                         |
+| `features`                     | object  | Feature flags (extensible)                        |
+| `updatedAt`                    | string  | ISO 8601 timestamp of last update                 |
+| `updatedBy`                    | object  | User who last updated settings                    |
+| `version`                      | number  | Version number for optimistic concurrency control |
 
 ---
 
 #### PUT /system-settings
+
 **Requires:** `system_settings:write` permission (Admin only)
 
 Replace all system settings.
 
 **Request Body:**
+
 ```json
 {
   "ui": {
@@ -979,6 +1084,7 @@ Replace all system settings.
 ```
 
 **Response:**
+
 ```json
 {
   "ui": {
@@ -1001,11 +1107,13 @@ Replace all system settings.
 ---
 
 #### PATCH /system-settings
+
 **Requires:** `system_settings:write` permission (Admin only)
 
 Partially update system settings.
 
 **Request Body:**
+
 ```json
 {
   "ui": {
@@ -1015,11 +1123,13 @@ Partially update system settings.
 ```
 
 **Request Headers (Optional):**
+
 ```
 If-Match: 1
 ```
 
 **Response:**
+
 ```json
 {
   "ui": {
@@ -1040,6 +1150,7 @@ If-Match: 1
 ```
 
 **Optimistic Concurrency Control:**
+
 - Include `If-Match: <version>` header to ensure settings haven't been modified by another request
 - Returns **409 Conflict** if version mismatch detected
 - Prevents lost updates when multiple admins modify settings concurrently
@@ -1057,6 +1168,7 @@ The storage system provides file upload and management capabilities with support
 **Requires Authentication** - Initialize a multipart upload for large files. Returns presigned URLs for direct-to-S3 uploads.
 
 **Request Body:**
+
 ```json
 {
   "name": "document.pdf",
@@ -1066,6 +1178,7 @@ The storage system provides file upload and management capabilities with support
 ```
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -1090,6 +1203,7 @@ The storage system provides file upload and management capabilities with support
 **Requires Authentication** - Check progress of an in-progress upload.
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -1110,6 +1224,7 @@ The storage system provides file upload and management capabilities with support
 **Requires Authentication** - Finalize multipart upload after all parts are uploaded.
 
 **Request Body:**
+
 ```json
 {
   "parts": [
@@ -1120,6 +1235,7 @@ The storage system provides file upload and management capabilities with support
 ```
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -1151,10 +1267,12 @@ The storage system provides file upload and management capabilities with support
 **Requires Authentication** - Direct upload for small files (< 100MB) using multipart/form-data.
 
 **Request:**
+
 - Content-Type: `multipart/form-data`
 - Body: File attached as form data with key `file`
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -1176,15 +1294,17 @@ The storage system provides file upload and management capabilities with support
 **Requires Authentication** - List storage objects with pagination and filtering.
 
 **Query Parameters:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | number | 1 | Page number |
-| `pageSize` | number | 20 | Items per page (max 100) |
-| `status` | enum | - | Filter by status: `pending`, `uploading`, `processing`, `ready`, `failed` |
-| `sortBy` | enum | `createdAt` | Sort field: `createdAt`, `name`, `size` |
-| `sortOrder` | enum | `desc` | Sort order: `asc`, `desc` |
+
+| Parameter   | Type   | Default     | Description                                                               |
+| ----------- | ------ | ----------- | ------------------------------------------------------------------------- |
+| `page`      | number | 1           | Page number                                                               |
+| `pageSize`  | number | 20          | Items per page (max 100)                                                  |
+| `status`    | enum   | -           | Filter by status: `pending`, `uploading`, `processing`, `ready`, `failed` |
+| `sortBy`    | enum   | `createdAt` | Sort field: `createdAt`, `name`, `size`                                   |
+| `sortOrder` | enum   | `desc`      | Sort order: `asc`, `desc`                                                 |
 
 **Response:**
+
 ```json
 {
   "data": [
@@ -1215,6 +1335,7 @@ The storage system provides file upload and management capabilities with support
 **Requires Authentication** - Get storage object metadata.
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -1241,11 +1362,13 @@ The storage system provides file upload and management capabilities with support
 **Requires Authentication** - Get a signed download URL for the object.
 
 **Query Parameters:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `expiresIn` | number | 3600 | URL expiration in seconds |
+
+| Parameter   | Type   | Default | Description               |
+| ----------- | ------ | ------- | ------------------------- |
+| `expiresIn` | number | 3600    | URL expiration in seconds |
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -1266,6 +1389,7 @@ The storage system provides file upload and management capabilities with support
 **Response:** HTTP 204 No Content
 
 **Error Cases:**
+
 - 404 Not Found - Object not found
 - 403 Forbidden - User does not own object (non-admin)
 
@@ -1278,6 +1402,7 @@ The storage system provides file upload and management capabilities with support
 **Requires Authentication** - Update custom metadata for an object.
 
 **Request Body:**
+
 ```json
 {
   "metadata": {
@@ -1288,6 +1413,7 @@ The storage system provides file upload and management capabilities with support
 ```
 
 **Response:**
+
 ```json
 {
   "data": {
@@ -1315,22 +1441,25 @@ allowed to act, and that week has to end one repository at a time — a single
 `enabled` flag would leave no way to do that except globally.
 
 #### GET /repositories
+
 List registered repositories. Paginated.
 
 **Query parameters:**
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `page` | number | `1` | 1-based page number |
-| `pageSize` | number | `25` | Max 100 |
-| `observeEnabled` | boolean | — | Filter to what the reconciler reads |
-| `dispatchEnabled` | boolean | — | Filter to what may be dispatched |
-| `projectId` | uuid | — | Filter by project |
+| Parameter         | Type    | Default | Description                         |
+| ----------------- | ------- | ------- | ----------------------------------- |
+| `page`            | number  | `1`     | 1-based page number                 |
+| `pageSize`        | number  | `25`    | Max 100                             |
+| `observeEnabled`  | boolean | —       | Filter to what the reconciler reads |
+| `dispatchEnabled` | boolean | —       | Filter to what may be dispatched    |
+| `projectId`       | uuid    | —       | Filter by project                   |
 
 #### GET /repositories/{id}
+
 Get one registered repository.
 
 #### POST /repositories
+
 Register a repository.
 
 **Verifies the repository is reachable** with the configured GitHub credential
@@ -1339,6 +1468,7 @@ reconciler tick into a 404. The default branch is read from GitHub rather than
 assumed, because a work order pins its base commit on that branch.
 
 **Request:**
+
 ```json
 {
   "owner": "marinoscar",
@@ -1369,13 +1499,14 @@ one flip. `mirrorLabelsEnabled` is gated a second time by the global
 
 **Errors:**
 
-| Status | Cause |
-|---|---|
-| `400` | Not reachable (does not exist, or the token cannot see it), or archived |
-| `409` | Already registered |
-| `503` | The GitHub credential is missing, expired, or lacks access |
+| Status | Cause                                                                   |
+| ------ | ----------------------------------------------------------------------- |
+| `400`  | Not reachable (does not exist, or the token cannot see it), or archived |
+| `409`  | Already registered                                                      |
+| `503`  | The GitHub credential is missing, expired, or lacks access              |
 
 #### PATCH /repositories/{id}
+
 Update the policy. Omitted fields are left unchanged; an explicit `null` clears
 a ceiling.
 
@@ -1386,6 +1517,7 @@ it. Disabling never re-verifies: that has to work precisely when GitHub is
 unreachable.
 
 #### DELETE /repositories/{id}
+
 De-register a repository. Returns `204`.
 
 **Refused with `400` while the repository has work orders.** Deleting would
@@ -1398,7 +1530,7 @@ chain survives. Set `observeEnabled` and `dispatchEnabled` to `false` instead.
 
 The read models the operator dashboard is built on. These answer operational
 questions rather than returning rows for the browser to interpret — the verdict
-about *why* a work order is not running is the control plane's, and a UI that
+about _why_ a work order is not running is the control plane's, and a UI that
 recomputed it would be a second implementation of dispatch policy, out of date
 by one poll interval and wrong the moment the rules change.
 
@@ -1406,9 +1538,9 @@ by one poll interval and wrong the moment the rules change.
 
 Queued and held work orders, in dispatch order. Requires `workorders:read`.
 
-| Query | Type | Default | Notes |
-|---|---|---|---|
-| `limit` | number | `25` | 1–100. |
+| Query   | Type   | Default | Notes  |
+| ------- | ------ | ------- | ------ |
+| `limit` | number | `25`    | 1–100. |
 
 **Position 1 is what the next reconciler tick will pick up.** The order is the
 same one the dispatch pass drains in (`queuedAt` ascending), which is what makes
@@ -1422,12 +1554,12 @@ high while the factory is busy working through it.
 
 `state` is the answer to "why is this not running yet":
 
-| State | Meaning | Clears when |
-|---|---|---|
-| `ready` | A runner could take it right now | The next tick dispatches it |
-| `waiting` | No capable runner, or the rows ahead take every free slot | On its own |
-| `held` | A `factory:hold` label, or a quarantine | **A human acts** |
-| `dispatching` | In the vocabulary, never returned — see below | — |
+| State         | Meaning                                                   | Clears when                 |
+| ------------- | --------------------------------------------------------- | --------------------------- |
+| `ready`       | A runner could take it right now                          | The next tick dispatches it |
+| `waiting`     | No capable runner, or the rows ahead take every free slot | On its own                  |
+| `held`        | A `factory:hold` label, or a quarantine                   | **A human acts**            |
+| `dispatching` | In the vocabulary, never returned — see below             | —                           |
 
 `held` is kept apart from `waiting` because they call for opposite responses:
 waiting is a scheduling outcome that resolves itself, held is a policy outcome
@@ -1480,11 +1612,11 @@ authorization stakes and are tracked separately (#116).
 
 Runs, newest first. Requires `runs:read`.
 
-| Query | Type | Default | Notes |
-|---|---|---|---|
-| `page` / `pageSize` | number | `1` / `25` | `pageSize` max 100. |
-| `needsAttention` | boolean | — | See below. |
-| `status` | enum | — | `running`, `succeeded`, `stalled`, `blocked`, `failed`, `quarantined`. |
+| Query               | Type    | Default    | Notes                                                                  |
+| ------------------- | ------- | ---------- | ---------------------------------------------------------------------- |
+| `page` / `pageSize` | number  | `1` / `25` | `pageSize` max 100.                                                    |
+| `needsAttention`    | boolean | —          | See below.                                                             |
+| `status`            | enum    | —          | `running`, `succeeded`, `stalled`, `blocked`, `failed`, `quarantined`. |
 
 **`needsAttention` means "has an escalation nobody has acknowledged or
 resolved"** — not a status list. The obvious `status IN (stalled, failed,
@@ -1518,10 +1650,10 @@ One run. Requires `runs:read`. `404` if it does not exist.
 VISION §9 gives three failure modes three different responses, and the
 operator's next move is decided by which is populated:
 
-| Field set | Meaning | What to do |
-|---|---|---|
-| `attentionReason` | A human has to act | Kill, re-plan, review a quarantine |
-| `resumesAt` | The system will handle it | Nothing — acting is wasted effort |
+| Field set         | Meaning                   | What to do                         |
+| ----------------- | ------------------------- | ---------------------------------- |
+| `attentionReason` | A human has to act        | Kill, re-plan, review a quarantine |
+| `resumesAt`       | The system will handle it | Nothing — acting is wasted effort  |
 
 A single "message" field would destroy exactly that distinction.
 
@@ -1532,11 +1664,11 @@ claim as a run that was free.
 
 Every work order, newest first. Requires `workorders:read`.
 
-| Query | Type | Default | Notes |
-|---|---|---|---|
-| `page` / `pageSize` | number | `1` / `25` | `pageSize` max 100. |
-| `status` | enum | — | `pending`, `queued`, `held`, `dispatched`, `succeeded`, `failed`, `quarantined`, `superseded`, `cancelled`. |
-| `repository` | string | — | `owner/name`. |
+| Query               | Type   | Default    | Notes                                                                                                       |
+| ------------------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------------- |
+| `page` / `pageSize` | number | `1` / `25` | `pageSize` max 100.                                                                                         |
+| `status`            | enum   | —          | `pending`, `queued`, `held`, `dispatched`, `succeeded`, `failed`, `quarantined`, `superseded`, `cancelled`. |
+| `repository`        | string | —          | `owner/name`.                                                                                               |
 
 Unlike `/queue` — which lists only what is waiting, in dispatch order — this is
 **history**: every state a work order can reach. `runCount` is how many runs have
@@ -1556,8 +1688,8 @@ never seen would be a lookup key chosen for the database's convenience.
 **`document` is rebuilt from the row and passed through the same serializer**
 that produced the bytes committed to the factory branch and posted to the issue
 (#63, #154). It is not a second rendering of the same columns. That distinction
-is the whole point: #63's premise is that *"the agent did something I did not ask
-for"* is a checkable claim, and it stops being checkable the moment the cockpit
+is the whole point: #63's premise is that _"the agent did something I did not ask
+for"_ is a checkable claim, and it stops being checkable the moment the cockpit
 shows a lookalike. Comparing this against the authorization record on the issue
 is a real check.
 
@@ -1593,7 +1725,10 @@ about where dispatch commented.
       "repository": { "owner": "marinoscar", "name": "opifex" },
       "baseCommit": "a3f91c2000000000000000000000000000000000",
       "attempt": 1,
-      "issue": { "number": 312, "url": "https://github.com/marinoscar/opifex/issues/312" },
+      "issue": {
+        "number": 312,
+        "url": "https://github.com/marinoscar/opifex/issues/312"
+      },
       "decisionRefs": ["ADR-0042"],
       "taskSpec": "…",
       "acceptanceCriteria": ["…"],
@@ -1621,15 +1756,15 @@ about where dispatch commented.
 
 The normalized event floor across every run, newest first. Requires `runs:read`.
 
-| Query | Type | Default | Notes |
-|---|---|---|---|
-| `page` / `pageSize` | number | `1` / `20` | `pageSize` max 200. |
-| `type` | enum | — | `run.started`, `run.heartbeat`, `run.progress`, `run.blocked`, `run.completed`, `run.failed`. |
-| `source` | enum | — | `runner`, `git`, `control-plane`. |
+| Query               | Type   | Default    | Notes                                                                                         |
+| ------------------- | ------ | ---------- | --------------------------------------------------------------------------------------------- |
+| `page` / `pageSize` | number | `1` / `20` | `pageSize` max 200.                                                                           |
+| `type`              | enum   | —          | `run.started`, `run.heartbeat`, `run.progress`, `run.blocked`, `run.completed`, `run.failed`. |
+| `source`            | enum   | —          | `runner`, `git`, `control-plane`.                                                             |
 
 **Not the same as `/runs/{id}/events`**, which is one run's timeline. This spans
 runs, so every row names its `runId` and the work order `identity` it belongs
-to — a feed of *"edited a file"* with no subject is a list of sentences nobody
+to — a feed of _"edited a file"_ with no subject is a list of sentences nobody
 can act on.
 
 The default page is **20**, matching what the dashboard panel asks for.
@@ -1677,9 +1812,9 @@ API's own responses — and a caller should never have to know that.
 
 Spend over a window, with the unmeasured part counted. Requires `runs:read`.
 
-| Query | Type | Default | Notes |
-|---|---|---|---|
-| `days` | number | `30` | Window length, 1–90. |
+| Query  | Type   | Default | Notes                |
+| ------ | ------ | ------- | -------------------- |
+| `days` | number | `30`    | Window length, 1–90. |
 
 **Read `totalUsd` and `runsWithoutCost` together.** `Run.costUsd` is nullable
 because a runner may not report cost at all — `reportsCost` is in the capability
@@ -1703,8 +1838,8 @@ screen showing that has lost the reader over an artefact of the language.
 
 **`quota` is always `null`, and present rather than omitted.** VISION §11's
 shared quota is the agent subscription, and nothing records consumption against
-a window capacity — `RunEvent.blockedUntil` holds a reset *time*, never a burn
-rate. The GitHub rate limit *is* measured and could be divided by its window;
+a window capacity — `RunEvent.blockedUntil` holds a reset _time_, never a burn
+rate. The GitHub rate limit _is_ measured and could be divided by its window;
 that would answer a different question under this one's label. The field is
 named so a cost-and-quota screen (#86) can say "unavailable" rather than looking
 like quota was forgotten. Same absence that makes `quotaBurn` null in
@@ -1714,13 +1849,26 @@ like quota was forgotten. Same absence that makes `quotaBurn` null in
 {
   "data": {
     "generatedAt": "2026-08-23T05:00:00.000Z",
-    "window": { "from": "2026-07-24T05:00:00.000Z", "to": "2026-08-23T05:00:00.000Z" },
+    "window": {
+      "from": "2026-07-24T05:00:00.000Z",
+      "to": "2026-08-23T05:00:00.000Z"
+    },
     "totalUsd": 5.3,
     "runs": 5,
     "runsWithoutCost": 2,
     "byRepository": [
-      { "repository": "probe-owner/alpha", "totalUsd": 5.3, "runs": 3, "runsWithoutCost": 0 },
-      { "repository": "probe-owner/beta", "totalUsd": null, "runs": 2, "runsWithoutCost": 2 }
+      {
+        "repository": "probe-owner/alpha",
+        "totalUsd": 5.3,
+        "runs": 3,
+        "runsWithoutCost": 0
+      },
+      {
+        "repository": "probe-owner/beta",
+        "totalUsd": null,
+        "runs": 2,
+        "runsWithoutCost": 2
+      }
     ],
     "byDay": [
       { "date": "2026-08-18", "totalUsd": 5 },
@@ -1742,9 +1890,9 @@ would have been a second way to read the same rows, differing only in shape.
 
 The six VISION §10 success metrics, in one request. Requires `runs:read`.
 
-| Query | Type | Default | Notes |
-|---|---|---|---|
-| `days` | number | `7` | Window length, 1–90. |
+| Query  | Type   | Default | Notes                |
+| ------ | ------ | ------- | -------------------- |
+| `days` | number | `7`     | Window length, 1–90. |
 
 **One request for the whole stat row, not six** — six requests to paint one row
 is six chances to render a half-updated screen.
@@ -1757,18 +1905,18 @@ every stall instantly, when what happened is that nothing was measured.
 
 Two of the six are computed today:
 
-| Metric | Today | Why |
-|---|---|---|
-| `detectionLatency` | **computed** | p50 of `Escalation.detectLatencyMs` (#59), in seconds |
-| `attemptsPerWorkOrder` | **computed** | mean runs over work orders that reached `succeeded` |
-| `deadTimePerDay` | `null` | nothing records how long a run *spent* stalled or parked |
-| `firstPassAcceptance` | `null` | merge state is not tracked anywhere |
-| `costPerMergedPr` | `null` | merge state is not tracked anywhere |
-| `quotaBurn` | `null` | consumption against a window capacity is not recorded |
+| Metric                 | Today        | Why                                                      |
+| ---------------------- | ------------ | -------------------------------------------------------- |
+| `detectionLatency`     | **computed** | p50 of `Escalation.detectLatencyMs` (#59), in seconds    |
+| `attemptsPerWorkOrder` | **computed** | mean runs over work orders that reached `succeeded`      |
+| `deadTimePerDay`       | `null`       | nothing records how long a run _spent_ stalled or parked |
+| `firstPassAcceptance`  | `null`       | merge state is not tracked anywhere                      |
+| `costPerMergedPr`      | `null`       | merge state is not tracked anywhere                      |
+| `quotaBurn`            | `null`       | consumption against a window capacity is not recorded    |
 
 Each `null` refuses a specific temptation. Dead time could be approximated from
-currently-stalled runs — that answers *"dead time right now"*, not *"per day
-across the window"*. Quota burn could be computed from the GitHub rate limit, but
+currently-stalled runs — that answers _"dead time right now"_, not _"per day
+across the window"_. Quota burn could be computed from the GitHub rate limit, but
 VISION §11's shared quota is the agent subscription, and labelling one while
 measuring the other is the same substitution in a better disguise.
 
@@ -1782,7 +1930,10 @@ than a flat line implying stability nobody measured.
 {
   "data": {
     "generatedAt": "2026-08-23T04:40:00.000Z",
-    "window": { "from": "2026-08-16T04:40:00.000Z", "to": "2026-08-23T04:40:00.000Z" },
+    "window": {
+      "from": "2026-08-16T04:40:00.000Z",
+      "to": "2026-08-23T04:40:00.000Z"
+    },
     "metrics": {
       "detectionLatency": { "value": 15, "trend": [5, 60] },
       "deadTimePerDay": { "value": null, "trend": [] },
@@ -1802,8 +1953,8 @@ fetched it, so a panel showing a stale row can say how stale.
 
 One run's normalized event timeline, newest first. Requires `runs:read`.
 
-| Query | Type | Default | Notes |
-|---|---|---|---|
+| Query               | Type   | Default    | Notes               |
+| ------------------- | ------ | ---------- | ------------------- |
 | `page` / `pageSize` | number | `1` / `50` | `pageSize` max 200. |
 
 **Its own endpoint rather than an array on the run**, because `RunEvent` is
@@ -1847,65 +1998,131 @@ has not acted. `acknowledged` and `resolved` do not, so a condition that
 recurs after a human dealt with it raises again.
 
 #### GET /escalations
+
 List escalations, newest first. Paginated.
 
 **Query parameters:**
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `page` | number | `1` | 1-based page number |
-| `pageSize` | number | `25` | Max 100 |
-| `status` | string | — | `raised`, `dispatched`, `delivered`, `failed`, `acknowledged`, `resolved` |
-| `unresolvedOnly` | boolean | — | The triage view |
-| `runId` | uuid | — | One run's escalations |
+| Parameter        | Type    | Default | Description                                                               |
+| ---------------- | ------- | ------- | ------------------------------------------------------------------------- |
+| `page`           | number  | `1`     | 1-based page number                                                       |
+| `pageSize`       | number  | `25`    | Max 100                                                                   |
+| `status`         | string  | —       | `raised`, `dispatched`, `delivered`, `failed`, `acknowledged`, `resolved` |
+| `unresolvedOnly` | boolean | —       | The triage view                                                           |
+| `runId`          | uuid    | —       | One run's escalations                                                     |
 
 Each escalation carries its own latency measurement: `progressStoppedAt`,
 `detectionSource`, `detectLatencyMs` and `notifyLatencyMs`.
 
 #### GET /escalations/latency
+
 Detection latency, aggregated. **VISION §10's success metric 1**, whose target
-is *seconds*.
+is _seconds_.
 
 Measured **stop-to-notified**: from a run ceasing to make progress to a human
-being informed. Measuring stop-to-*detected* instead would report success
+being informed. Measuring stop-to-_detected_ instead would report success
 while the operator still finds out four hours later, so the two are separate
 figures and only one of them is the metric.
 
 **Query parameters:**
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `since` | date-time | — | Inclusive lower bound on `raisedAt` |
-| `until` | date-time | — | Inclusive upper bound on `raisedAt` |
-| `repository` | string | — | `owner/name` |
+| Parameter    | Type      | Default | Description                         |
+| ------------ | --------- | ------- | ----------------------------------- |
+| `since`      | date-time | —       | Inclusive lower bound on `raisedAt` |
+| `until`      | date-time | —       | Inclusive upper bound on `raisedAt` |
+| `repository` | string    | —       | `owner/name`                        |
 
 **Response:**
+
 ```json
 {
   "since": "2026-08-15T00:00:00.000Z",
   "until": null,
   "truncated": false,
   "sampleSize": 42,
-  "notified":  { "count": 38, "p50Ms": 6200, "p90Ms": 11400, "p99Ms": 19800, "maxMs": 19800 },
-  "detected":  { "count": 42, "p50Ms": 2100, "p90Ms":  4300, "p99Ms":  9100, "maxMs":  9100 },
+  "notified": {
+    "count": 38,
+    "p50Ms": 6200,
+    "p90Ms": 11400,
+    "p99Ms": 19800,
+    "maxMs": 19800
+  },
+  "detected": {
+    "count": 42,
+    "p50Ms": 2100,
+    "p90Ms": 4300,
+    "p99Ms": 9100,
+    "maxMs": 9100
+  },
   "awaitingNotification": 4,
   "unmeasurable": 0,
   "bySource": {
-    "runner":        { "notified": { "count": 30, "p50Ms": 4100, "p90Ms": 8200, "p99Ms": 9100, "maxMs": 9100 }, "detected": { "count": 32, "p50Ms": 1800, "p90Ms": 3200, "p99Ms": 4000, "maxMs": 4000 }, "awaitingNotification": 2, "unmeasurable": 0 },
-    "git":           { "notified": { "count":  8, "p50Ms": 14500, "p90Ms": 19800, "p99Ms": 19800, "maxMs": 19800 }, "detected": { "count": 10, "p50Ms": 7400, "p90Ms": 9100, "p99Ms": 9100, "maxMs": 9100 }, "awaitingNotification": 2, "unmeasurable": 0 },
-    "control_plane": { "notified": { "count": 0, "p50Ms": null, "p90Ms": null, "p99Ms": null, "maxMs": null }, "detected": { "count": 0, "p50Ms": null, "p90Ms": null, "p99Ms": null, "maxMs": null }, "awaitingNotification": 0, "unmeasurable": 0 }
+    "runner": {
+      "notified": {
+        "count": 30,
+        "p50Ms": 4100,
+        "p90Ms": 8200,
+        "p99Ms": 9100,
+        "maxMs": 9100
+      },
+      "detected": {
+        "count": 32,
+        "p50Ms": 1800,
+        "p90Ms": 3200,
+        "p99Ms": 4000,
+        "maxMs": 4000
+      },
+      "awaitingNotification": 2,
+      "unmeasurable": 0
+    },
+    "git": {
+      "notified": {
+        "count": 8,
+        "p50Ms": 14500,
+        "p90Ms": 19800,
+        "p99Ms": 19800,
+        "maxMs": 19800
+      },
+      "detected": {
+        "count": 10,
+        "p50Ms": 7400,
+        "p90Ms": 9100,
+        "p99Ms": 9100,
+        "maxMs": 9100
+      },
+      "awaitingNotification": 2,
+      "unmeasurable": 0
+    },
+    "control_plane": {
+      "notified": {
+        "count": 0,
+        "p50Ms": null,
+        "p90Ms": null,
+        "p99Ms": null,
+        "maxMs": null
+      },
+      "detected": {
+        "count": 0,
+        "p50Ms": null,
+        "p90Ms": null,
+        "p99Ms": null,
+        "maxMs": null
+      },
+      "awaitingNotification": 0,
+      "unmeasurable": 0
+    }
   }
 }
 ```
 
 Four figures, because three of them can hide the fourth:
 
-| Field | Meaning |
-|---|---|
-| `notified` | Stop to a human being informed. **The metric.** |
-| `detected` | Stop to Opifex noticing. Reported alongside so the gap shows — a fast detector behind a broken transport looks perfect on this one alone. |
+| Field                  | Meaning                                                                                                                                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notified`             | Stop to a human being informed. **The metric.**                                                                                                                                    |
+| `detected`             | Stop to Opifex noticing. Reported alongside so the gap shows — a fast detector behind a broken transport looks perfect on this one alone.                                          |
 | `awaitingNotification` | Measurable, raised, never delivered. Their real latency is unbounded; omitting them silently would make a totally broken transport render as excellent latency over a tiny sample. |
-| `unmeasurable` | No stop time at all, such as a `system` escalation. Counted rather than measured from `raisedAt`, which would add a zero-latency entry per unmeasurable event. |
+| `unmeasurable`         | No stop time at all, such as a `system` escalation. Counted rather than measured from `raisedAt`, which would add a zero-latency entry per unmeasurable event.                     |
 
 Percentiles are **nearest-rank**, so every figure reported is one that
 actually happened and the operator can go and find the run behind it. An empty
@@ -1928,6 +2145,7 @@ depend on the OTEL stack running — see
 [ADR 0003](adr/0003-observability-backend.md).
 
 #### POST /escalations/{id}/acknowledge
+
 Record that a human has seen it — the one fact the lifecycle exists to
 capture. Acknowledging twice is not an error; two people reaching for the same
 page at once is normal and the first acknowledgement stands.
@@ -1938,9 +2156,9 @@ this one once.
 
 **Errors:**
 
-| Status | Cause |
-|---|---|
-| `404` | No such escalation |
+| Status | Cause              |
+| ------ | ------------------ |
+| `404`  | No such escalation |
 
 ---
 
@@ -1966,19 +2184,21 @@ settings.
 
 This is why the escalation lifecycle has three statuses and not two:
 
-| Status | Means |
-|---|---|
-| `dispatched` | A push service returned 201. It has taken custody. Nothing more is known. |
-| `delivered` | A device posted a receipt back. Somebody's phone rang. |
-| `failed` | No transport would take it, **or** the receipt never arrived within `NOTIFY_RECEIPT_TIMEOUT_MS`. |
+| Status       | Means                                                                                            |
+| ------------ | ------------------------------------------------------------------------------------------------ |
+| `dispatched` | A push service returned 201. It has taken custody. Nothing more is known.                        |
+| `delivered`  | A device posted a receipt back. Somebody's phone rang.                                           |
+| `failed`     | No transport would take it, **or** the receipt never arrived within `NOTIFY_RECEIPT_TIMEOUT_MS`. |
 
 Collapsing the first two would put a green tick next to a notification nobody
 saw — the exact failure #58 describes.
 
 #### GET /notifications/config
+
 What the browser needs in order to subscribe.
 
 **Response:**
+
 ```json
 {
   "vapidPublicKey": "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkFZwuiKmpBpMWvcxYVbGGmkTBBUuRQGSlxAOKmR1IQ",
@@ -1988,20 +2208,23 @@ What the browser needs in order to subscribe.
 ```
 
 `pushConfigured` is false when the server has no VAPID keys. The UI uses it to
-say *"notifications are not set up on this server"* rather than offering a
+say _"notifications are not set up on this server"_ rather than offering a
 button that silently does nothing — which would be the same failure as no
 notification at all, dressed as a feature.
 
 #### GET /notifications/subscriptions
+
 The current user's registered devices. **Never returns `p256dh` or `auth`** —
 they are the device's payload-encryption secrets, the browser already has
 them, and handing them back would turn a listing into a way to push arbitrary
 content to somebody's phone.
 
 #### POST /notifications/subscriptions
+
 Register a device.
 
 **Request:**
+
 ```json
 {
   "endpoint": "https://fcm.googleapis.com/fcm/send/...",
@@ -2011,17 +2234,19 @@ Register a device.
 }
 ```
 
-**Idempotent on `endpoint`**, which *is* the device's identity in the Web Push
+**Idempotent on `endpoint`**, which _is_ the device's identity in the Web Push
 protocol: a browser re-subscribing with the same key material gets the same
 endpoint back, and a second row for it would push twice to one phone. The
 upsert also clears the failure count — a browser that just handed over a fresh
 subscription is, by construction, working again.
 
 #### DELETE /notifications/subscriptions/{id}
+
 Stop notifying a device. Returns `204`. Scoped to the caller, so one user
 cannot remove another's device even by guessing an id.
 
 #### POST /notifications/receipts
+
 **Public.** The device confirming it actually displayed a notification.
 
 ```json
@@ -2044,8 +2269,8 @@ This is what closes the stop-to-notified measurement in
 
 #### What arrives on the phone
 
-VISION §8: *"one tap from a phone, with enough context to decide — what, why,
-blast radius, and what happens if ignored."* Those are four separate fields in
+VISION §8: _"one tap from a phone, with enough context to decide — what, why,
+blast radius, and what happens if ignored."_ Those are four separate fields in
 the payload, not prose, because prose is what gets trimmed when somebody writes
 a notification in a hurry and the part that survives is the part that says
 least.
@@ -2053,8 +2278,8 @@ least.
 Consequences are written per escalation kind. A stalled run is burning nothing
 and simply not finishing; a looping one is spending money right now. One
 generic sentence would have to be vague enough to cover both, and a
-notification that cannot distinguish *"this can wait until morning"* from
-*"this is costing money"* fails the only test that matters at 2am.
+notification that cannot distinguish _"this can wait until morning"_ from
+_"this is costing money"_ fails the only test that matters at 2am.
 
 #### When delivery fails
 
@@ -2077,9 +2302,11 @@ three different fixes.
 **Public endpoints** - Used for Kubernetes liveness/readiness probes.
 
 #### GET /health
+
 Full health check - includes database connectivity test. Equivalent to GET /health/ready.
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -2091,14 +2318,17 @@ Full health check - includes database connectivity test. Equivalent to GET /heal
 ```
 
 **Error Cases:**
+
 - 503 Service Unavailable - Database connection failed
 
 ---
 
 #### GET /health/live
+
 Liveness check - always returns 200 if service is running.
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -2109,9 +2339,11 @@ Liveness check - always returns 200 if service is running.
 ---
 
 #### GET /health/ready
+
 Readiness check - includes database connectivity test.
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -2123,40 +2355,41 @@ Readiness check - includes database connectivity test.
 ```
 
 **Error Cases:**
+
 - 503 Service Unavailable - Database connection failed
 
 ---
 
 ## HTTP Status Codes
 
-| Code | Description |
-|------|-------------|
-| 200 | OK - Request successful |
-| 201 | Created - Resource created successfully |
-| 204 | No Content - Request successful, no response body |
-| 400 | Bad Request - Invalid request format or validation error |
-| 401 | Unauthorized - Missing or invalid authentication token |
-| 403 | Forbidden - Insufficient permissions or user disabled |
-| 404 | Not Found - Resource not found |
-| 409 | Conflict - Resource already exists or version mismatch (optimistic concurrency) |
-| 500 | Internal Server Error - Server error occurred |
-| 503 | Service Unavailable - Service temporarily unavailable |
+| Code | Description                                                                     |
+| ---- | ------------------------------------------------------------------------------- |
+| 200  | OK - Request successful                                                         |
+| 201  | Created - Resource created successfully                                         |
+| 204  | No Content - Request successful, no response body                               |
+| 400  | Bad Request - Invalid request format or validation error                        |
+| 401  | Unauthorized - Missing or invalid authentication token                          |
+| 403  | Forbidden - Insufficient permissions or user disabled                           |
+| 404  | Not Found - Resource not found                                                  |
+| 409  | Conflict - Resource already exists or version mismatch (optimistic concurrency) |
+| 500  | Internal Server Error - Server error occurred                                   |
+| 503  | Service Unavailable - Service temporarily unavailable                           |
 
 ---
 
 ## Error Codes
 
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `AUTH_REQUIRED` | 401 | No valid authentication token provided |
-| `INVALID_TOKEN` | 401 | JWT token is invalid or expired |
-| `FORBIDDEN` | 403 | User does not have required permissions |
-| `USER_DISABLED` | 403 | User account is disabled |
-| `NOT_FOUND` | 404 | Requested resource not found |
-| `VALIDATION_ERROR` | 400 | Request validation failed |
-| `CONFLICT` | 409 | Resource already exists or version mismatch |
-| `NOT_AUTHORIZED` | 403 | Email not in allowlist |
-| `VERSION_MISMATCH` | 409 | Optimistic concurrency conflict (If-Match header) |
+| Code               | HTTP Status | Description                                       |
+| ------------------ | ----------- | ------------------------------------------------- |
+| `AUTH_REQUIRED`    | 401         | No valid authentication token provided            |
+| `INVALID_TOKEN`    | 401         | JWT token is invalid or expired                   |
+| `FORBIDDEN`        | 403         | User does not have required permissions           |
+| `USER_DISABLED`    | 403         | User account is disabled                          |
+| `NOT_FOUND`        | 404         | Requested resource not found                      |
+| `VALIDATION_ERROR` | 400         | Request validation failed                         |
+| `CONFLICT`         | 409         | Resource already exists or version mismatch       |
+| `NOT_AUTHORIZED`   | 403         | Email not in allowlist                            |
+| `VERSION_MISMATCH` | 409         | Optimistic concurrency conflict (If-Match header) |
 
 ---
 
@@ -2166,12 +2399,12 @@ Readiness check - includes database connectivity test.
 
 **Recommended limits:**
 
-| Endpoint Pattern | Recommended Limit | Window |
-|------------------|-------------------|--------|
-| `/api/auth/*` | 10 requests | 1 minute |
-| `/api/allowlist` (POST) | 30 requests | 1 minute |
-| `/api/system-settings` (PUT/PATCH) | 30 requests | 1 minute |
-| All other endpoints | 100 requests | 1 minute |
+| Endpoint Pattern                   | Recommended Limit | Window   |
+| ---------------------------------- | ----------------- | -------- |
+| `/api/auth/*`                      | 10 requests       | 1 minute |
+| `/api/allowlist` (POST)            | 30 requests       | 1 minute |
+| `/api/system-settings` (PUT/PATCH) | 30 requests       | 1 minute |
+| All other endpoints                | 100 requests      | 1 minute |
 
 ---
 
@@ -2183,6 +2416,7 @@ Interactive API documentation with request/response examples is available at:
 
 This serves a [Scalar](https://scalar.com) reference page (not Swagger UI) generated from the
 OpenAPI 3.1 document at `/api/openapi.json`. It allows you to:
+
 - Explore all endpoints, grouped into sections via `x-tagGroups`
 - View request/response schemas, including the generated **Requires:** RBAC line per operation
 - Test API calls directly from the browser

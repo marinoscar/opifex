@@ -56,12 +56,16 @@ describe('rehydrateWorkOrder', () => {
       ...input,
     });
 
-    if (!result.ok) throw new Error(`fixture did not generate: ${result.message}`);
+    if (!result.ok)
+      throw new Error(`fixture did not generate: ${result.message}`);
     return result.workOrder;
   }
 
   /** What the row looks like after the generator's output is persisted. */
-  function stored(from: GeneratedWorkOrder, overrides: Partial<StoredWorkOrder> = {}): StoredWorkOrder {
+  function stored(
+    from: GeneratedWorkOrder,
+    overrides: Partial<StoredWorkOrder> = {},
+  ): StoredWorkOrder {
     return {
       identity: from.identity,
       branch: from.branch,
@@ -100,13 +104,17 @@ describe('rehydrateWorkOrder', () => {
         { budgetCeilingUsd: null, wallClockTimeoutMinutes: null },
       );
 
-      const rebuilt = rehydrateWorkOrder(stored(original, { issueTitle: null }));
+      const rebuilt = rehydrateWorkOrder(
+        stored(original, { issueTitle: null }),
+      );
       expect(serializeWorkOrder(rebuilt)).toBe(serializeWorkOrder(original));
     });
 
     it('keeps the identity, which is the idempotency key', () => {
       const original = generated();
-      expect(rehydrateWorkOrder(stored(original)).identity).toBe(original.identity);
+      expect(rehydrateWorkOrder(stored(original)).identity).toBe(
+        original.identity,
+      );
     });
 
     it('rebuilds the coordinates rather than storing them', () => {
@@ -119,7 +127,9 @@ describe('rehydrateWorkOrder', () => {
       // repository — so the row rebuilt into a DIFFERENT identity while every
       // other field looked right.
       const original = generated();
-      expect(rehydrateWorkOrder(stored(original)).coordinates).toEqual(original.coordinates);
+      expect(rehydrateWorkOrder(stored(original)).coordinates).toEqual(
+        original.coordinates,
+      );
     });
 
     it('refuses a row whose identity its own coordinates do not derive', () => {
@@ -129,7 +139,9 @@ describe('rehydrateWorkOrder', () => {
       const original = generated();
 
       expect(() =>
-        rehydrateWorkOrder(stored(original, { identity: 'wo_something-else_312_a3f91c2_a1' })),
+        rehydrateWorkOrder(
+          stored(original, { identity: 'wo_something-else_312_a3f91c2_a1' }),
+        ),
       ).toThrow(/disagrees with itself/);
     });
   });
@@ -139,7 +151,9 @@ describe('rehydrateWorkOrder', () => {
       // Prisma hands back a Decimal, not a number. Left unconverted it would
       // serialize as an object and the document would stop matching.
       const original = generated({}, { budgetCeilingUsd: 5 });
-      const asDecimal = stored(original, { budgetCeilingUsd: { toNumber: () => 5 } });
+      const asDecimal = stored(original, {
+        budgetCeilingUsd: { toNumber: () => 5 },
+      });
 
       expect(serializeWorkOrder(rehydrateWorkOrder(asDecimal))).toBe(
         serializeWorkOrder(original),
@@ -162,7 +176,9 @@ describe('rehydrateWorkOrder', () => {
       const original = generated();
 
       expect(() =>
-        rehydrateWorkOrder(stored(original, { branch: 'factory/999-deadbee-a1' })),
+        rehydrateWorkOrder(
+          stored(original, { branch: 'factory/999-deadbee-a1' }),
+        ),
       ).toThrow(RehydrationError);
     });
 
@@ -171,9 +187,9 @@ describe('rehydrateWorkOrder', () => {
       // failing at serialization names a schema keyword and a JSON path.
       const original = generated();
 
-      expect(() => rehydrateWorkOrder(stored(original, { issueUrl: '' }))).toThrow(
-        /no issue URL/,
-      );
+      expect(() =>
+        rehydrateWorkOrder(stored(original, { issueUrl: '' })),
+      ).toThrow(/no issue URL/);
     });
 
     it('refuses a need this build does not understand, rather than dropping it', () => {
@@ -184,7 +200,9 @@ describe('rehydrateWorkOrder', () => {
       const original = generated();
 
       expect(() =>
-        rehydrateWorkOrder(stored(original, { needs: ['full-streaming', 'gpu-attached'] })),
+        rehydrateWorkOrder(
+          stored(original, { needs: ['full-streaming', 'gpu-attached'] }),
+        ),
       ).toThrow(/gpu-attached/);
     });
 
@@ -196,7 +214,9 @@ describe('rehydrateWorkOrder', () => {
         { issueUrl: '' },
         { needs: ['nonsense'] },
       ]) {
-        expect(() => rehydrateWorkOrder(stored(original, bad))).toThrow(original.identity);
+        expect(() => rehydrateWorkOrder(stored(original, bad))).toThrow(
+          original.identity,
+        );
       }
     });
   });
@@ -207,7 +227,12 @@ describe('rehydrateWorkOrder', () => {
       // union; this list is what turns them back into it. A need added to
       // RunnerNeed and not here would be refused at rehydration.
       expect([...KNOWN_NEEDS].sort()).toEqual(
-        ['cost-reporting', 'full-streaming', 'own-infrastructure', 'structured-rate-limits'].sort(),
+        [
+          'cost-reporting',
+          'full-streaming',
+          'own-infrastructure',
+          'structured-rate-limits',
+        ].sort(),
       );
     });
 

@@ -134,10 +134,14 @@ export class S3StorageProvider implements StorageProvider {
       const result = await this.s3Client.send(command);
 
       if (!result.UploadId) {
-        throw new Error('Failed to initiate multipart upload - no UploadId returned');
+        throw new Error(
+          'Failed to initiate multipart upload - no UploadId returned',
+        );
       }
 
-      this.logger.log(`Multipart upload initiated for key: ${key}, UploadId: ${result.UploadId}`);
+      this.logger.log(
+        `Multipart upload initiated for key: ${key}, UploadId: ${result.UploadId}`,
+      );
 
       return {
         uploadId: result.UploadId,
@@ -371,7 +375,13 @@ export class S3StorageProvider implements StorageProvider {
 
       return result.Metadata || {};
     } catch (error) {
-      if (error instanceof NotFound || (error && typeof error === 'object' && 'name' in error && error.name === 'NotFound')) {
+      if (
+        error instanceof NotFound ||
+        (error &&
+          typeof error === 'object' &&
+          'name' in error &&
+          error.name === 'NotFound')
+      ) {
         return null;
       }
       const message = error instanceof Error ? error.message : String(error);
@@ -430,7 +440,13 @@ export class S3StorageProvider implements StorageProvider {
       await this.s3Client.send(command);
       return true;
     } catch (error) {
-      if (error instanceof NotFound || (error && typeof error === 'object' && 'name' in error && error.name === 'NotFound')) {
+      if (
+        error instanceof NotFound ||
+        (error &&
+          typeof error === 'object' &&
+          'name' in error &&
+          error.name === 'NotFound')
+      ) {
         return false;
       }
       const message = error instanceof Error ? error.message : String(error);

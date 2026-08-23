@@ -3,19 +3,24 @@ import { ConfigService } from '@nestjs/config';
 import { GitHubHttpService } from '../github-http.service';
 import { GitHubNotFoundError } from '../github.errors';
 import { GitHubWriteService } from './github-write.service';
-import { ApprovalRequirement, Reversibility, WriteAction } from './reversibility';
+import {
+  ApprovalRequirement,
+  Reversibility,
+  WriteAction,
+} from './reversibility';
 
 const REPO = { owner: 'acme', name: 'app' };
 
 function httpMock() {
-  return { request: jest.fn().mockResolvedValue({ data: {} }) } as unknown as jest.Mocked<
-    Pick<GitHubHttpService, 'request'>
-  >;
+  return {
+    request: jest.fn().mockResolvedValue({ data: {} }),
+  } as unknown as jest.Mocked<Pick<GitHubHttpService, 'request'>>;
 }
 
 function build(http: ReturnType<typeof httpMock>, writesEnabled: boolean) {
   const config = {
-    get: (key: string) => (key === 'github.writesEnabled' ? writesEnabled : undefined),
+    get: (key: string) =>
+      key === 'github.writesEnabled' ? writesEnabled : undefined,
   } as unknown as ConfigService;
   return new GitHubWriteService(http as unknown as GitHubHttpService, config);
 }
@@ -31,7 +36,10 @@ describe('GitHubWriteService', () => {
     it('defaults OFF when the config says nothing', () => {
       // VISION §12's observation week is the default posture, not an opt-in.
       const config = { get: () => undefined } as unknown as ConfigService;
-      const service = new GitHubWriteService(http as unknown as GitHubHttpService, config);
+      const service = new GitHubWriteService(
+        http as unknown as GitHubHttpService,
+        config,
+      );
 
       expect(service.enabled).toBe(false);
     });
@@ -46,7 +54,11 @@ describe('GitHubWriteService', () => {
       // With writes off the calling path must be the REAL one, exercised for a
       // week — not a branch that has never run. A suppressed write therefore
       // produces a record as complete as a performed one.
-      const result = await build(http, false).addLabel(REPO, 312, 'factory/dispatched');
+      const result = await build(http, false).addLabel(
+        REPO,
+        312,
+        'factory/dispatched',
+      );
 
       expect(result).toMatchObject({
         action: WriteAction.AddLabel,
@@ -60,31 +72,72 @@ describe('GitHubWriteService', () => {
     it('suppresses pre-authorized record-writing too', async () => {
       // The carve-out is about APPROVAL, not about the kill switch. During the
       // observation week nothing reaches GitHub, mandated or not.
-      const result = await build(http, false).postRunSummary(REPO, 9, 'summary');
+      const result = await build(http, false).postRunSummary(
+        REPO,
+        9,
+        'summary',
+      );
 
       expect(result.performed).toBe(false);
       expect(http.request).not.toHaveBeenCalled();
     });
 
     it('performs the write when enabled', async () => {
-      const result = await build(http, true).addLabel(REPO, 312, 'factory/dispatched');
+      const result = await build(http, true).addLabel(
+        REPO,
+        312,
+        'factory/dispatched',
+      );
 
       expect(result.performed).toBe(true);
       expect(http.request).toHaveBeenCalledWith(
         '/repos/acme/app/issues/312/labels',
-        expect.objectContaining({ method: 'POST', body: { labels: ['factory/dispatched'] } }),
+        expect.objectContaining({
+          method: 'POST',
+          body: { labels: ['factory/dispatched'] },
+        }),
       );
     });
   });
 
   describe('every result carries its classification', () => {
     it.each([
-      ['addLabel', () => build(http, true).addLabel(REPO, 1, 'x'), Reversibility.Reversible, ApprovalRequirement.Gated],
-      ['removeLabel', () => build(http, true).removeLabel(REPO, 1, 'x'), Reversibility.Reversible, ApprovalRequirement.Gated],
-      ['postGeneralComment', () => build(http, true).postGeneralComment(REPO, 1, 'x'), Reversibility.Irreversible, ApprovalRequirement.Gated],
-      ['postRunSummary', () => build(http, true).postRunSummary(REPO, 1, 'x'), Reversibility.Irreversible, ApprovalRequirement.PreAuthorizedRecord],
-      ['postAuthorizationRecord', () => build(http, true).postAuthorizationRecord(REPO, 1, {}), Reversibility.Irreversible, ApprovalRequirement.PreAuthorizedRecord],
-      ['postEscalationNote', () => build(http, true).postEscalationNote(REPO, 1, 'x'), Reversibility.Irreversible, ApprovalRequirement.PreAuthorizedRecord],
+      [
+        'addLabel',
+        () => build(http, true).addLabel(REPO, 1, 'x'),
+        Reversibility.Reversible,
+        ApprovalRequirement.Gated,
+      ],
+      [
+        'removeLabel',
+        () => build(http, true).removeLabel(REPO, 1, 'x'),
+        Reversibility.Reversible,
+        ApprovalRequirement.Gated,
+      ],
+      [
+        'postGeneralComment',
+        () => build(http, true).postGeneralComment(REPO, 1, 'x'),
+        Reversibility.Irreversible,
+        ApprovalRequirement.Gated,
+      ],
+      [
+        'postRunSummary',
+        () => build(http, true).postRunSummary(REPO, 1, 'x'),
+        Reversibility.Irreversible,
+        ApprovalRequirement.PreAuthorizedRecord,
+      ],
+      [
+        'postAuthorizationRecord',
+        () => build(http, true).postAuthorizationRecord(REPO, 1, {}),
+        Reversibility.Irreversible,
+        ApprovalRequirement.PreAuthorizedRecord,
+      ],
+      [
+        'postEscalationNote',
+        () => build(http, true).postEscalationNote(REPO, 1, 'x'),
+        Reversibility.Irreversible,
+        ApprovalRequirement.PreAuthorizedRecord,
+      ],
     ])('%s', async (_name, call, reversibility, approval) => {
       // The approval engine in epic #22 consumes this. Establishing it at the
       // adapter means it is a decision made here, not one guessed later by
@@ -110,10 +163,19 @@ describe('GitHubWriteService', () => {
       // A reconciler computing "this label should be absent" must not fail
       // every tick after the first one that removed it.
       http.request.mockRejectedValue(
-        new GitHubNotFoundError('Label does not exist (DELETE /x)', 404, 'DELETE', '/x'),
+        new GitHubNotFoundError(
+          'Label does not exist (DELETE /x)',
+          404,
+          'DELETE',
+          '/x',
+        ),
       );
 
-      const result = await build(http, true).removeLabel(REPO, 312, 'factory/dispatched');
+      const result = await build(http, true).removeLabel(
+        REPO,
+        312,
+        'factory/dispatched',
+      );
 
       expect(result.noop).toBe(true);
       expect(result.performed).toBe(true);
@@ -126,9 +188,9 @@ describe('GitHubWriteService', () => {
         new GitHubNotFoundError('Not Found (DELETE /x)', 404, 'DELETE', '/x'),
       );
 
-      await expect(build(http, true).removeLabel(REPO, 999, 'bug')).rejects.toBeInstanceOf(
-        GitHubNotFoundError,
-      );
+      await expect(
+        build(http, true).removeLabel(REPO, 999, 'bug'),
+      ).rejects.toBeInstanceOf(GitHubNotFoundError);
     });
 
     it('URL-encodes a label name on removal', async () => {
@@ -152,8 +214,13 @@ describe('GitHubWriteService', () => {
         id: 'wo_app_312_a3f91c2_a1',
       });
 
-      const [, options] = http.request.mock.calls[0] as [string, { body: { body: string } }];
-      expect(options.body.body).toContain('<!-- opifex:authorization-record -->');
+      const [, options] = http.request.mock.calls[0] as [
+        string,
+        { body: { body: string } },
+      ];
+      expect(options.body.body).toContain(
+        '<!-- opifex:authorization-record -->',
+      );
       expect(options.body.body).toContain('```json');
       expect(options.body.body).toContain('"wo_app_312_a3f91c2_a1"');
     });
@@ -175,7 +242,10 @@ describe('GitHubWriteService', () => {
       // marker on an ordinary comment would make it look like one.
       await build(http, true).postGeneralComment(REPO, 312, 'just a note');
 
-      const [, options] = http.request.mock.calls[0] as [string, { body: { body: string } }];
+      const [, options] = http.request.mock.calls[0] as [
+        string,
+        { body: { body: string } },
+      ];
       expect(options.body.body).toBe('just a note');
     });
   });
@@ -186,9 +256,9 @@ describe('GitHubWriteService', () => {
       // never-trustable list is enforced by ABSENCE (see reversibility.spec),
       // and this is the guard that the absence stays true as the class grows:
       // a new adapter has to be added to this list deliberately.
-      const members = Object.getOwnPropertyNames(GitHubWriteService.prototype).filter(
-        (name) => name !== 'constructor',
-      );
+      const members = Object.getOwnPropertyNames(
+        GitHubWriteService.prototype,
+      ).filter((name) => name !== 'constructor');
 
       expect(members.sort()).toEqual([
         'addLabel',

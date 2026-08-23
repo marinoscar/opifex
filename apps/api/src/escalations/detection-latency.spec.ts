@@ -5,7 +5,13 @@ describe('detection-latency statistics', () => {
     // Zero milliseconds is an excellent latency; "we measured nothing" is not
     // a latency at all. Rendering them the same shows a perfect dashboard for
     // a system that never detected anything.
-    expect(stats([])).toEqual({ count: 0, p50Ms: null, p90Ms: null, p99Ms: null, maxMs: null });
+    expect(stats([])).toEqual({
+      count: 0,
+      p50Ms: null,
+      p90Ms: null,
+      p99Ms: null,
+      maxMs: null,
+    });
   });
 
   it('reports a value that actually happened', () => {
@@ -15,7 +21,12 @@ describe('detection-latency statistics', () => {
 
     const result = stats(samples);
 
-    for (const value of [result.p50Ms, result.p90Ms, result.p99Ms, result.maxMs]) {
+    for (const value of [
+      result.p50Ms,
+      result.p90Ms,
+      result.p99Ms,
+      result.maxMs,
+    ]) {
       expect(samples).toContain(value);
     }
   });
@@ -48,7 +59,9 @@ describe('detection-latency statistics', () => {
   });
 
   it('does not depend on the order it received them', () => {
-    expect(stats([9_000, 1_000, 3_000, 2_000])).toEqual(stats([1_000, 2_000, 3_000, 9_000]));
+    expect(stats([9_000, 1_000, 3_000, 2_000])).toEqual(
+      stats([1_000, 2_000, 3_000, 9_000]),
+    );
   });
 
   it("does not mutate the caller's array", () => {

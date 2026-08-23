@@ -11,7 +11,10 @@ import type { SpendTally } from './spend-ledger.service';
  * §3.6), and deterministic policy can be pinned to its edges.
  */
 describe('decideSpendAdmission', () => {
-  const ceiling = (limitUsd: number | null, malformed: string | null = null): HardCeiling => ({
+  const ceiling = (
+    limitUsd: number | null,
+    malformed: string | null = null,
+  ): HardCeiling => ({
     limitUsd,
     windowDays: 30,
     malformed,
@@ -39,7 +42,9 @@ describe('decideSpendAdmission', () => {
       const verdict = decideSpendAdmission(ceiling(null), tally(), order());
 
       expect(verdict.admit).toBe(false);
-      expect(verdict.admit === false && verdict.refusal).toBe('no-hard-spend-ceiling-configured');
+      expect(verdict.admit === false && verdict.refusal).toBe(
+        'no-hard-spend-ceiling-configured',
+      );
       expect(verdict.reason).toContain('OPIFEX_HARD_SPEND_CEILING_USD');
     });
 
@@ -47,7 +52,11 @@ describe('decideSpendAdmission', () => {
       // The operator has to be able to see their own typo in the message,
       // otherwise "no ceiling configured" sends them looking for an unset
       // variable that is in fact set.
-      const verdict = decideSpendAdmission(ceiling(null, '5O'), tally(), order());
+      const verdict = decideSpendAdmission(
+        ceiling(null, '5O'),
+        tally(),
+        order(),
+      );
 
       expect(verdict.admit).toBe(false);
       expect(verdict.reason).toContain('"5O"');
@@ -63,13 +72,19 @@ describe('decideSpendAdmission', () => {
         order({ ceilingUsd: null, runnerReportsCost: false }),
       );
 
-      expect(verdict.admit === false && verdict.refusal).toBe('no-hard-spend-ceiling-configured');
+      expect(verdict.admit === false && verdict.refusal).toBe(
+        'no-hard-spend-ceiling-configured',
+      );
     });
   });
 
   describe('the ceiling itself', () => {
     it('admits with headroom to spare', () => {
-      const verdict = decideSpendAdmission(ceiling(100), tally({ totalUsd: 10 }), order());
+      const verdict = decideSpendAdmission(
+        ceiling(100),
+        tally({ totalUsd: 10 }),
+        order(),
+      );
 
       expect(verdict.admit).toBe(true);
       expect(verdict.admit === true && verdict.headroomUsd).toBe(90);
@@ -78,9 +93,15 @@ describe('decideSpendAdmission', () => {
     it('refuses at exactly the ceiling, not just past it', () => {
       // The boundary is the whole point of a hard ceiling: "at most $50"
       // means $50 is not available to spend again.
-      const verdict = decideSpendAdmission(ceiling(50), tally({ totalUsd: 50 }), order());
+      const verdict = decideSpendAdmission(
+        ceiling(50),
+        tally({ totalUsd: 50 }),
+        order(),
+      );
 
-      expect(verdict.admit === false && verdict.refusal).toBe('hard-spend-ceiling-reached');
+      expect(verdict.admit === false && verdict.refusal).toBe(
+        'hard-spend-ceiling-reached',
+      );
     });
 
     it('refuses a projected overshoot, using what the order MIGHT spend', () => {
@@ -113,7 +134,9 @@ describe('decideSpendAdmission', () => {
     it('refuses everything when the ceiling is zero', () => {
       const verdict = decideSpendAdmission(ceiling(0), tally(), order());
 
-      expect(verdict.admit === false && verdict.refusal).toBe('hard-spend-ceiling-reached');
+      expect(verdict.admit === false && verdict.refusal).toBe(
+        'hard-spend-ceiling-reached',
+      );
     });
   });
 
@@ -128,7 +151,9 @@ describe('decideSpendAdmission', () => {
       );
 
       expect(verdict.admit).toBe(false);
-      expect(verdict.admit === false && verdict.refusal).toBe('work-order-cannot-be-budgeted');
+      expect(verdict.admit === false && verdict.refusal).toBe(
+        'work-order-cannot-be-budgeted',
+      );
       expect(verdict.reason).toContain('budgetCeilingUsd');
     });
 
@@ -153,13 +178,19 @@ describe('decideSpendAdmission', () => {
         order({ ceilingUsd: null, runnerReportsCost: false }),
       );
 
-      expect(verdict.admit === false && verdict.refusal).toBe('hard-spend-ceiling-reached');
+      expect(verdict.admit === false && verdict.refusal).toBe(
+        'hard-spend-ceiling-reached',
+      );
     });
   });
 
   describe('what the reason says about the figure', () => {
     it('calls a clean measurement reported', () => {
-      const verdict = decideSpendAdmission(ceiling(100), tally({ totalUsd: 10, reportedUsd: 10 }), order());
+      const verdict = decideSpendAdmission(
+        ceiling(100),
+        tally({ totalUsd: 10, reportedUsd: 10 }),
+        order(),
+      );
 
       expect(verdict.reason).toContain('spent $10.00 reported');
     });
@@ -169,7 +200,12 @@ describe('decideSpendAdmission', () => {
       // figure as a measurement is indistinguishable one call later.
       const verdict = decideSpendAdmission(
         ceiling(100),
-        tally({ totalUsd: 30, reportedUsd: 10, estimatedUsd: 20, runsWithoutCost: 4 }),
+        tally({
+          totalUsd: 30,
+          reportedUsd: 10,
+          estimatedUsd: 20,
+          runsWithoutCost: 4,
+        }),
         order(),
       );
 
@@ -197,7 +233,9 @@ describe('decideSpendAdmission', () => {
         order(),
       );
 
-      expect(verdict.reason).toContain('$5.00 estimated from the ceilings of 1 run(s)');
+      expect(verdict.reason).toContain(
+        '$5.00 estimated from the ceilings of 1 run(s)',
+      );
     });
 
     it('says the figure is a floor when some runs cannot be bounded at all', () => {
@@ -205,7 +243,12 @@ describe('decideSpendAdmission', () => {
       // how a ceiling gets passed with nothing appearing to go wrong.
       const verdict = decideSpendAdmission(
         ceiling(100),
-        tally({ totalUsd: 10, reportedUsd: 10, runsWithoutCost: 3, unboundedRuns: 3 }),
+        tally({
+          totalUsd: 10,
+          reportedUsd: 10,
+          runsWithoutCost: 3,
+          unboundedRuns: 3,
+        }),
         order(),
       );
 
@@ -216,7 +259,11 @@ describe('decideSpendAdmission', () => {
     it('says the ceiling cannot be raised, on every refusal that is about money', () => {
       // The operator's next move on hitting a limit is to look for the knob.
       // The message has to answer that before they go looking.
-      const verdict = decideSpendAdmission(ceiling(10), tally({ totalUsd: 10 }), order());
+      const verdict = decideSpendAdmission(
+        ceiling(10),
+        tally({ totalUsd: 10 }),
+        order(),
+      );
 
       expect(verdict.reason).toContain('cannot be raised at runtime');
     });

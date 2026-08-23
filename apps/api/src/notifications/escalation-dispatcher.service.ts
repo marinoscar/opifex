@@ -5,7 +5,10 @@ import { randomBytes } from 'node:crypto';
 import { EscalationsService } from '../escalations/escalations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildPayload } from './notification-payload';
-import { FallbackWebhookTransport, WEBHOOK_TARGET } from './fallback-webhook.transport';
+import {
+  FallbackWebhookTransport,
+  WEBHOOK_TARGET,
+} from './fallback-webhook.transport';
 import { PushSubscriptionsService } from './push-subscriptions.service';
 import { WebPushTransport } from './web-push.transport';
 
@@ -140,7 +143,9 @@ export class EscalationDispatcher {
       deliveredAt: at,
     });
 
-    this.logger.log(`Escalation ${escalation.id} confirmed delivered by a device`);
+    this.logger.log(
+      `Escalation ${escalation.id} confirmed delivered by a device`,
+    );
     return { escalationId: escalation.id, recorded: true };
   }
 
@@ -197,9 +202,16 @@ export class EscalationDispatcher {
    * none of them took it.
    */
   private async deliver(
-    escalation: Awaited<ReturnType<EscalationDispatcher['loadPending']>>[number],
+    escalation: Awaited<
+      ReturnType<EscalationDispatcher['loadPending']>
+    >[number],
     now: Date,
-  ): Promise<{ dispatched: number; failed: number; rerouted: number; abandoned: number }> {
+  ): Promise<{
+    dispatched: number;
+    failed: number;
+    rerouted: number;
+    abandoned: number;
+  }> {
     const receiptId = randomBytes(32).toString('hex');
     const appUrl = this.config.get<string>('appUrl') ?? '';
     const payload = buildPayload(escalation, receiptId, appUrl);
@@ -233,10 +245,15 @@ export class EscalationDispatcher {
     // a different path" — a retry of the same transport is not a different
     // path, because if the push service is down or there are no devices,
     // trying again produces the same silence.
-    const reason = describeFailure(targets.length, outcomes, this.push.isConfigured());
+    const reason = describeFailure(
+      targets.length,
+      outcomes,
+      this.push.isConfigured(),
+    );
     const rerouted = await this.reroute(escalation.id, payload, reason, now);
 
-    if (rerouted) return { dispatched: 1, failed: 0, rerouted: 1, abandoned: 0 };
+    if (rerouted)
+      return { dispatched: 1, failed: 0, rerouted: 1, abandoned: 0 };
 
     await this.prisma.escalation.update({
       where: { id: escalation.id },
@@ -263,7 +280,12 @@ export class EscalationDispatcher {
             `${attempts} of ${MAX_DELIVERY_ATTEMPTS}, will retry next tick. ${reason}`,
     );
 
-    return { dispatched: 0, failed: 1, rerouted: 0, abandoned: abandoned ? 1 : 0 };
+    return {
+      dispatched: 0,
+      failed: 1,
+      rerouted: 0,
+      abandoned: abandoned ? 1 : 0,
+    };
   }
 
   /** The second path. Returns true when it took the message. */
@@ -308,11 +330,16 @@ export class EscalationDispatcher {
    * an operator has seen.
    */
   private async sweepOverdue(now: Date): Promise<number> {
-    const timeoutMs = this.config.get<number>('notifications.receiptTimeoutMs') ?? 120_000;
+    const timeoutMs =
+      this.config.get<number>('notifications.receiptTimeoutMs') ?? 120_000;
     const cutoff = new Date(now.getTime() - timeoutMs);
 
     const overdue = await this.prisma.escalation.findMany({
-      where: { status: 'dispatched', deliveredAt: null, dispatchedAt: { lt: cutoff } },
+      where: {
+        status: 'dispatched',
+        deliveredAt: null,
+        dispatchedAt: { lt: cutoff },
+      },
       select: { id: true, summary: true, failureReason: true },
     });
 
@@ -324,7 +351,9 @@ export class EscalationDispatcher {
           failureReason:
             `A transport accepted this escalation but no device confirmed it within ` +
             `${Math.round(timeoutMs / 1000)}s. It was sent and probably not seen.` +
-            (escalation.failureReason ? ` Earlier: ${escalation.failureReason}` : ''),
+            (escalation.failureReason
+              ? ` Earlier: ${escalation.failureReason}`
+              : ''),
         },
       });
 
@@ -366,7 +395,11 @@ function describeFailure(
   }
 
   const reasons = outcomes
-    .map((outcome) => (outcome.statusCode ? `${outcome.statusCode}: ` : '') + (outcome.error ?? ''))
+    .map(
+      (outcome) =>
+        (outcome.statusCode ? `${outcome.statusCode}: ` : '') +
+        (outcome.error ?? ''),
+    )
     .filter((reason) => reason.length > 0);
 
   return `All ${targetCount} subscribed device(s) rejected the notification. ${reasons.join('; ')}`;

@@ -328,7 +328,9 @@ describe('AuthContext', () => {
   describe('Context Usage', () => {
     it('should throw error when used outside provider', () => {
       // Suppress console.error for this test
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
 
       expect(() => {
         renderHook(() => useAuth());

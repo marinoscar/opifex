@@ -13,7 +13,7 @@ describe('ProtectedRoute', () => {
           <Route path="/" element={<ProtectedRoute />}>
             <Route index element={<div>Protected Content</div>} />
           </Route>
-        </Routes>
+        </Routes>,
       );
 
       // Initially may show loading
@@ -32,7 +32,7 @@ describe('ProtectedRoute', () => {
         </Routes>,
         {
           wrapperOptions: { authenticated: true },
-        }
+        },
       );
 
       await waitFor(() => {
@@ -50,7 +50,7 @@ describe('ProtectedRoute', () => {
         </Routes>,
         {
           wrapperOptions: { authenticated: true, route: '/settings' },
-        }
+        },
       );
 
       await waitFor(() => {
@@ -67,7 +67,7 @@ describe('ProtectedRoute', () => {
         </Routes>,
         {
           wrapperOptions: { authenticated: true },
-        }
+        },
       );
 
       await waitFor(() => {
@@ -87,7 +87,7 @@ describe('ProtectedRoute', () => {
         </Routes>,
         {
           wrapperOptions: { authenticated: false },
-        }
+        },
       );
 
       await waitFor(() => {
@@ -104,7 +104,7 @@ describe('ProtectedRoute', () => {
         </Routes>,
         {
           wrapperOptions: { authenticated: false },
-        }
+        },
       );
 
       await waitFor(() => {
@@ -120,7 +120,7 @@ describe('ProtectedRoute', () => {
           <Route path="/" element={<ProtectedRoute />}>
             <Route index element={<div>Protected Content</div>} />
           </Route>
-        </Routes>
+        </Routes>,
       );
 
       // Component handles loading state internally
@@ -142,7 +142,7 @@ describe('ProtectedRoute', () => {
             authenticated: false,
             route: '/protected',
           },
-        }
+        },
       );
 
       await waitFor(() => {
@@ -165,7 +165,7 @@ describe('ProtectedRoute', () => {
         </Routes>,
         {
           wrapperOptions: { authenticated: true },
-        }
+        },
       );
 
       await waitFor(() => {
@@ -184,7 +184,7 @@ describe('ProtectedRoute', () => {
         </Routes>,
         {
           wrapperOptions: { authenticated: false },
-        }
+        },
       );
 
       await waitFor(() => {
@@ -197,7 +197,7 @@ describe('ProtectedRoute', () => {
           <Route path="/" element={<ProtectedRoute />}>
             <Route index element={<div>Protected Content</div>} />
           </Route>
-        </Routes>
+        </Routes>,
       );
 
       // Component should handle state change

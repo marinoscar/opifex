@@ -29,7 +29,11 @@ export interface TruncatedCellProps {
 export function TruncatedCell({ title, children }: TruncatedCellProps) {
   const hasTitle = typeof title === 'string' && title.length > 0;
   return (
-    <Tooltip title={hasTitle ? title : ''} enterDelay={400} disableHoverListener={!hasTitle}>
+    <Tooltip
+      title={hasTitle ? title : ''}
+      enterDelay={400}
+      disableHoverListener={!hasTitle}
+    >
       <Box
         component="span"
         data-testid="datatable-truncated-cell"
@@ -90,7 +94,9 @@ export function DataTableLoadingOverlay() {
         gap: 1.5,
         // Sits on top of any already-rendered rows.
         bgcolor: (theme) =>
-          theme.palette.mode === 'dark' ? 'rgba(0, 0, 0, 0.45)' : 'rgba(255, 255, 255, 0.6)',
+          theme.palette.mode === 'dark'
+            ? 'rgba(0, 0, 0, 0.45)'
+            : 'rgba(255, 255, 255, 0.6)',
       }}
     >
       <CircularProgress size={24} />

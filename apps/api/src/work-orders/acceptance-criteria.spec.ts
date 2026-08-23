@@ -1,4 +1,8 @@
-import { assessCriteria, describeProblems, MIN_CRITERION_LENGTH } from './acceptance-criteria';
+import {
+  assessCriteria,
+  describeProblems,
+  MIN_CRITERION_LENGTH,
+} from './acceptance-criteria';
 
 const GOOD = [
   'GET /api/widgets returns 200 with a paginated list',
@@ -19,13 +23,16 @@ describe('assessCriteria', () => {
       // `includes` would make "clean" reject this. A gate that rejects good
       // work is worse than one that lets some bad work through, because
       // people route around it rather than fixing their issues.
-      expect(assessCriteria(['The parser is cleanly separated from the lexer']).testable).toBe(
-        true,
-      );
+      expect(
+        assessCriteria(['The parser is cleanly separated from the lexer'])
+          .testable,
+      ).toBe(true);
     });
 
     it('accepts a criterion that merely mentions a placeholder word', () => {
-      expect(assessCriteria(['Rejects a TBD placeholder with a 400']).testable).toBe(true);
+      expect(
+        assessCriteria(['Rejects a TBD placeholder with a 400']).testable,
+      ).toBe(true);
     });
 
     it('ignores blank entries rather than failing on them', () => {
@@ -102,9 +109,9 @@ describe('assessCriteria', () => {
     });
 
     it('names the criterion, not just the phrase', () => {
-      expect(assessCriteria(['The endpoint is fast']).problems[0].criterion).toBe(
-        'The endpoint is fast',
-      );
+      expect(
+        assessCriteria(['The endpoint is fast']).problems[0].criterion,
+      ).toBe('The endpoint is fast');
     });
   });
 
@@ -123,7 +130,9 @@ describe('assessCriteria', () => {
     });
 
     it('renders the problems as something a human can act on', () => {
-      const message = describeProblems(assessCriteria(['TBD', 'It is fast enough']).problems);
+      const message = describeProblems(
+        assessCriteria(['TBD', 'It is fast enough']).problems,
+      );
 
       expect(message).toContain('placeholder');
       expect(message).toContain('TBD');

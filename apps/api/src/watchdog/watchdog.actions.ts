@@ -55,7 +55,9 @@ export function actionsForSilence(verdict: SilenceVerdict): ReconcileAction[] {
       type: 'escalate',
       escalationKind: 'run_stalled',
       progressStoppedAt: verdict.progressStoppedAt.toISOString(),
-      ...(verdict.detectionSource ? { detectionSource: verdict.detectionSource } : {}),
+      ...(verdict.detectionSource
+        ? { detectionSource: verdict.detectionSource }
+        : {}),
       // Written to be decidable from a phone (#57): what stopped, where, how
       // long ago, and what Opifex intends to do about it.
       reason:

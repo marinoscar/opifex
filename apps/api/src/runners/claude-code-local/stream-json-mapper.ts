@@ -88,7 +88,10 @@ export const SUMMARY_MAX_LENGTH = 400;
  * a parse failure anyway (a partial write, a non-JSON diagnostic on stdout),
  * and handling it in two places is how one of them ends up killing the run.
  */
-export function mapStreamLine(line: unknown, context: MapperContext): StreamMapping {
+export function mapStreamLine(
+  line: unknown,
+  context: MapperContext,
+): StreamMapping {
   if (!isRecord(line) || typeof line.type !== 'string') {
     return drop('not a stream-json object');
   }
@@ -119,7 +122,10 @@ export function mapStreamLine(line: unknown, context: MapperContext): StreamMapp
  * The tool call is the valuable one — it is the entire basis of loop
  * detection (#55) and the reason `streamingFidelity` is graded at all.
  */
-function mapAssistant(line: Record<string, unknown>, context: MapperContext): StreamMapping {
+function mapAssistant(
+  line: Record<string, unknown>,
+  context: MapperContext,
+): StreamMapping {
   const content = contentBlocks(line);
 
   const toolUse = content.find((block) => block.type === 'tool_use');
@@ -140,7 +146,9 @@ function mapAssistant(line: Record<string, unknown>, context: MapperContext): St
   if (text && typeof text.text === 'string' && text.text.trim().length > 0) {
     return {
       kind: 'event',
-      event: event(line, context, 'run.progress', { summary: truncate(text.text) }),
+      event: event(line, context, 'run.progress', {
+        summary: truncate(text.text),
+      }),
     };
   }
 
@@ -169,8 +177,13 @@ function mapAssistant(line: Record<string, unknown>, context: MapperContext): St
  * emitting `run.failed` here would make the control plane abandon runs that
  * were about to succeed.
  */
-function mapUser(line: Record<string, unknown>, context: MapperContext): StreamMapping {
-  const result = contentBlocks(line).find((block) => block.type === 'tool_result');
+function mapUser(
+  line: Record<string, unknown>,
+  context: MapperContext,
+): StreamMapping {
+  const result = contentBlocks(line).find(
+    (block) => block.type === 'tool_result',
+  );
   if (!result) return drop('user line with no tool result');
 
   return {
@@ -194,7 +207,10 @@ function mapUser(line: Record<string, unknown>, context: MapperContext): StreamM
  * real block through silence, but it has nothing that notices a wrongly
  * parked run.
  */
-function mapRateLimit(line: Record<string, unknown>, context: MapperContext): StreamMapping {
+function mapRateLimit(
+  line: Record<string, unknown>,
+  context: MapperContext,
+): StreamMapping {
   const info = isRecord(line.rate_limit_info) ? line.rate_limit_info : null;
   if (!info) return drop('rate_limit_event with no rate_limit_info');
 
@@ -203,7 +219,8 @@ function mapRateLimit(line: Record<string, unknown>, context: MapperContext): St
 
   // `quota-exhausted` and `rate-limit` are different in #56: one clears at a
   // known time, the other needs a human to buy more. The CLI tells us which.
-  const exhausted = info.overageStatus === 'rejected' && info.isUsingOverage === true;
+  const exhausted =
+    info.overageStatus === 'rejected' && info.isUsingOverage === true;
 
   return {
     kind: 'event',
@@ -212,7 +229,10 @@ function mapRateLimit(line: Record<string, unknown>, context: MapperContext): St
       blocked: {
         reason: exhausted ? 'quota-exhausted' : 'rate-limit',
         ...resetAt(info.resetsAt),
-        detail: typeof info.rateLimitType === 'string' ? info.rateLimitType : undefined,
+        detail:
+          typeof info.rateLimitType === 'string'
+            ? info.rateLimitType
+            : undefined,
       },
     }),
   };
@@ -227,12 +247,16 @@ function mapRateLimit(line: Record<string, unknown>, context: MapperContext): St
  * a moment that means nothing.
  */
 function resetAt(value: unknown): { resetAt?: string } {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return {};
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
+    return {};
   return { resetAt: new Date(value * 1000).toISOString() };
 }
 
 /** System lines: mostly noise, one of them worth keeping. */
-function mapSystem(line: Record<string, unknown>, context: MapperContext): StreamMapping {
+function mapSystem(
+  line: Record<string, unknown>,
+  context: MapperContext,
+): StreamMapping {
   switch (line.subtype) {
     case 'init':
       // Not `run.started`. The runner already emitted one when it spawned the
@@ -255,8 +279,12 @@ function mapSystem(line: Record<string, unknown>, context: MapperContext): Strea
       // Kept rather than dropped because a run that is quietly being refused
       // its tools is the shape of a run about to go silent, and this is the
       // only warning of it an operator gets.
-      const tool = typeof line.tool_name === 'string' ? line.tool_name : 'a tool';
-      const why = typeof line.decision_reason === 'string' ? `: ${line.decision_reason}` : '';
+      const tool =
+        typeof line.tool_name === 'string' ? line.tool_name : 'a tool';
+      const why =
+        typeof line.decision_reason === 'string'
+          ? `: ${line.decision_reason}`
+          : '';
       return {
         kind: 'event',
         event: event(line, context, 'run.progress', {
@@ -310,11 +338,15 @@ function mapResult(line: Record<string, unknown>): StreamMapping {
  * failure #55 exists to catch.
  */
 export function toolSignature(input: unknown): string {
-  return createHash('sha256').update(canonicalJson(input)).digest('hex').slice(0, 32);
+  return createHash('sha256')
+    .update(canonicalJson(input))
+    .digest('hex')
+    .slice(0, 32);
 }
 
 function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (value === null || typeof value !== 'object')
+    return JSON.stringify(value) ?? 'null';
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
 
   const entries = Object.entries(value as Record<string, unknown>)
@@ -360,7 +392,9 @@ function cliTimestamp(line: Record<string, unknown>): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-function contentBlocks(line: Record<string, unknown>): Record<string, unknown>[] {
+function contentBlocks(
+  line: Record<string, unknown>,
+): Record<string, unknown>[] {
   const message = isRecord(line.message) ? line.message : null;
   if (!message || !Array.isArray(message.content)) return [];
   return message.content.filter(isRecord);
@@ -368,11 +402,15 @@ function contentBlocks(line: Record<string, unknown>): Record<string, unknown>[]
 
 function truncate(text: string): string {
   const clean = text.trim().replace(/\s+/g, ' ');
-  return clean.length <= SUMMARY_MAX_LENGTH ? clean : `${clean.slice(0, SUMMARY_MAX_LENGTH - 1)}…`;
+  return clean.length <= SUMMARY_MAX_LENGTH
+    ? clean
+    : `${clean.slice(0, SUMMARY_MAX_LENGTH - 1)}…`;
 }
 
 function numberOrUndefined(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

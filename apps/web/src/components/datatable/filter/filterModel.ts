@@ -37,7 +37,9 @@ export function columnForFilter<Row>(
  * controlled from the first render (a React input that switches from
  * uncontrolled to controlled warns, and worse, drops the first keystroke).
  */
-export function blankValueFor(arity: ReturnType<typeof operatorArity>): DataTableFilterValue {
+export function blankValueFor(
+  arity: ReturnType<typeof operatorArity>,
+): DataTableFilterValue {
   if (arity === 0) return null;
   if (arity === 2) return ['', ''];
   if (arity === 'many') return [];
@@ -45,7 +47,9 @@ export function blankValueFor(arity: ReturnType<typeof operatorArity>): DataTabl
 }
 
 /** A fresh, not-yet-complete filter targeting `column`. */
-export function draftFilterFor<Row>(column: DataTableColumn<Row>): DataTableFilter {
+export function draftFilterFor<Row>(
+  column: DataTableColumn<Row>,
+): DataTableFilter {
   const operator = defaultOperatorForColumn(column);
   const filterType = filterTypeOf(column);
   const arity = operatorArity(operator);
@@ -70,10 +74,13 @@ export function isFilterComplete(filter: DataTableFilter): boolean {
     return (
       Array.isArray(filter.value) &&
       filter.value.length === 2 &&
-      filter.value.every((entry) => entry !== '' && entry !== null && entry !== undefined)
+      filter.value.every(
+        (entry) => entry !== '' && entry !== null && entry !== undefined,
+      )
     );
   }
-  if (arity === 'many') return Array.isArray(filter.value) && filter.value.length > 0;
+  if (arity === 'many')
+    return Array.isArray(filter.value) && filter.value.length > 0;
   if (typeof filter.value === 'boolean') return true;
   if (typeof filter.value === 'number') return Number.isFinite(filter.value);
   return typeof filter.value === 'string' && filter.value.trim() !== '';
@@ -89,7 +96,10 @@ export function sameFilter(a: DataTableFilter, b: DataTableFilter): boolean {
 }
 
 /** Whether `model` already contains an identical filter. */
-export function containsFilter(model: DataTableFilterModel, filter: DataTableFilter): boolean {
+export function containsFilter(
+  model: DataTableFilterModel,
+  filter: DataTableFilter,
+): boolean {
   return model.some((entry) => sameFilter(entry, filter));
 }
 
@@ -104,7 +114,9 @@ export function describeFilterValue<Row>(
   const labelOf = (raw: string | number | boolean): string => {
     if (typeof raw === 'boolean') return raw ? 'Yes' : 'No';
     if (column?.enumValues) {
-      const match = column.enumValues.find((option) => option.value === String(raw));
+      const match = column.enumValues.find(
+        (option) => option.value === String(raw),
+      );
       if (match) return match.label;
     }
     return String(raw);

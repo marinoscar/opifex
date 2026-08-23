@@ -10,7 +10,11 @@ import {
 import { detectLoop, type ToolObservation } from './loop-detection';
 import { detectSilentRuns } from './silent-detection';
 import { actionsForLoop, actionsForSilence } from './watchdog.actions';
-import type { LivenessSource, StreamingFidelity, WatchedRunState } from './watchdog.types';
+import type {
+  LivenessSource,
+  StreamingFidelity,
+  WatchedRunState,
+} from './watchdog.types';
 
 export interface WatchdogSweepResult {
   runsJudged: number;
@@ -173,7 +177,12 @@ export class WatchdogService {
       }
     }
 
-    return { parked, resumable, judgedRunIds: runs.map((run) => run.runId), actions };
+    return {
+      parked,
+      resumable,
+      judgedRunIds: runs.map((run) => run.runId),
+      actions,
+    };
   }
 
   /**
@@ -232,7 +241,9 @@ export class WatchdogService {
    * whole stream of a long-running job to look at its tail would grow with the
    * run.
    */
-  private async loadToolObservations(runId: string): Promise<ToolObservation[]> {
+  private async loadToolObservations(
+    runId: string,
+  ): Promise<ToolObservation[]> {
     const events = await this.prisma.runEvent.findMany({
       where: { runId, toolSignature: { not: null } },
       orderBy: { occurredAt: 'desc' },
@@ -240,9 +251,10 @@ export class WatchdogService {
       select: { toolSignature: true, occurredAt: true },
     });
 
-    return events
-      .reverse()
-      .map((event) => ({ signature: event.toolSignature as string, occurredAt: event.occurredAt }));
+    return events.reverse().map((event) => ({
+      signature: event.toolSignature as string,
+      occurredAt: event.occurredAt,
+    }));
   }
 
   /**
@@ -274,7 +286,9 @@ export class WatchdogService {
           orderBy: { occurredAt: 'desc' as const },
           select: { source: true },
         },
-        runner: { select: { capability: { select: { streamingFidelity: true } } } },
+        runner: {
+          select: { capability: { select: { streamingFidelity: true } } },
+        },
         workOrder: {
           select: {
             identity: true,
@@ -295,7 +309,9 @@ export class WatchdogService {
       lastEventAt: run.lastEventAt,
       lastEventSource: (run.events[0]?.source as LivenessSource) ?? null,
       runnerKey: run.runnerKey,
-      fidelity: (run.runner?.capability?.streamingFidelity as StreamingFidelity) ?? null,
+      fidelity:
+        (run.runner?.capability?.streamingFidelity as StreamingFidelity) ??
+        null,
     }));
   }
 }

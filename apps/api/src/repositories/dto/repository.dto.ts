@@ -69,7 +69,13 @@ const repositoryPolicySchema = z.object({
   /** Per-run spend ceiling in USD. Null clears it. */
   budgetCeilingUsd: z.number().positive().max(10000).nullable().optional(),
   /** Per-run wall-clock ceiling in minutes. Null clears it. */
-  wallClockTimeoutMinutes: z.number().int().positive().max(1440).nullable().optional(),
+  wallClockTimeoutMinutes: z
+    .number()
+    .int()
+    .positive()
+    .max(1440)
+    .nullable()
+    .optional(),
   /** Glob constraints on what a runner may touch. Empty means unconstrained. */
   pathConstraints: z.array(z.string().min(1)).max(50).optional(),
 });
@@ -81,7 +87,9 @@ export const registerRepositorySchema = repositoryPolicySchema.extend({
   projectId: z.uuid().nullable().optional(),
 });
 
-export class RegisterRepositoryDto extends createZodDto(registerRepositorySchema) {}
+export class RegisterRepositoryDto extends createZodDto(
+  registerRepositorySchema,
+) {}
 
 export const updateRepositorySchema = repositoryPolicySchema.extend({
   projectId: z.uuid().nullable().optional(),
@@ -117,7 +125,9 @@ export const repositoryResponseSchema = z.object({
   updatedAt: z.iso.datetime(),
 });
 
-export class RepositoryResponseDto extends createZodDto(repositoryResponseSchema) {}
+export class RepositoryResponseDto extends createZodDto(
+  repositoryResponseSchema,
+) {}
 
 export const listRepositoriesQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -128,4 +138,6 @@ export const listRepositoriesQuerySchema = z.object({
   projectId: z.uuid().optional(),
 });
 
-export class ListRepositoriesQueryDto extends createZodDto(listRepositoriesQuerySchema) {}
+export class ListRepositoriesQueryDto extends createZodDto(
+  listRepositoriesQuerySchema,
+) {}

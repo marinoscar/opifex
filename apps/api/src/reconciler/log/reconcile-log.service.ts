@@ -39,7 +39,8 @@ export class ReconcileLogService {
     // Every tick gets a row, including quiet ones: a log with gaps cannot be
     // reviewed, because a missing entry is indistinguishable from a tick that
     // never ran. Only the heavy payload is conditional.
-    const worthKeeping = record.actions.length > 0 || record.failures.length > 0;
+    const worthKeeping =
+      record.actions.length > 0 || record.failures.length > 0;
 
     try {
       await this.prisma.reconcileTick.create({

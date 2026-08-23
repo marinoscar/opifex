@@ -84,7 +84,8 @@ export const RUN_STATUS_DESCRIPTORS: Record<RunStatus, RunStatusDescriptor> = {
   blocked: {
     status: 'blocked',
     label: 'Blocked',
-    description: 'Parked on a rate limit with a reset time. Resumes on its own.',
+    description:
+      'Parked on a rate limit with a reset time. Resumes on its own.',
     Icon: PauseCircleOutlinedIcon,
     token: 'blocked',
     needsAttention: false,

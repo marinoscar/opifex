@@ -22,7 +22,17 @@
  * `/admin/users` to a Viewer produces a second dead end from the first one.
  */
 
-import { Box, Button, Container, List, ListItem, ListItemButton, ListItemIcon, ListItemText, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  Container,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Typography,
+} from '@mui/material';
 import HomeIcon from '@mui/icons-material/Home';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
 import { usePermissions } from '../hooks/usePermissions';
@@ -33,7 +43,8 @@ export default function NotFoundPage() {
   const { hasPermission } = usePermissions();
 
   const reachable = DESTINATIONS.filter(
-    (destination) => !destination.permission || hasPermission(destination.permission),
+    (destination) =>
+      !destination.permission || hasPermission(destination.permission),
   );
 
   return (
@@ -84,7 +95,11 @@ export default function NotFoundPage() {
           Back to the cockpit
         </Button>
 
-        <Typography variant="subtitle2" component="h2" id="not-found-destinations">
+        <Typography
+          variant="subtitle2"
+          component="h2"
+          id="not-found-destinations"
+        >
           Where you can go
         </Typography>
         <List dense aria-labelledby="not-found-destinations">
@@ -97,7 +112,10 @@ export default function NotFoundPage() {
                 {/* The full label and the real path: on a 404 the operator is
                     already unsure where they are, and the URL is the thing they
                     were getting wrong. */}
-                <ListItemText primary={destination.label} secondary={destination.path} />
+                <ListItemText
+                  primary={destination.label}
+                  secondary={destination.path}
+                />
               </ListItemButton>
             </ListItem>
           ))}

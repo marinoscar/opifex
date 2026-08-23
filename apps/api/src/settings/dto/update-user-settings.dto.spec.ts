@@ -90,7 +90,9 @@ describe('UpdateUserSettingsDto (PUT)', () => {
 
       expect(result.profile.displayName).toBe('John Doe');
       expect(result.profile.useProviderImage).toBe(false);
-      expect(result.profile.customImageUrl).toBe('https://example.com/image.jpg');
+      expect(result.profile.customImageUrl).toBe(
+        'https://example.com/image.jpg',
+      );
     });
 
     it('should accept profile with null customImageUrl', () => {
@@ -199,7 +201,9 @@ describe('UpdateUserSettingsDto (PUT)', () => {
         },
       });
 
-      expect(result.profile.customImageUrl).toBe('http://example.com/image.jpg');
+      expect(result.profile.customImageUrl).toBe(
+        'http://example.com/image.jpg',
+      );
     });
 
     it('should reject invalid URL for customImageUrl', () => {
@@ -358,7 +362,9 @@ describe('PatchUserSettingsDto (PATCH)', () => {
         },
       });
 
-      expect(result.profile?.customImageUrl).toBe('https://example.com/new-image.jpg');
+      expect(result.profile?.customImageUrl).toBe(
+        'https://example.com/new-image.jpg',
+      );
     });
 
     it('should accept partial profile with null customImageUrl', () => {
@@ -624,9 +630,7 @@ describe('PatchUserSettingsDto (PATCH)', () => {
           ...baseValid,
           dataTables: { jobs: { pageSize: DATA_TABLE_MAX_PAGE_SIZE } },
         });
-        expect(result.dataTables?.jobs.pageSize).toBe(
-          DATA_TABLE_MAX_PAGE_SIZE,
-        );
+        expect(result.dataTables?.jobs.pageSize).toBe(DATA_TABLE_MAX_PAGE_SIZE);
       });
     });
 

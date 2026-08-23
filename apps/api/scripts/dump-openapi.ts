@@ -25,7 +25,10 @@ process.env.NODE_ENV = 'production';
 import { mkdirSync, writeFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import {
+  FastifyAdapter,
+  NestFastifyApplication,
+} from '@nestjs/platform-fastify';
 import { AppModule } from '../src/app.module';
 import { createOpenApiDocument } from '../src/openapi/document';
 
@@ -63,6 +66,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+  process.stderr.write(
+    `${error instanceof Error ? error.stack : String(error)}\n`,
+  );
   process.exit(1);
 });

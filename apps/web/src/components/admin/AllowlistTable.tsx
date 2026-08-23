@@ -38,7 +38,11 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { getAllowlist } from '../../services/api';
 import { AddEmailDialog } from './AddEmailDialog';
 import type { AllowedEmailEntry } from '../../types';
-import { TABLE_ID, asAllowlistSortField, buildAllowlistColumns } from './allowlistColumns';
+import {
+  TABLE_ID,
+  asAllowlistSortField,
+  buildAllowlistColumns,
+} from './allowlistColumns';
 
 type AllowlistStatus = 'all' | 'pending' | 'claimed';
 
@@ -47,12 +51,21 @@ function readStatusFilter(filters: DataTableFilterModel): AllowlistStatus {
   const found = filters.find(
     (filter) => filter.columnId === 'status' && filter.operator === 'is',
   );
-  return found?.value === 'pending' || found?.value === 'claimed' ? found.value : 'all';
+  return found?.value === 'pending' || found?.value === 'claimed'
+    ? found.value
+    : 'all';
 }
 
 export function AllowlistTable() {
-  const { entries, total, isLoading, error, fetchAllowlist, addEmail, removeEmail } =
-    useAllowlist();
+  const {
+    entries,
+    total,
+    isLoading,
+    error,
+    fetchAllowlist,
+    addEmail,
+    removeEmail,
+  } = useAllowlist();
   const { hasPermission } = usePermissions();
 
   const [search, setSearch] = useState('');
@@ -79,7 +92,15 @@ export function AllowlistTable() {
     });
     // Scalars only — `entries` is replaced on every fetch, so nothing here may
     // depend on a row object.
-  }, [page, pageSize, search, status, sortField, sortDirection, fetchAllowlist]);
+  }, [
+    page,
+    pageSize,
+    search,
+    status,
+    sortField,
+    sortDirection,
+    fetchAllowlist,
+  ]);
 
   // --- Row actions ------------------------------------------------------------
   const canWrite = hasPermission('allowlist:write');
@@ -118,7 +139,9 @@ export function AllowlistTable() {
   const emptyState = useMemo(
     () => (
       <Typography color="text.secondary">
-        {search ? 'No emails found matching your search' : 'No emails in allowlist'}
+        {search
+          ? 'No emails found matching your search'
+          : 'No emails in allowlist'}
       </Typography>
     ),
     [search],
@@ -130,7 +153,11 @@ export function AllowlistTable() {
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
         spacing={1}
-        sx={{ mb: 2, alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+        sx={{
+          mb: 2,
+          alignItems: { sm: 'center' },
+          justifyContent: 'space-between',
+        }}
       >
         <Typography variant="h6" component="h2">
           Email allowlist
@@ -190,7 +217,10 @@ export function AllowlistTable() {
           rowActions={rowActions}
           csvExport={{
             filename: 'allowlist',
-            fetchAllRows: async ({ page: exportPage, pageSize: exportPageSize }) => {
+            fetchAllRows: async ({
+              page: exportPage,
+              pageSize: exportPageSize,
+            }) => {
               const response = await getAllowlist({
                 page: exportPage + 1,
                 pageSize: exportPageSize,

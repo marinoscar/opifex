@@ -38,7 +38,6 @@ function createMockUserCreate(
 
   // After transaction completes, the second findUnique should return user with roles
   // We set this up by registering the user in the registry after create is called
-  const originalFindUnique = context.prismaMock.user.findUnique;
   let createCalled = false;
 
   context.prismaMock.user.create.mockImplementation(async () => {
@@ -122,7 +121,13 @@ describe('Test Auth Integration', () => {
       });
 
       // Mock user creation with proper flow
-      createMockUserCreate(context, 'new-user', 'newuser@example.com', 'newuser', 'viewer');
+      createMockUserCreate(
+        context,
+        'new-user',
+        'newuser@example.com',
+        'newuser',
+        'viewer',
+      );
 
       const response = await request(context.app.getHttpServer())
         .post('/api/auth/test/login')
@@ -148,7 +153,13 @@ describe('Test Auth Integration', () => {
       });
 
       // Mock user creation with proper flow
-      createMockUserCreate(context, 'cookie-user', 'cookie@example.com', 'cookie', 'viewer');
+      createMockUserCreate(
+        context,
+        'cookie-user',
+        'cookie@example.com',
+        'cookie',
+        'viewer',
+      );
 
       const response = await request(context.app.getHttpServer())
         .post('/api/auth/test/login')
@@ -202,7 +213,13 @@ describe('Test Auth Integration', () => {
       });
 
       // Mock user creation with proper flow
-      createMockUserCreate(context, 'default-user', 'default@example.com', 'default', 'viewer');
+      createMockUserCreate(
+        context,
+        'default-user',
+        'default@example.com',
+        'default',
+        'viewer',
+      );
 
       const response = await request(context.app.getHttpServer())
         .post('/api/auth/test/login')
@@ -231,7 +248,13 @@ describe('Test Auth Integration', () => {
         });
 
         // Mock user creation with proper flow
-        createMockUserCreate(context, `${role}-user`, `${role}@example.com`, role, role);
+        createMockUserCreate(
+          context,
+          `${role}-user`,
+          `${role}@example.com`,
+          role,
+          role,
+        );
 
         const response = await request(context.app.getHttpServer())
           .post('/api/auth/test/login')
@@ -254,7 +277,13 @@ describe('Test Auth Integration', () => {
       });
 
       // Mock user creation with proper flow (note: email is already lowercase in mock)
-      createMockUserCreate(context, 'upper-user', 'uppercase@example.com', 'UPPERCASE', 'viewer');
+      createMockUserCreate(
+        context,
+        'upper-user',
+        'uppercase@example.com',
+        'UPPERCASE',
+        'viewer',
+      );
 
       await request(context.app.getHttpServer())
         .post('/api/auth/test/login')
@@ -281,7 +310,13 @@ describe('Test Auth Integration', () => {
       });
 
       // Mock user creation with proper flow
-      createMockUserCreate(context, 'custom-user', 'custom@example.com', 'Custom Display Name', 'viewer');
+      createMockUserCreate(
+        context,
+        'custom-user',
+        'custom@example.com',
+        'Custom Display Name',
+        'viewer',
+      );
 
       await request(context.app.getHttpServer())
         .post('/api/auth/test/login')
@@ -314,7 +349,13 @@ describe('Test Auth Integration', () => {
       });
 
       // Mock user creation with proper flow
-      createMockUserCreate(context, 'refresh-user', 'refresh@example.com', 'refresh', 'viewer');
+      createMockUserCreate(
+        context,
+        'refresh-user',
+        'refresh@example.com',
+        'refresh',
+        'viewer',
+      );
 
       await request(context.app.getHttpServer())
         .post('/api/auth/test/login')

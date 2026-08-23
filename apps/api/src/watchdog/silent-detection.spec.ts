@@ -46,38 +46,51 @@ describe('detectSilentRuns', () => {
 
     it('gets more permissive as fidelity drops', () => {
       // VISION §6: it gets dumber, not broken.
-      expect(SILENCE_THRESHOLDS_MS.full).toBeLessThan(SILENCE_THRESHOLDS_MS.partial);
-      expect(SILENCE_THRESHOLDS_MS.partial).toBeLessThan(SILENCE_THRESHOLDS_MS.none);
+      expect(SILENCE_THRESHOLDS_MS.full).toBeLessThan(
+        SILENCE_THRESHOLDS_MS.partial,
+      );
+      expect(SILENCE_THRESHOLDS_MS.partial).toBeLessThan(
+        SILENCE_THRESHOLDS_MS.none,
+      );
     });
 
     it.each<[StreamingFidelity, number]>([
       ['full', 2],
       ['partial', 15],
       ['none', 120],
-    ])('flags a %s-fidelity runner silent for %i minutes', (fidelity, silentMinutes) => {
-      const verdicts = detectSilentRuns(
-        [run({ fidelity, lastEventAt: minutesAgo(silentMinutes) })],
-        NOW,
-      );
+    ])(
+      'flags a %s-fidelity runner silent for %i minutes',
+      (fidelity, silentMinutes) => {
+        const verdicts = detectSilentRuns(
+          [run({ fidelity, lastEventAt: minutesAgo(silentMinutes) })],
+          NOW,
+        );
 
-      expect(verdicts).toHaveLength(1);
-      expect(verdicts[0].fidelity).toBe(fidelity);
-    });
+        expect(verdicts).toHaveLength(1);
+        expect(verdicts[0].fidelity).toBe(fidelity);
+      },
+    );
 
     it('does NOT kill a non-streaming runner that a streaming threshold would', () => {
       // The case #54 names explicitly: "A non-streaming runner is judged by
       // git-derived liveness, not starved of signal and killed."
       const quiet = { lastEventAt: minutesAgo(30) };
 
-      expect(detectSilentRuns([run({ ...quiet, fidelity: 'full' })], NOW)).toHaveLength(1);
-      expect(detectSilentRuns([run({ ...quiet, fidelity: 'none' })], NOW)).toEqual([]);
+      expect(
+        detectSilentRuns([run({ ...quiet, fidelity: 'full' })], NOW),
+      ).toHaveLength(1);
+      expect(
+        detectSilentRuns([run({ ...quiet, fidelity: 'none' })], NOW),
+      ).toEqual([]);
     });
 
     it('detects a streaming stall in SECONDS, not hours', () => {
       // The metric #54 asks for. 90 seconds is several missed heartbeats.
       expect(SILENCE_THRESHOLDS_MS.full).toBeLessThanOrEqual(120_000);
 
-      expect(detectSilentRuns([run({ lastEventAt: secondsAgo(91) })], NOW)).toHaveLength(1);
+      expect(
+        detectSilentRuns([run({ lastEventAt: secondsAgo(91) })], NOW),
+      ).toHaveLength(1);
     });
   });
 
@@ -91,9 +104,12 @@ describe('detectSilentRuns', () => {
     });
 
     it('is not killed at a streaming-runner age', () => {
-      expect(detectSilentRuns([run({ fidelity: null, lastEventAt: minutesAgo(30) })], NOW)).toEqual(
-        [],
-      );
+      expect(
+        detectSilentRuns(
+          [run({ fidelity: null, lastEventAt: minutesAgo(30) })],
+          NOW,
+        ),
+      ).toEqual([]);
     });
 
     it('says in its reason that no manifest was declared', () => {
@@ -112,14 +128,22 @@ describe('detectSilentRuns', () => {
       // (#56). Killing it would collapse two of VISION §9's three failure
       // modes into one, which it calls the most common supervision bug.
       expect(
-        detectSilentRuns([run({ status: 'blocked', lastEventAt: minutesAgo(600) })], NOW),
+        detectSilentRuns(
+          [run({ status: 'blocked', lastEventAt: minutesAgo(600) })],
+          NOW,
+        ),
       ).toEqual([]);
     });
 
     it.each(['succeeded', 'failed', 'quarantined'] as const)(
       'ignores a %s run',
       (status) => {
-        expect(detectSilentRuns([run({ status, lastEventAt: minutesAgo(600) })], NOW)).toEqual([]);
+        expect(
+          detectSilentRuns(
+            [run({ status, lastEventAt: minutesAgo(600) })],
+            NOW,
+          ),
+        ).toEqual([]);
       },
     );
 
@@ -127,7 +151,10 @@ describe('detectSilentRuns', () => {
       // It has not been killed yet, and re-confirming keeps the verdict
       // current rather than going quiet about a problem that persists.
       expect(
-        detectSilentRuns([run({ status: 'stalled', lastEventAt: minutesAgo(30) })], NOW),
+        detectSilentRuns(
+          [run({ status: 'stalled', lastEventAt: minutesAgo(30) })],
+          NOW,
+        ),
       ).toHaveLength(1);
     });
   });
@@ -137,7 +164,10 @@ describe('detectSilentRuns', () => {
       // Otherwise every run is killed in the seconds between dispatch and its
       // first heartbeat.
       expect(
-        detectSilentRuns([run({ lastEventAt: null, startedAt: secondsAgo(5) })], NOW),
+        detectSilentRuns(
+          [run({ lastEventAt: null, startedAt: secondsAgo(5) })],
+          NOW,
+        ),
       ).toEqual([]);
     });
 
@@ -147,7 +177,9 @@ describe('detectSilentRuns', () => {
         NOW,
       );
 
-      expect(verdict.reason).toContain('no event of any source since the run started');
+      expect(verdict.reason).toContain(
+        'no event of any source since the run started',
+      );
     });
   });
 
@@ -155,13 +187,17 @@ describe('detectSilentRuns', () => {
     it('does not fire exactly AT the threshold', () => {
       const exactly = new Date(NOW.getTime() - SILENCE_THRESHOLDS_MS.full);
 
-      expect(detectSilentRuns([run({ lastEventAt: exactly })], NOW)).toEqual([]);
+      expect(detectSilentRuns([run({ lastEventAt: exactly })], NOW)).toEqual(
+        [],
+      );
     });
 
     it('fires one millisecond past it', () => {
       const past = new Date(NOW.getTime() - SILENCE_THRESHOLDS_MS.full - 1);
 
-      expect(detectSilentRuns([run({ lastEventAt: past })], NOW)).toHaveLength(1);
+      expect(detectSilentRuns([run({ lastEventAt: past })], NOW)).toHaveLength(
+        1,
+      );
     });
   });
 
@@ -170,11 +206,16 @@ describe('detectSilentRuns', () => {
       // #54: "Every kill records why, with the event age that triggered it."
       // This is the one decision in the system that destroys work, and a
       // verdict nobody can check is one they will stop trusting.
-      const [verdict] = detectSilentRuns([run({ lastEventAt: minutesAgo(10) })], NOW);
+      const [verdict] = detectSilentRuns(
+        [run({ lastEventAt: minutesAgo(10) })],
+        NOW,
+      );
 
       expect(verdict.reason).toContain('silent for 10m');
       expect(verdict.reason).toContain(minutesAgo(10).toISOString());
-      expect(verdict.reason).toContain('claude-code-local declares full streaming fidelity');
+      expect(verdict.reason).toContain(
+        'claude-code-local declares full streaming fidelity',
+      );
       expect(verdict.silentForMs).toBe(10 * 60_000);
       expect(verdict.thresholdMs).toBe(SILENCE_THRESHOLDS_MS.full);
     });
@@ -184,7 +225,10 @@ describe('detectSilentRuns', () => {
       // minutes rendered "silent for 2m, exceeding the 2m threshold" — a
       // justification that cannot justify itself, and exactly the kind of
       // number that makes an operator stop trusting a kill.
-      const [verdict] = detectSilentRuns([run({ lastEventAt: secondsAgo(95) })], NOW);
+      const [verdict] = detectSilentRuns(
+        [run({ lastEventAt: secondsAgo(95) })],
+        NOW,
+      );
 
       expect(verdict.reason).toContain('silent for 1m 35s');
       expect(verdict.reason).toContain('exceeding the 1m 30s threshold');
@@ -192,7 +236,13 @@ describe('detectSilentRuns', () => {
 
     it('expresses a sub-minute duration in seconds', () => {
       const [verdict] = detectSilentRuns(
-        [run({ fidelity: 'full', lastEventAt: null, startedAt: secondsAgo(100) })],
+        [
+          run({
+            fidelity: 'full',
+            lastEventAt: null,
+            startedAt: secondsAgo(100),
+          }),
+        ],
         NOW,
       );
 
@@ -211,9 +261,15 @@ describe('detectSilentRuns', () => {
     });
 
     it('carries the repository and issue, so an escalation can be acted on', () => {
-      const [verdict] = detectSilentRuns([run({ lastEventAt: minutesAgo(10) })], NOW);
+      const [verdict] = detectSilentRuns(
+        [run({ lastEventAt: minutesAgo(10) })],
+        NOW,
+      );
 
-      expect(verdict).toMatchObject({ repository: 'marinoscar/opifex', issueNumber: 312 });
+      expect(verdict).toMatchObject({
+        repository: 'marinoscar/opifex',
+        issueNumber: 312,
+      });
     });
   });
 
@@ -260,7 +316,10 @@ describe('the stop side of detection latency (#59)', () => {
   it('reports the last event as the moment progress stopped', () => {
     // VISION §10 measures from when the run ceased to make progress, not from
     // the tick that noticed. Only the detector knows which timestamp that was.
-    const [verdict] = detectSilentRuns([run({ lastEventAt: minutesAgo(30) })], NOW);
+    const [verdict] = detectSilentRuns(
+      [run({ lastEventAt: minutesAgo(30) })],
+      NOW,
+    );
 
     expect(verdict.progressStoppedAt).toEqual(minutesAgo(30));
   });
@@ -299,9 +358,14 @@ describe('the stop side of detection latency (#59)', () => {
     // The stored latency and the sentence a human reads must not disagree —
     // a verdict that contradicts its own number is one an operator stops
     // trusting.
-    const [verdict] = detectSilentRuns([run({ lastEventAt: minutesAgo(30) })], NOW);
+    const [verdict] = detectSilentRuns(
+      [run({ lastEventAt: minutesAgo(30) })],
+      NOW,
+    );
 
-    expect(NOW.getTime() - verdict.progressStoppedAt.getTime()).toBe(verdict.silentForMs);
+    expect(NOW.getTime() - verdict.progressStoppedAt.getTime()).toBe(
+      verdict.silentForMs,
+    );
   });
 });
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { useUsers } from '../../hooks/useUsers';
 import { server } from '../mocks/server';
@@ -86,7 +86,7 @@ describe('useUsers', () => {
       server.use(
         http.get('*/api/users', () => {
           return HttpResponse.json(mockUsersResponse);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -114,7 +114,7 @@ describe('useUsers', () => {
         http.get('*/api/users', async () => {
           await requestPromise;
           return HttpResponse.json(mockUsersResponse);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -149,7 +149,7 @@ describe('useUsers', () => {
             page: 2,
             pageSize: 20,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -174,7 +174,7 @@ describe('useUsers', () => {
             pageSize: 10,
             totalPages: 3,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -195,9 +195,9 @@ describe('useUsers', () => {
         http.get('*/api/users', () => {
           return HttpResponse.json(
             { message: 'Internal server error' },
-            { status: 500 }
+            { status: 500 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -215,7 +215,7 @@ describe('useUsers', () => {
       server.use(
         http.get('*/api/users', () => {
           return HttpResponse.error();
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -234,9 +234,9 @@ describe('useUsers', () => {
         http.get('*/api/users', () => {
           return HttpResponse.json(
             { message: 'Forbidden - Admin access required' },
-            { status: 403 }
+            { status: 403 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -253,7 +253,7 @@ describe('useUsers', () => {
       server.use(
         http.get('*/api/users', () => {
           return HttpResponse.json(mockUsersResponse);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -270,9 +270,9 @@ describe('useUsers', () => {
         http.get('*/api/users', () => {
           return HttpResponse.json(
             { message: 'Server error' },
-            { status: 500 }
+            { status: 500 },
           );
-        })
+        }),
       );
 
       await act(async () => {
@@ -298,7 +298,7 @@ describe('useUsers', () => {
             pageSize: 10,
             totalPages: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -324,7 +324,7 @@ describe('useUsers', () => {
             pageSize: 10,
             totalPages: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -350,7 +350,7 @@ describe('useUsers', () => {
             pageSize: 10,
             totalPages: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -370,7 +370,7 @@ describe('useUsers', () => {
         http.get('*/api/users', ({ request }) => {
           requestUrl = request.url;
           return HttpResponse.json(mockUsersResponse);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -407,7 +407,7 @@ describe('useUsers', () => {
             });
           }
           return HttpResponse.json({ message: 'Not found' }, { status: 404 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -436,14 +436,14 @@ describe('useUsers', () => {
         }),
         http.patch('*/api/users/:id', async ({ params, request }) => {
           if (params.id === 'user-1') {
-            const body = await request.json() as { displayName?: string };
+            const body = (await request.json()) as { displayName?: string };
             return HttpResponse.json({
               ...mockUser1,
               displayName: body.displayName || mockUser1.displayName,
             });
           }
           return HttpResponse.json({ message: 'Not found' }, { status: 404 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -453,7 +453,9 @@ describe('useUsers', () => {
       });
 
       await act(async () => {
-        await result.current.updateUser('user-1', { displayName: 'Updated Name' });
+        await result.current.updateUser('user-1', {
+          displayName: 'Updated Name',
+        });
       });
 
       expect(result.current.users[0].displayName).toBe('Updated Name');
@@ -473,7 +475,7 @@ describe('useUsers', () => {
             });
           }
           return HttpResponse.json({ message: 'Not found' }, { status: 404 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -501,9 +503,9 @@ describe('useUsers', () => {
         http.patch('*/api/users/:id', () => {
           return HttpResponse.json(
             { message: 'Update failed' },
-            { status: 500 }
+            { status: 500 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -532,9 +534,9 @@ describe('useUsers', () => {
         http.patch('*/api/users/:id', () => {
           return HttpResponse.json(
             { message: 'Forbidden - Admin access required' },
-            { status: 403 }
+            { status: 403 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -563,7 +565,7 @@ describe('useUsers', () => {
             });
           }
           return HttpResponse.json({ message: 'Not found' }, { status: 404 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -594,14 +596,14 @@ describe('useUsers', () => {
         }),
         http.put('*/api/users/:id/roles', async ({ params, request }) => {
           if (params.id === 'user-1') {
-            const body = await request.json() as { roles: string[] };
+            const body = (await request.json()) as { roles: string[] };
             return HttpResponse.json({
               ...mockUser1,
               roles: body.roles,
             });
           }
           return HttpResponse.json({ message: 'Not found' }, { status: 404 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -613,7 +615,10 @@ describe('useUsers', () => {
       expect(result.current.users[0].roles).toEqual(['Viewer']);
 
       await act(async () => {
-        await result.current.updateUserRoles('user-1', ['Admin', 'Contributor']);
+        await result.current.updateUserRoles('user-1', [
+          'Admin',
+          'Contributor',
+        ]);
       });
 
       expect(result.current.users[0].roles).toEqual(['Admin', 'Contributor']);
@@ -628,9 +633,9 @@ describe('useUsers', () => {
         http.put('*/api/users/:id/roles', () => {
           return HttpResponse.json(
             { message: 'Failed to update user roles' },
-            { status: 500 }
+            { status: 500 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -659,9 +664,9 @@ describe('useUsers', () => {
         http.put('*/api/users/:id/roles', () => {
           return HttpResponse.json(
             { message: 'Forbidden - Admin access required' },
-            { status: 403 }
+            { status: 403 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -690,7 +695,7 @@ describe('useUsers', () => {
             });
           }
           return HttpResponse.json({ message: 'Not found' }, { status: 404 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -723,7 +728,7 @@ describe('useUsers', () => {
             });
           }
           return HttpResponse.json({ message: 'Not found' }, { status: 404 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -745,7 +750,7 @@ describe('useUsers', () => {
       server.use(
         http.get('*/api/users', () => {
           return HttpResponse.json(mockUsersResponse);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -767,7 +772,7 @@ describe('useUsers', () => {
             pageSize: 10,
             totalPages: 1,
           });
-        })
+        }),
       );
 
       // Refresh
@@ -788,7 +793,7 @@ describe('useUsers', () => {
           callCount++;
           requestUrl = request.url;
           return HttpResponse.json(mockUsersResponse);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -816,9 +821,9 @@ describe('useUsers', () => {
         http.get('*/api/users', () => {
           return HttpResponse.json(
             { message: 'Server error' },
-            { status: 500 }
+            { status: 500 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -833,7 +838,7 @@ describe('useUsers', () => {
       server.use(
         http.get('*/api/users', () => {
           return HttpResponse.json(mockUsersResponse);
-        })
+        }),
       );
 
       await act(async () => {
@@ -861,7 +866,7 @@ describe('useUsers', () => {
         http.get('*/api/users', async () => {
           await requestPromise;
           return HttpResponse.json(mockUsersResponse);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -888,9 +893,9 @@ describe('useUsers', () => {
         http.get('*/api/users', () => {
           return HttpResponse.json(
             { message: 'Server error' },
-            { status: 500 }
+            { status: 500 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -912,7 +917,7 @@ describe('useUsers', () => {
             ...mockUser1,
             isActive: false,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -941,7 +946,7 @@ describe('useUsers', () => {
             ...mockUser1,
             roles: ['Admin'],
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -965,11 +970,8 @@ describe('useUsers', () => {
       // First request fails
       server.use(
         http.get('*/api/users', () => {
-          return HttpResponse.json(
-            { message: 'Fetch error' },
-            { status: 500 }
-          );
-        })
+          return HttpResponse.json({ message: 'Fetch error' }, { status: 500 });
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -984,7 +986,7 @@ describe('useUsers', () => {
       server.use(
         http.get('*/api/users', () => {
           return HttpResponse.json(mockUsersResponse);
-        })
+        }),
       );
 
       await act(async () => {
@@ -998,7 +1000,7 @@ describe('useUsers', () => {
       server.use(
         http.get('*/api/users', () => {
           return HttpResponse.json(mockUsersResponse);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -1010,11 +1012,8 @@ describe('useUsers', () => {
       // Simulate an error from a previous operation (fetch error)
       server.use(
         http.get('*/api/users', () => {
-          return HttpResponse.json(
-            { message: 'First error' },
-            { status: 500 }
-          );
-        })
+          return HttpResponse.json({ message: 'First error' }, { status: 500 });
+        }),
       );
 
       await act(async () => {
@@ -1030,7 +1029,7 @@ describe('useUsers', () => {
             ...mockUser1,
             isActive: false,
           });
-        })
+        }),
       );
 
       await act(async () => {
@@ -1045,7 +1044,7 @@ describe('useUsers', () => {
       server.use(
         http.get('*/api/users', () => {
           return HttpResponse.json(mockUsersResponse);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -1057,11 +1056,8 @@ describe('useUsers', () => {
       // Simulate an error from a previous operation (fetch error)
       server.use(
         http.get('*/api/users', () => {
-          return HttpResponse.json(
-            { message: 'First error' },
-            { status: 500 }
-          );
-        })
+          return HttpResponse.json({ message: 'First error' }, { status: 500 });
+        }),
       );
 
       await act(async () => {
@@ -1077,7 +1073,7 @@ describe('useUsers', () => {
             ...mockUser1,
             roles: ['Admin'],
           });
-        })
+        }),
       );
 
       await act(async () => {
@@ -1100,7 +1096,7 @@ describe('useUsers', () => {
             pageSize: 10,
             totalPages: 0,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -1123,9 +1119,9 @@ describe('useUsers', () => {
         http.patch('*/api/users/:id', () => {
           return HttpResponse.json(
             { message: 'User not found' },
-            { status: 404 }
+            { status: 404 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -1136,7 +1132,9 @@ describe('useUsers', () => {
 
       await expect(async () => {
         await act(async () => {
-          await result.current.updateUser('non-existent-id', { isActive: false });
+          await result.current.updateUser('non-existent-id', {
+            isActive: false,
+          });
         });
       }).rejects.toThrow();
     });
@@ -1149,9 +1147,9 @@ describe('useUsers', () => {
         http.put('*/api/users/:id/roles', () => {
           return HttpResponse.json(
             { message: 'User not found' },
-            { status: 404 }
+            { status: 404 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -1176,7 +1174,7 @@ describe('useUsers', () => {
           // Simulate network delay
           await new Promise((resolve) => setTimeout(resolve, 10));
           return HttpResponse.json(mockUsersResponse);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());
@@ -1209,7 +1207,7 @@ describe('useUsers', () => {
             ...mockUser1,
             isActive: false,
           });
-        })
+        }),
       );
 
       // Update should succeed but not affect the empty list
@@ -1246,7 +1244,7 @@ describe('useUsers', () => {
             });
           }
           return HttpResponse.json({ message: 'Not found' }, { status: 404 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUsers());

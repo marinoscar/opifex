@@ -50,12 +50,13 @@ export function applyDataEnvelope(document: MutableDocument): MutableDocument {
     {}) as Record<string, SchemaLike>;
 
   forEachOperation(document, (operation) => {
-    for (const [status, response] of Object.entries(operation.responses ?? {})) {
+    for (const [status, response] of Object.entries(
+      operation.responses ?? {},
+    )) {
       if (!/^2\d\d$/.test(status)) continue;
 
       const json = (response as SchemaLike | undefined)?.['content'] as
-        | Record<string, { schema?: SchemaLike }>
-        | undefined;
+        Record<string, { schema?: SchemaLike }> | undefined;
       const media = json?.['application/json'];
       const schema = media?.schema;
       if (!media || !schema) continue;

@@ -30,7 +30,9 @@ interface UseUserSettingsReturn {
   refresh: () => Promise<void>;
 }
 
-export function useUserSettings(options: UseUserSettingsOptions = {}): UseUserSettingsReturn {
+export function useUserSettings(
+  options: UseUserSettingsOptions = {},
+): UseUserSettingsReturn {
   const { syncTheme = true } = options;
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -57,7 +59,8 @@ export function useUserSettings(options: UseUserSettingsOptions = {}): UseUserSe
         }
       }
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Failed to load settings';
+      const message =
+        err instanceof ApiError ? err.message : 'Failed to load settings';
       if (isMounted()) setError(message);
     } finally {
       if (isMounted()) setIsLoading(false);
@@ -96,7 +99,8 @@ export function useUserSettings(options: UseUserSettingsOptions = {}): UseUserSe
           await fetchSettings();
           throw new Error('Settings were updated elsewhere. Please try again.');
         }
-        const message = err instanceof ApiError ? err.message : 'Failed to save settings';
+        const message =
+          err instanceof ApiError ? err.message : 'Failed to save settings';
         if (isMounted()) setError(message);
         throw err;
       } finally {

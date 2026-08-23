@@ -8,15 +8,18 @@ import {
 
 describe('tokenize', () => {
   it('drops short words and stop words', () => {
-    expect([...tokenize('the export is on a page')].sort()).toEqual(['export', 'page']);
+    expect([...tokenize('the export is on a page')].sort()).toEqual([
+      'export',
+      'page',
+    ]);
   });
 
   it('strips fenced code', () => {
     // Two issues quoting the same stack trace are not duplicates, and leaving
     // the trace in makes them look like one.
-    expect(tokenize('report\n```\nTypeError undefined reading foo\n```')).toEqual(
-      new Set(['report']),
-    );
+    expect(
+      tokenize('report\n```\nTypeError undefined reading foo\n```'),
+    ).toEqual(new Set(['report']));
   });
 
   it('strips inline code', () => {
@@ -27,9 +30,13 @@ describe('tokenize', () => {
 
   it('keeps link text but drops the URL', () => {
     // The text carries meaning; the URL is shared by every issue about one file.
-    expect([...tokenize('see [the export module](https://github.com/acme/app/blob/main/x)')].sort()).toEqual(
-      ['export', 'module', 'see'],
-    );
+    expect(
+      [
+        ...tokenize(
+          'see [the export module](https://github.com/acme/app/blob/main/x)',
+        ),
+      ].sort(),
+    ).toEqual(['export', 'module', 'see']);
   });
 
   it('strips HTML comments, which every templated issue shares', () => {
@@ -87,8 +94,14 @@ describe('similarity', () => {
     // against the same subsystem.
     expect(TITLE_WEIGHT).toBeGreaterThan(0.5);
 
-    const sameTitle = similarity(ISSUE, { title: ISSUE.title, body: 'Completely other words.' });
-    const sameBody = similarity(ISSUE, { title: 'Entirely different heading.', body: ISSUE.body });
+    const sameTitle = similarity(ISSUE, {
+      title: ISSUE.title,
+      body: 'Completely other words.',
+    });
+    const sameBody = similarity(ISSUE, {
+      title: 'Entirely different heading.',
+      body: ISSUE.body,
+    });
 
     expect(sameTitle).toBeGreaterThan(sameBody);
   });
@@ -102,7 +115,9 @@ describe('similarity', () => {
         body: 'Operators currently export reports by hand; add a CSV download button.',
       };
 
-      expect(similarity(ISSUE, reworded)).toBeGreaterThanOrEqual(DUPLICATE_THRESHOLD);
+      expect(similarity(ISSUE, reworded)).toBeGreaterThanOrEqual(
+        DUPLICATE_THRESHOLD,
+      );
     });
 
     it('does NOT refuse different work against the same subsystem', () => {

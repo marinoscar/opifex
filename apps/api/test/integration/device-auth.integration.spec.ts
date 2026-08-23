@@ -6,10 +6,7 @@ import {
 } from '../helpers/test-app.helper';
 import { resetPrismaMock } from '../mocks/prisma.mock';
 import { setupBaseMocks } from '../fixtures/mock-setup.helper';
-import {
-  createMockTestUser,
-  authHeader,
-} from '../helpers/auth-mock.helper';
+import { createMockTestUser, authHeader } from '../helpers/auth-mock.helper';
 import { DeviceCodeStatus } from '@prisma/client';
 
 describe('Device Auth Controller (Integration)', () => {

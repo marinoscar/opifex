@@ -11,6 +11,7 @@ A helper script that constructs `DATABASE_URL` from individual PostgreSQL enviro
 The application uses individual database connection variables (`POSTGRES_HOST`, `POSTGRES_PORT`, etc.) for flexibility across different environments (Docker, local development, CI/CD). However, Prisma CLI requires `DATABASE_URL` to be set as an environment variable.
 
 This script bridges that gap by:
+
 1. Reading individual PostgreSQL environment variables
 2. Constructing a proper `DATABASE_URL` connection string
 3. Executing Prisma CLI commands with the constructed URL
@@ -19,14 +20,14 @@ This script bridges that gap by:
 
 The script reads the following environment variables:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `POSTGRES_HOST` | `localhost` | PostgreSQL server hostname |
-| `POSTGRES_PORT` | `5432` | PostgreSQL server port |
-| `POSTGRES_USER` | `postgres` | Database user |
-| `POSTGRES_PASSWORD` | `postgres` | Database password |
-| `POSTGRES_DB` | `appdb` | Database name |
-| `POSTGRES_SSL` | `false` | Enable SSL connection (`true`/`false`) |
+| Variable            | Default     | Description                            |
+| ------------------- | ----------- | -------------------------------------- |
+| `POSTGRES_HOST`     | `localhost` | PostgreSQL server hostname             |
+| `POSTGRES_PORT`     | `5432`      | PostgreSQL server port                 |
+| `POSTGRES_USER`     | `postgres`  | Database user                          |
+| `POSTGRES_PASSWORD` | `postgres`  | Database password                      |
+| `POSTGRES_DB`       | `appdb`     | Database name                          |
+| `POSTGRES_SSL`      | `false`     | Enable SSL connection (`true`/`false`) |
 
 ### Usage
 
@@ -139,12 +140,14 @@ npm run prisma:migrate
 If you previously used `DATABASE_URL` directly:
 
 **Old approach:**
+
 ```bash
 export DATABASE_URL="postgresql://user:pass@localhost:5432/db"
 npx prisma migrate deploy
 ```
 
 **New approach:**
+
 ```bash
 export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
@@ -159,19 +162,23 @@ npm run prisma:migrate
 ### Troubleshooting
 
 **Error: "No Prisma command specified"**
+
 - You forgot to pass a Prisma command
 - Solution: `npm run prisma -- [command]`
 
 **Error: "Connection timeout" or "Can't reach database"**
+
 - Check that environment variables are set correctly
 - Verify database is running and accessible
 - Test connection: `psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB`
 
 **Error: "Authentication failed"**
+
 - Check `POSTGRES_USER` and `POSTGRES_PASSWORD` are correct
 - If password has special characters, make sure they're properly set (the script handles URL encoding)
 
 **Prisma generates but migrations fail**
+
 - Ensure all environment variables are available
 - Check network connectivity to database
 - Verify database user has proper permissions

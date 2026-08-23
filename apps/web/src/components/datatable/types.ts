@@ -62,7 +62,8 @@ export type FilterOperator =
  *
  * Default `'text'`.
  */
-export type DataTableFilterType = 'text' | 'number' | 'date' | 'enum' | 'boolean';
+export type DataTableFilterType =
+  'text' | 'number' | 'date' | 'enum' | 'boolean';
 
 /** One selectable option for an `enum` filter column. */
 export interface DataTableEnumValue {
@@ -322,7 +323,8 @@ export interface DataTableSortConfig {
  * filter model survives `JSON.stringify`, a URL round-trip, and a page reload
  * without a revive step.
  */
-export type DataTableFilterValue = string | number | boolean | (string | number)[] | null;
+export type DataTableFilterValue =
+  string | number | boolean | (string | number)[] | null;
 
 /**
  * One entry in the normalized filter model.

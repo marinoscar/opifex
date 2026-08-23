@@ -242,9 +242,7 @@ describe('AllowlistService', () => {
       };
 
       mockPrisma.allowedEmail.findUnique.mockResolvedValue(null);
-      mockPrisma.allowedEmail.create.mockResolvedValue(
-        mockPendingEntry as any,
-      );
+      mockPrisma.allowedEmail.create.mockResolvedValue(mockPendingEntry as any);
       mockPrisma.auditEvent.create.mockResolvedValue({} as any);
 
       const result = await service.addEmail(dto, mockAddedBy.id);
@@ -278,9 +276,7 @@ describe('AllowlistService', () => {
       };
 
       mockPrisma.allowedEmail.findUnique.mockResolvedValue(null);
-      mockPrisma.allowedEmail.create.mockResolvedValue(
-        mockPendingEntry as any,
-      );
+      mockPrisma.allowedEmail.create.mockResolvedValue(mockPendingEntry as any);
       mockPrisma.auditEvent.create.mockResolvedValue({} as any);
 
       await service.addEmail(dto, mockAddedBy.id);
@@ -346,9 +342,7 @@ describe('AllowlistService', () => {
       };
 
       mockPrisma.allowedEmail.findUnique.mockResolvedValue(null);
-      mockPrisma.allowedEmail.create.mockResolvedValue(
-        mockPendingEntry as any,
-      );
+      mockPrisma.allowedEmail.create.mockResolvedValue(mockPendingEntry as any);
       mockPrisma.auditEvent.create.mockResolvedValue({} as any);
 
       await service.addEmail(dto, mockAddedBy.id);
@@ -407,9 +401,7 @@ describe('AllowlistService', () => {
       mockPrisma.allowedEmail.findUnique.mockResolvedValue(
         mockPendingEntry as any,
       );
-      mockPrisma.allowedEmail.delete.mockResolvedValue(
-        mockPendingEntry as any,
-      );
+      mockPrisma.allowedEmail.delete.mockResolvedValue(mockPendingEntry as any);
       mockPrisma.auditEvent.create.mockResolvedValue({} as any);
 
       await service.removeEmail(mockPendingEntry.id, mockAddedBy.id);
@@ -423,9 +415,7 @@ describe('AllowlistService', () => {
       mockPrisma.allowedEmail.findUnique.mockResolvedValue(
         mockPendingEntry as any,
       );
-      mockPrisma.allowedEmail.delete.mockResolvedValue(
-        mockPendingEntry as any,
-      );
+      mockPrisma.allowedEmail.delete.mockResolvedValue(mockPendingEntry as any);
       mockPrisma.auditEvent.create.mockResolvedValue({} as any);
 
       await service.removeEmail(mockPendingEntry.id, mockAddedBy.id);
@@ -562,10 +552,7 @@ describe('AllowlistService', () => {
         claimedAt: new Date(),
       } as any);
 
-      await service.markEmailClaimed(
-        mockPendingEntry.email,
-        mockClaimedBy.id,
-      );
+      await service.markEmailClaimed(mockPendingEntry.email, mockClaimedBy.id);
 
       expect(mockPrisma.allowedEmail.update).toHaveBeenCalledWith({
         where: { id: mockPendingEntry.id },
@@ -581,10 +568,7 @@ describe('AllowlistService', () => {
         mockClaimedEntry as any,
       );
 
-      await service.markEmailClaimed(
-        mockClaimedEntry.email,
-        mockClaimedBy.id,
-      );
+      await service.markEmailClaimed(mockClaimedEntry.email, mockClaimedBy.id);
 
       expect(mockPrisma.allowedEmail.update).not.toHaveBeenCalled();
     });
@@ -625,10 +609,7 @@ describe('AllowlistService', () => {
         claimedAt: new Date(),
       } as any);
 
-      await service.markEmailClaimed(
-        mockPendingEntry.email,
-        mockClaimedBy.id,
-      );
+      await service.markEmailClaimed(mockPendingEntry.email, mockClaimedBy.id);
 
       expect(mockPrisma.allowedEmail.update).toHaveBeenCalledWith({
         where: { id: mockPendingEntry.id },
@@ -649,10 +630,7 @@ describe('AllowlistService', () => {
         claimedAt: new Date(),
       } as any);
 
-      await service.markEmailClaimed(
-        mockPendingEntry.email,
-        mockClaimedBy.id,
-      );
+      await service.markEmailClaimed(mockPendingEntry.email, mockClaimedBy.id);
 
       expect(mockPrisma.allowedEmail.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -669,9 +647,7 @@ describe('AllowlistService', () => {
       mockPrisma.allowedEmail.findUnique.mockResolvedValue(
         mockPendingEntry as any,
       );
-      mockPrisma.allowedEmail.delete.mockResolvedValue(
-        mockPendingEntry as any,
-      );
+      mockPrisma.allowedEmail.delete.mockResolvedValue(mockPendingEntry as any);
       mockPrisma.auditEvent.create.mockResolvedValue({} as any);
 
       await service.removeEmail(mockPendingEntry.id, mockAddedBy.id);
@@ -685,9 +661,7 @@ describe('AllowlistService', () => {
       mockPrisma.allowedEmail.findUnique.mockResolvedValue(
         mockPendingEntry as any,
       );
-      mockPrisma.allowedEmail.delete.mockResolvedValue(
-        mockPendingEntry as any,
-      );
+      mockPrisma.allowedEmail.delete.mockResolvedValue(mockPendingEntry as any);
       mockPrisma.auditEvent.create.mockResolvedValue({} as any);
 
       await service.removeEmail(mockPendingEntry.id, mockAddedBy.id);
@@ -740,12 +714,8 @@ describe('AllowlistService', () => {
         claimedAt: null,
       };
 
-      mockPrisma.allowedEmail.findUnique.mockResolvedValue(
-        pendingEntry as any,
-      );
-      mockPrisma.allowedEmail.delete.mockResolvedValue(
-        pendingEntry as any,
-      );
+      mockPrisma.allowedEmail.findUnique.mockResolvedValue(pendingEntry as any);
+      mockPrisma.allowedEmail.delete.mockResolvedValue(pendingEntry as any);
       mockPrisma.auditEvent.create.mockResolvedValue({} as any);
 
       await expect(

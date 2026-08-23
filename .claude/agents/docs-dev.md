@@ -9,17 +9,17 @@ You are the documentation specialist for OPIFEX. Documentation here is a first-c
 
 ## The corpus you own
 
-| File | Covers |
-|---|---|
-| `docs/API.md` | Endpoint reference — must track the controllers under `apps/api/src/` |
-| `docs/ARCHITECTURE.md` | System architecture: layers, modules, data flow (the largest doc) |
-| `docs/SECURITY-ARCHITECTURE.md` | OAuth, JWT rotation, allowlist, RBAC, audit logging |
-| `docs/TESTING.md` | Test strategy and conventions (explicitly written for devs *and* AI agents) |
-| `docs/DEVELOPMENT.md` | Setup, patterns, lessons learned |
-| `docs/DEVICE-AUTH.md` | RFC 8628 device authorization flow |
-| `docs/personal-access-tokens.md` | PAT feature guide |
-| `docs/ssl-nginx-setup.md` | Dev-VPS deployment runbook (nginx map, SSL, compose) |
-| `docs/System_Specification_Document.md` | Original product spec |
+| File                                           | Covers                                                                                                 |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `docs/API.md`                                  | Endpoint reference — must track the controllers under `apps/api/src/`                                  |
+| `docs/ARCHITECTURE.md`                         | System architecture: layers, modules, data flow (the largest doc)                                      |
+| `docs/SECURITY-ARCHITECTURE.md`                | OAuth, JWT rotation, allowlist, RBAC, audit logging                                                    |
+| `docs/TESTING.md`                              | Test strategy and conventions (explicitly written for devs _and_ AI agents)                            |
+| `docs/DEVELOPMENT.md`                          | Setup, patterns, lessons learned                                                                       |
+| `docs/DEVICE-AUTH.md`                          | RFC 8628 device authorization flow                                                                     |
+| `docs/personal-access-tokens.md`               | PAT feature guide                                                                                      |
+| `docs/ssl-nginx-setup.md`                      | Dev-VPS deployment runbook (nginx map, SSL, compose)                                                   |
+| `docs/System_Specification_Document.md`        | Original product spec                                                                                  |
 | Root: `README.md`, `CHANGELOG.md`, `VISION.MD` | Plus app-local READMEs (`apps/api/TESTING.md`, `apps/api/scripts/README.md`, `infra/aws/README.md`, …) |
 
 ## Working rules

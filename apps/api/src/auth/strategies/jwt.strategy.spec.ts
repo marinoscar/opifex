@@ -31,10 +31,18 @@ describe('JwtStrategy', () => {
 
   describe('validate', () => {
     it('should return user from auth service', async () => {
-      const mockUser = { id: 'user-1', email: 'test@example.com', isActive: true };
+      const mockUser = {
+        id: 'user-1',
+        email: 'test@example.com',
+        isActive: true,
+      };
       mockAuthService.validateJwtPayload.mockResolvedValue(mockUser as any);
 
-      const payload = { sub: 'user-1', email: 'test@example.com', roles: ['viewer'] };
+      const payload = {
+        sub: 'user-1',
+        email: 'test@example.com',
+        roles: ['viewer'],
+      };
       const result = await strategy.validate(payload);
 
       expect(result).toEqual(mockUser);
@@ -46,7 +54,9 @@ describe('JwtStrategy', () => {
 
       const payload = { sub: 'invalid', email: 'test@example.com', roles: [] };
 
-      await expect(strategy.validate(payload)).rejects.toThrow(UnauthorizedException);
+      await expect(strategy.validate(payload)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should throw when auth service throws', async () => {
@@ -56,7 +66,9 @@ describe('JwtStrategy', () => {
 
       const payload = { sub: 'invalid', email: 'test@example.com', roles: [] };
 
-      await expect(strategy.validate(payload)).rejects.toThrow(UnauthorizedException);
+      await expect(strategy.validate(payload)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 });

@@ -1,7 +1,6 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { ExecutionContext, CallHandler, Logger } from '@nestjs/common';
 import { LoggingInterceptor } from './logging.interceptor';
-import { of, throwError } from 'rxjs';
+import { of } from 'rxjs';
 import { FastifyRequest } from 'fastify';
 
 describe('LoggingInterceptor', () => {
@@ -20,7 +19,11 @@ describe('LoggingInterceptor', () => {
     jest.restoreAllMocks();
   });
 
-  function createMockContext(method: string, url: string, requestId?: string): ExecutionContext {
+  function createMockContext(
+    method: string,
+    url: string,
+    requestId?: string,
+  ): ExecutionContext {
     const mockRequest: Partial<FastifyRequest> = {
       method,
       url,
@@ -207,7 +210,9 @@ describe('LoggingInterceptor', () => {
 
     it('should log for requests returning large objects', (done) => {
       const context = createMockContext('GET', '/api/large');
-      const largeData = { items: new Array(1000).fill({ id: 1, name: 'test' }) };
+      const largeData = {
+        items: new Array(1000).fill({ id: 1, name: 'test' }),
+      };
       const callHandler = createMockCallHandler(largeData);
 
       interceptor.intercept(context, callHandler).subscribe(() => {

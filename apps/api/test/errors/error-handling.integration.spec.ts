@@ -179,7 +179,9 @@ describe('Error Handling (Integration)', () => {
     it('should return 401 with invalid JWT signature', async () => {
       const response = await request(context.app.getHttpServer())
         .get('/api/auth/me')
-        .set(authHeader('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.invalid.signature'))
+        .set(
+          authHeader('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.invalid.signature'),
+        )
         .expect(401);
 
       expect(response.body).toHaveProperty('statusCode', 401);

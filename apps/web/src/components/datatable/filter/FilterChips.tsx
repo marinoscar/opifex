@@ -53,7 +53,9 @@ export function FilterChips<Row>({
 
   return (
     <Box
-      data-testid={strip ? 'datatable-filter-chip-strip' : 'datatable-filter-chips'}
+      data-testid={
+        strip ? 'datatable-filter-chip-strip' : 'datatable-filter-chips'
+      }
       role="list"
       aria-label="Active filters"
       sx={{

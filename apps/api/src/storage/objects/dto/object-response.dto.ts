@@ -35,4 +35,6 @@ export const uploadStatusResponseSchema = z.object({
   totalBytes: z.string(),
 });
 
-export class UploadStatusResponseDto extends createZodDto(uploadStatusResponseSchema) {}
+export class UploadStatusResponseDto extends createZodDto(
+  uploadStatusResponseSchema,
+) {}

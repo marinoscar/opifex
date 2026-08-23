@@ -80,7 +80,8 @@ export function rowAccessibleName<Row>(
 ): string {
   const primary = columns.find(
     (column) =>
-      column.priority === 'primary' && (!visibleColumnIds || visibleColumnIds.has(column.id)),
+      column.priority === 'primary' &&
+      (!visibleColumnIds || visibleColumnIds.has(column.id)),
   );
   if (!primary) return fallbackId;
   const text = formatColumnValue(extractColumnValue(primary, row));
@@ -132,8 +133,16 @@ export function toGridColDef<Row>(column: DataTableColumn<Row>): GridColDef {
     def.renderCell = (params) => {
       const row = params.row as Row;
       const scalar = extractColumnValue(column, row);
-      const content: ReactNode = column.render ? column.render(row) : displayText(scalar);
+      const content: ReactNode = column.render
+        ? column.render(row)
+        : displayText(scalar);
       if (!column.truncate) return content;
+      // TruncatedCellProps declares `children` as required, so the
+      // three-argument createElement form does not typecheck against it
+      // (TS2769). The rule is about JSX, where `children` as a prop is a
+      // readability problem; this is a createElement call in a .ts file,
+      // where props are the only place it can go.
+      // eslint-disable-next-line react/no-children-prop
       return createElement(TruncatedCell, {
         title: scalar === null ? undefined : String(scalar),
         children: content,
@@ -145,7 +154,9 @@ export function toGridColDef<Row>(column: DataTableColumn<Row>): GridColDef {
 }
 
 /** Map a whole column set, preserving declaration order. */
-export function toGridColumns<Row>(columns: DataTableColumn<Row>[]): GridColDef[] {
+export function toGridColumns<Row>(
+  columns: DataTableColumn<Row>[],
+): GridColDef[] {
   return columns.map((column) => toGridColDef(column));
 }
 
@@ -173,8 +184,12 @@ export function buildColumnVisibilityModel<Row>(
 ): GridColumnVisibilityModel {
   const model: GridColumnVisibilityModel = {};
   for (const column of columns) {
-    const layoutShows = !(options.hideDetailColumns && column.priority === 'detail');
-    const userShows = options.visibleColumns ? options.visibleColumns.has(column.id) : true;
+    const layoutShows = !(
+      options.hideDetailColumns && column.priority === 'detail'
+    );
+    const userShows = options.visibleColumns
+      ? options.visibleColumns.has(column.id)
+      : true;
     model[column.id] = layoutShows && userShows;
   }
   return model;

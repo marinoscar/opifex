@@ -57,7 +57,14 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
  */
 const AGENT_REQUIRED = ['Work-Order', 'Issue', 'Runner', 'Run-Id', 'Attempt'];
 const HUMAN_FORBIDDEN = ['Work-Order', 'Runner', 'Run-Id', 'Attempt'];
-const ALL_TRAILERS = ['Work-Order', 'Issue', 'Decision', 'Runner', 'Run-Id', 'Attempt'];
+const ALL_TRAILERS = [
+  'Work-Order',
+  'Issue',
+  'Decision',
+  'Runner',
+  'Run-Id',
+  'Attempt',
+];
 
 /**
  * GitHub's own closing-keyword set, which is what actually decides whether the
@@ -82,7 +89,9 @@ function documentedPattern(provenance, trailer) {
     );
   }
 
-  const match = /matching `\^([^`]+)\$`/.exec(provenance.slice(start, start + 700));
+  const match = /matching `\^([^`]+)\$`/.exec(
+    provenance.slice(start, start + 700),
+  );
   if (!match) {
     throw new Error(
       `docs/PROVENANCE.md documents no pattern for ${trailer}: — the spec and this check have diverged.`,
@@ -93,8 +102,13 @@ function documentedPattern(provenance, trailer) {
 }
 
 export function loadPatterns() {
-  const provenance = readFileSync(join(REPO_ROOT, 'docs/PROVENANCE.md'), 'utf8');
-  return Object.fromEntries(ALL_TRAILERS.map((t) => [t, documentedPattern(provenance, t)]));
+  const provenance = readFileSync(
+    join(REPO_ROOT, 'docs/PROVENANCE.md'),
+    'utf8',
+  );
+  return Object.fromEntries(
+    ALL_TRAILERS.map((t) => [t, documentedPattern(provenance, t)]),
+  );
 }
 
 /**
@@ -111,19 +125,22 @@ export function parseTrailers(message) {
   const lines = message.replace(/\r\n/g, '\n').trimEnd().split('\n');
 
   let start = lines.length;
-  while (start > 0 && /^[A-Za-z][A-Za-z0-9-]*:/.test(lines[start - 1])) start -= 1;
+  while (start > 0 && /^[A-Za-z][A-Za-z0-9-]*:/.test(lines[start - 1]))
+    start -= 1;
 
   // A trailer block is the last block. If what precedes it is neither a blank
   // line nor the start of the message, those lines are prose that happens to
   // contain a colon, not trailers.
   if (start === lines.length) return { trailers: [], malformed: [] };
-  if (start > 0 && lines[start - 1].trim() !== '') return { trailers: [], malformed: [] };
+  if (start > 0 && lines[start - 1].trim() !== '')
+    return { trailers: [], malformed: [] };
 
   const trailers = [];
   const malformed = [];
 
   for (const line of lines.slice(start)) {
-    const [, key, separator, value] = /^([A-Za-z][A-Za-z0-9-]*):(\s*)(.*)$/.exec(line);
+    const [, key, separator, value] =
+      /^([A-Za-z][A-Za-z0-9-]*):(\s*)(.*)$/.exec(line);
 
     // "One space after the colon. No leading whitespace." Only enforced for
     // keys the vocabulary actually defines — `Co-authored-by:` and friends are
@@ -143,7 +160,11 @@ function resolvesToAdr(value) {
   const number = value.slice(4);
   const dir = join(REPO_ROOT, 'docs/adr');
   if (!existsSync(dir)) return false;
-  return readdirSync(dir).filter((f) => f.startsWith(`${number}-`) && f.endsWith('.md')).length === 1;
+  return (
+    readdirSync(dir).filter(
+      (f) => f.startsWith(`${number}-`) && f.endsWith('.md'),
+    ).length === 1
+  );
 }
 
 /**
@@ -184,7 +205,9 @@ export function checkCommit(commit, patterns) {
 
   for (const [key, value] of present) {
     if (!patterns[key].test(value)) {
-      problems.push(`${key}: value "${value}" does not match the format in docs/PROVENANCE.md`);
+      problems.push(
+        `${key}: value "${value}" does not match the format in docs/PROVENANCE.md`,
+      );
     }
   }
 
@@ -226,7 +249,9 @@ export function checkCommit(commit, patterns) {
   } else {
     for (const key of HUMAN_FORBIDDEN) {
       if (present.has(key)) {
-        problems.push(`${key}: present on a human-authored commit, where it must be absent`);
+        problems.push(
+          `${key}: present on a human-authored commit, where it must be absent`,
+        );
       }
     }
   }
@@ -239,7 +264,11 @@ function commitsBetween(base, head) {
   const FIELD = '';
   const raw = execFileSync(
     'git',
-    ['log', `--format=%H${FIELD}%P${FIELD}%s${FIELD}%B${RECORD}`, `${base}..${head}`],
+    [
+      'log',
+      `--format=%H${FIELD}%P${FIELD}%s${FIELD}%B${RECORD}`,
+      `${base}..${head}`,
+    ],
     { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 },
   );
 
@@ -249,19 +278,27 @@ function commitsBetween(base, head) {
     .filter(Boolean)
     .map((record) => {
       const [sha, parents, subject, message] = record.split(FIELD);
-      return { sha, parents: parents.trim().split(/\s+/).filter(Boolean), subject, message };
+      return {
+        sha,
+        parents: parents.trim().split(/\s+/).filter(Boolean),
+        subject,
+        message,
+      };
     });
 }
 
 function parseArgs(argv) {
   const args = {};
-  for (let i = 0; i < argv.length; i += 2) args[argv[i].replace(/^--/, '')] = argv[i + 1];
+  for (let i = 0; i < argv.length; i += 2)
+    args[argv[i].replace(/^--/, '')] = argv[i + 1];
   return args;
 }
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  const body = args['body-file'] ? readFileSync(args['body-file'], 'utf8') : (process.env.PR_BODY ?? '');
+  const body = args['body-file']
+    ? readFileSync(args['body-file'], 'utf8')
+    : (process.env.PR_BODY ?? '');
 
   let patterns;
   try {
@@ -269,7 +306,9 @@ function main() {
   } catch (error) {
     // Fail loudly. Falling back to a permissive default here would turn a
     // broken spec into a green check, which is the failure this exists to stop.
-    console.error(`✗ Cannot read the provenance specification:\n  ${error.message}`);
+    console.error(
+      `✗ Cannot read the provenance specification:\n  ${error.message}`,
+    );
     process.exit(1);
   }
 
@@ -288,7 +327,8 @@ function main() {
     const problems = checkCommit(commit, patterns);
     if (problems.length > 0) {
       failures.push(
-        `${commit.sha.slice(0, 9)} ${commit.subject}\n` + problems.map((p) => `    ${p}`).join('\n'),
+        `${commit.sha.slice(0, 9)} ${commit.subject}\n` +
+          problems.map((p) => `    ${p}`).join('\n'),
       );
     }
   }

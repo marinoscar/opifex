@@ -12,7 +12,9 @@ export const createPushSubscriptionSchema = z.object({
   userAgent: z.string().max(512).optional(),
 });
 
-export class CreatePushSubscriptionDto extends createZodDto(createPushSubscriptionSchema) {}
+export class CreatePushSubscriptionDto extends createZodDto(
+  createPushSubscriptionSchema,
+) {}
 
 /**
  * Never includes `p256dh` or `auth`.
@@ -31,7 +33,9 @@ export const pushSubscriptionResponseSchema = z.object({
   createdAt: z.iso.datetime(),
 });
 
-export class PushSubscriptionResponseDto extends createZodDto(pushSubscriptionResponseSchema) {}
+export class PushSubscriptionResponseDto extends createZodDto(
+  pushSubscriptionResponseSchema,
+) {}
 
 export const notificationConfigResponseSchema = z.object({
   /**

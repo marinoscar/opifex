@@ -26,7 +26,10 @@ import { useCallback, useMemo } from 'react';
 import { Alert, Box, FormControlLabel, Stack } from '@mui/material';
 import type { DataTableRendererProps } from '../types';
 import { BulkActionBar } from '../BulkActionBar';
-import { DataTableEmptyOverlay, DataTableLoadingOverlay } from '../desktop/cells';
+import {
+  DataTableEmptyOverlay,
+  DataTableLoadingOverlay,
+} from '../desktop/cells';
 import { useRowActionConfirm } from '../shared/rowActionConfirm';
 import { IndeterminateCheckbox } from '../shared/IndeterminateCheckbox';
 import { DataCard } from './DataCard';
@@ -80,7 +83,9 @@ export function CardListRenderer<Row>({
       : columns;
     return {
       primaryColumns: shown.filter((column) => column.priority === 'primary'),
-      secondaryColumns: shown.filter((column) => column.priority === 'secondary'),
+      secondaryColumns: shown.filter(
+        (column) => column.priority === 'secondary',
+      ),
       detailColumns: shown.filter((column) => column.priority === 'detail'),
     };
   }, [columns, visibleColumnIds]);
@@ -108,7 +113,9 @@ export function CardListRenderer<Row>({
     if (!selection) return;
     // Page-scoped, exactly like the grid's header checkbox: with server-side
     // pagination "all" can only mean the ids this table has actually loaded.
-    selection.onSelectionChange(allSelected ? new Set<string>() : new Set(rowIds));
+    selection.onSelectionChange(
+      allSelected ? new Set<string>() : new Set(rowIds),
+    );
   }, [selection, allSelected, rowIds]);
 
   const clearSelection = useCallback(() => {
@@ -124,7 +131,8 @@ export function CardListRenderer<Row>({
   // Instead the browser is allowed to skip layout/paint for off-screen cards,
   // with a placeholder height MEASURED from a real card in this very table.
   const skipOffscreenCards = shouldVirtualizeCards(rows.length);
-  const { measureRef, height: measuredCardHeight } = useMeasuredCardHeight(skipOffscreenCards);
+  const { measureRef, height: measuredCardHeight } =
+    useMeasuredCardHeight(skipOffscreenCards);
 
   // --- Render ---------------------------------------------------------------
 
@@ -231,7 +239,9 @@ export function CardListRenderer<Row>({
         </Box>
       )}
 
-      {pagination && <CompactPagination pagination={pagination} loadedRows={rows.length} />}
+      {pagination && (
+        <CompactPagination pagination={pagination} loadedRows={rows.length} />
+      )}
 
       {confirmDialog}
     </Box>

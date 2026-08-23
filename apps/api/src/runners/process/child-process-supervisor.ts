@@ -112,20 +112,26 @@ export class SupervisedProcess {
       // terminal outcome, not a warning: nothing was started, so nothing can
       // be polled or cancelled.
       child.once('error', (error: Error) => {
-        this.settle({ kind: 'spawn-failed', exitCode: null, signal: null, error }, resolve);
+        this.settle(
+          { kind: 'spawn-failed', exitCode: null, signal: null, error },
+          resolve,
+        );
       });
 
       // `close` rather than `exit`: `exit` can fire while stdout still has
       // buffered data, and a run whose last line is its result would lose it.
-      child.once('close', (code: number | null, signal: NodeJS.Signals | null) => {
-        this.flushPartialLine();
-        this.settle(
-          signal
-            ? { kind: 'signalled', exitCode: null, signal }
-            : { kind: 'exited', exitCode: code ?? 0, signal: null },
-          resolve,
-        );
-      });
+      child.once(
+        'close',
+        (code: number | null, signal: NodeJS.Signals | null) => {
+          this.flushPartialLine();
+          this.settle(
+            signal
+              ? { kind: 'signalled', exitCode: null, signal }
+              : { kind: 'exited', exitCode: code ?? 0, signal: null },
+            resolve,
+          );
+        },
+      );
     });
 
     child.stdout?.setEncoding('utf8');
@@ -295,7 +301,10 @@ export class SupervisedProcess {
     this.stderrTail = (this.stderrTail + chunk).slice(-STDERR_TAIL_BYTES);
   }
 
-  private settle(outcome: ProcessOutcome, resolve: (value: ProcessOutcome) => void): void {
+  private settle(
+    outcome: ProcessOutcome,
+    resolve: (value: ProcessOutcome) => void,
+  ): void {
     if (this.outcome !== null) return;
     this.outcome = outcome;
     this.endedAtValue = new Date();

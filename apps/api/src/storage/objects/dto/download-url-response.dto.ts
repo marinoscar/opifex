@@ -8,4 +8,6 @@ export const downloadUrlResponseSchema = z.object({
   expiresIn: z.number().int().positive(),
 });
 
-export class DownloadUrlResponseDto extends createZodDto(downloadUrlResponseSchema) {}
+export class DownloadUrlResponseDto extends createZodDto(
+  downloadUrlResponseSchema,
+) {}

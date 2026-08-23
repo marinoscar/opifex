@@ -66,7 +66,9 @@ const luminanceOf = (color: string) => relativeLuminance(parseColor(color));
 describe('theme tokens — status palette', () => {
   it('covers exactly the RunStatus union in both modes', () => {
     for (const mode of MODES) {
-      expect(Object.keys(statusTokens[mode]).sort()).toEqual([...RUN_STATUSES].sort());
+      expect(Object.keys(statusTokens[mode]).sort()).toEqual(
+        [...RUN_STATUSES].sort(),
+      );
     }
   });
 
@@ -80,9 +82,10 @@ describe('theme tokens — status palette', () => {
         const { fg, surface: fill } = statusTokens[mode][status];
 
         // Status text inside a card or a table row.
-        expect(contrastRatio(fg, paper), `${status} on background.paper`).toBeGreaterThanOrEqual(
-          WCAG_AA_NORMAL_TEXT,
-        );
+        expect(
+          contrastRatio(fg, paper),
+          `${status} on background.paper`,
+        ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
         // Status text on the bare page — the dashboard panels' own background.
         // This is the TIGHTER of the two in light mode, because the page is a
         // 4% step below white, and it is the constraint that caps how light a
@@ -92,9 +95,10 @@ describe('theme tokens — status palette', () => {
           `${status} on background.default`,
         ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
         // The label inside `StatusChip`, which paints its own fill.
-        expect(contrastRatio(fg, fill), `${status} on its chip fill`).toBeGreaterThanOrEqual(
-          WCAG_AA_NORMAL_TEXT,
-        );
+        expect(
+          contrastRatio(fg, fill),
+          `${status} on its chip fill`,
+        ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
       },
     );
 
@@ -106,42 +110,54 @@ describe('theme tokens — status palette', () => {
         // that can rot. Asserted anyway: it is the thing WCAG 1.4.11 requires,
         // and it would stop being implied the moment someone fades the border.
         const { fg } = statusTokens[mode][status];
-        expect(contrastRatio(fg, paper)).toBeGreaterThanOrEqual(WCAG_AA_UI_COMPONENT);
-        expect(contrastRatio(fg, pageBackground)).toBeGreaterThanOrEqual(WCAG_AA_UI_COMPONENT);
+        expect(contrastRatio(fg, paper)).toBeGreaterThanOrEqual(
+          WCAG_AA_UI_COMPONENT,
+        );
+        expect(contrastRatio(fg, pageBackground)).toBeGreaterThanOrEqual(
+          WCAG_AA_UI_COMPONENT,
+        );
       },
     );
 
-    it.each([...RUN_STATUSES])('%s: chip fill is distinguishable from the card', (status) => {
-      const { surface: fill } = statusTokens[mode][status];
-      expect(contrastRatio(fill, paper), `${status} fill vs paper`).toBeGreaterThanOrEqual(
-        MIN_CHIP_FILL_SEPARATION,
-      );
-    });
+    it.each([...RUN_STATUSES])(
+      '%s: chip fill is distinguishable from the card',
+      (status) => {
+        const { surface: fill } = statusTokens[mode][status];
+        expect(
+          contrastRatio(fill, paper),
+          `${status} fill vs paper`,
+        ).toBeGreaterThanOrEqual(MIN_CHIP_FILL_SEPARATION);
+      },
+    );
 
     it('gives every status a distinct luminance', () => {
-      const luminances = RUN_STATUSES.map((status) => luminanceOf(statusTokens[mode][status].fg));
+      const luminances = RUN_STATUSES.map((status) =>
+        luminanceOf(statusTokens[mode][status].fg),
+      );
       expect(new Set(luminances).size).toBe(RUN_STATUSES.length);
     });
 
-    it.each(CONFUSABLE_STATUS_GROUPS.map((group) => [group.join(' / '), group] as const))(
-      'separates %s in luminance, not only in hue',
-      (_name, group) => {
-        // The property that survives greyscale and dichromacy. Hue is what a
-        // colorblind operator may not have; tone is what everybody has.
-        for (let i = 0; i < group.length; i += 1) {
-          for (let j = i + 1; j < group.length; j += 1) {
-            const a = group[i];
-            const b = group[j];
-            const delta = Math.abs(
-              luminanceOf(statusTokens[mode][a].fg) - luminanceOf(statusTokens[mode][b].fg),
-            );
-            expect(delta, `${mode}: ${a} vs ${b}`).toBeGreaterThanOrEqual(
-              MIN_STATUS_LUMINANCE_SEPARATION,
-            );
-          }
+    it.each(
+      CONFUSABLE_STATUS_GROUPS.map(
+        (group) => [group.join(' / '), group] as const,
+      ),
+    )('separates %s in luminance, not only in hue', (_name, group) => {
+      // The property that survives greyscale and dichromacy. Hue is what a
+      // colorblind operator may not have; tone is what everybody has.
+      for (let i = 0; i < group.length; i += 1) {
+        for (let j = i + 1; j < group.length; j += 1) {
+          const a = group[i];
+          const b = group[j];
+          const delta = Math.abs(
+            luminanceOf(statusTokens[mode][a].fg) -
+              luminanceOf(statusTokens[mode][b].fg),
+          );
+          expect(delta, `${mode}: ${a} vs ${b}`).toBeGreaterThanOrEqual(
+            MIN_STATUS_LUMINANCE_SEPARATION,
+          );
         }
-      },
-    );
+      }
+    });
 
     it('never paints a status in the brand accent', () => {
       // The hue-allocation rule, mechanically. Equality is the crude form of
@@ -154,9 +170,10 @@ describe('theme tokens — status palette', () => {
         brand[mode].accent.toLowerCase(),
       ];
       for (const status of RUN_STATUSES) {
-        expect(reserved, `${status} must not reuse the brand accent`).not.toContain(
-          statusTokens[mode][status].fg.toLowerCase(),
-        );
+        expect(
+          reserved,
+          `${status} must not reuse the brand accent`,
+        ).not.toContain(statusTokens[mode][status].fg.toLowerCase());
       }
     });
   });
@@ -170,35 +187,41 @@ describe('theme tokens — surfaces and text', () => {
       // Third argument is mandatory here: both palettes state at least one
       // text tier with alpha, and a translucent foreground read as opaque
       // reports a contrast nobody sees (see `utils/contrast.ts`).
-      expect(contrastRatio(text[mode].primary, backing, backing)).toBeGreaterThanOrEqual(
-        WCAG_AA_NORMAL_TEXT,
-      );
-      expect(contrastRatio(text[mode].secondary, backing, backing)).toBeGreaterThanOrEqual(
-        WCAG_AA_NORMAL_TEXT,
-      );
+      expect(
+        contrastRatio(text[mode].primary, backing, backing),
+      ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
+      expect(
+        contrastRatio(text[mode].secondary, backing, backing),
+      ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
     }
   });
 
-  it.each(MODES)('%s: the brand accent is legible as link text on both surfaces', (mode) => {
-    // The accent is used for LINK TEXT, not only for fills and borders, so it
-    // is held to 4.5:1 rather than to the 3:1 UI-component floor.
-    const accent = brand[mode].accent;
-    expect(contrastRatio(accent, surface[mode].paper)).toBeGreaterThanOrEqual(
-      WCAG_AA_NORMAL_TEXT,
-    );
-    expect(contrastRatio(accent, surface[mode].default)).toBeGreaterThanOrEqual(
-      WCAG_AA_NORMAL_TEXT,
-    );
-  });
+  it.each(MODES)(
+    '%s: the brand accent is legible as link text on both surfaces',
+    (mode) => {
+      // The accent is used for LINK TEXT, not only for fills and borders, so it
+      // is held to 4.5:1 rather than to the 3:1 UI-component floor.
+      const accent = brand[mode].accent;
+      expect(contrastRatio(accent, surface[mode].paper)).toBeGreaterThanOrEqual(
+        WCAG_AA_NORMAL_TEXT,
+      );
+      expect(
+        contrastRatio(accent, surface[mode].default),
+      ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
+    },
+  );
 
-  it.each(MODES)('%s: text.secondary is measurably quieter than text.primary', (mode) => {
-    // Guards the alpha-compositing mistake described in `utils/contrast.ts`:
-    // drop the third argument and both tiers collapse to the same ratio.
-    const paper = surface[mode].paper;
-    const primary = contrastRatio(text[mode].primary, paper, paper);
-    const secondary = contrastRatio(text[mode].secondary, paper, paper);
-    expect(secondary).toBeLessThan(primary);
-  });
+  it.each(MODES)(
+    '%s: text.secondary is measurably quieter than text.primary',
+    (mode) => {
+      // Guards the alpha-compositing mistake described in `utils/contrast.ts`:
+      // drop the third argument and both tiers collapse to the same ratio.
+      const paper = surface[mode].paper;
+      const primary = contrastRatio(text[mode].primary, paper, paper);
+      const secondary = contrastRatio(text[mode].secondary, paper, paper);
+      expect(secondary).toBeLessThan(primary);
+    },
+  );
 });
 
 describe('theme — the tokens actually reach the MUI themes', () => {
@@ -208,7 +231,9 @@ describe('theme — the tokens actually reach the MUI themes', () => {
     expect(lightTheme.palette.error.main).toBe(statusTokens.light.failed.fg);
     expect(lightTheme.palette.warning.main).toBe(statusTokens.light.stalled.fg);
     expect(lightTheme.palette.info.main).toBe(statusTokens.light.running.fg);
-    expect(lightTheme.palette.success.main).toBe(statusTokens.light.succeeded.fg);
+    expect(lightTheme.palette.success.main).toBe(
+      statusTokens.light.succeeded.fg,
+    );
 
     expect(darkTheme.palette.error.main).toBe(statusTokens.dark.failed.fg);
     expect(darkTheme.palette.warning.main).toBe(statusTokens.dark.stalled.fg);
@@ -239,8 +264,13 @@ describe('theme — the tokens actually reach the MUI themes', () => {
     // divider.
     for (const theme of [lightTheme, darkTheme]) {
       const root = theme.components?.MuiAppBar?.styleOverrides?.root;
-      expect(typeof root, 'MuiAppBar root override must be a theme callback').toBe('function');
-      const styles = (root as (props: { theme: typeof theme }) => Record<string, unknown>)({
+      expect(
+        typeof root,
+        'MuiAppBar root override must be a theme callback',
+      ).toBe('function');
+      const styles = (
+        root as (props: { theme: typeof theme }) => Record<string, unknown>
+      )({
         theme,
       });
       expect(styles.borderBottom).toBe(`1px solid ${theme.palette.divider}`);
@@ -252,8 +282,7 @@ describe('theme — the tokens actually reach the MUI themes', () => {
     // `.opifex-num` is the whole reason Inter is self-hosted: without tabular
     // figures a polled metric reflows its own column on every tick.
     const baseline = lightTheme.components?.MuiCssBaseline?.styleOverrides as
-      | Record<string, Record<string, unknown>>
-      | undefined;
+      Record<string, Record<string, unknown>> | undefined;
     expect(baseline?.['.opifex-num']?.fontVariantNumeric).toBe('tabular-nums');
     expect(baseline?.['.opifex-mono']?.fontFamily).toBe(fontFamilyMono);
   });

@@ -19,13 +19,19 @@
  * task descriptions piped in on stdin. This keeps the test exercising the
  * real production code while leaving the shared jest.config.js untouched.
  */
-import { checkCommit, parseTrailers, loadPatterns } from '../../../../scripts/check-provenance.mjs';
+import {
+  checkCommit,
+  parseTrailers,
+  loadPatterns,
+} from '../../../../scripts/check-provenance.mjs';
 
 function readStdin() {
   const chunks = [];
   return new Promise((resolve, reject) => {
     process.stdin.on('data', (chunk) => chunks.push(chunk));
-    process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    process.stdin.on('end', () =>
+      resolve(Buffer.concat(chunks).toString('utf8')),
+    );
     process.stdin.on('error', reject);
   });
 }

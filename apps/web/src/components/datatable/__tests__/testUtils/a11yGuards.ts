@@ -31,14 +31,19 @@ import { expect } from 'vitest';
  *  - MUI X's own hover-revealed column-header chrome (sort/menu buttons) —
  *    not ours to assert on, and reachable by keyboard regardless.
  */
-export const DEFAULT_VISIBLE_CONTROL_SELECTOR = 'button, [role="button"], .MuiCheckbox-root, a[href]';
+export const DEFAULT_VISIBLE_CONTROL_SELECTOR =
+  'button, [role="button"], .MuiCheckbox-root, a[href]';
 
 /** Selector for third-party (MUI X) chrome the sweep should not walk into. */
-export const THIRD_PARTY_CHROME_SELECTOR = '.MuiDataGrid-columnHeaders, .MuiDataGrid-columnHeader';
+export const THIRD_PARTY_CHROME_SELECTOR =
+  '.MuiDataGrid-columnHeaders, .MuiDataGrid-columnHeader';
 
 /** Human-readable identifier for a failing control, so a regression names the offender. */
 export function describeControl(control: HTMLElement): string {
-  const label = control.getAttribute('aria-label') ?? control.textContent?.slice(0, 24) ?? '';
+  const label =
+    control.getAttribute('aria-label') ??
+    control.textContent?.slice(0, 24) ??
+    '';
   return `${control.tagName.toLowerCase()}[${label}]`;
 }
 
@@ -61,11 +66,12 @@ export function assertNoInvisibleHitTargets(
   options: AssertNoInvisibleHitTargetsOptions = {},
 ): void {
   const selector = options.selector ?? DEFAULT_VISIBLE_CONTROL_SELECTOR;
-  const thirdPartyChrome = options.thirdPartyChrome ?? THIRD_PARTY_CHROME_SELECTOR;
+  const thirdPartyChrome =
+    options.thirdPartyChrome ?? THIRD_PARTY_CHROME_SELECTOR;
 
-  const controls = Array.from(root.querySelectorAll<HTMLElement>(selector)).filter(
-    (control) => !control.closest(thirdPartyChrome),
-  );
+  const controls = Array.from(
+    root.querySelectorAll<HTMLElement>(selector),
+  ).filter((control) => !control.closest(thirdPartyChrome));
   expect(controls.length).toBeGreaterThan(0);
 
   const offenders = controls

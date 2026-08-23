@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
@@ -6,7 +11,10 @@ import { DispatchQueueService } from '../dispatch/dispatch-queue.service';
 import { EscalationsService } from '../escalations/escalations.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
 import { EscalationDispatcher } from '../notifications/escalation-dispatcher.service';
-import { WatchdogService, type WatchdogSweepResult } from '../watchdog/watchdog.service';
+import {
+  WatchdogService,
+  type WatchdogSweepResult,
+} from '../watchdog/watchdog.service';
 import type { ReconcileAction } from './diff/actions.types';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
 import { SpecFeedbackExecutor } from './execute/spec-feedback.executor';
@@ -57,11 +65,14 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // A disabled reconciler that still wakes every 60 seconds to decide it
       // is disabled shows up in every profile and every log, and invites the
       // question of whether it is really off.
-      this.logger.log('Reconciler is DISABLED (RECONCILER_ENABLED is not true)');
+      this.logger.log(
+        'Reconciler is DISABLED (RECONCILER_ENABLED is not true)',
+      );
       return;
     }
 
-    const intervalMs = this.config.get<number>('reconciler.intervalMs') ?? 60_000;
+    const intervalMs =
+      this.config.get<number>('reconciler.intervalMs') ?? 60_000;
 
     const handle = setInterval(() => {
       // Deliberately not awaited: `setInterval` cannot await, and the lease is
@@ -180,9 +191,12 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     judgedRunIds: string[],
   ): Promise<void> {
     try {
-      const { raised, deduplicated } = await this.escalations.raiseFrom(actions);
+      const { raised, deduplicated } =
+        await this.escalations.raiseFrom(actions);
       if (raised > 0) {
-        this.logger.warn(`Escalations: ${raised} raised, ${deduplicated} suppressed as duplicates`);
+        this.logger.warn(
+          `Escalations: ${raised} raised, ${deduplicated} suppressed as duplicates`,
+        );
       }
 
       // A run the watchdog judged and did NOT escalate about has recovered.
@@ -195,11 +209,15 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
           .map((action) => action.runId)
           .filter((runId): runId is string => Boolean(runId)),
       );
-      const recovered = judgedRunIds.filter((runId) => !stillEscalating.has(runId));
+      const recovered = judgedRunIds.filter(
+        (runId) => !stillEscalating.has(runId),
+      );
 
       const resolved = await this.escalations.resolveStale(recovered);
       if (resolved > 0) {
-        this.logger.log(`Escalations: ${resolved} resolved because the condition cleared`);
+        this.logger.log(
+          `Escalations: ${resolved} resolved because the condition cleared`,
+        );
       }
     } catch (error) {
       this.logger.error(
@@ -228,7 +246,9 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       if (result.dispatched > 0 || result.rerouted > 0) {
         this.logger.log(
           `Notifications: ${result.dispatched} dispatched` +
-            (result.rerouted > 0 ? `, ${result.rerouted} via the fallback path` : '') +
+            (result.rerouted > 0
+              ? `, ${result.rerouted} via the fallback path`
+              : '') +
             // Reported even on success: escalations that only went out on a
             // retry mean the transport is limping, and a line that said only
             // "dispatched" would make that look healthy.
@@ -273,7 +293,9 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       if (outcome.failures.length > 0) {
         this.logger.error(
           `Spec feedback: ${outcome.failures.length} comment(s) could not be posted — ` +
-            outcome.failures.map((f) => `${f.repository}#${f.issueNumber}: ${f.reason}`).join('; '),
+            outcome.failures
+              .map((f) => `${f.repository}#${f.issueNumber}: ${f.reason}`)
+              .join('; '),
         );
       }
     } catch (error) {

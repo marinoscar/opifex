@@ -29,7 +29,15 @@
  * inline validation that took its place.
  */
 
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render, mockAdminUser, type MockUser } from '../../utils/test-utils';
@@ -131,9 +139,14 @@ function setHookState({
   });
 }
 
-function renderList(permissions: string[] = mockAdminUser.permissions, width = 1400) {
+function renderList(
+  permissions: string[] = mockAdminUser.permissions,
+  width = 1400,
+) {
   setInitialContainerWidth(width);
-  return render(<UserList />, { wrapperOptions: { user: userWith(permissions) } });
+  return render(<UserList />, {
+    wrapperOptions: { user: userWith(permissions) },
+  });
 }
 
 /** Choose an option from one of the filter editor's MUI selects. */
@@ -201,7 +214,9 @@ describe('UserList', () => {
       setHookState({ users: [activeUser], total: 1 });
       renderList();
 
-      const avatar = await screen.findByRole('img', { name: 'active@example.com' });
+      const avatar = await screen.findByRole('img', {
+        name: 'active@example.com',
+      });
       expect(avatar).toBeInTheDocument();
 
       // A thumbnail-only column would have no scalar behind it, so there must
@@ -226,7 +241,9 @@ describe('UserList', () => {
         screen.getByRole('checkbox', { name: 'Select active@example.com' }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole('button', { name: 'Row actions for inactive@example.com' }),
+        screen.getByRole('button', {
+          name: 'Row actions for inactive@example.com',
+        }),
       ).toBeInTheDocument();
     });
 
@@ -234,7 +251,9 @@ describe('UserList', () => {
       setHookState({ error: 'Failed to load users' });
       renderList();
 
-      expect(await screen.findByText('Failed to load users')).toBeInTheDocument();
+      expect(
+        await screen.findByText('Failed to load users'),
+      ).toBeInTheDocument();
     });
 
     it('shows a search-aware empty state', async () => {
@@ -257,7 +276,9 @@ describe('UserList', () => {
       // The old `{isLoading ? <CircularProgress/> : <Table/>}` ternary made
       // these two mutually exclusive. They must now coexist.
       expect(await screen.findByText('active@example.com')).toBeInTheDocument();
-      expect(screen.getByTestId('datatable-loading-overlay')).toBeInTheDocument();
+      expect(
+        screen.getByTestId('datatable-loading-overlay'),
+      ).toBeInTheDocument();
     });
   });
 
@@ -352,7 +373,9 @@ describe('UserList', () => {
       // `sortBy` accepts email | createdAt | updatedAt only, so Display Name
       // and Roles must not advertise a sortable header.
       for (const label of ['Display Name', 'Roles']) {
-        const header = screen.getByRole('columnheader', { name: new RegExp(`^${label}`) });
+        const header = screen.getByRole('columnheader', {
+          name: new RegExp(`^${label}`),
+        });
         expect(header).toHaveAttribute('aria-sort', 'none');
         expect(within(header).queryByRole('button')).not.toBeInTheDocument();
       }
@@ -371,12 +394,18 @@ describe('UserList', () => {
 
       await screen.findByText('active@example.com');
       await user.click(
-        screen.getByRole('button', { name: 'Row actions for active@example.com' }),
+        screen.getByRole('button', {
+          name: 'Row actions for active@example.com',
+        }),
       );
-      await user.click(await screen.findByRole('menuitem', { name: 'Deactivate user' }));
+      await user.click(
+        await screen.findByRole('menuitem', { name: 'Deactivate user' }),
+      );
 
       await waitFor(() => {
-        expect(mockUpdateUser).toHaveBeenCalledWith('user-1', { isActive: false });
+        expect(mockUpdateUser).toHaveBeenCalledWith('user-1', {
+          isActive: false,
+        });
       });
     });
 
@@ -387,12 +416,18 @@ describe('UserList', () => {
 
       await screen.findByText('inactive@example.com');
       await user.click(
-        screen.getByRole('button', { name: 'Row actions for inactive@example.com' }),
+        screen.getByRole('button', {
+          name: 'Row actions for inactive@example.com',
+        }),
       );
-      await user.click(await screen.findByRole('menuitem', { name: 'Activate user' }));
+      await user.click(
+        await screen.findByRole('menuitem', { name: 'Activate user' }),
+      );
 
       await waitFor(() => {
-        expect(mockUpdateUser).toHaveBeenCalledWith('user-2', { isActive: true });
+        expect(mockUpdateUser).toHaveBeenCalledWith('user-2', {
+          isActive: true,
+        });
       });
     });
 
@@ -403,15 +438,19 @@ describe('UserList', () => {
 
       await screen.findByText('active@example.com');
       await user.click(
-        screen.getByRole('button', { name: 'Row actions for active@example.com' }),
+        screen.getByRole('button', {
+          name: 'Row actions for active@example.com',
+        }),
       );
 
       // Both are present; "Activate" is simply not applicable to this row.
-      const activate = await screen.findByRole('menuitem', { name: 'Activate user' });
+      const activate = await screen.findByRole('menuitem', {
+        name: 'Activate user',
+      });
       expect(activate).toHaveAttribute('aria-disabled', 'true');
-      expect(screen.getByRole('menuitem', { name: 'Deactivate user' })).not.toHaveAttribute(
-        'aria-disabled',
-      );
+      expect(
+        screen.getByRole('menuitem', { name: 'Deactivate user' }),
+      ).not.toHaveAttribute('aria-disabled');
     });
   });
 
@@ -423,9 +462,13 @@ describe('UserList', () => {
     async function openDialog(user: ReturnType<typeof userEvent.setup>) {
       await screen.findByText('active@example.com');
       await user.click(
-        screen.getByRole('button', { name: 'Row actions for active@example.com' }),
+        screen.getByRole('button', {
+          name: 'Row actions for active@example.com',
+        }),
       );
-      await user.click(await screen.findByRole('menuitem', { name: 'Manage roles' }));
+      await user.click(
+        await screen.findByRole('menuitem', { name: 'Manage roles' }),
+      );
       return screen.findByRole('dialog');
     }
 
@@ -435,8 +478,12 @@ describe('UserList', () => {
       renderList();
 
       const dialog = await openDialog(user);
-      expect(within(dialog).getByRole('checkbox', { name: 'viewer' })).toBeChecked();
-      expect(within(dialog).getByRole('checkbox', { name: 'admin' })).not.toBeChecked();
+      expect(
+        within(dialog).getByRole('checkbox', { name: 'viewer' }),
+      ).toBeChecked();
+      expect(
+        within(dialog).getByRole('checkbox', { name: 'admin' }),
+      ).not.toBeChecked();
     });
 
     it('saves the new role set through updateUserRoles', async () => {
@@ -446,10 +493,15 @@ describe('UserList', () => {
 
       const dialog = await openDialog(user);
       await user.click(within(dialog).getByRole('checkbox', { name: 'admin' }));
-      await user.click(within(dialog).getByRole('button', { name: 'Save roles' }));
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Save roles' }),
+      );
 
       await waitFor(() => {
-        expect(mockUpdateUserRoles).toHaveBeenCalledWith('user-1', ['viewer', 'admin']);
+        expect(mockUpdateUserRoles).toHaveBeenCalledWith('user-1', [
+          'viewer',
+          'admin',
+        ]);
       });
     });
 
@@ -459,12 +511,16 @@ describe('UserList', () => {
       renderList();
 
       const dialog = await openDialog(user);
-      await user.click(within(dialog).getByRole('checkbox', { name: 'viewer' }));
+      await user.click(
+        within(dialog).getByRole('checkbox', { name: 'viewer' }),
+      );
 
       expect(
         within(dialog).getByText('User must have at least one role'),
       ).toBeInTheDocument();
-      expect(within(dialog).getByRole('button', { name: 'Save roles' })).toBeDisabled();
+      expect(
+        within(dialog).getByRole('button', { name: 'Save roles' }),
+      ).toBeDisabled();
       expect(mockUpdateUserRoles).not.toHaveBeenCalled();
     });
   });
@@ -483,7 +539,9 @@ describe('UserList', () => {
       // One remaining action collapses to a bare icon button, so there is no
       // "Row actions" menu at all.
       expect(
-        screen.queryByRole('button', { name: 'Row actions for active@example.com' }),
+        screen.queryByRole('button', {
+          name: 'Row actions for active@example.com',
+        }),
       ).not.toBeInTheDocument();
 
       const only = screen.getByRole('button', {
@@ -492,7 +550,9 @@ describe('UserList', () => {
       await user.click(only);
       await screen.findByRole('dialog');
 
-      expect(screen.queryByRole('menuitem', { name: 'Activate user' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('menuitem', { name: 'Activate user' }),
+      ).not.toBeInTheDocument();
       expect(
         screen.queryByRole('menuitem', { name: 'Deactivate user' }),
       ).not.toBeInTheDocument();
@@ -505,11 +565,15 @@ describe('UserList', () => {
 
       await screen.findByText('active@example.com');
       await user.click(
-        screen.getByRole('button', { name: 'Row actions for active@example.com' }),
+        screen.getByRole('button', {
+          name: 'Row actions for active@example.com',
+        }),
       );
 
       await screen.findByRole('menuitem', { name: 'Deactivate user' });
-      expect(screen.queryByRole('menuitem', { name: 'Manage roles' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('menuitem', { name: 'Manage roles' }),
+      ).not.toBeInTheDocument();
     });
 
     it('renders no row-action control at all on read-only permissions', async () => {
@@ -556,14 +620,22 @@ describe('UserList', () => {
       await screen.findByLabelText(/Remove filter: Status is Active/i);
 
       // 2. Select a row.
-      await user.click(screen.getByRole('checkbox', { name: 'Select active@example.com' }));
-      expect(screen.getByRole('checkbox', { name: 'Select active@example.com' })).toBeChecked();
+      await user.click(
+        screen.getByRole('checkbox', { name: 'Select active@example.com' }),
+      );
+      expect(
+        screen.getByRole('checkbox', { name: 'Select active@example.com' }),
+      ).toBeChecked();
 
       // 3. Expand a row.
       await user.click(
-        screen.getByRole('button', { name: 'Show details for active@example.com' }),
+        screen.getByRole('button', {
+          name: 'Show details for active@example.com',
+        }),
       );
-      await screen.findByRole('button', { name: 'Hide details for active@example.com' });
+      await screen.findByRole('button', {
+        name: 'Hide details for active@example.com',
+      });
 
       const tableBefore = screen.getByTestId('admin-users-table');
       const gridBefore = screen.getByRole('grid');
@@ -581,11 +653,17 @@ describe('UserList', () => {
       expect(screen.getByRole('grid')).toBe(gridBefore);
 
       // And all three pieces of state survived.
-      expect(screen.getByRole('checkbox', { name: 'Select active@example.com' })).toBeChecked();
       expect(
-        screen.getByRole('button', { name: 'Hide details for active@example.com' }),
+        screen.getByRole('checkbox', { name: 'Select active@example.com' }),
+      ).toBeChecked();
+      expect(
+        screen.getByRole('button', {
+          name: 'Hide details for active@example.com',
+        }),
       ).toBeInTheDocument();
-      expect(screen.getByLabelText(/Remove filter: Status is Active/i)).toBeInTheDocument();
+      expect(
+        screen.getByLabelText(/Remove filter: Status is Active/i),
+      ).toBeInTheDocument();
     });
   });
 });

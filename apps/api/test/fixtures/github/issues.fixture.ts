@@ -45,7 +45,8 @@ export function rawIssue(
     node_id: 'MDU6SXNzdWUx',
     url: 'https://api.github.com/repos/acme/app/issues/312',
     repository_url: 'https://api.github.com/repos/acme/app',
-    labels_url: 'https://api.github.com/repos/acme/app/issues/312/labels{/name}',
+    labels_url:
+      'https://api.github.com/repos/acme/app/issues/312/labels{/name}',
     comments_url: 'https://api.github.com/repos/acme/app/issues/312/comments',
     events_url: 'https://api.github.com/repos/acme/app/issues/312/events',
     html_url: 'https://github.com/acme/app/issues/312',

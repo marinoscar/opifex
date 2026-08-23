@@ -44,7 +44,9 @@ if (!bucket) {
   process.exit(1);
 }
 if (!accessKeyId || !secretAccessKey) {
-  console.error('✖ AWS credentials missing (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY).');
+  console.error(
+    '✖ AWS credentials missing (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY).',
+  );
   process.exit(1);
 }
 
@@ -62,7 +64,11 @@ function buildCors() {
   const extra = [];
   if (process.env.APP_URL) extra.push(process.env.APP_URL.replace(/\/$/, ''));
   if (process.env.CORS_EXTRA_ORIGINS) {
-    extra.push(...process.env.CORS_EXTRA_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean));
+    extra.push(
+      ...process.env.CORS_EXTRA_ORIGINS.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
   }
   if (extra.length && rules[0]) {
     const set = new Set([...(rules[0].AllowedOrigins || []), ...extra]);
@@ -79,7 +85,9 @@ async function bucketExists() {
     const code = err?.$metadata?.httpStatusCode;
     if (code === 404 || err?.name === 'NotFound') return false;
     if (code === 403) {
-      console.error(`✖ HeadBucket returned 403 for "${bucket}" — it likely exists but is owned by another account, or the credentials lack s3:ListBucket. Aborting to avoid clobbering.`);
+      console.error(
+        `✖ HeadBucket returned 403 for "${bucket}" — it likely exists but is owned by another account, or the credentials lack s3:ListBucket. Aborting to avoid clobbering.`,
+      );
       process.exit(2);
     }
     throw err;
@@ -87,7 +95,9 @@ async function bucketExists() {
 }
 
 async function main() {
-  console.log(`→ Bucket: ${bucket}  Region: ${region}${endpoint ? `  Endpoint: ${endpoint}` : ''}`);
+  console.log(
+    `→ Bucket: ${bucket}  Region: ${region}${endpoint ? `  Endpoint: ${endpoint}` : ''}`,
+  );
 
   const exists = await bucketExists();
   if (!exists) {
@@ -129,7 +139,9 @@ async function main() {
     new PutBucketEncryptionCommand({
       Bucket: bucket,
       ServerSideEncryptionConfiguration: {
-        Rules: [{ ApplyServerSideEncryptionByDefault: { SSEAlgorithm: 'AES256' } }],
+        Rules: [
+          { ApplyServerSideEncryptionByDefault: { SSEAlgorithm: 'AES256' } },
+        ],
       },
     }),
   );
@@ -138,7 +150,10 @@ async function main() {
   // 3) CORS (browser presigned multipart PUT + ETag exposure)
   const corsRules = buildCors();
   await s3.send(
-    new PutBucketCorsCommand({ Bucket: bucket, CORSConfiguration: { CORSRules: corsRules } }),
+    new PutBucketCorsCommand({
+      Bucket: bucket,
+      CORSConfiguration: { CORSRules: corsRules },
+    }),
   );
   console.log('✔ CORS applied:');
   console.log(JSON.stringify(corsRules, null, 2));

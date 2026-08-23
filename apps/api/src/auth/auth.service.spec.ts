@@ -7,7 +7,10 @@ import { GoogleProfile } from './strategies/google.strategy';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminBootstrapService } from '../common/services/admin-bootstrap.service';
 import { AllowlistService } from '../allowlist/allowlist.service';
-import { createMockPrismaService, MockPrismaService } from '../../test/mocks/prisma.mock';
+import {
+  createMockPrismaService,
+  MockPrismaService,
+} from '../../test/mocks/prisma.mock';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -141,7 +144,9 @@ describe('AuthService', () => {
         },
       };
 
-      mockPrisma.userIdentity.findUnique.mockResolvedValue(existingIdentity as any);
+      mockPrisma.userIdentity.findUnique.mockResolvedValue(
+        existingIdentity as any,
+      );
       mockPrisma.user.update.mockResolvedValue(existingIdentity.user as any);
       mockPrisma.refreshToken.create.mockResolvedValue({} as any);
 
@@ -164,14 +169,22 @@ describe('AuthService', () => {
       } as any);
       mockPrisma.user.update.mockResolvedValue(deactivatedUser as any);
 
-      await expect(service.handleGoogleLogin(mockGoogleProfile)).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(
+        service.handleGoogleLogin(mockGoogleProfile),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should grant admin role when shouldGrantAdminRole returns true', async () => {
-      const mockViewerRole = { id: 'viewer-role', name: 'viewer', rolePermissions: [] };
-      const mockAdminRole = { id: 'admin-role', name: 'admin', rolePermissions: [] };
+      const mockViewerRole = {
+        id: 'viewer-role',
+        name: 'viewer',
+        rolePermissions: [],
+      };
+      const mockAdminRole = {
+        id: 'admin-role',
+        name: 'admin',
+        rolePermissions: [],
+      };
       const mockUserCreated = {
         id: 'new-admin',
         email: 'admin@example.com',
@@ -193,7 +206,9 @@ describe('AuthService', () => {
       mockPrisma.role.findUnique
         .mockResolvedValueOnce(mockViewerRole as any) // Get default role
         .mockResolvedValueOnce(mockAdminRole as any); // Get admin role in transaction
-      mockPrisma.$transaction.mockImplementation(async (callback) => callback(mockPrisma));
+      mockPrisma.$transaction.mockImplementation(async (callback) =>
+        callback(mockPrisma),
+      );
       mockPrisma.user.create.mockResolvedValue(mockUserCreated as any);
       mockPrisma.userRole.upsert.mockResolvedValue({} as any);
       mockPrisma.user.update.mockResolvedValue(mockUserWithAdmin as any);
@@ -202,7 +217,9 @@ describe('AuthService', () => {
       const adminProfile = { ...mockGoogleProfile, email: 'admin@example.com' };
       const result = await service.handleGoogleLogin(adminProfile);
 
-      expect(mockAdminBootstrap.shouldGrantAdminRole).toHaveBeenCalledWith('admin@example.com');
+      expect(mockAdminBootstrap.shouldGrantAdminRole).toHaveBeenCalledWith(
+        'admin@example.com',
+      );
       // Admin role is now assigned directly in transaction, not via adminBootstrap.assignAdminRole
       expect(mockPrisma.userRole.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -250,10 +267,12 @@ describe('AuthService', () => {
     it('should throw ForbiddenException when email not in allowlist', async () => {
       mockAllowlistService.isEmailAllowed.mockResolvedValue(false);
 
-      await expect(service.handleGoogleLogin(mockGoogleProfile)).rejects.toThrow(
-        ForbiddenException,
-      );
-      await expect(service.handleGoogleLogin(mockGoogleProfile)).rejects.toThrow(
+      await expect(
+        service.handleGoogleLogin(mockGoogleProfile),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.handleGoogleLogin(mockGoogleProfile),
+      ).rejects.toThrow(
         'Your email is not authorized to access this application',
       );
     });
@@ -270,7 +289,9 @@ describe('AuthService', () => {
       mockPrisma.userIdentity.findUnique.mockResolvedValue(null);
       mockPrisma.user.findUnique.mockResolvedValue(null);
       mockPrisma.role.findUnique.mockResolvedValue(mockRole as any);
-      mockPrisma.$transaction.mockImplementation(async (callback) => callback(mockPrisma));
+      mockPrisma.$transaction.mockImplementation(async (callback) =>
+        callback(mockPrisma),
+      );
       mockPrisma.user.create.mockResolvedValue(mockUser as any);
       mockPrisma.user.update.mockResolvedValue(mockUser as any);
       mockPrisma.refreshToken.create.mockResolvedValue({} as any);
@@ -306,7 +327,9 @@ describe('AuthService', () => {
       mockPrisma.userIdentity.findUnique.mockResolvedValue(null);
       mockPrisma.user.findUnique.mockResolvedValue(null);
       mockPrisma.role.findUnique.mockResolvedValue(mockRole as any);
-      mockPrisma.$transaction.mockImplementation(async (callback) => callback(mockPrisma));
+      mockPrisma.$transaction.mockImplementation(async (callback) =>
+        callback(mockPrisma),
+      );
       mockPrisma.user.create.mockResolvedValue(mockUser as any);
       mockPrisma.user.update.mockResolvedValue(mockUser as any);
       mockPrisma.refreshToken.create.mockResolvedValue({} as any);
@@ -339,7 +362,9 @@ describe('AuthService', () => {
       mockPrisma.userIdentity.findUnique.mockResolvedValue(null);
       mockPrisma.user.findUnique.mockResolvedValue(null);
       mockPrisma.role.findUnique.mockResolvedValue(mockRole as any);
-      mockPrisma.$transaction.mockImplementation(async (callback) => callback(mockPrisma));
+      mockPrisma.$transaction.mockImplementation(async (callback) =>
+        callback(mockPrisma),
+      );
       mockPrisma.user.create.mockResolvedValue(mockUser as any);
       mockPrisma.user.update.mockResolvedValue(mockUser as any);
       mockPrisma.refreshToken.create.mockResolvedValue({} as any);
@@ -372,7 +397,9 @@ describe('AuthService', () => {
       mockPrisma.userIdentity.findUnique.mockResolvedValue(null);
       mockPrisma.user.findUnique.mockResolvedValue(null);
       mockPrisma.role.findUnique.mockResolvedValue(mockRole as any);
-      mockPrisma.$transaction.mockImplementation(async (callback) => callback(mockPrisma));
+      mockPrisma.$transaction.mockImplementation(async (callback) =>
+        callback(mockPrisma),
+      );
       mockPrisma.user.create.mockResolvedValue(mockUser as any);
       mockPrisma.user.update.mockResolvedValue(mockUser as any);
       mockPrisma.refreshToken.create.mockResolvedValue({} as any);
@@ -551,7 +578,9 @@ describe('AuthService', () => {
     };
 
     it('should return new access and refresh tokens with valid refresh token', async () => {
-      mockPrisma.refreshToken.findUnique.mockResolvedValue(mockRefreshToken as any);
+      mockPrisma.refreshToken.findUnique.mockResolvedValue(
+        mockRefreshToken as any,
+      );
       mockPrisma.refreshToken.update.mockResolvedValue({} as any);
       mockPrisma.refreshToken.create.mockResolvedValue({} as any);
 
@@ -614,12 +643,12 @@ describe('AuthService', () => {
     it('should throw UnauthorizedException with non-existent token', async () => {
       mockPrisma.refreshToken.findUnique.mockResolvedValue(null);
 
-      await expect(service.refreshAccessToken('non-existent-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
-      await expect(service.refreshAccessToken('non-existent-token')).rejects.toThrow(
-        'Invalid refresh token',
-      );
+      await expect(
+        service.refreshAccessToken('non-existent-token'),
+      ).rejects.toThrow(UnauthorizedException);
+      await expect(
+        service.refreshAccessToken('non-existent-token'),
+      ).rejects.toThrow('Invalid refresh token');
     });
 
     it('should throw UnauthorizedException for inactive user', async () => {
@@ -628,7 +657,9 @@ describe('AuthService', () => {
         user: { ...mockUser, isActive: false },
       };
 
-      mockPrisma.refreshToken.findUnique.mockResolvedValue(inactiveUserToken as any);
+      mockPrisma.refreshToken.findUnique.mockResolvedValue(
+        inactiveUserToken as any,
+      );
 
       await expect(service.refreshAccessToken('token')).rejects.toThrow(
         UnauthorizedException,
@@ -639,7 +670,9 @@ describe('AuthService', () => {
     });
 
     it('should revoke old token and create new one (token rotation)', async () => {
-      mockPrisma.refreshToken.findUnique.mockResolvedValue(mockRefreshToken as any);
+      mockPrisma.refreshToken.findUnique.mockResolvedValue(
+        mockRefreshToken as any,
+      );
       mockPrisma.refreshToken.update.mockResolvedValue({} as any);
       mockPrisma.refreshToken.create.mockResolvedValue({} as any);
 
@@ -662,7 +695,9 @@ describe('AuthService', () => {
     });
 
     it('should store token as hash (not plaintext)', async () => {
-      mockPrisma.refreshToken.findUnique.mockResolvedValue(mockRefreshToken as any);
+      mockPrisma.refreshToken.findUnique.mockResolvedValue(
+        mockRefreshToken as any,
+      );
       mockPrisma.refreshToken.update.mockResolvedValue({} as any);
       mockPrisma.refreshToken.create.mockResolvedValue({} as any);
 
@@ -727,7 +762,9 @@ describe('AuthService', () => {
 
   describe('cleanupExpiredTokens', () => {
     it('should delete expired and revoked tokens', async () => {
-      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 10 } as any);
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({
+        count: 10,
+      } as any);
 
       const result = await service.cleanupExpiredTokens();
 

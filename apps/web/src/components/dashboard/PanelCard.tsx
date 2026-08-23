@@ -33,7 +33,14 @@
  */
 
 import type { ReactNode } from 'react';
-import { Alert, Box, Card, CardContent, CardHeader, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Card,
+  CardContent,
+  CardHeader,
+  Typography,
+} from '@mui/material';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import type { ResourceState } from '../../hooks/usePolledResource';
 
@@ -85,7 +92,10 @@ export function PanelCard({
     }
   })();
 
-  const showStaleBanner = error !== null && error !== undefined && (state === 'ready' || state === 'empty');
+  const showStaleBanner =
+    error !== null &&
+    error !== undefined &&
+    (state === 'ready' || state === 'empty');
 
   return (
     <Card
@@ -116,7 +126,9 @@ export function PanelCard({
         sx={{ pb: 0 }}
       />
 
-      <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <CardContent
+        sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 2 }}
+      >
         {showStaleBanner && (
           // `warning`, not `error`: what is on screen is still true, it is just
           // older than it should be. Calling that an error would train the

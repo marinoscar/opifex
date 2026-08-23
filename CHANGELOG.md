@@ -70,16 +70,19 @@ Enterprise Application Foundation - A production-grade full-stack application fo
 ### Features
 
 #### Authentication
+
 - Google OAuth 2.0 with JWT access tokens and refresh token rotation
 - Short-lived access tokens (15 min default) with secure refresh rotation
 - HttpOnly cookie storage for refresh tokens
 
 #### Device Authorization (RFC 8628)
+
 - Device Authorization Flow for CLI tools, mobile apps, and IoT devices
 - Secure device code generation and polling
 - Device session management and revocation
 
 #### Authorization
+
 - Role-Based Access Control (RBAC) with three roles:
   - **Admin**: Full access, manage users and system settings
   - **Contributor**: Standard capabilities, manage own settings
@@ -87,27 +90,32 @@ Enterprise Application Foundation - A production-grade full-stack application fo
 - Flexible permission system for feature expansion
 
 #### Access Control
+
 - Email allowlist restricts application access to pre-authorized users
 - Pending/Claimed status tracking for allowlist entries
 - Initial admin bootstrap via `INITIAL_ADMIN_EMAIL` environment variable
 
 #### User Management
+
 - Admin interface for managing users and role assignments
 - User activation/deactivation controls
 - Allowlist management UI at `/admin/users`
 
 #### Settings Framework
+
 - System-wide settings with type-safe Zod schemas
 - Per-user settings with validation
 - JSONB storage in PostgreSQL
 
 #### API
+
 - RESTful API built with NestJS and Fastify (2-3x better performance than Express)
 - Swagger/OpenAPI documentation at `/api/docs`
 - Health check endpoints (liveness and readiness probes)
 - Input validation on all endpoints
 
 #### Frontend
+
 - React 18 with TypeScript
 - Material-UI (MUI) component library
 - Theme support with responsive design
@@ -115,12 +123,14 @@ Enterprise Application Foundation - A production-grade full-stack application fo
 - Vite build tool with hot module replacement
 
 #### CLI Tool
+
 - Cross-platform CLI (`app`) for development and API management
 - Device authorization flow for secure CLI authentication
 - Interactive menu-driven mode and command-line interface
 - Support for multiple server environments (local, staging, production)
 
 #### Infrastructure
+
 - Docker Compose configurations:
   - `base.compose.yml`: Core services (api, web, db, nginx)
   - `dev.compose.yml`: Development overrides with hot reload
@@ -131,18 +141,21 @@ Enterprise Application Foundation - A production-grade full-stack application fo
 - Automated database migrations and seeding
 
 #### Observability
+
 - OpenTelemetry instrumentation for traces and metrics
 - Uptrace integration for visualization (UI at localhost:14318)
 - Pino structured logging
 - OTEL Collector configuration included
 
 #### Testing
+
 - Backend: Jest + Supertest for unit and integration tests
 - Frontend: Vitest + React Testing Library
 
 ### API Endpoints
 
 #### Authentication
+
 - `GET /api/auth/providers` - List enabled OAuth providers
 - `GET /api/auth/google` - Initiate Google OAuth
 - `GET /api/auth/google/callback` - OAuth callback
@@ -151,32 +164,38 @@ Enterprise Application Foundation - A production-grade full-stack application fo
 - `GET /api/auth/me` - Get current user
 
 #### Device Authorization
+
 - `POST /api/auth/device/code` - Generate device code
 - `POST /api/auth/device/token` - Poll for authorization
 - `GET /api/auth/device/sessions` - List device sessions
 - `DELETE /api/auth/device/sessions/:id` - Revoke device session
 
 #### Users (Admin only)
+
 - `GET /api/users` - List users (paginated)
 - `GET /api/users/:id` - Get user by ID
 - `PATCH /api/users/:id` - Update user
 
 #### Allowlist (Admin only)
+
 - `GET /api/allowlist` - List allowlisted emails
 - `POST /api/allowlist` - Add email to allowlist
 - `DELETE /api/allowlist/:id` - Remove from allowlist
 
 #### Settings
+
 - `GET /api/user-settings` - Get user settings
 - `PUT /api/user-settings` - Update user settings
 - `GET /api/system-settings` - Get system settings
 - `PUT /api/system-settings` - Update system settings (Admin)
 
 #### Health
+
 - `GET /api/health/live` - Liveness probe
 - `GET /api/health/ready` - Readiness probe
 
 ### Technical Stack
+
 - **Backend**: Node.js + TypeScript, NestJS with Fastify adapter
 - **Frontend**: React + TypeScript, Material-UI (MUI)
 - **Database**: PostgreSQL with Prisma ORM

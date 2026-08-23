@@ -30,7 +30,10 @@ const DURATION_UNITS: { value: PatDurationUnit; label: string }[] = [
   { value: 'months', label: 'Months' },
 ];
 
-function computeExpiresAt(durationValue: number, durationUnit: PatDurationUnit): Date {
+function computeExpiresAt(
+  durationValue: number,
+  durationUnit: PatDurationUnit,
+): Date {
   const now = new Date();
   switch (durationUnit) {
     case 'minutes':
@@ -45,7 +48,12 @@ function computeExpiresAt(durationValue: number, durationUnit: PatDurationUnit):
   }
 }
 
-export function CreatePatDialog({ open, onClose, onCreated, onCreate }: CreatePatDialogProps) {
+export function CreatePatDialog({
+  open,
+  onClose,
+  onCreated,
+  onCreate,
+}: CreatePatDialogProps) {
   const [name, setName] = useState('');
   const [durationValue, setDurationValue] = useState('30');
   const [durationUnit, setDurationUnit] = useState<PatDurationUnit>('days');
@@ -59,8 +67,9 @@ export function CreatePatDialog({ open, onClose, onCreated, onCreate }: CreatePa
     parsedDurationValue >= 1 &&
     parsedDurationValue <= 999;
 
-  const expiresAt =
-    isDurationValid ? computeExpiresAt(parsedDurationValue, durationUnit) : null;
+  const expiresAt = isDurationValid
+    ? computeExpiresAt(parsedDurationValue, durationUnit)
+    : null;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -149,7 +158,9 @@ export function CreatePatDialog({ open, onClose, onCreated, onCreate }: CreatePa
                 select
                 label="Unit"
                 value={durationUnit}
-                onChange={(e) => setDurationUnit(e.target.value as PatDurationUnit)}
+                onChange={(e) =>
+                  setDurationUnit(e.target.value as PatDurationUnit)
+                }
                 disabled={isSubmitting}
                 sx={{ flex: 1 }}
               >

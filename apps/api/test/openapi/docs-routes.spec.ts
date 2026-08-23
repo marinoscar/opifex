@@ -1,4 +1,8 @@
-import { createTestApp, closeTestApp, TestContext } from '../helpers/test-app.helper';
+import {
+  createTestApp,
+  closeTestApp,
+  TestContext,
+} from '../helpers/test-app.helper';
 import { createOpenApiDocument } from '../../src/openapi/document';
 import {
   DOCS_PATH,
@@ -21,7 +25,8 @@ describe('documentation routes', () => {
     context = await createTestApp({
       // Registered before init(), the same point in the boot sequence main.ts
       // uses — Fastify refuses new routes once its root plugin has booted.
-      registerRoutes: (app) => registerDocsRoutes(app, createOpenApiDocument(app), '9.9.9'),
+      registerRoutes: (app) =>
+        registerDocsRoutes(app, createOpenApiDocument(app), '9.9.9'),
     });
   }, 60000);
 
@@ -31,7 +36,10 @@ describe('documentation routes', () => {
 
   describe(OPENAPI_JSON_PATH, () => {
     it('serves the document as JSON', async () => {
-      const response = await context.app.inject({ method: 'GET', url: OPENAPI_JSON_PATH });
+      const response = await context.app.inject({
+        method: 'GET',
+        url: OPENAPI_JSON_PATH,
+      });
 
       expect(response.statusCode).toBe(200);
       expect(response.headers['content-type']).toContain('application/json');
@@ -45,28 +53,38 @@ describe('documentation routes', () => {
 
   describe(DOCS_PATH, () => {
     it('serves the reference as HTML', async () => {
-      const response = await context.app.inject({ method: 'GET', url: DOCS_PATH });
+      const response = await context.app.inject({
+        method: 'GET',
+        url: DOCS_PATH,
+      });
 
       expect(response.statusCode).toBe(200);
       expect(response.headers['content-type']).toContain('text/html');
-      expect(response.body).toContain(
-        '<title>OPIFEX API Reference</title>',
-      );
+      expect(response.body).toContain('<title>OPIFEX API Reference</title>');
       expect(response.body).toContain('createApiReference');
     });
 
     it('shows the version it was handed', async () => {
-      const response = await context.app.inject({ method: 'GET', url: DOCS_PATH });
+      const response = await context.app.inject({
+        method: 'GET',
+        url: DOCS_PATH,
+      });
       expect(response.body).toContain('9.9.9');
     });
 
     it('answers on the trailing-slash spelling too', async () => {
-      const response = await context.app.inject({ method: 'GET', url: `${DOCS_PATH}/` });
+      const response = await context.app.inject({
+        method: 'GET',
+        url: `${DOCS_PATH}/`,
+      });
       expect(response.statusCode).toBe(200);
     });
 
     it('points at the spec rather than inlining it, so the page stays small', async () => {
-      const response = await context.app.inject({ method: 'GET', url: DOCS_PATH });
+      const response = await context.app.inject({
+        method: 'GET',
+        url: DOCS_PATH,
+      });
 
       expect(response.body).toContain(OPENAPI_JSON_PATH);
       // The spec is hundreds of kilobytes; inlining it would be the obvious
@@ -75,7 +93,10 @@ describe('documentation routes', () => {
     });
 
     it('reaches the reader without a bearer token — it is how they get one', async () => {
-      const response = await context.app.inject({ method: 'GET', url: DOCS_PATH });
+      const response = await context.app.inject({
+        method: 'GET',
+        url: DOCS_PATH,
+      });
       expect(response.statusCode).toBe(200);
     });
   });

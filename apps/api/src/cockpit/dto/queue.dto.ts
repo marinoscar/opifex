@@ -22,7 +22,12 @@ export const QUEUE_MAX_LIMIT = 100;
 export const QUEUE_DEFAULT_LIMIT = 25;
 
 export const queueQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(QUEUE_MAX_LIMIT).default(QUEUE_DEFAULT_LIMIT),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(QUEUE_MAX_LIMIT)
+    .default(QUEUE_DEFAULT_LIMIT),
 });
 
 export class QueueQueryDto extends createZodDto(queueQuerySchema) {}
@@ -38,7 +43,12 @@ export class QueueQueryDto extends createZodDto(queueQuerySchema) {}
  * `dispatching` is in the vocabulary and is deliberately never emitted today —
  * see `QueueService.stateOf`.
  */
-export const queueEntryStateSchema = z.enum(['waiting', 'ready', 'dispatching', 'held']);
+export const queueEntryStateSchema = z.enum([
+  'waiting',
+  'ready',
+  'dispatching',
+  'held',
+]);
 
 /**
  * A work order, reduced to identity and a way back to GitHub.

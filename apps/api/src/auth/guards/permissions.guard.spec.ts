@@ -23,7 +23,9 @@ describe('PermissionsGuard', () => {
     guard = module.get<PermissionsGuard>(PermissionsGuard);
   });
 
-  function createMockContext(user: Partial<AuthenticatedUser> | null = null): ExecutionContext {
+  function createMockContext(
+    user: Partial<AuthenticatedUser> | null = null,
+  ): ExecutionContext {
     return {
       switchToHttp: () => ({
         getRequest: () => ({ user }),
@@ -33,7 +35,9 @@ describe('PermissionsGuard', () => {
     } as any;
   }
 
-  function createUserWithPermissions(permissionNames: string[]): Partial<AuthenticatedUser> {
+  function createUserWithPermissions(
+    permissionNames: string[],
+  ): Partial<AuthenticatedUser> {
     return {
       id: 'user-id',
       email: 'test@example.com',
@@ -98,13 +102,18 @@ describe('PermissionsGuard', () => {
 
     it('should allow access when user has required permission', () => {
       reflector.getAllAndOverride.mockReturnValue(['users:read']);
-      const context = createMockContext(createUserWithPermissions(['users:read', 'users:write']));
+      const context = createMockContext(
+        createUserWithPermissions(['users:read', 'users:write']),
+      );
 
       expect(guard.canActivate(context)).toBe(true);
     });
 
     it('should allow access when user has all required permissions', () => {
-      reflector.getAllAndOverride.mockReturnValue(['users:read', 'users:write']);
+      reflector.getAllAndOverride.mockReturnValue([
+        'users:read',
+        'users:write',
+      ]);
       const context = createMockContext(
         createUserWithPermissions(['users:read', 'users:write', 'rbac:manage']),
       );
@@ -114,18 +123,29 @@ describe('PermissionsGuard', () => {
 
     it('should deny access when user lacks required permission', () => {
       reflector.getAllAndOverride.mockReturnValue(['users:write']);
-      const context = createMockContext(createUserWithPermissions(['users:read']));
+      const context = createMockContext(
+        createUserWithPermissions(['users:read']),
+      );
 
       expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
-      expect(() => guard.canActivate(context)).toThrow('Missing permissions: users:write');
+      expect(() => guard.canActivate(context)).toThrow(
+        'Missing permissions: users:write',
+      );
     });
 
     it('should deny access when user lacks one of multiple required permissions', () => {
-      reflector.getAllAndOverride.mockReturnValue(['users:read', 'users:write']);
-      const context = createMockContext(createUserWithPermissions(['users:read']));
+      reflector.getAllAndOverride.mockReturnValue([
+        'users:read',
+        'users:write',
+      ]);
+      const context = createMockContext(
+        createUserWithPermissions(['users:read']),
+      );
 
       expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
-      expect(() => guard.canActivate(context)).toThrow('Missing permissions: users:write');
+      expect(() => guard.canActivate(context)).toThrow(
+        'Missing permissions: users:write',
+      );
     });
 
     it('should deny access when user has no permissions', () => {
@@ -144,7 +164,10 @@ describe('PermissionsGuard', () => {
     });
 
     it('should aggregate permissions from multiple roles', () => {
-      reflector.getAllAndOverride.mockReturnValue(['users:read', 'system_settings:read']);
+      reflector.getAllAndOverride.mockReturnValue([
+        'users:read',
+        'system_settings:read',
+      ]);
       const context = createMockContext(
         createUserWithMultipleRoles([
           { roleName: 'role1', permissions: ['users:read'] },
@@ -169,7 +192,9 @@ describe('PermissionsGuard', () => {
       );
 
       expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
-      expect(() => guard.canActivate(context)).toThrow('Missing permissions: users:write');
+      expect(() => guard.canActivate(context)).toThrow(
+        'Missing permissions: users:write',
+      );
     });
 
     it('should handle duplicate permissions across roles', () => {
@@ -185,8 +210,14 @@ describe('PermissionsGuard', () => {
     });
 
     it('should list all missing permissions in error message', () => {
-      reflector.getAllAndOverride.mockReturnValue(['users:read', 'users:write', 'rbac:manage']);
-      const context = createMockContext(createUserWithPermissions(['users:read']));
+      reflector.getAllAndOverride.mockReturnValue([
+        'users:read',
+        'users:write',
+        'rbac:manage',
+      ]);
+      const context = createMockContext(
+        createUserWithPermissions(['users:read']),
+      );
 
       expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
       expect(() => guard.canActivate(context)).toThrow('users:write');

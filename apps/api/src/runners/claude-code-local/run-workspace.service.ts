@@ -4,7 +4,11 @@ import { mkdir, rm, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { ChildProcessSupervisor } from '../process/child-process-supervisor';
-import { describeFailure, runCommand, type CommandResult } from '../process/run-command';
+import {
+  describeFailure,
+  runCommand,
+  type CommandResult,
+} from '../process/run-command';
 
 /**
  * The directory a run happens in.
@@ -64,7 +68,9 @@ export class RunWorkspaceService {
   constructor(private readonly config: ConfigService) {}
 
   private get root(): string {
-    return resolve(this.config.get<string>('runners.claudeCodeLocal.workspaceRoot')!);
+    return resolve(
+      this.config.get<string>('runners.claudeCodeLocal.workspaceRoot')!,
+    );
   }
 
   /** Absolute path for an identity, whether or not it exists yet. */
@@ -75,7 +81,9 @@ export class RunWorkspaceService {
     // and a path built from an unvalidated string is a traversal waiting for
     // the one caller that skipped validation.
     if (!/^[A-Za-z0-9_-]+$/.test(identity)) {
-      throw new WorkspaceError(`Refusing to build a workspace path from "${identity}"`);
+      throw new WorkspaceError(
+        `Refusing to build a workspace path from "${identity}"`,
+      );
     }
     return join(this.root, identity);
   }
@@ -94,7 +102,9 @@ export class RunWorkspaceService {
 
     const existing = await this.inspect(dir, request);
     if (existing) {
-      this.logger.log(`Reusing workspace for ${request.identity} at ${existing.headCommit}`);
+      this.logger.log(
+        `Reusing workspace for ${request.identity} at ${existing.headCommit}`,
+      );
       return existing;
     }
 
@@ -155,8 +165,16 @@ export class RunWorkspaceService {
   private async clone(dir: string, request: WorkspaceRequest): Promise<string> {
     const url = this.remoteUrl(request.repository);
 
-    await this.expect(dir, ['init', '--quiet', '--initial-branch=main'], 'initialise a repository');
-    await this.expect(dir, ['remote', 'add', 'origin', url], 'add the origin remote');
+    await this.expect(
+      dir,
+      ['init', '--quiet', '--initial-branch=main'],
+      'initialise a repository',
+    );
+    await this.expect(
+      dir,
+      ['remote', 'add', 'origin', url],
+      'add the origin remote',
+    );
 
     await this.configureCredentials(dir);
     await this.configureCommitter(dir);
@@ -188,7 +206,11 @@ export class RunWorkspaceService {
         `Shallow fetch of ${start.commit} failed (${describeFailure(shallow)}); ` +
           'retrying as a full fetch',
       );
-      await this.expect(dir, ['fetch', '--quiet', 'origin'], 'fetch the repository');
+      await this.expect(
+        dir,
+        ['fetch', '--quiet', 'origin'],
+        'fetch the repository',
+      );
     }
 
     await this.expect(
@@ -227,7 +249,12 @@ export class RunWorkspaceService {
     dir: string,
     request: WorkspaceRequest,
   ): Promise<{ commit: string; fromBranch: boolean }> {
-    const remote = await this.git(dir, ['ls-remote', '--exit-code', 'origin', request.branch]);
+    const remote = await this.git(dir, [
+      'ls-remote',
+      '--exit-code',
+      'origin',
+      request.branch,
+    ]);
     if (!remote.ok) return { commit: request.baseCommit, fromBranch: false };
 
     const sha = remote.stdout.trim().split(/\s+/)[0];
@@ -262,7 +289,9 @@ export class RunWorkspaceService {
       // Not fatal. A public repository clones anonymously, and pushing is the
       // step that will fail — visibly, with a git error — rather than this
       // refusing to start a run that might not have needed a token.
-      this.logger.warn('No GITHUB_TOKEN configured; workspace will use anonymous git access');
+      this.logger.warn(
+        'No GITHUB_TOKEN configured; workspace will use anonymous git access',
+      );
       return;
     }
 
@@ -288,10 +317,22 @@ export class RunWorkspaceService {
    * with a human having written the code.
    */
   private async configureCommitter(dir: string): Promise<void> {
-    const name = this.config.get<string>('runners.claudeCodeLocal.committerName')!;
-    const email = this.config.get<string>('runners.claudeCodeLocal.committerEmail')!;
-    await this.expect(dir, ['config', '--local', 'user.name', name], 'configure the commit author');
-    await this.expect(dir, ['config', '--local', 'user.email', email], 'configure the commit email');
+    const name = this.config.get<string>(
+      'runners.claudeCodeLocal.committerName',
+    )!;
+    const email = this.config.get<string>(
+      'runners.claudeCodeLocal.committerEmail',
+    )!;
+    await this.expect(
+      dir,
+      ['config', '--local', 'user.name', name],
+      'configure the commit author',
+    );
+    await this.expect(
+      dir,
+      ['config', '--local', 'user.email', email],
+      'configure the commit email',
+    );
   }
 
   private remoteUrl(repository: { owner: string; name: string }): string {
@@ -319,7 +360,11 @@ export class RunWorkspaceService {
     });
   }
 
-  private async expect(cwd: string, args: string[], what: string): Promise<CommandResult> {
+  private async expect(
+    cwd: string,
+    args: string[],
+    what: string,
+  ): Promise<CommandResult> {
     const result = await this.git(cwd, args);
     if (!result.ok) {
       throw new WorkspaceError(`Could not ${what}: ${describeFailure(result)}`);

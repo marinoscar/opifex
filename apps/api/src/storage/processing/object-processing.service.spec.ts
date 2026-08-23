@@ -4,9 +4,15 @@ import { Readable } from 'node:stream';
 import { ObjectProcessingService } from './object-processing.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { STORAGE_PROVIDER } from '../providers/storage-provider.interface';
-import { OBJECT_PROCESSOR, ObjectProcessor } from './object-processor.interface';
+import {
+  OBJECT_PROCESSOR,
+  ObjectProcessor,
+} from './object-processor.interface';
 import { ObjectUploadedEvent } from './events/object-uploaded.event';
-import { createMockPrismaService, MockPrismaService } from '../../../test/mocks/prisma.mock';
+import {
+  createMockPrismaService,
+  MockPrismaService,
+} from '../../../test/mocks/prisma.mock';
 import { createMockStorageProvider } from '../../../test/mocks/storage-provider.mock';
 
 describe('ObjectProcessingService', () => {
@@ -231,7 +237,9 @@ describe('ObjectProcessingService', () => {
     });
 
     it('should continue processing even when one processor throws', async () => {
-      mockProcessor1.process.mockRejectedValue(new Error('Processor 1 crashed'));
+      mockProcessor1.process.mockRejectedValue(
+        new Error('Processor 1 crashed'),
+      );
 
       mockProcessor2.process.mockResolvedValue({
         success: true,
@@ -440,8 +448,12 @@ describe('ObjectProcessingService', () => {
       const metadata = updateCall.data.metadata as any;
 
       expect(metadata._processedAt).toBeDefined();
-      expect(new Date(metadata._processedAt).getTime()).toBeGreaterThanOrEqual(new Date(beforeTime).getTime());
-      expect(new Date(metadata._processedAt).getTime()).toBeLessThanOrEqual(new Date(afterTime).getTime());
+      expect(new Date(metadata._processedAt).getTime()).toBeGreaterThanOrEqual(
+        new Date(beforeTime).getTime(),
+      );
+      expect(new Date(metadata._processedAt).getTime()).toBeLessThanOrEqual(
+        new Date(afterTime).getTime(),
+      );
     });
   });
 

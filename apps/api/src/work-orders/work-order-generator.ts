@@ -1,5 +1,9 @@
 import type { RunnerNeed } from '../runners/runner.types';
-import { assessCriteria, describeProblems, type CriteriaProblem } from './acceptance-criteria';
+import {
+  assessCriteria,
+  describeProblems,
+  type CriteriaProblem,
+} from './acceptance-criteria';
 import {
   workOrderBranch,
   workOrderIdentity,

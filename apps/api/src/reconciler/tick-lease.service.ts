@@ -61,7 +61,9 @@ export class TickLeaseService {
         if (!locked) {
           // Not an error. Overlap is the expected outcome of a tick that ran
           // long, and the scheduler firing again is not a fault to report.
-          this.logger.debug('Reconciler tick skipped: another tick holds the lease');
+          this.logger.debug(
+            'Reconciler tick skipped: another tick holds the lease',
+          );
           return { acquired: false as const };
         }
 
@@ -88,4 +90,5 @@ export class TickLeaseService {
   }
 }
 
-export type LeaseOutcome<T> = { acquired: false } | { acquired: true; result: T };
+export type LeaseOutcome<T> =
+  { acquired: false } | { acquired: true; result: T };

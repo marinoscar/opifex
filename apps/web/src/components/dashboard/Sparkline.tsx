@@ -161,7 +161,13 @@ export function Sparkline({
         strokeLinejoin="round"
       />
       {/* The end dot answers "which end is now?", which a bare line cannot. */}
-      <circle cx={lastX} cy={lastY} r={2} fill="currentColor" vectorEffect="non-scaling-stroke" />
+      <circle
+        cx={lastX}
+        cy={lastY}
+        r={2}
+        fill="currentColor"
+        vectorEffect="non-scaling-stroke"
+      />
     </Box>
   );
 }

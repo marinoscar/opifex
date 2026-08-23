@@ -52,19 +52,19 @@ The authoritative list is the host Nginx `map` block in
 `/etc/nginx/sites-available/dev-wildcard`. This table is a copy and can drift —
 check the live file before claiming a port.
 
-| Project | Port | Subdomain |
-|---------|------|-----------|
-| ModelGate | 8318 | modelgate.dev.marin.cr |
-| Knecta | 8319 | knecta.dev.marin.cr |
-| Clipboard | 8320 | clipboard.dev.marin.cr |
-| Semantic Convert | 8321 | semantic.dev.marin.cr |
-| *(8322 unassigned — a gap of unknown cause; left alone)* | | |
-| ShellKeep | 8323 | shellkeep.dev.marin.cr |
-| Store Front (raul1) | 8324 | raul1.dev.marin.cr |
-| Store Front (raul2) | 8325 | raul2.dev.marin.cr |
-| Knotes | 8326 | knotes.dev.marin.cr |
-| MemoriaHub | 8327 | memoriahub.dev.marin.cr |
-| **Opifex** | **8328** | **opifex.dev.marin.cr** |
+| Project                                                  | Port     | Subdomain               |
+| -------------------------------------------------------- | -------- | ----------------------- |
+| ModelGate                                                | 8318     | modelgate.dev.marin.cr  |
+| Knecta                                                   | 8319     | knecta.dev.marin.cr     |
+| Clipboard                                                | 8320     | clipboard.dev.marin.cr  |
+| Semantic Convert                                         | 8321     | semantic.dev.marin.cr   |
+| _(8322 unassigned — a gap of unknown cause; left alone)_ |          |                         |
+| ShellKeep                                                | 8323     | shellkeep.dev.marin.cr  |
+| Store Front (raul1)                                      | 8324     | raul1.dev.marin.cr      |
+| Store Front (raul2)                                      | 8325     | raul2.dev.marin.cr      |
+| Knotes                                                   | 8326     | knotes.dev.marin.cr     |
+| MemoriaHub                                               | 8327     | memoriahub.dev.marin.cr |
+| **Opifex**                                               | **8328** | **opifex.dev.marin.cr** |
 
 ## Step 0: Prerequisites
 
@@ -143,27 +143,27 @@ openssl rand -base64 32     # -> COOKIE_SECRET
 
 `.env.example` documents every variable. The ones that must change for this host:
 
-| Variable | Value | Where it comes from |
-|---|---|---|
-| `COMPOSE_PROJECT_NAME` | `opifex` | literal — **mandatory**, see below |
-| `NGINX_PORT` | `8328` | literal, after the port check |
-| `NODE_ENV` | `development` | literal (Vite dev server) |
-| `APP_URL` | `https://opifex.dev.marin.cr` | literal |
-| `CORS_ORIGIN` | `https://opifex.dev.marin.cr` | literal |
-| `POSTGRES_HOST` | `postgres` | literal — devnet DNS |
-| `POSTGRES_USER` | `admin` | shared PostgreSQL user |
-| `POSTGRES_PASSWORD` | — | copy from another app's `.env` on this host |
-| `POSTGRES_DB` | `opifex` | literal |
-| `POSTGRES_SSL` | `false` | literal — same Docker network |
-| `JWT_SECRET` | — | **generate** |
-| `COOKIE_SECRET` | — | **generate** (a second, different one) |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | — | copy from the shared OAuth client |
-| `GOOGLE_CALLBACK_URL` | `https://opifex.dev.marin.cr/api/auth/google/callback` | literal |
-| `INITIAL_ADMIN_EMAIL` | your Google address | first login with it becomes Admin |
-| `TEST_AUTH_ENABLED` | `false` | literal — **security-critical**, see below |
-| `S3_BUCKET` | `marin-opifex` | literal |
-| `S3_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | — | copy from the shared AWS credentials |
-| `OTEL_ENABLED` | `false` | literal — no collector in this stack |
+| Variable                                                  | Value                                                  | Where it comes from                         |
+| --------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------- |
+| `COMPOSE_PROJECT_NAME`                                    | `opifex`                                               | literal — **mandatory**, see below          |
+| `NGINX_PORT`                                              | `8328`                                                 | literal, after the port check               |
+| `NODE_ENV`                                                | `development`                                          | literal (Vite dev server)                   |
+| `APP_URL`                                                 | `https://opifex.dev.marin.cr`                          | literal                                     |
+| `CORS_ORIGIN`                                             | `https://opifex.dev.marin.cr`                          | literal                                     |
+| `POSTGRES_HOST`                                           | `postgres`                                             | literal — devnet DNS                        |
+| `POSTGRES_USER`                                           | `admin`                                                | shared PostgreSQL user                      |
+| `POSTGRES_PASSWORD`                                       | —                                                      | copy from another app's `.env` on this host |
+| `POSTGRES_DB`                                             | `opifex`                                               | literal                                     |
+| `POSTGRES_SSL`                                            | `false`                                                | literal — same Docker network               |
+| `JWT_SECRET`                                              | —                                                      | **generate**                                |
+| `COOKIE_SECRET`                                           | —                                                      | **generate** (a second, different one)      |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`               | —                                                      | copy from the shared OAuth client           |
+| `GOOGLE_CALLBACK_URL`                                     | `https://opifex.dev.marin.cr/api/auth/google/callback` | literal                                     |
+| `INITIAL_ADMIN_EMAIL`                                     | your Google address                                    | first login with it becomes Admin           |
+| `TEST_AUTH_ENABLED`                                       | `false`                                                | literal — **security-critical**, see below  |
+| `S3_BUCKET`                                               | `marin-opifex`                                         | literal                                     |
+| `S3_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | —                                                      | copy from the shared AWS credentials        |
+| `OTEL_ENABLED`                                            | `false`                                                | literal — no collector in this stack        |
 
 > **`COMPOSE_PROJECT_NAME` is not optional.** Compose derives the project name
 > from the directory holding the compose file, which is `compose` for every app
@@ -248,47 +248,55 @@ Docker's DNS every 10s, so a rebuild no longer strands it on stale IPs.
 ## Troubleshooting
 
 **502 Bad Gateway**
+
 - Containers down: `docker compose -f base.compose.yml -f dev.compose.yml ps`
 - Port mismatch: confirm `NGINX_PORT=8328` in `.env` matches the host Nginx map.
 
 **Every subdomain is unreachable**
+
 - The host Nginx service is down. `systemctl status nginx`, then `sudo nginx -t`
   to find the offending site config, fix it, `sudo systemctl start nginx`.
 
 **Another app's containers disappeared**
+
 - `COMPOSE_PROJECT_NAME` was unset. Set it, then bring the other app back up.
 
 **`Blocked request. This host is not allowed.`**
+
 - `opifex.dev.marin.cr` is missing from `allowedHosts` in
   `apps/web/vite.config.ts`. It is baked into the image, so redeploy with
   `--build`.
 
 **Database connection refused**
+
 - `docker network ls | grep devnet`
 - `docker compose ... exec api sh -c "nc -zv postgres 5432"`
 - `docker exec postgres psql -U admin -d postgres -c '\l' | grep opifex`
 
 **413 Request Entity Too Large**
+
 - Confirm `client_max_body_size 128m` in `infra/nginx/nginx.conf` and that the
   host `dev-wildcard` config permits at least as much. For large files use the
   resumable flow (`POST /api/storage/objects/upload/init`), which streams to S3.
 
 **Google OAuth errors**
+
 - `https://opifex.dev.marin.cr/api/auth/google/callback` must be registered on
   the OAuth client and match `GOOGLE_CALLBACK_URL` exactly.
 
 **Uploads succeed but completing a multipart upload fails**
+
 - The bucket CORS policy is missing `ETag` in `ExposeHeaders`. Re-run
   `setup-bucket.cjs`.
 
 ## File reference
 
-| File | Purpose |
-|------|---------|
-| `/etc/nginx/sites-available/dev-wildcard` | Host reverse proxy — subdomain→port map + SSL |
-| `/etc/letsencrypt/live/dev.marin.cr/` | Wildcard SSL certificate and key |
-| `infra/nginx/nginx.conf` | Docker-internal routing, resolver, body-size limit |
-| `infra/compose/base.compose.yml` | Base services; `env_file: .env`; api on devnet |
-| `infra/compose/dev.compose.yml` | Development overrides (Vite, hot reload) |
-| `infra/compose/.env` | Environment (DB, Google OAuth, AWS S3) — never committed |
-| `infra/aws/` | S3 bucket provisioning and CORS policy |
+| File                                      | Purpose                                                  |
+| ----------------------------------------- | -------------------------------------------------------- |
+| `/etc/nginx/sites-available/dev-wildcard` | Host reverse proxy — subdomain→port map + SSL            |
+| `/etc/letsencrypt/live/dev.marin.cr/`     | Wildcard SSL certificate and key                         |
+| `infra/nginx/nginx.conf`                  | Docker-internal routing, resolver, body-size limit       |
+| `infra/compose/base.compose.yml`          | Base services; `env_file: .env`; api on devnet           |
+| `infra/compose/dev.compose.yml`           | Development overrides (Vite, hot reload)                 |
+| `infra/compose/.env`                      | Environment (DB, Google OAuth, AWS S3) — never committed |
+| `infra/aws/`                              | S3 bucket provisioning and CORS policy                   |

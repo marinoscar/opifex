@@ -34,7 +34,9 @@ describe('QueueService', () => {
     };
   }
 
-  function decision(overrides: Partial<DispatchDecision> = {}): DispatchDecision {
+  function decision(
+    overrides: Partial<DispatchDecision> = {},
+  ): DispatchDecision {
     return {
       outcome: 'dispatch',
       runnerKey: 'claude-code-local',
@@ -82,7 +84,9 @@ describe('QueueService', () => {
       // queue depth read high while the factory is busy working through it.
       await service.list();
 
-      expect(findMany.mock.calls[0][0].where).toEqual({ status: { in: ['queued', 'held'] } });
+      expect(findMany.mock.calls[0][0].where).toEqual({
+        status: { in: ['queued', 'held'] },
+      });
     });
 
     it('orders the way the dispatch pass drains, held rows last', async () => {
@@ -173,7 +177,9 @@ describe('QueueService', () => {
 
       const [entry] = await service.list();
 
-      expect(entry.waitingOn).toBe('Queued: every capable runner is at capacity.');
+      expect(entry.waitingOn).toBe(
+        'Queued: every capable runner is at capacity.',
+      );
     });
 
     it('is held when a human paused it, whatever the fleet says', async () => {
@@ -199,12 +205,17 @@ describe('QueueService', () => {
 
     it('uses the stored reason when a hold has one', async () => {
       findMany.mockResolvedValue([
-        row({ status: 'held', holdReason: 'Quarantined: identity disagrees with itself' }),
+        row({
+          status: 'held',
+          holdReason: 'Quarantined: identity disagrees with itself',
+        }),
       ]);
 
       const [entry] = await service.list();
 
-      expect(entry.waitingOn).toBe('Quarantined: identity disagrees with itself');
+      expect(entry.waitingOn).toBe(
+        'Quarantined: identity disagrees with itself',
+      );
     });
 
     it('never reports dispatching', async () => {
@@ -224,11 +235,19 @@ describe('QueueService', () => {
     it('marks only as many ready as the fleet can actually take', async () => {
       // Two free slots and three queued work orders: reporting all three ready
       // would tell the operator three things can start when one cannot.
-      findMany.mockResolvedValue([row({ id: 'a' }), row({ id: 'b' }), row({ id: 'c' })]);
+      findMany.mockResolvedValue([
+        row({ id: 'a' }),
+        row({ id: 'b' }),
+        row({ id: 'c' }),
+      ]);
 
       const entries = await service.list();
 
-      expect(entries.map((e) => e.state)).toEqual(['ready', 'ready', 'waiting']);
+      expect(entries.map((e) => e.state)).toEqual([
+        'ready',
+        'ready',
+        'waiting',
+      ]);
     });
 
     it('says the slots are taken, not that it is dispatching', async () => {
@@ -237,7 +256,11 @@ describe('QueueService', () => {
       // it here was a real bug, caught by a probe against a fleet with finite
       // headroom and three rows to fit into it — the double could not, because
       // the double had never run out.
-      findMany.mockResolvedValue([row({ id: 'a' }), row({ id: 'b' }), row({ id: 'c' })]);
+      findMany.mockResolvedValue([
+        row({ id: 'a' }),
+        row({ id: 'b' }),
+        row({ id: 'c' }),
+      ]);
 
       const entries = await service.list();
 
@@ -254,7 +277,9 @@ describe('QueueService', () => {
 
       const entries = await service.list();
 
-      expect(entries[0].waitingOn).toBe('Queued: every capable runner is at capacity.');
+      expect(entries[0].waitingOn).toBe(
+        'Queued: every capable runner is at capacity.',
+      );
     });
 
     it('does not let a held row consume a slot', async () => {
@@ -273,7 +298,9 @@ describe('QueueService', () => {
 
     it('marks nothing ready when the fleet has no headroom at all', async () => {
       decide.mockResolvedValue(
-        decision({ candidates: [{ ...decision().candidates[0], headroom: 0 }] }),
+        decision({
+          candidates: [{ ...decision().candidates[0], headroom: 0 }],
+        }),
       );
       findMany.mockResolvedValue([row({ id: 'a' }), row({ id: 'b' })]);
 
@@ -328,7 +355,11 @@ describe('QueueService', () => {
 
   describe('position and enqueuedAt', () => {
     it('numbers positions from one, in list order', async () => {
-      findMany.mockResolvedValue([row({ id: 'a' }), row({ id: 'b' }), row({ id: 'c' })]);
+      findMany.mockResolvedValue([
+        row({ id: 'a' }),
+        row({ id: 'b' }),
+        row({ id: 'c' }),
+      ]);
 
       const entries = await service.list();
 

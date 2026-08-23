@@ -47,7 +47,10 @@ export const TABLE_ID = 'admin-users';
 /** The roles the RBAC seed defines (`apps/api/prisma/seed.ts`). */
 export const AVAILABLE_ROLES = ['admin', 'contributor', 'viewer'] as const;
 
-const ROLE_ENUM_VALUES = AVAILABLE_ROLES.map((role) => ({ value: role, label: role }));
+const ROLE_ENUM_VALUES = AVAILABLE_ROLES.map((role) => ({
+  value: role,
+  label: role,
+}));
 
 /**
  * Column ids that are also valid `sortBy` values, and the narrowing that keeps
@@ -60,7 +63,9 @@ const ROLE_ENUM_VALUES = AVAILABLE_ROLES.map((role) => ({ value: role, label: ro
  */
 const SORTABLE_FIELDS: readonly UserSortField[] = ['email', 'createdAt'];
 
-export function asUserSortField(field: string | undefined): UserSortField | undefined {
+export function asUserSortField(
+  field: string | undefined,
+): UserSortField | undefined {
   return SORTABLE_FIELDS.find((candidate) => candidate === field);
 }
 
@@ -102,7 +107,11 @@ export function buildUserColumns(): DataTableColumn<UserListItem>[] {
       flex: 1.4,
       value: (user) => user.email,
       render: (user) => (
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ alignItems: 'center', minWidth: 0 }}
+        >
           <Avatar
             src={user.profileImageUrl || undefined}
             alt={user.email}

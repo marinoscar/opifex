@@ -55,8 +55,12 @@ const entrypoint = resolve(apiRoot, 'dist', 'main.js');
 
 const PORT = process.env.SMOKE_PORT ?? '3001';
 const BASE_URL = `http://127.0.0.1:${PORT}`;
-const STARTUP_TIMEOUT_MS = Number(process.env.SMOKE_STARTUP_TIMEOUT_MS ?? 90_000);
-const SHUTDOWN_TIMEOUT_MS = Number(process.env.SMOKE_SHUTDOWN_TIMEOUT_MS ?? 15_000);
+const STARTUP_TIMEOUT_MS = Number(
+  process.env.SMOKE_STARTUP_TIMEOUT_MS ?? 90_000,
+);
+const SHUTDOWN_TIMEOUT_MS = Number(
+  process.env.SMOKE_SHUTDOWN_TIMEOUT_MS ?? 15_000,
+);
 const POLL_INTERVAL_MS = 500;
 
 /** Everything the child wrote, replayed into the job log if anything fails. */
@@ -127,7 +131,9 @@ function fail(message) {
  */
 async function waitForLiveness() {
   const deadline = Date.now() + STARTUP_TIMEOUT_MS;
-  log(`waiting for ${BASE_URL}/api/health/live (timeout ${STARTUP_TIMEOUT_MS}ms)`);
+  log(
+    `waiting for ${BASE_URL}/api/health/live (timeout ${STARTUP_TIMEOUT_MS}ms)`,
+  );
 
   while (Date.now() < deadline) {
     if (childExit) {
@@ -142,7 +148,9 @@ async function waitForLiveness() {
       if (response.status !== 200) {
         fail(`GET /api/health/live returned ${response.status}, expected 200`);
       }
-      log(`GET /api/health/live -> 200 (after ${STARTUP_TIMEOUT_MS - (deadline - Date.now())}ms)`);
+      log(
+        `GET /api/health/live -> 200 (after ${STARTUP_TIMEOUT_MS - (deadline - Date.now())}ms)`,
+      );
       return;
     }
 
@@ -228,14 +236,18 @@ async function assertOpenApiDocument() {
   }
 
   if (response.status !== 200) {
-    fail(`GET /api/openapi.json returned ${response.status}, expected 200. Body: ${body}`);
+    fail(
+      `GET /api/openapi.json returned ${response.status}, expected 200. Body: ${body}`,
+    );
   }
 
   let document;
   try {
     document = JSON.parse(body);
   } catch (error) {
-    fail(`GET /api/openapi.json returned 200 but the body is not valid JSON: ${error.message}`);
+    fail(
+      `GET /api/openapi.json returned 200 but the body is not valid JSON: ${error.message}`,
+    );
   }
 
   if (typeof document.openapi !== 'string') {
@@ -250,7 +262,9 @@ async function assertOpenApiDocument() {
   // The prefix is applied by `setGlobalPrefix('api')` during bootstrap, which is
   // itself untested by the suite — so confirm it actually took effect rather
   // than trusting that a non-empty `paths` implies correct routing.
-  const prefixed = Object.keys(paths).filter((path) => path.startsWith('/api/'));
+  const prefixed = Object.keys(paths).filter((path) =>
+    path.startsWith('/api/'),
+  );
   if (prefixed.length === 0) {
     fail(
       'no path in the OpenAPI document starts with `/api/` — setGlobalPrefix() ' +
@@ -322,7 +336,9 @@ async function shutdown(child) {
 
   if (!childExit) {
     child.kill('SIGKILL');
-    fail(`the API did not exit within ${SHUTDOWN_TIMEOUT_MS}ms of SIGTERM; had to SIGKILL it`);
+    fail(
+      `the API did not exit within ${SHUTDOWN_TIMEOUT_MS}ms of SIGTERM; had to SIGKILL it`,
+    );
   }
 
   const { code, signal } = childExit;
@@ -334,7 +350,9 @@ async function shutdown(child) {
     return;
   }
 
-  fail(`the API exited with a non-zero code on shutdown (code=${code}, signal=${signal})`);
+  fail(
+    `the API exited with a non-zero code on shutdown (code=${code}, signal=${signal})`,
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -352,7 +370,10 @@ async function main() {
       child.kill('SIGKILL');
     }
     dumpChildOutput();
-    const message = error instanceof SmokeFailure ? error.message : (error.stack ?? String(error));
+    const message =
+      error instanceof SmokeFailure
+        ? error.message
+        : (error.stack ?? String(error));
     process.stderr.write(`\n[smoke] FAILED: ${message}\n`);
     process.exit(1);
   }

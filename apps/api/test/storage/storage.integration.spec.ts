@@ -6,11 +6,7 @@ import {
 } from '../helpers/test-app.helper';
 import { resetPrismaMock } from '../mocks/prisma.mock';
 import { setupBaseMocks } from '../fixtures/mock-setup.helper';
-import {
-  createMockTestUser,
-  createMockAdminUser,
-  authHeader,
-} from '../helpers/auth-mock.helper';
+import { createMockTestUser, authHeader } from '../helpers/auth-mock.helper';
 import { STORAGE_PROVIDER } from '../../src/storage/providers/storage-provider.interface';
 import { createMockStorageProvider } from '../mocks/storage-provider.mock';
 
@@ -41,7 +37,9 @@ describe('Storage Integration', () => {
     context = await createTestApp({ useMockDatabase: true });
 
     // Override storage provider with mock
-    const storageProviderToken = context.module.get(STORAGE_PROVIDER, { strict: false });
+    const storageProviderToken = context.module.get(STORAGE_PROVIDER, {
+      strict: false,
+    });
     if (storageProviderToken) {
       Object.assign(storageProviderToken, mockStorageProvider);
     }
@@ -158,7 +156,9 @@ describe('Storage Integration', () => {
       context.prismaMock.storageObject.findUnique.mockResolvedValue(null);
 
       await request(context.app.getHttpServer())
-        .get('/api/storage/objects/550e8400-e29b-41d4-a716-446655440001/upload/status')
+        .get(
+          '/api/storage/objects/550e8400-e29b-41d4-a716-446655440001/upload/status',
+        )
         .set(authHeader(user.accessToken))
         .expect(404);
     });
@@ -229,7 +229,9 @@ describe('Storage Integration', () => {
       context.prismaMock.storageObject.findUnique.mockResolvedValue(null);
 
       await request(context.app.getHttpServer())
-        .post('/api/storage/objects/550e8400-e29b-41d4-a716-446655440001/upload/complete')
+        .post(
+          '/api/storage/objects/550e8400-e29b-41d4-a716-446655440001/upload/complete',
+        )
         .set(authHeader(user.accessToken))
         .send({
           parts: [{ partNumber: 1, eTag: 'etag1' }],
@@ -275,14 +277,16 @@ describe('Storage Integration', () => {
       context.prismaMock.storageObject.findUnique.mockResolvedValue(null);
 
       await request(context.app.getHttpServer())
-        .delete('/api/storage/objects/550e8400-e29b-41d4-a716-446655440001/upload/abort')
+        .delete(
+          '/api/storage/objects/550e8400-e29b-41d4-a716-446655440001/upload/abort',
+        )
         .set(authHeader(user.accessToken))
         .expect(404);
     });
   });
 
   describe('GET /api/storage/objects', () => {
-    it('should list user\'s objects', async () => {
+    it("should list user's objects", async () => {
       const user = await createMockTestUser(context);
 
       const mockObjects = [
@@ -539,7 +543,9 @@ describe('Storage Integration', () => {
         uploadedById: otherUserId,
       };
 
-      context.prismaMock.storageObject.findUnique.mockResolvedValue(otherUserObject);
+      context.prismaMock.storageObject.findUnique.mockResolvedValue(
+        otherUserObject,
+      );
 
       // Test various endpoints
       await request(context.app.getHttpServer())

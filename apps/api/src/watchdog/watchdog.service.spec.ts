@@ -25,8 +25,9 @@ function runRow(overrides: Record<string, unknown> = {}) {
 describe('WatchdogService', () => {
   /** Live runs for the first query; the blocked query still returns none. */
   function mockLiveRuns(rows: unknown[]) {
-    prisma.run.findMany.mockImplementation(async (query: { where: { status: unknown } }) =>
-      query.where.status === 'blocked' ? [] : rows,
+    prisma.run.findMany.mockImplementation(
+      async (query: { where: { status: unknown } }) =>
+        query.where.status === 'blocked' ? [] : rows,
     );
   }
 
@@ -43,8 +44,9 @@ describe('WatchdogService', () => {
     };
     // Blocked runs are a second query against `run.findMany`; by default the
     // suite has none, so the first call returns live runs and the second none.
-    prisma.run.findMany.mockImplementation(async (query: { where: { status: unknown } }) =>
-      query.where.status === 'blocked' ? [] : [runRow()],
+    prisma.run.findMany.mockImplementation(
+      async (query: { where: { status: unknown } }) =>
+        query.where.status === 'blocked' ? [] : [runRow()],
     );
     prisma.run.update = jest.fn().mockResolvedValue({});
     service = new WatchdogService(prisma as unknown as PrismaService);
@@ -67,7 +69,9 @@ describe('WatchdogService', () => {
       await service.sweep(NOW);
 
       const [{ select }] = prisma.run.findMany.mock.calls[0];
-      expect(select.runner.select.capability.select.streamingFidelity).toBe(true);
+      expect(select.runner.select.capability.select.streamingFidelity).toBe(
+        true,
+      );
     });
   });
 
@@ -84,7 +88,10 @@ describe('WatchdogService', () => {
       // escalation is what should happen to the human.
       const result = await service.sweep(NOW);
 
-      expect(result.actions.map((a) => a.type)).toEqual(['kill-and-re-run', 'escalate']);
+      expect(result.actions.map((a) => a.type)).toEqual([
+        'kill-and-re-run',
+        'escalate',
+      ]);
     });
 
     it('carries the runId, since the action concerns an execution not an issue', async () => {
@@ -121,9 +128,7 @@ describe('WatchdogService', () => {
 
   describe('a healthy run', () => {
     it('produces no actions at all', async () => {
-      mockLiveRuns([
-        runRow({ lastEventAt: new Date(NOW.getTime() - 5_000) }),
-      ]);
+      mockLiveRuns([runRow({ lastEventAt: new Date(NOW.getTime() - 5_000) })]);
 
       const result = await service.sweep(NOW);
 
@@ -177,25 +182,30 @@ describe('WatchdogService', () => {
 
     beforeEach(() => {
       // Healthy on the silence axis, so only the loop check can fire.
-      mockLiveRuns([
-        runRow({ lastEventAt: new Date(NOW.getTime() - 5_000) }),
-      ]);
+      mockLiveRuns([runRow({ lastEventAt: new Date(NOW.getTime() - 5_000) })]);
     });
 
     it('produces kill-and-re-PLAN, not kill-and-re-run', async () => {
       // #55: re-running the identical work order from base would simply loop
       // again. Collapsing the two responses is the mistake VISION §9 warns
       // about directly.
-      prisma.runEvent.findMany.mockResolvedValue(toolEvents('Bash:sha256:abc', 10));
+      prisma.runEvent.findMany.mockResolvedValue(
+        toolEvents('Bash:sha256:abc', 10),
+      );
 
       const result = await service.sweep(NOW);
 
-      expect(result.actions.map((a) => a.type)).toEqual(['kill-and-re-plan', 'escalate']);
+      expect(result.actions.map((a) => a.type)).toEqual([
+        'kill-and-re-plan',
+        'escalate',
+      ]);
       expect(result.loopingRuns).toBe(1);
     });
 
     it('says the work order needs DECOMPOSING, not retrying', async () => {
-      prisma.runEvent.findMany.mockResolvedValue(toolEvents('Bash:sha256:abc', 10));
+      prisma.runEvent.findMany.mockResolvedValue(
+        toolEvents('Bash:sha256:abc', 10),
+      );
 
       const result = await service.sweep(NOW);
       const escalation = result.actions.find((a) => a.type === 'escalate')!;
@@ -231,7 +241,10 @@ describe('WatchdogService', () => {
       const result = await service.sweep(NOW);
 
       expect(prisma.runEvent.findMany).not.toHaveBeenCalled();
-      expect(result.actions.map((a) => a.type)).toEqual(['kill-and-re-run', 'escalate']);
+      expect(result.actions.map((a) => a.type)).toEqual([
+        'kill-and-re-run',
+        'escalate',
+      ]);
     });
 
     it('reads only events that carry a tool signature, bounded', async () => {
@@ -280,8 +293,9 @@ describe('WatchdogService', () => {
     }
 
     function mockBlocked(rows: unknown[]) {
-      prisma.run.findMany.mockImplementation(async (query: { where: { status: unknown } }) =>
-        query.where.status === 'blocked' ? rows : [],
+      prisma.run.findMany.mockImplementation(
+        async (query: { where: { status: unknown } }) =>
+          query.where.status === 'blocked' ? rows : [],
       );
     }
 
@@ -304,7 +318,9 @@ describe('WatchdogService', () => {
     it('is silent while a parked run simply waits', async () => {
       // A blocked run waiting out its quota is Opifex succeeding. An action
       // every tick would bury the ones that need attention.
-      mockBlocked([blockedRow({ resumesAt: new Date(NOW.getTime() + 60 * 60_000) })]);
+      mockBlocked([
+        blockedRow({ resumesAt: new Date(NOW.getTime() + 60 * 60_000) }),
+      ]);
 
       const result = await service.sweep(NOW);
 
@@ -313,7 +329,9 @@ describe('WatchdogService', () => {
     });
 
     it('computes a resume once the scheduled time has passed', async () => {
-      mockBlocked([blockedRow({ resumesAt: new Date(NOW.getTime() - 60_000) })]);
+      mockBlocked([
+        blockedRow({ resumesAt: new Date(NOW.getTime() - 60_000) }),
+      ]);
 
       const result = await service.sweep(NOW);
 
@@ -373,7 +391,10 @@ describe('WatchdogService', () => {
 
   describe('detection latency, carried on the escalation (#59)', () => {
     const escalation = (actions: { type: string }[]) =>
-      actions.find((action) => action.type === 'escalate') as Record<string, unknown>;
+      actions.find((action) => action.type === 'escalate') as Record<
+        string,
+        unknown
+      >;
 
     it('carries when the run stopped, not when the tick noticed', async () => {
       const { actions } = await service.sweep(NOW);
@@ -427,7 +448,8 @@ describe('WatchdogService', () => {
       const { actions } = await service.sweep(NOW);
 
       const looping = actions.find(
-        (action) => action.type === 'escalate' && action.escalationKind === 'run_looping',
+        (action) =>
+          action.type === 'escalate' && action.escalationKind === 'run_looping',
       );
       expect(looping!.progressStoppedAt).toBe(startedRepeating.toISOString());
       // Loop detection needs tool detail, which only the runner stream carries.

@@ -1,6 +1,5 @@
 import { prismaMock, mockPrismaTransaction } from '../mocks/prisma.mock';
 import {
-  createMockUser,
   createMockUserWithRelations,
   createMockAllowedEmail,
   createMockAuditEvent,
@@ -96,7 +95,7 @@ export function clearMockUserRegistry(): void {
 export function setupUserMocks(): void {
   // Mock user.findUnique - searches the registry
   (prismaMock.user.findUnique as jest.Mock).mockImplementation(
-    async ({ where, include }: any) => {
+    async ({ where }: any) => {
       // Search by id
       if (where.id && mockUserRegistry.has(where.id)) {
         return mockUserRegistry.get(where.id);
@@ -113,17 +112,21 @@ export function setupUserMocks(): void {
 
   // Mock user.update - updates user in registry
   (prismaMock.user.update as jest.Mock).mockImplementation(
-    async ({ where, data, include }: any) => {
+    async ({ where, data }: any) => {
       const user = mockUserRegistry.get(where.id);
       if (user) {
         // Merge the data updates into the existing user
         const updated = { ...user };
         // Only update fields that are defined in data
-        if (data.displayName !== undefined) updated.displayName = data.displayName;
+        if (data.displayName !== undefined)
+          updated.displayName = data.displayName;
         if (data.isActive !== undefined) updated.isActive = data.isActive;
-        if (data.profileImageUrl !== undefined) updated.profileImageUrl = data.profileImageUrl;
-        if (data.providerDisplayName !== undefined) updated.providerDisplayName = data.providerDisplayName;
-        if (data.providerProfileImageUrl !== undefined) updated.providerProfileImageUrl = data.providerProfileImageUrl;
+        if (data.profileImageUrl !== undefined)
+          updated.profileImageUrl = data.profileImageUrl;
+        if (data.providerDisplayName !== undefined)
+          updated.providerDisplayName = data.providerDisplayName;
+        if (data.providerProfileImageUrl !== undefined)
+          updated.providerProfileImageUrl = data.providerProfileImageUrl;
 
         mockUserRegistry.set(where.id, updated);
         return updated;
@@ -199,7 +202,6 @@ export function setupMockUserList(
   (prismaMock.user.findMany as jest.Mock).mockImplementation(
     async (args: any) => {
       const where = args?.where;
-      const include = args?.include;
       const skip = args?.skip || 0;
       const take = args?.take;
       const orderBy = args?.orderBy;
@@ -226,7 +228,8 @@ export function setupMockUserList(
                 return u.displayName?.toLowerCase().includes(search);
               }
               if (condition.providerDisplayName?.contains) {
-                const search = condition.providerDisplayName.contains.toLowerCase();
+                const search =
+                  condition.providerDisplayName.contains.toLowerCase();
                 return u.providerDisplayName?.toLowerCase().includes(search);
               }
               return false;
@@ -259,7 +262,10 @@ export function setupMockUserList(
 
       // Apply sorting
       if (orderBy) {
-        const [sortField, sortDirection] = Object.entries(orderBy)[0] as [string, 'asc' | 'desc'];
+        const [sortField, sortDirection] = Object.entries(orderBy)[0] as [
+          string,
+          'asc' | 'desc',
+        ];
         filtered = [...filtered].sort((a: any, b: any) => {
           const aVal = a[sortField];
           const bVal = b[sortField];
@@ -314,7 +320,8 @@ export function setupMockUserList(
               return u.displayName?.toLowerCase().includes(search);
             }
             if (condition.providerDisplayName?.contains) {
-              const search = condition.providerDisplayName.contains.toLowerCase();
+              const search =
+                condition.providerDisplayName.contains.toLowerCase();
               return u.providerDisplayName?.toLowerCase().includes(search);
             }
             return false;
@@ -602,13 +609,17 @@ export function setupBaseMocks(): void {
 
   // Mock userRole operations (used in transactions)
   (prismaMock.userRole.deleteMany as jest.Mock).mockResolvedValue({ count: 0 });
-  (prismaMock.userRole.create as jest.Mock).mockImplementation(async ({ data }: any) => ({
-    userId: data.userId,
-    roleId: data.roleId,
-  }));
-  (prismaMock.userRole.createMany as jest.Mock).mockImplementation(async ({ data }: any) => ({
-    count: Array.isArray(data) ? data.length : 1,
-  }));
+  (prismaMock.userRole.create as jest.Mock).mockImplementation(
+    async ({ data }: any) => ({
+      userId: data.userId,
+      roleId: data.roleId,
+    }),
+  );
+  (prismaMock.userRole.createMany as jest.Mock).mockImplementation(
+    async ({ data }: any) => ({
+      count: Array.isArray(data) ? data.length : 1,
+    }),
+  );
 
   // Mock $connect and $disconnect
   (prismaMock.$connect as jest.Mock).mockResolvedValue(undefined);

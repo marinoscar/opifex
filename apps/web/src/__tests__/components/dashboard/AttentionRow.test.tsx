@@ -22,7 +22,8 @@ function makeRun(overrides: Partial<RunSummary> = {}): RunSummary {
     status: 'stalled',
     startedAt: '2026-08-19T06:00:00.000Z',
     lastEventAt: '2026-08-19T11:48:00.000Z',
-    attentionReason: 'No events for 12 minutes. Kill and re-run from the base commit.',
+    attentionReason:
+      'No events for 12 minutes. Kill and re-run from the base commit.',
     resumesAt: null,
     runner: 'claude-code-local',
     costUsd: 1.25,
@@ -68,7 +69,9 @@ describe('AttentionRow', () => {
   it('shows the reason a human is needed', () => {
     render(<AttentionRow run={makeRun()} now={now} />);
     expect(
-      screen.getByText('No events for 12 minutes. Kill and re-run from the base commit.'),
+      screen.getByText(
+        'No events for 12 minutes. Kill and re-run from the base commit.',
+      ),
     ).toBeInTheDocument();
   });
 
@@ -95,13 +98,20 @@ describe('AttentionRow', () => {
   it('links the title to the pull request when there is one', () => {
     render(
       <AttentionRow
-        run={makeRun({ pullRequestUrl: 'https://github.com/opifex/opifex/pull/9' })}
+        run={makeRun({
+          pullRequestUrl: 'https://github.com/opifex/opifex/pull/9',
+        })}
         now={now}
       />,
     );
 
-    const link = screen.getByRole('link', { name: 'Add the run queue endpoint' });
-    expect(link).toHaveAttribute('href', 'https://github.com/opifex/opifex/pull/9');
+    const link = screen.getByRole('link', {
+      name: 'Add the run queue endpoint',
+    });
+    expect(link).toHaveAttribute(
+      'href',
+      'https://github.com/opifex/opifex/pull/9',
+    );
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 

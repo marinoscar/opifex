@@ -25,7 +25,12 @@ export interface RaiseResult {
  * the two disagreeing means the panel shows a run nobody will be told about —
  * or hides one somebody already was.
  */
-export const UNRESOLVED: readonly string[] = ['raised', 'dispatched', 'delivered', 'failed'];
+export const UNRESOLVED: readonly string[] = [
+  'raised',
+  'dispatched',
+  'delivered',
+  'failed',
+];
 
 /**
  * Escalations, as first-class records.
@@ -160,7 +165,12 @@ export class EscalationsService {
       this.prisma.escalation.count({ where }),
     ]);
 
-    return { items: items.map(toResponse), total, page: query.page, pageSize: query.pageSize };
+    return {
+      items: items.map(toResponse),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   }
 
   /**
@@ -171,7 +181,9 @@ export class EscalationsService {
    * cannot answer the question it is for — who knows about this.
    */
   async acknowledge(id: string, userId: string) {
-    const escalation = await this.prisma.escalation.findUnique({ where: { id } });
+    const escalation = await this.prisma.escalation.findUnique({
+      where: { id },
+    });
     if (!escalation) {
       throw new NotFoundException(`Escalation ${id} not found`);
     }
@@ -216,10 +228,17 @@ export class EscalationsService {
    * escalation has no run that stopped. Counted rather than measured from
    * `raisedAt`, which would be a zero-latency entry per unmeasurable event.
    */
-  async latencySummary(query: { since?: Date; until?: Date; repository?: string } = {}) {
+  async latencySummary(
+    query: { since?: Date; until?: Date; repository?: string } = {},
+  ) {
     const where: Prisma.EscalationWhereInput = {
       ...(query.since || query.until
-        ? { raisedAt: { ...(query.since ? { gte: query.since } : {}), ...(query.until ? { lte: query.until } : {}) } }
+        ? {
+            raisedAt: {
+              ...(query.since ? { gte: query.since } : {}),
+              ...(query.until ? { lte: query.until } : {}),
+            },
+          }
         : {}),
       ...(query.repository
         ? {
@@ -262,7 +281,9 @@ export class EscalationsService {
       bySource: Object.fromEntries(
         ['runner', 'git', 'control_plane'].map((source) => [
           source,
-          summarizeLatency(sample.filter((row) => row.detectionSource === source)),
+          summarizeLatency(
+            sample.filter((row) => row.detectionSource === source),
+          ),
         ]),
       ),
     };
@@ -294,7 +315,11 @@ export class EscalationsService {
         deliveredAt: true,
         progressStoppedAt: true,
         detectionSource: true,
-        run: { select: { workOrder: { select: { identity: true, repository: true } } } },
+        run: {
+          select: {
+            workOrder: { select: { identity: true, repository: true } },
+          },
+        },
       },
     });
     if (!escalation) {
@@ -339,7 +364,9 @@ export class EscalationsService {
   }
 
   async get(id: string) {
-    const escalation = await this.prisma.escalation.findUnique({ where: { id } });
+    const escalation = await this.prisma.escalation.findUnique({
+      where: { id },
+    });
     if (!escalation) {
       throw new NotFoundException(`Escalation ${id} not found`);
     }
@@ -365,7 +392,9 @@ export class EscalationsService {
   }
 }
 
-type EscalationRow = Awaited<ReturnType<PrismaService['escalation']['findUniqueOrThrow']>>;
+type EscalationRow = Awaited<
+  ReturnType<PrismaService['escalation']['findUniqueOrThrow']>
+>;
 
 function toResponse(escalation: EscalationRow) {
   return {
@@ -427,7 +456,9 @@ function elapsed(from: Date, to: Date): number {
   return Math.max(0, to.getTime() - from.getTime());
 }
 
-function repositoryName(repository: { owner: string; name: string } | undefined): string {
+function repositoryName(
+  repository: { owner: string; name: string } | undefined,
+): string {
   return repository ? `${repository.owner}/${repository.name}` : 'unknown';
 }
 
@@ -466,7 +497,9 @@ function summarizeLatency(rows: LatencySample[]): LatencySummary {
         .map((row) => row.detectLatencyMs)
         .filter((value): value is number => value !== null),
     ),
-    awaitingNotification: measurable.filter((row) => row.notifyLatencyMs === null).length,
+    awaitingNotification: measurable.filter(
+      (row) => row.notifyLatencyMs === null,
+    ).length,
     unmeasurable: rows.length - measurable.length,
   };
 }

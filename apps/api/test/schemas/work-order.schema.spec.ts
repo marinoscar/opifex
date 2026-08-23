@@ -39,7 +39,9 @@ function buildValidator(): ValidateFunction {
 }
 
 /** A minimal valid work order, for tests that mutate one field at a time. */
-function workOrder(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function workOrder(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     schemaVersion: '1.0.0',
     identity: 'wo_opifex_312_a3f91c2_a1',
@@ -47,7 +49,10 @@ function workOrder(overrides: Record<string, unknown> = {}): Record<string, unkn
     repository: { owner: 'marinoscar', name: 'opifex' },
     baseCommit: 'a3f91c2000000000000000000000000000000000',
     attempt: 1,
-    issue: { number: 312, url: 'https://github.com/marinoscar/opifex/issues/312' },
+    issue: {
+      number: 312,
+      url: 'https://github.com/marinoscar/opifex/issues/312',
+    },
     taskSpec: 'Add the endpoint.',
     acceptanceCriteria: ['GET /api/widgets returns 200 with a paginated list'],
     pathConstraints: [],
@@ -65,14 +70,17 @@ describe('work-order.schema.json', () => {
     validate = buildValidator();
   });
 
-  const errors = (candidate: unknown) => (validate(candidate) ? [] : validate.errors);
+  const errors = (candidate: unknown) =>
+    validate(candidate) ? [] : validate.errors;
 
   it('compiles under strict draft 2020-12', () => {
     expect(() => buildValidator()).not.toThrow();
   });
 
   describe('the worked examples', () => {
-    const files = readdirSync(EXAMPLE_DIR).filter((name) => name.endsWith('.json'));
+    const files = readdirSync(EXAMPLE_DIR).filter((name) =>
+      name.endsWith('.json'),
+    );
 
     it('there are some', () => {
       expect(files.length).toBeGreaterThan(0);
@@ -87,7 +95,9 @@ describe('work-order.schema.json', () => {
     it('covers a retry at the same base', () => {
       // The case that proves abandon-and-re-run: a fresh attempt against the
       // SAME tree, not a fresh base.
-      const retry = JSON.parse(readFileSync(join(EXAMPLE_DIR, 'retry.json'), 'utf8'));
+      const retry = JSON.parse(
+        readFileSync(join(EXAMPLE_DIR, 'retry.json'), 'utf8'),
+      );
 
       expect(retry.attempt).toBeGreaterThan(1);
       expect(retry.identity).toContain('_a3');
@@ -133,7 +143,9 @@ describe('work-order.schema.json', () => {
       // VISION §6. A work order that named its runner could not be
       // re-dispatched when that runner was at capacity, which is most of the
       // value of having a seam.
-      expect(errors(workOrder({ runner: 'claude-code-local' }))).not.toEqual([]);
+      expect(errors(workOrder({ runner: 'claude-code-local' }))).not.toEqual(
+        [],
+      );
     });
 
     it.each(['runnerKey', 'runnerId', 'assignedRunner', 'executor'])(
@@ -144,7 +156,9 @@ describe('work-order.schema.json', () => {
     );
 
     it('mentions no runner anywhere in the property list', () => {
-      const properties = Object.keys(schema.properties as Record<string, unknown>);
+      const properties = Object.keys(
+        schema.properties as Record<string, unknown>,
+      );
 
       expect(properties.join(' ').toLowerCase()).not.toContain('runner');
     });
@@ -176,7 +190,9 @@ describe('work-order.schema.json', () => {
 
     it('rejects an issue with no number', () => {
       expect(
-        errors(workOrder({ issue: { url: 'https://github.com/x/y/issues/1' } })),
+        errors(
+          workOrder({ issue: { url: 'https://github.com/x/y/issues/1' } }),
+        ),
       ).not.toEqual([]);
     });
 
@@ -208,7 +224,9 @@ describe('work-order.schema.json', () => {
     });
 
     it('accepts a real ceiling', () => {
-      expect(errors(workOrder({ budgetCeilingUsd: 5, wallClockTimeoutMinutes: 30 }))).toEqual([]);
+      expect(
+        errors(workOrder({ budgetCeilingUsd: 5, wallClockTimeoutMinutes: 30 })),
+      ).toEqual([]);
     });
 
     it('rejects a negative budget', () => {
@@ -272,7 +290,10 @@ describe('work-order.schema.json', () => {
     it.each([
       ['312-a3f91c2-a1', 'no factory/ prefix'],
       ['factory/312-a3f91c2', 'no attempt'],
-      ['factory/opifex-312-a3f91c2-a1', 'a repository name that does not belong'],
+      [
+        'factory/opifex-312-a3f91c2-a1',
+        'a repository name that does not belong',
+      ],
     ])('rejects branch %s (%s)', (branch) => {
       expect(errors(workOrder({ branch }))).not.toEqual([]);
     });

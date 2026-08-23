@@ -45,7 +45,11 @@ export function installLayoutStubs(): void {
       get: () => containerWidth,
     });
   }
-  for (const prop of ['clientHeight', 'offsetHeight', 'scrollHeight'] as const) {
+  for (const prop of [
+    'clientHeight',
+    'offsetHeight',
+    'scrollHeight',
+  ] as const) {
     Object.defineProperty(HTMLElement.prototype, prop, {
       configurable: true,
       get: () => VIEWPORT_HEIGHT,
@@ -87,7 +91,8 @@ export function installLayoutStubs(): void {
                   : VIEWPORT_HEIGHT,
             },
           })) as unknown as ResizeObserverEntry[];
-          if (entries.length > 0) callback(entries, this as unknown as ResizeObserver);
+          if (entries.length > 0)
+            callback(entries, this as unknown as ResizeObserver);
         },
       };
       observers.add(this.entry);
@@ -106,7 +111,8 @@ export function installLayoutStubs(): void {
     }
   }
 
-  globalThis.ResizeObserver = ControllableResizeObserver as unknown as typeof ResizeObserver;
+  globalThis.ResizeObserver =
+    ControllableResizeObserver as unknown as typeof ResizeObserver;
 
   window.matchMedia = vi.fn().mockImplementation((query: string) => {
     const max = /max-width:\s*([\d.]+)px/.exec(query);

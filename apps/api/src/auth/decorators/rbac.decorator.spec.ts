@@ -26,7 +26,10 @@ describe('RBAC Decorators', () => {
         testMethod() {}
       }
 
-      const roles = Reflect.getMetadata(ROLES_KEY, TestClass.prototype.testMethod);
+      const roles = Reflect.getMetadata(
+        ROLES_KEY,
+        TestClass.prototype.testMethod,
+      );
       expect(roles).toEqual(['admin']);
     });
 
@@ -36,7 +39,10 @@ describe('RBAC Decorators', () => {
         testMethod() {}
       }
 
-      const roles = Reflect.getMetadata(ROLES_KEY, TestClass.prototype.testMethod);
+      const roles = Reflect.getMetadata(
+        ROLES_KEY,
+        TestClass.prototype.testMethod,
+      );
       expect(roles).toEqual(['admin', 'contributor', 'viewer']);
     });
 
@@ -48,7 +54,10 @@ describe('RBAC Decorators', () => {
       }
 
       const classRoles = Reflect.getMetadata(ROLES_KEY, TestClass);
-      const methodRoles = Reflect.getMetadata(ROLES_KEY, TestClass.prototype.testMethod);
+      const methodRoles = Reflect.getMetadata(
+        ROLES_KEY,
+        TestClass.prototype.testMethod,
+      );
 
       expect(classRoles).toEqual(['admin']);
       expect(methodRoles).toEqual(['contributor']);
@@ -88,7 +97,10 @@ describe('RBAC Decorators', () => {
         testMethod() {}
       }
 
-      const permissions = Reflect.getMetadata(PERMISSIONS_KEY, TestClass.prototype.testMethod);
+      const permissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        TestClass.prototype.testMethod,
+      );
       expect(permissions).toEqual(['system_settings:write']);
     });
 
@@ -98,7 +110,10 @@ describe('RBAC Decorators', () => {
         testMethod() {}
       }
 
-      const permissions = Reflect.getMetadata(PERMISSIONS_KEY, TestClass.prototype.testMethod);
+      const permissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        TestClass.prototype.testMethod,
+      );
       expect(permissions).toEqual(['users:read', 'users:write', 'rbac:manage']);
     });
 
@@ -150,8 +165,14 @@ describe('RBAC Decorators', () => {
         testMethod() {}
       }
 
-      const roles = Reflect.getMetadata(ROLES_KEY, TestClass.prototype.testMethod);
-      const permissions = Reflect.getMetadata(PERMISSIONS_KEY, TestClass.prototype.testMethod);
+      const roles = Reflect.getMetadata(
+        ROLES_KEY,
+        TestClass.prototype.testMethod,
+      );
+      const permissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        TestClass.prototype.testMethod,
+      );
 
       expect(roles).toEqual(['admin']);
       expect(permissions).toEqual(['users:write']);
@@ -166,7 +187,10 @@ describe('RBAC Decorators', () => {
 
       const classRoles = Reflect.getMetadata(ROLES_KEY, TestClass);
       const classPermissions = Reflect.getMetadata(PERMISSIONS_KEY, TestClass);
-      const methodRoles = Reflect.getMetadata(ROLES_KEY, TestClass.prototype.testMethod);
+      const methodRoles = Reflect.getMetadata(
+        ROLES_KEY,
+        TestClass.prototype.testMethod,
+      );
       const methodPermissions = Reflect.getMetadata(
         PERMISSIONS_KEY,
         TestClass.prototype.testMethod,

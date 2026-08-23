@@ -6,7 +6,10 @@ import {
 } from '../helpers/test-app.helper';
 import { resetPrismaMock } from '../mocks/prisma.mock';
 import { setupBaseMocks } from '../fixtures/mock-setup.helper';
-import { MockGoogleStrategy, createMockGoogleProfile } from '../mocks/google-oauth.mock';
+import {
+  MockGoogleStrategy,
+  createMockGoogleProfile,
+} from '../mocks/google-oauth.mock';
 import { mockRoles } from '../fixtures/test-data.factory';
 
 /**
@@ -78,9 +81,11 @@ describe('OAuth Callback Integration', () => {
       // Mock the Prisma responses for new user creation
       context.prismaMock.userIdentity.findUnique.mockResolvedValue(null);
       context.prismaMock.user.findUnique.mockResolvedValue(null);
-      context.prismaMock.role.findUnique.mockResolvedValue(mockRoles.viewer as any);
-      context.prismaMock.$transaction.mockImplementation(async (callback: any) =>
-        callback(context.prismaMock),
+      context.prismaMock.role.findUnique.mockResolvedValue(
+        mockRoles.viewer as any,
+      );
+      context.prismaMock.$transaction.mockImplementation(
+        async (callback: any) => callback(context.prismaMock),
       );
       context.prismaMock.user.create.mockResolvedValue({
         id: 'new-user-id',
@@ -190,9 +195,11 @@ describe('OAuth Callback Integration', () => {
 
       context.prismaMock.userIdentity.findUnique.mockResolvedValue(null);
       context.prismaMock.user.findUnique.mockResolvedValue(null);
-      context.prismaMock.role.findUnique.mockResolvedValue(mockRoles.viewer as any);
-      context.prismaMock.$transaction.mockImplementation(async (callback: any) =>
-        callback(context.prismaMock),
+      context.prismaMock.role.findUnique.mockResolvedValue(
+        mockRoles.viewer as any,
+      );
+      context.prismaMock.$transaction.mockImplementation(
+        async (callback: any) => callback(context.prismaMock),
       );
       context.prismaMock.user.create.mockResolvedValue({
         id: 'brand-new-user',
@@ -457,7 +464,9 @@ describe('OAuth Callback Integration', () => {
 
       // Simulate an error with very long message
       const longMessage = 'Error: ' + 'x'.repeat(200);
-      context.prismaMock.userIdentity.findUnique.mockRejectedValue(new Error(longMessage));
+      context.prismaMock.userIdentity.findUnique.mockRejectedValue(
+        new Error(longMessage),
+      );
 
       const response = await request(context.app.getHttpServer())
         .get('/api/auth/google/callback')

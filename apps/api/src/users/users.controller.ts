@@ -22,7 +22,10 @@ import { Auth } from '../auth/decorators/auth.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { PERMISSIONS } from '../common/constants/roles.constants';
 import { UserListQueryDto } from './dto/user-list-query.dto';
-import { UserDetailResponseDto, UserResponseDto } from './dto/user-response.dto';
+import {
+  UserDetailResponseDto,
+  UserResponseDto,
+} from './dto/user-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserRolesDto } from './dto/update-user-roles.dto';
 
@@ -42,7 +45,11 @@ export class UsersController {
   // 'true' and 'false' and rejects anything else, so a documented boolean would
   // invite `isActive=1` and a 400.
   @ApiQuery({ name: 'isActive', required: false, enum: ['true', 'false'] })
-  @ApiQuery({ name: 'sortBy', required: false, enum: ['email', 'createdAt', 'updatedAt'] })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: ['email', 'createdAt', 'updatedAt'],
+  })
   @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'] })
   @ApiDataResponse(UserResponseDto, {
     pagination: 'flat',

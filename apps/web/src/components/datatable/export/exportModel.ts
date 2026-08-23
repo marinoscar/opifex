@@ -88,7 +88,8 @@ export function exportColumns<Row>(
 ): DataTableColumn<Row>[] {
   return columns.filter(
     (column) =>
-      isExportableColumn(column) && (!visibleColumnIds || visibleColumnIds.has(column.id)),
+      isExportableColumn(column) &&
+      (!visibleColumnIds || visibleColumnIds.has(column.id)),
   );
 }
 
@@ -115,7 +116,9 @@ export function buildExportMatrix<Row>(
 ): ExportMatrix {
   return {
     header: columns.map((column) => column.label),
-    body: rows.map((row) => columns.map((column) => extractColumnValue(column, row))),
+    body: rows.map((row) =>
+      columns.map((column) => extractColumnValue(column, row)),
+    ),
   };
 }
 
@@ -150,8 +153,13 @@ export function slugifyExportName(name: string | undefined | null): string {
  * Dated because an export is a snapshot: two files downloaded a week apart must
  * not collide in a Downloads folder, and `jobs (3).csv` tells nobody anything.
  */
-export function exportFilename(base: string | undefined | null, now: Date = new Date()): string {
-  const iso = Number.isNaN(now.getTime()) ? '' : `-${now.toISOString().slice(0, 10)}`;
+export function exportFilename(
+  base: string | undefined | null,
+  now: Date = new Date(),
+): string {
+  const iso = Number.isNaN(now.getTime())
+    ? ''
+    : `-${now.toISOString().slice(0, 10)}`;
   return `${slugifyExportName(base)}${iso}.csv`;
 }
 
@@ -169,7 +177,8 @@ export function exportFilename(base: string | undefined | null, now: Date = new 
  * download must not take a render down with it.
  */
 export function downloadCsv(content: string, filename: string): boolean {
-  if (typeof document === 'undefined' || typeof URL === 'undefined') return false;
+  if (typeof document === 'undefined' || typeof URL === 'undefined')
+    return false;
   if (typeof URL.createObjectURL !== 'function') return false;
 
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });

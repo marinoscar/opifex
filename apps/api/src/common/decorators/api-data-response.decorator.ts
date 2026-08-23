@@ -37,7 +37,11 @@ const ITEMS = (model: Type<unknown>) => ({
 });
 
 const FLAT_COUNTS = {
-  total: { type: 'integer', description: 'Total matching rows across all pages.', example: 42 },
+  total: {
+    type: 'integer',
+    description: 'Total matching rows across all pages.',
+    example: 42,
+  },
   page: { type: 'integer', description: 'One-based page number.', example: 1 },
   pageSize: { type: 'integer', example: 20 },
   totalPages: { type: 'integer', example: 3 },
@@ -47,11 +51,15 @@ const NESTED_META_SCHEMA = {
   type: 'object',
   description:
     'Pagination counts. Note this is nested inside `data` and is a different object from the ' +
-    'envelope\'s own `meta`, which carries the server timestamp. Note also that the total is ' +
+    "envelope's own `meta`, which carries the server timestamp. Note also that the total is " +
     'named `totalItems` here, where a flat list names it `total`.',
   required: ['page', 'pageSize', 'totalItems', 'totalPages'],
   properties: {
-    page: { type: 'integer', description: 'One-based page number.', example: 1 },
+    page: {
+      type: 'integer',
+      description: 'One-based page number.',
+      example: 1,
+    },
     pageSize: { type: 'integer', example: 20 },
     totalItems: { type: 'integer', example: 42 },
     totalPages: { type: 'integer', example: 3 },

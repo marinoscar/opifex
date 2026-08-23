@@ -58,7 +58,9 @@ describe('PAT universality (Integration)', () => {
     });
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    (context.prismaMock.personalAccessToken.findUnique as jest.Mock).mockImplementation(
+    (
+      context.prismaMock.personalAccessToken.findUnique as jest.Mock
+    ).mockImplementation(
       async ({ where }: { where: { tokenHash: string } }) => {
         const expected = createHash('sha256').update(RAW_TOKEN).digest('hex');
         if (where.tokenHash !== expected) return null;
@@ -77,7 +79,9 @@ describe('PAT universality (Integration)', () => {
         };
       },
     );
-    (context.prismaMock.personalAccessToken.update as jest.Mock).mockResolvedValue({});
+    (
+      context.prismaMock.personalAccessToken.update as jest.Mock
+    ).mockResolvedValue({});
   }
 
   it('authenticates an @Auth()-guarded route on an unrelated controller', async () => {
@@ -109,7 +113,9 @@ describe('PAT universality (Integration)', () => {
   });
 
   it('rejects a pat_ token that does not resolve, rather than falling through to JWT', async () => {
-    (context.prismaMock.personalAccessToken.findUnique as jest.Mock).mockResolvedValue(null);
+    (
+      context.prismaMock.personalAccessToken.findUnique as jest.Mock
+    ).mockResolvedValue(null);
 
     await request(context.app.getHttpServer())
       .get('/api/auth/me')

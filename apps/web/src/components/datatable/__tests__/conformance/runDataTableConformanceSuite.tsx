@@ -58,7 +58,15 @@
  * (chips, links, buttons).
  */
 
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { useState } from 'react';
 import type { ReactElement } from 'react';
 import {
@@ -105,18 +113,47 @@ export interface ConformanceRow {
 }
 
 export const conformanceFixtureRows: ConformanceRow[] = [
-  { id: 'row-1', name: 'Nightly backup', status: 'active', owner: 'alice', score: 92, notes: null },
+  {
+    id: 'row-1',
+    name: 'Nightly backup',
+    status: 'active',
+    owner: 'alice',
+    score: 92,
+    notes: null,
+  },
   {
     id: 'row-2',
     name: 'Thumbnail repair',
     status: 'paused',
     owner: 'bob',
     score: 41,
-    notes: 'Waiting on a provider quota reset before this can resume automatically.',
+    notes:
+      'Waiting on a provider quota reset before this can resume automatically.',
   },
-  { id: 'row-3', name: 'Geocode sweep', status: 'archived', owner: 'carol', score: 15, notes: null },
-  { id: 'row-4', name: 'Face backfill', status: 'active', owner: 'alice', score: 77, notes: 'Re-run after the model upgrade.' },
-  { id: 'row-5', name: 'Tag vocabulary sync', status: 'paused', owner: 'dave', score: 58, notes: null },
+  {
+    id: 'row-3',
+    name: 'Geocode sweep',
+    status: 'archived',
+    owner: 'carol',
+    score: 15,
+    notes: null,
+  },
+  {
+    id: 'row-4',
+    name: 'Face backfill',
+    status: 'active',
+    owner: 'alice',
+    score: 77,
+    notes: 'Re-run after the model upgrade.',
+  },
+  {
+    id: 'row-5',
+    name: 'Tag vocabulary sync',
+    status: 'paused',
+    owner: 'dave',
+    score: 58,
+    notes: null,
+  },
 ];
 
 export const conformanceFixtureRowId = (row: ConformanceRow) => row.id;
@@ -152,7 +189,11 @@ export const conformanceFixtureColumns: DataTableColumn<ConformanceRow>[] = [
     ],
     value: (row) => row.status,
     render: (row) => (
-      <Chip size="small" label={row.status} data-testid={`status-chip-${row.id}`} />
+      <Chip
+        size="small"
+        label={row.status}
+        data-testid={`status-chip-${row.id}`}
+      />
     ),
   },
   {
@@ -229,9 +270,12 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
   options: RunDataTableConformanceSuiteOptions<Row> = {},
 ): void {
   const label = options.label ?? 'DataTable';
-  const columns = (options.columns ?? conformanceFixtureColumns) as unknown as DataTableColumn<Row>[];
+  const columns = (options.columns ??
+    conformanceFixtureColumns) as unknown as DataTableColumn<Row>[];
   const rows = (options.rows ?? conformanceFixtureRows) as unknown as Row[];
-  const rowId = (options.rowId ?? conformanceFixtureRowId) as (row: Row) => string;
+  const rowId = (options.rowId ?? conformanceFixtureRowId) as (
+    row: Row,
+  ) => string;
 
   // -------------------------------------------------------------------------
   // Fixture-INDEPENDENT probes
@@ -257,7 +301,8 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
   const drawable = columns.filter((column) => !column.filterOnly);
 
   /** A row's accessible name: the first `primary` column's scalar. */
-  const rowLabel = (row: Row): string => rowAccessibleName(drawable, row, rowId(row));
+  const rowLabel = (row: Row): string =>
+    rowAccessibleName(drawable, row, rowId(row));
 
   const sortableColumns = drawable.filter((column) => column.sortable);
   /** The column whose header a "clicking sorts" assertion uses. */
@@ -267,15 +312,23 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
 
   /** An enum filter to stand in for "a filter is active". */
   const enumFilterColumn = drawable.find(
-    (column) => column.filterable && column.filterType === 'enum' && column.enumValues?.length,
+    (column) =>
+      column.filterable &&
+      column.filterType === 'enum' &&
+      column.enumValues?.length,
   );
-  const sampleFilter: DataTableFilterModel[number] = enumFilterColumn?.enumValues?.[0]
+  const sampleFilter: DataTableFilterModel[number] = enumFilterColumn
+    ?.enumValues?.[0]
     ? {
         columnId: enumFilterColumn.id,
         operator: 'is',
         value: enumFilterColumn.enumValues[0].value,
       }
-    : { columnId: drawable[0].id, operator: 'contains', value: '\u0000no-match' };
+    : {
+        columnId: drawable[0].id,
+        operator: 'contains',
+        value: '\u0000no-match',
+      };
 
   /**
    * The column the picker test hides. A non-`primary` one where possible: the
@@ -283,8 +336,9 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
    * rename half the controls the other assertions look for.
    */
   const hideableColumn =
-    drawable.find((column) => column.hideable !== false && column.priority !== 'primary') ??
-    drawable.find((column) => column.hideable !== false);
+    drawable.find(
+      (column) => column.hideable !== false && column.priority !== 'primary',
+    ) ?? drawable.find((column) => column.hideable !== false);
 
   type TableProps = React.ComponentProps<typeof DataTable<Row>>;
 
@@ -352,13 +406,19 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
           field: primarySortColumn.id,
           direction: 'desc',
         });
-        const [filters, setFilters] = useState<DataTableFilterModel>([sampleFilter]);
+        const [filters, setFilters] = useState<DataTableFilterModel>([
+          sampleFilter,
+        ]);
 
         return (
           <>
-            <div data-testid="probe-selection">{Array.from(selectedIds).sort().join(',')}</div>
+            <div data-testid="probe-selection">
+              {Array.from(selectedIds).sort().join(',')}
+            </div>
             <div data-testid="probe-page">{page}</div>
-            <div data-testid="probe-sort">{sort ? `${sort.field}:${sort.direction}` : 'none'}</div>
+            <div data-testid="probe-sort">
+              {sort ? `${sort.field}:${sort.direction}` : 'none'}
+            </div>
             <div data-testid="probe-filters">{filters.length}</div>
             <DataTable<Row>
               columns={columns}
@@ -383,7 +443,9 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
       setInitialContainerWidth(1400);
       renderWithTheme(<Stateful />);
 
-      expect(screen.getByTestId('probe-selection')).toHaveTextContent(rowId(rows[0]));
+      expect(screen.getByTestId('probe-selection')).toHaveTextContent(
+        rowId(rows[0]),
+      );
       expect(screen.getByTestId('probe-sort')).toHaveTextContent(
         `${primarySortColumn.id}:desc`,
       );
@@ -391,7 +453,9 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
 
       setContainerWidth(400);
       expect(layoutOf()).toBe('mobile');
-      expect(screen.getByTestId('probe-selection')).toHaveTextContent(rowId(rows[0]));
+      expect(screen.getByTestId('probe-selection')).toHaveTextContent(
+        rowId(rows[0]),
+      );
       expect(screen.getByTestId('probe-sort')).toHaveTextContent(
         `${primarySortColumn.id}:desc`,
       );
@@ -399,7 +463,9 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
 
       setContainerWidth(1400);
       expect(layoutOf()).toBe('desktop');
-      expect(screen.getByTestId('probe-selection')).toHaveTextContent(rowId(rows[0]));
+      expect(screen.getByTestId('probe-selection')).toHaveTextContent(
+        rowId(rows[0]),
+      );
       expect(screen.getByTestId('probe-sort')).toHaveTextContent(
         `${primarySortColumn.id}:desc`,
       );
@@ -482,13 +548,17 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
   describe(`${label} conformance — selection`, () => {
     it('toggles one row and reports the id set back out', () => {
       const onSelectionChange = vi.fn();
-      renderTable({ selection: { selectedIds: new Set<string>(), onSelectionChange } });
+      renderTable({
+        selection: { selectedIds: new Set<string>(), onSelectionChange },
+      });
 
       const first = rows[0];
-      fireEvent.click(screen.getByRole('checkbox', { name: `Select ${rowLabel(first)}` }));
-      expect(Array.from(onSelectionChange.mock.calls[0][0] as Set<string>)).toEqual([
-        rowId(first),
-      ]);
+      fireEvent.click(
+        screen.getByRole('checkbox', { name: `Select ${rowLabel(first)}` }),
+      );
+      expect(
+        Array.from(onSelectionChange.mock.calls[0][0] as Set<string>),
+      ).toEqual([rowId(first)]);
     });
 
     // Fabricates 60 rows of the fixture's own shape, which the suite cannot do
@@ -497,41 +567,46 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
     it.runIf(usingDefaultFixture)(
       'select-all reports every loaded row id, even past the virtualization threshold',
       () => {
-      // 60 rows crosses `GRID_VIRTUALIZATION_ROW_THRESHOLD` (50) — select-all
-      // must still resolve to every id, not just what happens to be mounted.
-      const manyRows = Array.from({ length: 60 }, (_, i) => ({
-        id: `bulk-${i}`,
-        name: `Item ${i}`,
-        status: 'active' as const,
-        owner: 'alice',
-        score: i,
-        notes: null,
-      })) as unknown as Row[];
-      const manyRowIds = manyRows.map((row) => rowId(row));
+        // 60 rows crosses `GRID_VIRTUALIZATION_ROW_THRESHOLD` (50) — select-all
+        // must still resolve to every id, not just what happens to be mounted.
+        const manyRows = Array.from({ length: 60 }, (_, i) => ({
+          id: `bulk-${i}`,
+          name: `Item ${i}`,
+          status: 'active' as const,
+          owner: 'alice',
+          score: i,
+          notes: null,
+        })) as unknown as Row[];
+        const manyRowIds = manyRows.map((row) => rowId(row));
 
-      const onSelectionChange = vi.fn();
-      renderTable({
-        rows: manyRows,
-        selection: { selectedIds: new Set<string>(), onSelectionChange },
-      });
+        const onSelectionChange = vi.fn();
+        renderTable({
+          rows: manyRows,
+          selection: { selectedIds: new Set<string>(), onSelectionChange },
+        });
 
-      expect(screen.getByTestId('datatable-scroll-container')).toHaveAttribute(
-        'data-virtualized',
-        'true',
-      );
+        expect(
+          screen.getByTestId('datatable-scroll-container'),
+        ).toHaveAttribute('data-virtualized', 'true');
 
-      fireEvent.click(screen.getByRole('checkbox', { name: /select all rows/i }));
-      const emitted = onSelectionChange.mock.calls[0][0] as Set<string>;
-      expect(emitted.size).toBe(60);
-      expect(Array.from(emitted).sort()).toEqual([...manyRowIds].sort());
+        fireEvent.click(
+          screen.getByRole('checkbox', { name: /select all rows/i }),
+        );
+        const emitted = onSelectionChange.mock.calls[0][0] as Set<string>;
+        expect(emitted.size).toBe(60);
+        expect(Array.from(emitted).sort()).toEqual([...manyRowIds].sort());
       },
     );
 
     it('mirrors select-all on the card layout, page-scoped', () => {
       const onSelectionChange = vi.fn();
-      renderAtWidth(400, { selection: { selectedIds: new Set<string>(), onSelectionChange } });
+      renderAtWidth(400, {
+        selection: { selectedIds: new Set<string>(), onSelectionChange },
+      });
 
-      fireEvent.click(screen.getByRole('checkbox', { name: /select all rows/i }));
+      fireEvent.click(
+        screen.getByRole('checkbox', { name: /select all rows/i }),
+      );
       const emitted = onSelectionChange.mock.calls[0][0] as Set<string>;
       expect(emitted.size).toBe(rows.length);
     });
@@ -542,22 +617,34 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
   // =========================================================================
 
   describe(`${label} conformance — loading / empty / error states`, () => {
-    for (const [name, width] of [['desktop', 1400], ['mobile', 400]] as const) {
+    for (const [name, width] of [
+      ['desktop', 1400],
+      ['mobile', 400],
+    ] as const) {
       it(`shows a loading overlay on ${name} without discarding rows already on screen`, () => {
         renderAtWidth(width, { loading: true });
-        expect(screen.getByTestId('datatable-loading-overlay')).toBeInTheDocument();
+        expect(
+          screen.getByTestId('datatable-loading-overlay'),
+        ).toBeInTheDocument();
       });
 
       it(`shows the caller's empty state on ${name}`, () => {
-        renderAtWidth(width, { rows: [], emptyState: <span>Nothing here yet</span> });
+        renderAtWidth(width, {
+          rows: [],
+          emptyState: <span>Nothing here yet</span>,
+        });
         expect(
-          within(screen.getByTestId('datatable-empty-overlay')).getByText('Nothing here yet'),
+          within(screen.getByTestId('datatable-empty-overlay')).getByText(
+            'Nothing here yet',
+          ),
         ).toBeInTheDocument();
       });
 
       it(`renders the error alert on ${name} while keeping the table beneath it readable`, () => {
         renderAtWidth(width, { error: 'Failed to load' });
-        expect(screen.getByTestId('datatable-error')).toHaveTextContent('Failed to load');
+        expect(screen.getByTestId('datatable-error')).toHaveTextContent(
+          'Failed to load',
+        );
         expect(screen.getByText(rowLabel(rows[0]))).toBeInTheDocument();
       });
     }
@@ -572,14 +659,20 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
       renderTable();
       for (const column of columns) {
         if (column.hideable === false) continue;
-        expect(screen.getByRole('columnheader', { name: new RegExp(`^${column.label}$`, 'i') })).toBeInTheDocument();
+        expect(
+          screen.getByRole('columnheader', {
+            name: new RegExp(`^${column.label}$`, 'i'),
+          }),
+        ).toBeInTheDocument();
       }
     });
 
     it('hides a column via the picker and keeps it out of a CSV export', () => {
       renderTable({ csvExport: {} });
       fireEvent.click(screen.getByTestId('datatable-columns-button'));
-      fireEvent.click(screen.getByTestId(`datatable-column-toggle-${hideableColumn!.id}`));
+      fireEvent.click(
+        screen.getByTestId(`datatable-column-toggle-${hideableColumn!.id}`),
+      );
       // Menu stays open (multi-toggle is one trip, not one per column).
       expect(
         screen.queryByRole('columnheader', {
@@ -594,7 +687,10 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
       cleanup();
 
       renderAtWidth(400, { density: 'comfortable' });
-      expect(screen.getByTestId('datatable-card-list')).toHaveAttribute('data-density', 'comfortable');
+      expect(screen.getByTestId('datatable-card-list')).toHaveAttribute(
+        'data-density',
+        'comfortable',
+      );
     });
   });
 
@@ -613,9 +709,12 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
         lastBlob = blob;
         return 'blob:mock';
       });
-      URL.createObjectURL = createObjectURLSpy as unknown as typeof URL.createObjectURL;
+      URL.createObjectURL =
+        createObjectURLSpy as unknown as typeof URL.createObjectURL;
       URL.revokeObjectURL = vi.fn();
-      clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      clickSpy = vi
+        .spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => {});
     });
 
     afterEach(() => {
@@ -628,22 +727,29 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
     it.runIf(usingDefaultFixture)(
       'writes the `value` scalar for a `render`-only column, quotes/escapes as RFC 4180 requires',
       async () => {
-      const quirky = [
-        { id: 'q1', name: 'has "quotes"', status: 'active', owner: 'a,b', score: -5, notes: null },
-      ] as unknown as Row[];
-      renderTable({ rows: quirky, csvExport: {} });
+        const quirky = [
+          {
+            id: 'q1',
+            name: 'has "quotes"',
+            status: 'active',
+            owner: 'a,b',
+            score: -5,
+            notes: null,
+          },
+        ] as unknown as Row[];
+        renderTable({ rows: quirky, csvExport: {} });
 
-      fireEvent.click(screen.getByTestId('datatable-export-button'));
-      await waitFor(() => expect(lastBlob).not.toBeNull());
+        fireEvent.click(screen.getByTestId('datatable-export-button'));
+        await waitFor(() => expect(lastBlob).not.toBeNull());
 
-      const text = await (lastBlob as Blob).text();
-      expect(text).toContain('"has ""quotes"""');
-      expect(text).toContain('"a,b"');
-      // A negative number is a real number, not a formula — must NOT be
-      // apostrophe-neutralized.
-      expect(text).toMatch(/(?<!')-5/);
-      // The Chip-rendered `status` column still exports its scalar, not "[object Object]".
-      expect(text).toContain('active');
+        const text = await (lastBlob as Blob).text();
+        expect(text).toContain('"has ""quotes"""');
+        expect(text).toContain('"a,b"');
+        // A negative number is a real number, not a formula — must NOT be
+        // apostrophe-neutralized.
+        expect(text).toMatch(/(?<!')-5/);
+        // The Chip-rendered `status` column still exports its scalar, not "[object Object]".
+        expect(text).toContain('active');
       },
     );
   });
@@ -655,10 +761,16 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
   describe(`${label} conformance — issue #243 guard`, () => {
     it('holds on the desktop grid with every affordance present', () => {
       renderTable({
-        selection: { selectedIds: new Set([rowId(rows[0])]), onSelectionChange: vi.fn() },
+        selection: {
+          selectedIds: new Set([rowId(rows[0])]),
+          onSelectionChange: vi.fn(),
+        },
         bulkActions: [{ id: 'archive', label: 'Archive', onClick: vi.fn() }],
         rowActions: [{ id: 'retry', label: 'Retry', onClick: vi.fn() }],
-        sort: { sort: { field: primarySortColumn.id, direction: 'asc' }, onSortChange: vi.fn() },
+        sort: {
+          sort: { field: primarySortColumn.id, direction: 'asc' },
+          onSortChange: vi.fn(),
+        },
         csvExport: {},
       });
       assertNoInvisibleHitTargets(wrapper());
@@ -666,11 +778,16 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
 
     it('holds on the card layout with every affordance present, detail regions opened', () => {
       renderAtWidth(400, {
-        selection: { selectedIds: new Set([rowId(rows[0])]), onSelectionChange: vi.fn() },
+        selection: {
+          selectedIds: new Set([rowId(rows[0])]),
+          onSelectionChange: vi.fn(),
+        },
         bulkActions: [{ id: 'archive', label: 'Archive', onClick: vi.fn() }],
         rowActions: [{ id: 'retry', label: 'Retry', onClick: vi.fn() }],
       });
-      for (const toggle of screen.getAllByTestId('datatable-card-detail-toggle')) {
+      for (const toggle of screen.getAllByTestId(
+        'datatable-card-detail-toggle',
+      )) {
         fireEvent.click(toggle);
       }
       assertNoInvisibleHitTargets(wrapper());
@@ -685,7 +802,10 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
     it('keeps every containment layer at max-width: 100% / min-width: 0 at a 360px container', () => {
       renderAtWidth(360, {
         rowActions: [{ id: 'retry', label: 'Retry', onClick: vi.fn() }],
-        selection: { selectedIds: new Set<string>(), onSelectionChange: vi.fn() },
+        selection: {
+          selectedIds: new Set<string>(),
+          onSelectionChange: vi.fn(),
+        },
       });
 
       // The three containment layers named in §6 of the spec.
@@ -745,10 +865,18 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
         const { container } = renderAtWidth(
           rendererName === 'mobile' ? 400 : 1400,
           {
-            selection: { selectedIds: new Set([rowId(rows[0])]), onSelectionChange: vi.fn() },
-            bulkActions: [{ id: 'archive', label: 'Archive', onClick: vi.fn() }],
+            selection: {
+              selectedIds: new Set([rowId(rows[0])]),
+              onSelectionChange: vi.fn(),
+            },
+            bulkActions: [
+              { id: 'archive', label: 'Archive', onClick: vi.fn() },
+            ],
             rowActions: [{ id: 'retry', label: 'Retry', onClick: vi.fn() }],
-            sort: { sort: { field: 'score', direction: 'desc' }, onSortChange: vi.fn() },
+            sort: {
+              sort: { field: 'score', direction: 'desc' },
+              onSortChange: vi.fn(),
+            },
             filters: [sampleFilter],
             onFiltersChange: vi.fn(),
             csvExport: {},
@@ -806,18 +934,28 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
     it('announces "N of M selected" from a live region, on both renderers', () => {
       const first = rows[0];
       renderTable({
-        selection: { selectedIds: new Set([rowId(first)]), onSelectionChange: vi.fn() },
+        selection: {
+          selectedIds: new Set([rowId(first)]),
+          onSelectionChange: vi.fn(),
+        },
       });
-      const status = within(screen.getByTestId('datatable-bulk-action-bar')).getByRole('status');
+      const status = within(
+        screen.getByTestId('datatable-bulk-action-bar'),
+      ).getByRole('status');
       expect(status).toHaveAttribute('aria-live', 'polite');
       expect(status).toHaveTextContent(`1 of ${rows.length} selected`);
       cleanup();
 
       renderAtWidth(400, {
-        selection: { selectedIds: new Set([rowId(first)]), onSelectionChange: vi.fn() },
+        selection: {
+          selectedIds: new Set([rowId(first)]),
+          onSelectionChange: vi.fn(),
+        },
       });
       expect(
-        within(screen.getByTestId('datatable-bulk-action-bar')).getByRole('status'),
+        within(screen.getByTestId('datatable-bulk-action-bar')).getByRole(
+          'status',
+        ),
       ).toHaveTextContent(`1 of ${rows.length} selected`);
     });
 
@@ -825,7 +963,12 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
       renderTable({
         filters: [sampleFilter],
         onFiltersChange: vi.fn(),
-        pagination: { page: 0, pageSize: 25, total: 12, onPaginationChange: vi.fn() },
+        pagination: {
+          page: 0,
+          pageSize: 25,
+          total: 12,
+          onPaginationChange: vi.fn(),
+        },
       });
       const region = screen.getByTestId('datatable-filter-live-region');
       expect(region).toHaveAttribute('aria-live', 'polite');
@@ -836,21 +979,35 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
       renderTable({
         filters: [],
         onFiltersChange: vi.fn(),
-        pagination: { page: 0, pageSize: 25, total: 5, onPaginationChange: vi.fn() },
+        pagination: {
+          page: 0,
+          pageSize: 25,
+          total: 5,
+          onPaginationChange: vi.fn(),
+        },
       });
-      expect(screen.getByTestId('datatable-filter-live-region')).toHaveTextContent('');
+      expect(
+        screen.getByTestId('datatable-filter-live-region'),
+      ).toHaveTextContent('');
     });
 
     it('singularizes "1 result"', () => {
       renderTable({
         filters: [sampleFilter],
         onFiltersChange: vi.fn(),
-        pagination: { page: 0, pageSize: 25, total: 1, onPaginationChange: vi.fn() },
+        pagination: {
+          page: 0,
+          pageSize: 25,
+          total: 1,
+          onPaginationChange: vi.fn(),
+        },
       });
-      expect(screen.getByTestId('datatable-filter-live-region')).toHaveTextContent(
-        'Filtered to 1 result',
-      );
-      expect(screen.getByTestId('datatable-filter-live-region')).not.toHaveTextContent('1 results');
+      expect(
+        screen.getByTestId('datatable-filter-live-region'),
+      ).toHaveTextContent('Filtered to 1 result');
+      expect(
+        screen.getByTestId('datatable-filter-live-region'),
+      ).not.toHaveTextContent('1 results');
     });
   });
 
@@ -877,7 +1034,9 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
       }
 
       await user.keyboard('{Escape}');
-      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+      );
       expect(document.activeElement).toBe(trigger);
     });
 
@@ -893,7 +1052,9 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
       expect(menu.contains(document.activeElement)).toBe(true);
 
       await user.keyboard('{Escape}');
-      await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+      );
       expect(document.activeElement).toBe(trigger);
     });
 
@@ -902,7 +1063,12 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
       renderTable({
         rowActions: [
           { id: 'retry', label: 'Retry', onClick: vi.fn() },
-          { id: 'delete', label: 'Delete', destructive: true, onClick: vi.fn() },
+          {
+            id: 'delete',
+            label: 'Delete',
+            destructive: true,
+            onClick: vi.fn(),
+          },
         ],
       });
 
@@ -917,7 +1083,9 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
       expect(menu.contains(document.activeElement)).toBe(true);
 
       await user.keyboard('{Escape}');
-      await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+      );
       expect(document.activeElement).toBe(trigger);
     });
   });
@@ -945,10 +1113,14 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
 
     it('every row-checkbox is independently reachable and toggleable by keyboard', async () => {
       const onSelectionChange = vi.fn();
-      renderTable({ selection: { selectedIds: new Set<string>(), onSelectionChange } });
+      renderTable({
+        selection: { selectedIds: new Set<string>(), onSelectionChange },
+      });
 
       const first = rows[0];
-      const checkbox = screen.getByRole('checkbox', { name: `Select ${rowLabel(first)}` });
+      const checkbox = screen.getByRole('checkbox', {
+        name: `Select ${rowLabel(first)}`,
+      });
       checkbox.focus();
       expect(document.activeElement).toBe(checkbox);
       fireEvent.keyDown(checkbox, { key: ' ' });
@@ -971,11 +1143,20 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
       const onSortChange = vi.fn();
       renderAtWidth(400, {
         sort: { sort: null, onSortChange },
-        pagination: { page: 0, pageSize: 25, total: 137, onPaginationChange: vi.fn() },
+        pagination: {
+          page: 0,
+          pageSize: 25,
+          total: 137,
+          onPaginationChange: vi.fn(),
+        },
       });
 
-      await user.click(within(screen.getByTestId('datatable-card-sort')).getByRole('combobox'));
-      await user.click(screen.getByRole('option', { name: primarySortColumn.label }));
+      await user.click(
+        within(screen.getByTestId('datatable-card-sort')).getByRole('combobox'),
+      );
+      await user.click(
+        screen.getByRole('option', { name: primarySortColumn.label }),
+      );
       expect(onSortChange).toHaveBeenCalledWith({
         field: primarySortColumn.id,
         direction: 'asc',
@@ -988,8 +1169,12 @@ export function runDataTableConformanceSuite<Row = ConformanceRow>(
 
     it('bulk select-all is reachable and toggleable by keyboard on both renderers', () => {
       const onSelectionChange = vi.fn();
-      renderTable({ selection: { selectedIds: new Set<string>(), onSelectionChange } });
-      const selectAll = screen.getByRole('checkbox', { name: /select all rows/i });
+      renderTable({
+        selection: { selectedIds: new Set<string>(), onSelectionChange },
+      });
+      const selectAll = screen.getByRole('checkbox', {
+        name: /select all rows/i,
+      });
       selectAll.focus();
       expect(document.activeElement).toBe(selectAll);
       fireEvent.click(selectAll);

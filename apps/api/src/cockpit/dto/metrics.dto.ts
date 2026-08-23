@@ -28,7 +28,12 @@ export const METRICS_MAX_DAYS = 90;
 export const METRICS_DEFAULT_DAYS = 7;
 
 export const metricsQuerySchema = z.object({
-  days: z.coerce.number().int().min(1).max(METRICS_MAX_DAYS).default(METRICS_DEFAULT_DAYS),
+  days: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(METRICS_MAX_DAYS)
+    .default(METRICS_DEFAULT_DAYS),
 });
 
 export class MetricsQueryDto extends createZodDto(metricsQuerySchema) {}

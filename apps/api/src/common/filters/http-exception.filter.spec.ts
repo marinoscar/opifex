@@ -72,7 +72,10 @@ describe('HttpExceptionFilter', () => {
     });
 
     it('should handle 401 Unauthorized', () => {
-      const exception = new HttpException('Unauthorized', HttpStatus.UNAUTHORIZED);
+      const exception = new HttpException(
+        'Unauthorized',
+        HttpStatus.UNAUTHORIZED,
+      );
 
       filter.catch(exception, mockHost);
 
@@ -102,7 +105,10 @@ describe('HttpExceptionFilter', () => {
     });
 
     it('should handle 404 Not Found', () => {
-      const exception = new HttpException('Resource not found', HttpStatus.NOT_FOUND);
+      const exception = new HttpException(
+        'Resource not found',
+        HttpStatus.NOT_FOUND,
+      );
 
       filter.catch(exception, mockHost);
 
@@ -117,7 +123,10 @@ describe('HttpExceptionFilter', () => {
     });
 
     it('should handle 409 Conflict', () => {
-      const exception = new HttpException('Resource already exists', HttpStatus.CONFLICT);
+      const exception = new HttpException(
+        'Resource already exists',
+        HttpStatus.CONFLICT,
+      );
 
       filter.catch(exception, mockHost);
 
@@ -172,14 +181,15 @@ describe('HttpExceptionFilter', () => {
   describe('Error response structure', () => {
     it('should include timestamp in error response', () => {
       const exception = new HttpException('Test', HttpStatus.BAD_REQUEST);
-      const beforeTime = new Date().toISOString();
 
       filter.catch(exception, mockHost);
 
       const response = mockResponse.send.mock.calls[0][0];
       expect(response.timestamp).toBeDefined();
       expect(new Date(response.timestamp)).toBeInstanceOf(Date);
-      expect(response.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+      expect(response.timestamp).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
+      );
     });
 
     it('should include request path in error response', () => {
@@ -197,7 +207,10 @@ describe('HttpExceptionFilter', () => {
 
     it('should handle exceptions with error array (validation errors)', () => {
       const errors = [
-        { property: 'email', constraints: { isEmail: 'email must be an email' } },
+        {
+          property: 'email',
+          constraints: { isEmail: 'email must be an email' },
+        },
         { property: 'age', constraints: { min: 'age must be >= 18' } },
       ];
       const exception = new HttpException(
@@ -220,7 +233,10 @@ describe('HttpExceptionFilter', () => {
     });
 
     it('should not include details field when no details provided', () => {
-      const exception = new HttpException('Simple error', HttpStatus.BAD_REQUEST);
+      const exception = new HttpException(
+        'Simple error',
+        HttpStatus.BAD_REQUEST,
+      );
 
       filter.catch(exception, mockHost);
 
@@ -283,7 +299,10 @@ describe('HttpExceptionFilter', () => {
 
   describe('Error code mapping', () => {
     it('should map 422 to UNPROCESSABLE_ENTITY', () => {
-      const exception = new HttpException('Invalid data', HttpStatus.UNPROCESSABLE_ENTITY);
+      const exception = new HttpException(
+        'Invalid data',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
 
       filter.catch(exception, mockHost);
 
@@ -295,7 +314,10 @@ describe('HttpExceptionFilter', () => {
     });
 
     it('should map 429 to TOO_MANY_REQUESTS', () => {
-      const exception = new HttpException('Too many requests', HttpStatus.TOO_MANY_REQUESTS);
+      const exception = new HttpException(
+        'Too many requests',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
 
       filter.catch(exception, mockHost);
 
@@ -307,7 +329,10 @@ describe('HttpExceptionFilter', () => {
     });
 
     it('should default to ERROR for unmapped status codes', () => {
-      const exception = new HttpException('Service unavailable', HttpStatus.SERVICE_UNAVAILABLE);
+      const exception = new HttpException(
+        'Service unavailable',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
 
       filter.catch(exception, mockHost);
 
@@ -322,7 +347,10 @@ describe('HttpExceptionFilter', () => {
 
   describe('String vs Object response handling', () => {
     it('should handle string exception response', () => {
-      const exception = new HttpException('Simple string message', HttpStatus.BAD_REQUEST);
+      const exception = new HttpException(
+        'Simple string message',
+        HttpStatus.BAD_REQUEST,
+      );
 
       filter.catch(exception, mockHost);
 

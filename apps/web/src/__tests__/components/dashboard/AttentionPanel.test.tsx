@@ -59,8 +59,13 @@ describe('AttentionPanel', () => {
   it('titles itself and links to the full run list', () => {
     render(<AttentionPanel />);
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Needs attention' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'All runs' })).toHaveAttribute('href', '/runs');
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Needs attention' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'All runs' })).toHaveAttribute(
+      'href',
+      '/runs',
+    );
   });
 
   /**
@@ -82,7 +87,9 @@ describe('AttentionPanel', () => {
 
     it('does not claim anything about the health of any run', () => {
       render(<AttentionPanel />);
-      expect(screen.queryByText(/Nothing needs attention/)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/Nothing needs attention/),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -101,7 +108,9 @@ describe('AttentionPanel', () => {
       // Blocked runs resume on their own (VISION §9) and are deliberately not
       // escalated; the empty state says so rather than leaving the operator to
       // wonder where they went.
-      expect(screen.getByText(/Blocked runs resume on their own/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Blocked runs resume on their own/),
+      ).toBeInTheDocument();
     });
 
     it('does not name a roadmap phase — there is nothing left to build here', () => {
@@ -128,7 +137,9 @@ describe('AttentionPanel', () => {
 
   describe('error', () => {
     it('surfaces a failure that left nothing to show', () => {
-      mockHook.mockReturnValue(hookResult({ state: 'error', error: 'network down' }));
+      mockHook.mockReturnValue(
+        hookResult({ state: 'error', error: 'network down' }),
+      );
 
       render(<AttentionPanel />);
 

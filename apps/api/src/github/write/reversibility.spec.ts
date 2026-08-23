@@ -28,8 +28,12 @@ describe('write action classification', () => {
     // VISION §3.5's actual line: a label can be removed and the issue is where
     // it was; a comment can be deleted only after everyone subscribed has been
     // emailed it. VISION's own irreversible examples include "a Slack post".
-    expect(WRITE_ACTIONS[WriteAction.AddLabel].reversibility).toBe(Reversibility.Reversible);
-    expect(WRITE_ACTIONS[WriteAction.RemoveLabel].reversibility).toBe(Reversibility.Reversible);
+    expect(WRITE_ACTIONS[WriteAction.AddLabel].reversibility).toBe(
+      Reversibility.Reversible,
+    );
+    expect(WRITE_ACTIONS[WriteAction.RemoveLabel].reversibility).toBe(
+      Reversibility.Reversible,
+    );
     expect(WRITE_ACTIONS[WriteAction.PostComment].reversibility).toBe(
       Reversibility.Irreversible,
     );
@@ -56,16 +60,22 @@ describe('write action classification', () => {
     it('does NOT cover a general comment', () => {
       // A supervisor arguing for a decomposition is an ordinary irreversible
       // action and gets gated like one.
-      expect(WRITE_ACTIONS[WriteAction.PostComment].approval).toBe(ApprovalRequirement.Gated);
+      expect(WRITE_ACTIONS[WriteAction.PostComment].approval).toBe(
+        ApprovalRequirement.Gated,
+      );
     });
 
     it('does NOT cover issue creation', () => {
-      expect(WRITE_ACTIONS[WriteAction.CreateIssue].approval).toBe(ApprovalRequirement.Gated);
+      expect(WRITE_ACTIONS[WriteAction.CreateIssue].approval).toBe(
+        ApprovalRequirement.Gated,
+      );
     });
 
     it('applies only to irreversible actions, since a reversible one needs no carve-out', () => {
       for (const action of RECORD_WRITING_ACTIONS) {
-        expect(WRITE_ACTIONS[action].reversibility).toBe(Reversibility.Irreversible);
+        expect(WRITE_ACTIONS[action].reversibility).toBe(
+          Reversibility.Irreversible,
+        );
       }
     });
   });
@@ -95,7 +105,9 @@ describe('write action classification', () => {
       // An adapter that does not exist cannot be called by a future mistake,
       // by a misconfigured trust grant, or by a supervisor that has talked
       // itself into something.
-      expect(writeServiceSource).not.toMatch(new RegExp(`\\b(async\\s+)?${name}\\s*\\(`));
+      expect(writeServiceSource).not.toMatch(
+        new RegExp(`\\b(async\\s+)?${name}\\s*\\(`),
+      );
     });
 
     it('issues no request with a method that could destroy something', () => {
@@ -112,7 +124,13 @@ describe('write action classification', () => {
       // else, under its own guards (ADR-0005, git-branch.service.spec.ts).
       // Read this as "the general write path cannot reach these", not as
       // "nothing in Opifex can".
-      for (const forbidden of ['/git/refs', '/branches', '/actions/', '/merge', '/secrets']) {
+      for (const forbidden of [
+        '/git/refs',
+        '/branches',
+        '/actions/',
+        '/merge',
+        '/secrets',
+      ]) {
         expect(writeServiceSource).not.toContain(forbidden);
       }
     });

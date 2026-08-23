@@ -244,7 +244,9 @@ export class RunPollerService {
         await this.enforceBudget(runId, poll.status === 'running', result);
       } catch (error) {
         result.failed += 1;
-        this.logger.error(`Could not check run ${runId} against its budget: ${asMessage(error)}`);
+        this.logger.error(
+          `Could not check run ${runId} against its budget: ${asMessage(error)}`,
+        );
       }
     }
 
@@ -346,7 +348,11 @@ export class RunPollerService {
   }
 
   /** Cancel through the seam, and say honestly whether it worked. */
-  private async stopForBudget(runId: string, identity: string, reason: string): Promise<string> {
+  private async stopForBudget(
+    runId: string,
+    identity: string,
+    reason: string,
+  ): Promise<string> {
     const entry = this.tracked.get(runId);
     if (!entry) {
       return `${reason} No runner handle in this process, so nothing could stop it.`;
@@ -384,17 +390,24 @@ export class RunPollerService {
     if (candidates.length === 0) return;
 
     const runs = await this.prisma.run.findMany({
-      where: { id: { in: candidates }, status: { in: LIVE_STATUSES as unknown as never } },
+      where: {
+        id: { in: candidates },
+        status: { in: LIVE_STATUSES as unknown as never },
+      },
       select: {
         id: true,
         startedAt: true,
-        workOrder: { select: { identity: true, wallClockTimeoutMinutes: true } },
+        workOrder: {
+          select: { identity: true, wallClockTimeoutMinutes: true },
+        },
       },
     });
 
     const now = new Date();
     const defaultTimeoutMinutes =
-      this.config.get<number | null>('runners.claudeCodeLocal.defaultTimeoutMinutes') ?? null;
+      this.config.get<number | null>(
+        'runners.claudeCodeLocal.defaultTimeoutMinutes',
+      ) ?? null;
     const graceMinutes =
       this.config.get<number>('runners.deadlineGraceMinutes') ??
       DEFAULT_DEADLINE_GRACE_MINUTES;
@@ -413,7 +426,11 @@ export class RunPollerService {
       if (!verdict.overdue) continue;
 
       result.timedOut += 1;
-      await this.cancelForDeadline(run.id, run.workOrder?.identity ?? run.id, verdict.reason);
+      await this.cancelForDeadline(
+        run.id,
+        run.workOrder?.identity ?? run.id,
+        verdict.reason,
+      );
     }
   }
 
@@ -456,7 +473,9 @@ export class RunPollerService {
     try {
       await entry.runner.cancel(entry.handle);
       await this.record(runId, `${reason} The control plane cancelled it.`);
-      this.logger.warn(`${identity}: ${reason} The control plane cancelled it.`);
+      this.logger.warn(
+        `${identity}: ${reason} The control plane cancelled it.`,
+      );
     } catch (error) {
       // Not rethrown: one runner refusing to cancel must not stop the pass
       // from reaching the next overdue run. And the recorded reason says it
@@ -506,7 +525,11 @@ export class RunPollerService {
       // Already reported. Rewriting the same reason every 15 seconds would
       // churn `updatedAt` and make the cockpit look like something is
       // happening when nothing is.
-      if (run.status === 'stalled' && run.attentionReason === LOST_HANDLE_REASON) continue;
+      if (
+        run.status === 'stalled' &&
+        run.attentionReason === LOST_HANDLE_REASON
+      )
+        continue;
 
       result.lost += 1;
       await this.markLost(run.id);

@@ -32,7 +32,8 @@ class ApiService {
     }
 
     if (!skipAuth && this.accessToken) {
-      (headers as Record<string, string>)['Authorization'] = `Bearer ${this.accessToken}`;
+      (headers as Record<string, string>)['Authorization'] =
+        `Bearer ${this.accessToken}`;
     }
 
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -49,7 +50,7 @@ class ApiService {
         const retryHeaders: HeadersInit = {
           'Content-Type': 'application/json',
           ...fetchOptions.headers,
-          'Authorization': `Bearer ${this.accessToken}`,
+          Authorization: `Bearer ${this.accessToken}`,
         };
 
         const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -298,7 +299,9 @@ export async function updateUserRoles(
 export async function getDeviceActivationInfo(
   userCode: string,
 ): Promise<DeviceActivationInfo> {
-  return api.get<DeviceActivationInfo>(`/auth/device/activate?code=${userCode}`);
+  return api.get<DeviceActivationInfo>(
+    `/auth/device/activate?code=${userCode}`,
+  );
 }
 
 export async function authorizeDevice(
@@ -312,7 +315,9 @@ export async function authorizeDevice(
 }
 
 // Personal Access Tokens API
-export async function getPersonalAccessTokens(): Promise<PersonalAccessToken[]> {
+export async function getPersonalAccessTokens(): Promise<
+  PersonalAccessToken[]
+> {
   return api.get<PersonalAccessToken[]>('/pat');
 }
 
@@ -361,7 +366,9 @@ export async function revokePersonalAccessToken(id: string): Promise<void> {
  * One request for the whole stat row rather than six, so the dashboard cannot
  * paint a half-updated set of tiles.
  */
-export async function getCockpitMetrics(signal?: AbortSignal): Promise<MetricsSummary> {
+export async function getCockpitMetrics(
+  signal?: AbortSignal,
+): Promise<MetricsSummary> {
   return api.get<MetricsSummary>('/metrics/summary', { signal });
 }
 
@@ -405,7 +412,9 @@ export async function getRunQueue(
   if (params?.limit) searchParams.set('limit', String(params.limit));
   const query = searchParams.toString();
 
-  return api.get<QueueEntry[]>(query ? `/queue?${query}` : '/queue', { signal });
+  return api.get<QueueEntry[]>(query ? `/queue?${query}` : '/queue', {
+    signal,
+  });
 }
 
 /**
@@ -422,7 +431,9 @@ export async function getActivityFeed(
   // this API. The panel wants the newest N and nothing else, so the page size
   // IS the limit here and the envelope is unwrapped for the caller — a
   // dashboard panel has no pager and no use for `total`.
-  const searchParams = new URLSearchParams({ pageSize: String(params?.limit ?? 20) });
+  const searchParams = new URLSearchParams({
+    pageSize: String(params?.limit ?? 20),
+  });
 
   const page = await api.get<{ items: RunEvent[]; total: number }>(
     `/events?${searchParams}`,
@@ -454,7 +465,10 @@ export async function createPushSubscription(input: {
   auth: string;
   userAgent?: string;
 }): Promise<PushSubscriptionRecord> {
-  return api.post<PushSubscriptionRecord>('/notifications/subscriptions', input);
+  return api.post<PushSubscriptionRecord>(
+    '/notifications/subscriptions',
+    input,
+  );
 }
 
 export async function deletePushSubscription(id: string): Promise<void> {

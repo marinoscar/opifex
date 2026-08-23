@@ -30,9 +30,17 @@ if (process.env.NODE_ENV !== 'production') {
     dotenv.config();
 
     // Also load from infra/compose/.env (canonical env location)
-    const composeEnv = path.resolve(__dirname, '..', '..', '..', 'infra', 'compose', '.env');
+    const composeEnv = path.resolve(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      'infra',
+      'compose',
+      '.env',
+    );
     dotenv.config({ path: composeEnv });
-  } catch (err) {
+  } catch {
     // dotenv might not be available in production builds, that's OK
   }
 }
@@ -66,7 +74,9 @@ function main() {
 
   if (prismaArgs.length === 0) {
     console.error('Error: No Prisma command specified');
-    console.error('Usage: node scripts/prisma-env.js [prisma command and args]');
+    console.error(
+      'Usage: node scripts/prisma-env.js [prisma command and args]',
+    );
     console.error('Example: node scripts/prisma-env.js migrate deploy');
     process.exit(1);
   }

@@ -21,7 +21,11 @@ interface PatTokenRevealDialogProps {
   token: string | null;
 }
 
-export function PatTokenRevealDialog({ open, onClose, token }: PatTokenRevealDialogProps) {
+export function PatTokenRevealDialog({
+  open,
+  onClose,
+  token,
+}: PatTokenRevealDialogProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -46,7 +50,8 @@ export function PatTokenRevealDialog({ open, onClose, token }: PatTokenRevealDia
       <DialogContent>
         <Box sx={{ pt: 1 }}>
           <Alert severity="warning" sx={{ mb: 2 }}>
-            Make sure to copy your personal access token now. You won't be able to see it again!
+            Make sure to copy your personal access token now. You won&apos;t be
+            able to see it again!
           </Alert>
           <TextField
             label="Your Token"
@@ -59,8 +64,16 @@ export function PatTokenRevealDialog({ open, onClose, token }: PatTokenRevealDia
                 endAdornment: (
                   <InputAdornment position="end">
                     <Tooltip title={copied ? 'Copied!' : 'Copy token'}>
-                      <IconButton onClick={handleCopy} edge="end" aria-label="copy token">
-                        {copied ? <CheckIcon color="success" /> : <ContentCopyIcon />}
+                      <IconButton
+                        onClick={handleCopy}
+                        edge="end"
+                        aria-label="copy token"
+                      >
+                        {copied ? (
+                          <CheckIcon color="success" />
+                        ) : (
+                          <ContentCopyIcon />
+                        )}
                       </IconButton>
                     </Tooltip>
                   </InputAdornment>

@@ -76,7 +76,10 @@ export const RATE_LIMIT_ALLOWED_LINE = {
  */
 export const RATE_LIMIT_BLOCKED_LINE = {
   ...RATE_LIMIT_ALLOWED_LINE,
-  rate_limit_info: { ...RATE_LIMIT_ALLOWED_LINE.rate_limit_info, status: 'rejected' },
+  rate_limit_info: {
+    ...RATE_LIMIT_ALLOWED_LINE.rate_limit_info,
+    status: 'rejected',
+  },
   uuid: 'a1b2c3d4-0000-4000-8000-000000000001',
 };
 
@@ -104,7 +107,10 @@ export const TOOL_USE_LINE = {
         type: 'tool_use',
         id: 'toolu_01Ks5wUX9v1zL3jAgXawVUA4',
         name: 'Bash',
-        input: { command: 'find . -iname "note.txt"', description: 'Locate the note' },
+        input: {
+          command: 'find . -iname "note.txt"',
+          description: 'Locate the note',
+        },
       },
     ],
     usage: { input_tokens: 2, output_tokens: 16 },
@@ -132,7 +138,10 @@ export const TOOL_USE_LINE_REORDERED_ARGS = {
         type: 'tool_use',
         id: 'toolu_reordered',
         name: 'Bash',
-        input: { description: 'Locate the note', command: 'find . -iname "note.txt"' },
+        input: {
+          description: 'Locate the note',
+          command: 'find . -iname "note.txt"',
+        },
       },
     ],
   },
@@ -148,7 +157,13 @@ export const THINKING_LINE = {
     role: 'assistant',
     // The real one carries a long opaque `signature`; the shape is what
     // matters here.
-    content: [{ type: 'thinking', thinking: 'Working out where the file is.', signature: 'ErYC' }],
+    content: [
+      {
+        type: 'thinking',
+        thinking: 'Working out where the file is.',
+        signature: 'ErYC',
+      },
+    ],
     usage: { input_tokens: 2, output_tokens: 2 },
   },
   parent_tool_use_id: null,
@@ -200,7 +215,8 @@ export const TOOL_RESULT_ERROR_LINE = {
     content: [
       {
         type: 'tool_result',
-        content: "Claude requested permissions to read from /w/note.txt, but you haven't granted it yet.",
+        content:
+          "Claude requested permissions to read from /w/note.txt, but you haven't granted it yet.",
         is_error: true,
         tool_use_id: 'toolu_01NFhYFBCb4KemKnLSpJg47K',
       },
@@ -223,7 +239,8 @@ export const PERMISSION_DENIED_LINE = {
   tool_use_id: 'toolu_01NFhYFBCb4KemKnLSpJg47K',
   decision_reason_type: 'workingDir',
   decision_reason: 'Path is outside allowed working directories',
-  message: 'Claude requested permissions to read from /w/note.txt, but you have not granted it yet.',
+  message:
+    'Claude requested permissions to read from /w/note.txt, but you have not granted it yet.',
   uuid: '65264706-b4cc-42fb-aca2-aea73770839c',
   session_id: SESSION,
 };
@@ -244,7 +261,9 @@ export const RESULT_SUCCESS_LINE = {
     cache_read_input_tokens: 128376,
     output_tokens: 362,
   },
-  permission_denials: [{ tool_name: 'Read', tool_use_id: 'toolu_01NFhYFBCb4KemKnLSpJg47K' }],
+  permission_denials: [
+    { tool_name: 'Read', tool_use_id: 'toolu_01NFhYFBCb4KemKnLSpJg47K' },
+  ],
   terminal_reason: 'completed',
   result: 'The word is: **hello**',
   uuid: 'fb15bae2-4859-4904-8cdc-00c1c08d248e',
@@ -264,11 +283,30 @@ export const RESULT_ERROR_LINE = {
 export const UNMAPPED_LINES = [
   { type: 'active_goal', uuid: 'b1096c18-ca4f-4027-8de4-29f601257d0a' },
   { type: 'autocompact_state', uuid: 'b1613968-ce88-492b-9dbe-61cdd0c32d6e' },
-  { type: 'system', subtype: 'commands_changed', uuid: '41f762cb-53fd-47ae-b124-5471fd7eae40' },
-  { type: 'system', subtype: 'thinking_tokens', uuid: '1d3a8534-9300-43a1-86de-29140418c4e3' },
-  { type: 'system', subtype: 'task_summary', uuid: '6ee9439c-b41d-4f55-a69e-03c29ef6174e' },
-  { type: 'system', subtype: 'post_turn_summary', uuid: 'c2243642-8059-4a43-bd94-3e45eef5028c' },
+  {
+    type: 'system',
+    subtype: 'commands_changed',
+    uuid: '41f762cb-53fd-47ae-b124-5471fd7eae40',
+  },
+  {
+    type: 'system',
+    subtype: 'thinking_tokens',
+    uuid: '1d3a8534-9300-43a1-86de-29140418c4e3',
+  },
+  {
+    type: 'system',
+    subtype: 'task_summary',
+    uuid: '6ee9439c-b41d-4f55-a69e-03c29ef6174e',
+  },
+  {
+    type: 'system',
+    subtype: 'post_turn_summary',
+    uuid: 'c2243642-8059-4a43-bd94-3e45eef5028c',
+  },
   // Not in the captured run: the shape of the next CLI version adding
   // something. ADR 0006 requires this be a drop, not an escalation.
-  { type: 'some_future_event_type', uuid: 'ffffffff-0000-4000-8000-000000000009' },
+  {
+    type: 'some_future_event_type',
+    uuid: 'ffffffff-0000-4000-8000-000000000009',
+  },
 ];

@@ -1,4 +1,7 @@
-import { RBAC_EXTENSION_KEY, RbacExtension } from '../auth/decorators/auth.decorator';
+import {
+  RBAC_EXTENSION_KEY,
+  RbacExtension,
+} from '../auth/decorators/auth.decorator';
 import { DocOperation, MutableDocument, forEachOperation } from './types';
 
 /**

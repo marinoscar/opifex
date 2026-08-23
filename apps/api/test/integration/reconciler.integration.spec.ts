@@ -2,7 +2,10 @@ import { ConfigService } from '@nestjs/config';
 
 import { EtagCacheService } from '../../src/github/etag-cache.service';
 import { GitHubHttpService } from '../../src/github/github-http.service';
-import { INPUT_LABELS, MIRROR_LABELS } from '../../src/github/labels/factory-labels';
+import {
+  INPUT_LABELS,
+  MIRROR_LABELS,
+} from '../../src/github/labels/factory-labels';
 import { RateLimitService } from '../../src/github/rate-limit.service';
 import { GitHubReadService } from '../../src/github/read/github-read.service';
 import { GitHubWriteService } from '../../src/github/write/github-write.service';
@@ -14,7 +17,11 @@ import { ReconcilerService } from '../../src/reconciler/reconciler.service';
 import { TickLeaseService } from '../../src/reconciler/tick-lease.service';
 import type { RepositoriesService } from '../../src/repositories/repositories.service';
 import { WorkOrderProjectionService } from '../../src/work-orders/work-order-projection.service';
-import { rawIssue, rawLabel, rawLabeledEvent } from '../fixtures/github/issues.fixture';
+import {
+  rawIssue,
+  rawLabel,
+  rawLabeledEvent,
+} from '../fixtures/github/issues.fixture';
 
 /**
  * Whole ticks, from raw GitHub JSON to a computed action list.
@@ -48,11 +55,17 @@ function rawCommit(sha = HEAD) {
     sha,
     html_url: `https://github.com/acme/app/commit/${sha}`,
     author: { login: 'someone' },
-    commit: { message: 'Merge pull request #9', author: { date: '2026-08-23T01:00:00Z' } },
+    commit: {
+      message: 'Merge pull request #9',
+      author: { date: '2026-08-23T01:00:00Z' },
+    },
   };
 }
 
-function githubJson(body: unknown, headers: Record<string, string> = {}): Response {
+function githubJson(
+  body: unknown,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
     headers: new Headers({
@@ -80,11 +93,16 @@ describe('reconciler ticks against a mocked GitHub', () => {
   let reconciler: ReconcilerService;
 
   /** Route by URL so a tick can make several different calls in any order. */
-  function respond(routes: { issues: unknown[]; timeline?: unknown[]; commits?: unknown[] }) {
+  function respond(routes: {
+    issues: unknown[];
+    timeline?: unknown[];
+    commits?: unknown[];
+  }) {
     fetchMock.mockImplementation(async (url: string) => {
       if (url.includes('/timeline')) return githubJson(routes.timeline ?? []);
       if (url.includes('/issues')) return githubJson(routes.issues);
-      if (url.includes('/commits')) return githubJson(routes.commits ?? [rawCommit()]);
+      if (url.includes('/commits'))
+        return githubJson(routes.commits ?? [rawCommit()]);
       return githubJson([]);
     });
   }
@@ -99,10 +117,16 @@ describe('reconciler ticks against a mocked GitHub', () => {
       'github.maxRetries': 0,
       'github.rateLimitReserve': 100,
     };
-    const config = { get: (k: string) => values[k] } as unknown as ConfigService;
+    const config = {
+      get: (k: string) => values[k],
+    } as unknown as ConfigService;
 
     const rateLimit = new RateLimitService();
-    const http = new GitHubHttpService(config, rateLimit, new EtagCacheService(50));
+    const http = new GitHubHttpService(
+      config,
+      rateLimit,
+      new EtagCacheService(50),
+    );
     const read = new GitHubReadService(http);
 
     return new ReconcilerService(
@@ -120,7 +144,9 @@ describe('reconciler ticks against a mocked GitHub', () => {
       http,
       rateLimit,
       prisma as unknown as PrismaService,
-      { record: jest.fn().mockResolvedValue(undefined) } as unknown as ReconcileLogService,
+      {
+        record: jest.fn().mockResolvedValue(undefined),
+      } as unknown as ReconcileLogService,
       // The REAL projection service, against the Prisma double. #51 asks for
       // whole ticks: substituting a mock here would leave the join between
       // raw GitHub JSON and a work order row — the thing #155 built —
@@ -153,7 +179,9 @@ describe('reconciler ticks against a mocked GitHub', () => {
 
   describe('an issue gains factory:ready', () => {
     it('produces a dispatch action', async () => {
-      respond({ issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })] });
+      respond({
+        issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })],
+      });
 
       const record = await reconciler.tick();
 
@@ -162,12 +190,16 @@ describe('reconciler ticks against a mocked GitHub', () => {
     });
 
     it('names the label in the reason, so the decision is reviewable', async () => {
-      respond({ issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })] });
+      respond({
+        issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })],
+      });
 
       const record = await reconciler.tick();
 
       expect(record.actions[0].reason).toContain(INPUT_LABELS.READY);
-      expect(record.actions[0].evidence.inputLabels).toEqual([INPUT_LABELS.READY]);
+      expect(record.actions[0].evidence.inputLabels).toEqual([
+        INPUT_LABELS.READY,
+      ]);
     });
   });
 
@@ -180,7 +212,9 @@ describe('reconciler ticks against a mocked GitHub', () => {
           issueNumber: 312,
           attempt: 1,
           status: 'dispatched',
-          runs: [{ id: 'r', status: 'running', costUsd: null, pullRequestUrl: null }],
+          runs: [
+            { id: 'r', status: 'running', costUsd: null, pullRequestUrl: null },
+          ],
         },
       ]);
       respond({
@@ -202,7 +236,9 @@ describe('reconciler ticks against a mocked GitHub', () => {
     it('is reflected on the very next tick, with no reset', async () => {
       // The reconciler-vs-queue property from VISION §4. A queue would have to
       // be told; the reconciler simply recomputes from what it now observes.
-      respond({ issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })] });
+      respond({
+        issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })],
+      });
       const before = await reconciler.tick();
 
       // The operator adds factory:hold in GitHub. Nothing tells the tick.
@@ -222,10 +258,14 @@ describe('reconciler ticks against a mocked GitHub', () => {
     });
 
     it('recovers when the human REMOVES a label too', async () => {
-      respond({ issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.HOLD)] })] });
+      respond({
+        issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.HOLD)] })],
+      });
       await reconciler.tick();
 
-      respond({ issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })] });
+      respond({
+        issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })],
+      });
       const after = await reconciler.tick();
 
       expect(actionTypes(after.actions)).toContain('dispatch');
@@ -236,7 +276,9 @@ describe('reconciler ticks against a mocked GitHub', () => {
     it('do NOT influence the projection', async () => {
       // VISION §3.3. If they did, the control plane would read its own output
       // as input and the state machine would have moved into issue labels.
-      respond({ issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })] });
+      respond({
+        issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })],
+      });
       const clean = await reconciler.tick();
 
       respond({
@@ -252,8 +294,12 @@ describe('reconciler ticks against a mocked GitHub', () => {
       });
       const dirty = await reconciler.tick();
 
-      expect(dirty.projections[0].issues[0].intent).toBe(clean.projections[0].issues[0].intent);
-      expect(dirty.projections[0].issues[0].reason).toBe(clean.projections[0].issues[0].reason);
+      expect(dirty.projections[0].issues[0].intent).toBe(
+        clean.projections[0].issues[0].intent,
+      );
+      expect(dirty.projections[0].issues[0].reason).toBe(
+        clean.projections[0].issues[0].reason,
+      );
     });
 
     it('ARE used to decide which labels to write', async () => {
@@ -262,7 +308,10 @@ describe('reconciler ticks against a mocked GitHub', () => {
       respond({
         issues: [
           rawIssue({
-            labels: [rawLabel(INPUT_LABELS.READY), rawLabel(MIRROR_LABELS.DISPATCHED)],
+            labels: [
+              rawLabel(INPUT_LABELS.READY),
+              rawLabel(MIRROR_LABELS.DISPATCHED),
+            ],
           }),
         ],
       });
@@ -276,7 +325,9 @@ describe('reconciler ticks against a mocked GitHub', () => {
 
   describe('idempotency', () => {
     it('the same tick run twice produces the same actions', async () => {
-      respond({ issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })] });
+      respond({
+        issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })],
+      });
 
       const first = await reconciler.tick();
       const second = await reconciler.tick();
@@ -287,10 +338,16 @@ describe('reconciler ticks against a mocked GitHub', () => {
     it('executing the same action list twice is safe', async () => {
       const writes = {
         addLabel: jest.fn().mockResolvedValue({ performed: true, noop: false }),
-        removeLabel: jest.fn().mockResolvedValue({ performed: true, noop: false }),
+        removeLabel: jest
+          .fn()
+          .mockResolvedValue({ performed: true, noop: false }),
       };
-      const executor = new MirrorLabelExecutor(writes as unknown as GitHubWriteService);
-      respond({ issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })] });
+      const executor = new MirrorLabelExecutor(
+        writes as unknown as GitHubWriteService,
+      );
+      respond({
+        issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.READY)] })],
+      });
       const record = await reconciler.tick();
 
       const enabled = new Set(['acme/app']);
@@ -313,18 +370,26 @@ describe('reconciler ticks against a mocked GitHub', () => {
           rawIssue({
             number: 2,
             labels: [rawLabel(INPUT_LABELS.READY)],
-            pull_request: { url: 'https://api.github.com/repos/acme/app/pulls/2' },
+            pull_request: {
+              url: 'https://api.github.com/repos/acme/app/pulls/2',
+            },
           }),
         ],
       });
 
       const record = await reconciler.tick();
 
-      expect(record.projections[0].issues.map((i) => i.issueNumber)).toEqual([1]);
+      expect(record.projections[0].issues.map((i) => i.issueNumber)).toEqual([
+        1,
+      ]);
     });
 
     it('tolerates a deleted author', async () => {
-      respond({ issues: [rawIssue({ user: null, labels: [rawLabel(INPUT_LABELS.READY)] })] });
+      respond({
+        issues: [
+          rawIssue({ user: null, labels: [rawLabel(INPUT_LABELS.READY)] }),
+        ],
+      });
 
       const record = await reconciler.tick();
 
@@ -332,7 +397,11 @@ describe('reconciler ticks against a mocked GitHub', () => {
     });
 
     it('tolerates an empty body', async () => {
-      respond({ issues: [rawIssue({ body: null, labels: [rawLabel(INPUT_LABELS.READY)] })] });
+      respond({
+        issues: [
+          rawIssue({ body: null, labels: [rawLabel(INPUT_LABELS.READY)] }),
+        ],
+      });
 
       expect((await reconciler.tick()).outcome).toBe('completed');
     });
@@ -355,8 +424,15 @@ describe('reconciler ticks against a mocked GitHub', () => {
     it('releases when a human applied the label', async () => {
       quarantined();
       respond({
-        issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.CLEAR_QUARANTINE)] })],
-        timeline: [rawLabeledEvent(INPUT_LABELS.CLEAR_QUARANTINE, { login: 'marinoscar', type: 'User' })],
+        issues: [
+          rawIssue({ labels: [rawLabel(INPUT_LABELS.CLEAR_QUARANTINE)] }),
+        ],
+        timeline: [
+          rawLabeledEvent(INPUT_LABELS.CLEAR_QUARANTINE, {
+            login: 'marinoscar',
+            type: 'User',
+          }),
+        ],
       });
 
       const record = await reconciler.tick();
@@ -369,8 +445,15 @@ describe('reconciler ticks against a mocked GitHub', () => {
       // check misses — a GitHub App acting through a token.
       quarantined();
       respond({
-        issues: [rawIssue({ labels: [rawLabel(INPUT_LABELS.CLEAR_QUARANTINE)] })],
-        timeline: [rawLabeledEvent(INPUT_LABELS.CLEAR_QUARANTINE, { login: 'opifex[bot]', type: 'User' })],
+        issues: [
+          rawIssue({ labels: [rawLabel(INPUT_LABELS.CLEAR_QUARANTINE)] }),
+        ],
+        timeline: [
+          rawLabeledEvent(INPUT_LABELS.CLEAR_QUARANTINE, {
+            login: 'opifex[bot]',
+            type: 'User',
+          }),
+        ],
       });
 
       const record = await reconciler.tick();
@@ -514,7 +597,9 @@ P1
 
       await build().tick();
 
-      expect(prisma.workOrder.create.mock.calls[0][0].data.baseCommit).toBe(other);
+      expect(prisma.workOrder.create.mock.calls[0][0].data.baseCommit).toBe(
+        other,
+      );
     });
 
     it('derives the identity and branch from those coordinates', async () => {
@@ -543,7 +628,9 @@ P1
     it('writes a held row when factory:hold is also present', async () => {
       respond({
         issues: [
-          readyIssue({ labels: [rawLabel(INPUT_LABELS.READY), rawLabel(INPUT_LABELS.HOLD)] }),
+          readyIssue({
+            labels: [rawLabel(INPUT_LABELS.READY), rawLabel(INPUT_LABELS.HOLD)],
+          }),
         ],
       });
 
@@ -559,7 +646,9 @@ P1
 
       expect(prisma.workOrder.create).not.toHaveBeenCalled();
       expect(
-        fetchMock.mock.calls.filter(([url]: [string]) => url.includes('/commits')),
+        fetchMock.mock.calls.filter(([url]: [string]) =>
+          url.includes('/commits'),
+        ),
       ).toHaveLength(0);
     });
 
@@ -602,7 +691,9 @@ P1
 
       expect(prisma.workOrder.create).not.toHaveBeenCalled();
       expect(
-        fetchMock.mock.calls.filter(([url]: [string]) => url.includes('/commits')),
+        fetchMock.mock.calls.filter(([url]: [string]) =>
+          url.includes('/commits'),
+        ),
       ).toHaveLength(0);
     });
   });

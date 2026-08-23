@@ -104,7 +104,9 @@ export class EtagCacheService {
       }
     }
     if (removed > 0) {
-      this.logger.debug(`Invalidated ${removed} cached responses for ${owner}/${name}`);
+      this.logger.debug(
+        `Invalidated ${removed} cached responses for ${owner}/${name}`,
+      );
     }
     return removed;
   }

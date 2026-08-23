@@ -34,7 +34,9 @@ function settingsWith(navigation?: UserSettings['navigation']): UserSettings {
 
 // Typed rather than a bare `vi.fn()`, so the payload assertions below are
 // checked against the real `UserSettingsUpdate` shape instead of `any`.
-let updateSettings: ReturnType<typeof vi.fn<(updates: UserSettingsUpdate) => Promise<void>>>;
+let updateSettings: ReturnType<
+  typeof vi.fn<(updates: UserSettingsUpdate) => Promise<void>>
+>;
 
 function mockSettings(settings: UserSettings | null, isLoading = false) {
   mockUseUserSettings.mockReturnValue({
@@ -52,9 +54,9 @@ function mockSettings(settings: UserSettings | null, isLoading = false) {
 describe('useNavigationPrefs', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    updateSettings = vi.fn<(updates: UserSettingsUpdate) => Promise<void>>().mockResolvedValue(
-      undefined,
-    );
+    updateSettings = vi
+      .fn<(updates: UserSettingsUpdate) => Promise<void>>()
+      .mockResolvedValue(undefined);
   });
 
   describe('Reading — absent means default', () => {
@@ -132,7 +134,9 @@ describe('useNavigationPrefs', () => {
       const { result } = renderHook(() => useNavigationPrefs());
       act(() => result.current.toggleRailCollapsed());
 
-      expect(updateSettings).toHaveBeenCalledWith({ navigation: { railCollapsed: true } });
+      expect(updateSettings).toHaveBeenCalledWith({
+        navigation: { railCollapsed: true },
+      });
       expect(updateSettings).toHaveBeenCalledTimes(1);
     });
 
@@ -142,13 +146,19 @@ describe('useNavigationPrefs', () => {
       const { result } = renderHook(() => useNavigationPrefs());
       act(() => result.current.toggleRailCollapsed());
 
-      expect(updateSettings).toHaveBeenCalledWith({ navigation: { railCollapsed: false } });
+      expect(updateSettings).toHaveBeenCalledWith({
+        navigation: { railCollapsed: false },
+      });
     });
 
     it('applies the new value immediately, before the write resolves', () => {
       // Waiting a round trip to animate a 164px column reads as a broken button.
       let resolveWrite: () => void = () => {};
-      updateSettings.mockReturnValue(new Promise<void>((res) => { resolveWrite = res; }));
+      updateSettings.mockReturnValue(
+        new Promise<void>((res) => {
+          resolveWrite = res;
+        }),
+      );
       mockSettings(settingsWith({ railCollapsed: false }));
 
       const { result } = renderHook(() => useNavigationPrefs());
@@ -175,7 +185,10 @@ describe('useNavigationPrefs', () => {
     it('does not let a late write from an earlier click clear a newer overlay', async () => {
       const resolvers: Array<() => void> = [];
       updateSettings.mockImplementation(
-        () => new Promise<void>((res) => { resolvers.push(res); }),
+        () =>
+          new Promise<void>((res) => {
+            resolvers.push(res);
+          }),
       );
       mockSettings(settingsWith({ railCollapsed: false }));
 
@@ -192,7 +205,9 @@ describe('useNavigationPrefs', () => {
       });
 
       expect(result.current.railCollapsed).toBe(false);
-      expect(updateSettings).toHaveBeenLastCalledWith({ navigation: { railCollapsed: false } });
+      expect(updateSettings).toHaveBeenLastCalledWith({
+        navigation: { railCollapsed: false },
+      });
     });
   });
 

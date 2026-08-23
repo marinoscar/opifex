@@ -16,13 +16,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { STORAGE_PROVIDER } from '../providers/storage-provider.interface';
 import type { StorageProvider } from '../providers/storage-provider.interface';
-import {
-  InitUploadDto,
-  InitUploadResponseDto,
-} from './dto/init-upload.dto';
-import {
-  CompleteUploadDto,
-} from './dto/complete-upload.dto';
+import { InitUploadDto, InitUploadResponseDto } from './dto/init-upload.dto';
+import { CompleteUploadDto } from './dto/complete-upload.dto';
 import {
   ObjectResponseDto,
   UploadStatusResponseDto,
@@ -31,12 +26,8 @@ import {
   ObjectListQueryDto,
   ObjectListResponseDto,
 } from './dto/object-list-query.dto';
-import {
-  UpdateMetadataDto,
-} from './dto/update-metadata.dto';
-import {
-  DownloadUrlResponseDto,
-} from './dto/download-url-response.dto';
+import { UpdateMetadataDto } from './dto/update-metadata.dto';
+import { DownloadUrlResponseDto } from './dto/download-url-response.dto';
 import {
   OBJECT_UPLOADED_EVENT,
   ObjectUploadedEvent,
@@ -361,11 +352,16 @@ export class ObjectsService {
     );
 
     // Create audit event
-    await this.createAuditEvent(userId, 'storage:upload:complete', storageObject.id, {
-      name: storageObject.name,
-      mimeType: storageObject.mimeType,
-      uploadType: 'simple',
-    });
+    await this.createAuditEvent(
+      userId,
+      'storage:upload:complete',
+      storageObject.id,
+      {
+        name: storageObject.name,
+        mimeType: storageObject.mimeType,
+        uploadType: 'simple',
+      },
+    );
 
     this.logger.log(`Simple upload completed: ${storageObject.id}`);
 
@@ -458,7 +454,9 @@ export class ObjectsService {
       { expiresIn: expiry },
     );
 
-    this.logger.log(`Generated download URL for object ${id}, expires in ${expiry}s`);
+    this.logger.log(
+      `Generated download URL for object ${id}, expires in ${expiry}s`,
+    );
 
     return {
       url,

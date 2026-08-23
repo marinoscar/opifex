@@ -145,7 +145,10 @@ export function useDataTableLayoutPrefs<Row>({
    * immediately persist its default page size as though the user had chosen it.
    * Only a later divergence from this baseline is a preference worth storing.
    */
-  const mirrorRef = useRef<{ sort: DataTableStoredSort | null; pageSize?: number } | null>(null);
+  const mirrorRef = useRef<{
+    sort: DataTableStoredSort | null;
+    pageSize?: number;
+  } | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -184,14 +187,15 @@ export function useDataTableLayoutPrefs<Row>({
       // header is absent, and the version check is skipped entirely in that case
       // (`user-settings.controller.ts` → `user-settings.service.ts`).
       const patch: UserSettingsUpdate = { dataTables: { [tableId]: next } };
-      void api
-        .patch('/user-settings', patch)
-        .catch((error: unknown) => {
-          // Fire-and-forget by design: the layout the user is looking at came
-          // from state and stays there. Losing the backup is a warning, never
-          // a rollback.
-          console.warn(`Failed to persist DataTable layout for "${tableId}"`, error);
-        });
+      void api.patch('/user-settings', patch).catch((error: unknown) => {
+        // Fire-and-forget by design: the layout the user is looking at came
+        // from state and stays there. Losing the backup is a warning, never
+        // a rollback.
+        console.warn(
+          `Failed to persist DataTable layout for "${tableId}"`,
+          error,
+        );
+      });
     },
     [tableId],
   );
@@ -298,9 +302,16 @@ export function useDataTableLayoutPrefs<Row>({
         }
 
         const paginationConfig = paginationRef.current;
-        if (stored.pageSize && paginationConfig && stored.pageSize !== paginationConfig.pageSize) {
+        if (
+          stored.pageSize &&
+          paginationConfig &&
+          stored.pageSize !== paginationConfig.pageSize
+        ) {
           // Page 0: a different page size makes the current offset meaningless.
-          paginationConfig.onPaginationChange({ page: 0, pageSize: stored.pageSize });
+          paginationConfig.onPaginationChange({
+            page: 0,
+            pageSize: stored.pageSize,
+          });
         }
 
         // Baseline for the mirror effect below: a stored value where there is
@@ -341,7 +352,8 @@ export function useDataTableLayoutPrefs<Row>({
     const sortChanged =
       (baseline.sort?.field ?? null) !== (nextSort?.field ?? null) ||
       (baseline.sort?.direction ?? null) !== (nextSort?.direction ?? null);
-    const pageSizeChanged = activePageSize !== undefined && baseline.pageSize !== activePageSize;
+    const pageSizeChanged =
+      activePageSize !== undefined && baseline.pageSize !== activePageSize;
 
     if (!sortChanged && !pageSizeChanged) return;
 

@@ -110,7 +110,10 @@ export interface DispatchDecision {
  * everything would route work to a runner that cannot do it, and the failure
  * would surface as a broken run rather than as a routing error.
  */
-export function satisfies(need: RunnerNeed, capabilities: RunnerCapabilities): boolean {
+export function satisfies(
+  need: RunnerNeed,
+  capabilities: RunnerCapabilities,
+): boolean {
   switch (need) {
     case 'full-streaming':
       return capabilities.streamingFidelity === 'full';
@@ -189,26 +192,41 @@ export function decideDispatch(
   // that does not depend on which runner would have been chosen — reporting
   // "runner X is full" when the real limit is the fleet's would send somebody
   // to raise the wrong number.
-  if (limits.globalMaxConcurrent !== null && limits.globalLiveRuns >= limits.globalMaxConcurrent) {
+  if (
+    limits.globalMaxConcurrent !== null &&
+    limits.globalLiveRuns >= limits.globalMaxConcurrent
+  ) {
     return queued(
       'global-concurrency-reached',
       `The fleet is at its global limit of ${limits.globalMaxConcurrent} concurrent run(s).`,
-      enabled.map((entry) => verdict(entry, input.needs, false, 'the fleet is at its global limit')),
+      enabled.map((entry) =>
+        verdict(entry, input.needs, false, 'the fleet is at its global limit'),
+      ),
     );
   }
 
   const hasGaFallback = (needs: readonly RunnerNeed[]): boolean =>
     enabled.some(
-      (entry) => !isPreview(entry.capabilities) && unmetNeeds(needs, entry.capabilities).length === 0,
+      (entry) =>
+        !isPreview(entry.capabilities) &&
+        unmetNeeds(needs, entry.capabilities).length === 0,
     );
 
   const candidates = enabled
     .map((entry) => {
       const unmet = unmetNeeds(input.needs, entry.capabilities);
-      const headroom = Math.max(0, entry.capabilities.maxConcurrency - entry.liveRuns);
+      const headroom = Math.max(
+        0,
+        entry.capabilities.maxConcurrency - entry.liveRuns,
+      );
 
       if (unmet.length > 0) {
-        return verdict(entry, input.needs, false, `does not advertise ${unmet.join(', ')}`);
+        return verdict(
+          entry,
+          input.needs,
+          false,
+          `does not advertise ${unmet.join(', ')}`,
+        );
       }
       if (isPreview(entry.capabilities) && !hasGaFallback(input.needs)) {
         // The one rejection that is about the FLEET rather than the runner.
@@ -244,18 +262,29 @@ export function decideDispatch(
         );
       }
 
-      return verdict(entry, input.needs, true, 'meets every declared need and has headroom');
+      return verdict(
+        entry,
+        input.needs,
+        true,
+        'meets every declared need and has headroom',
+      );
     })
     .sort(byPreference);
 
   const chosen = candidates.find((candidate) => candidate.eligible);
 
   if (!chosen) {
-    return queued(diagnose(candidates), explain(candidates, input.needs), candidates);
+    return queued(
+      diagnose(candidates),
+      explain(candidates, input.needs),
+      candidates,
+    );
   }
 
   const needsText =
-    input.needs.length === 0 ? 'no specific capabilities' : input.needs.join(', ');
+    input.needs.length === 0
+      ? 'no specific capabilities'
+      : input.needs.join(', ');
 
   return {
     outcome: 'dispatch',
@@ -300,21 +329,33 @@ function byPreference(a: CandidateVerdict, b: CandidateVerdict): number {
  * problem.
  */
 function diagnose(candidates: readonly CandidateVerdict[]): QueueReason {
-  const capable = candidates.filter((candidate) => candidate.unmetNeeds.length === 0);
+  const capable = candidates.filter(
+    (candidate) => candidate.unmetNeeds.length === 0,
+  );
 
   if (capable.length === 0) return 'no-runner-has-the-capabilities';
-  if (capable.every((candidate) => candidate.reason.includes('preview runner load-bearing'))) {
+  if (
+    capable.every((candidate) =>
+      candidate.reason.includes('preview runner load-bearing'),
+    )
+  ) {
     return 'only-preview-runners-and-no-ga-fallback';
   }
   return 'capable-runners-are-at-capacity';
 }
 
-function explain(candidates: readonly CandidateVerdict[], needs: readonly RunnerNeed[]): string {
-  const needsText = needs.length === 0 ? 'no specific capabilities' : needs.join(', ');
+function explain(
+  candidates: readonly CandidateVerdict[],
+  needs: readonly RunnerNeed[],
+): string {
+  const needsText =
+    needs.length === 0 ? 'no specific capabilities' : needs.join(', ');
 
   return (
     `Queued: no runner can take this work order (needs ${needsText}). ` +
-    candidates.map((candidate) => `${candidate.runnerKey} ${candidate.reason}`).join('; ') +
+    candidates
+      .map((candidate) => `${candidate.runnerKey} ${candidate.reason}`)
+      .join('; ') +
     '.'
   );
 }
@@ -343,5 +384,11 @@ function queued(
   // with a clear reason rather than failing." A failure would need somebody to
   // re-dispatch it by hand once a runner appeared; a queued work order is
   // picked up by the next tick that can serve it.
-  return { outcome: 'queued', runnerKey: null, queueReason, reason, candidates };
+  return {
+    outcome: 'queued',
+    runnerKey: null,
+    queueReason,
+    reason,
+    candidates,
+  };
 }

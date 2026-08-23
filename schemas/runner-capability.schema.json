@@ -57,27 +57,54 @@
     "streamingFidelity": {
       "description": "GRADED, not boolean, and the most consequential field here. It decides whether the control plane can run event-age watchdogs (#54) and tool-loop detection (#55), or must fall back to wall-clock timeouts and git-derived liveness (#52). `full` earns a 90-second silence threshold; `none` earns 90 minutes, because for a runner whose only signal is a commit, a false kill is far likelier than a missed stall.",
       "oneOf": [
-        { "const": "full", "description": "Per-tool-call events, including tool name and an argument signature. Loop detection is possible." },
-        { "const": "partial", "description": "Coarse progress only — phase transitions, not individual tool calls. Loop detection reports UNAVAILABLE rather than passing." },
-        { "const": "none", "description": "No event stream at all. Liveness is git-derived only." }
+        {
+          "const": "full",
+          "description": "Per-tool-call events, including tool name and an argument signature. Loop detection is possible."
+        },
+        {
+          "const": "partial",
+          "description": "Coarse progress only — phase transitions, not individual tool calls. Loop detection reports UNAVAILABLE rather than passing."
+        },
+        {
+          "const": "none",
+          "description": "No event stream at all. Liveness is git-derived only."
+        }
       ]
     },
 
     "rateLimitSignal": {
       "description": "GRADED, like streaming fidelity. Decides whether a blocked run can be PARKED with a dated resume (#56) or must be escalated because nothing can compute when it would resume. `structured` means a machine-readable reset time; `heuristic` means it can be inferred from a message; `none` means a rate limit is indistinguishable from any other failure.",
       "oneOf": [
-        { "const": "structured", "description": "A reset time arrives as data. Auto-resume is possible." },
-        { "const": "heuristic", "description": "A reset can be inferred from prose. Auto-resume is possible but approximate." },
-        { "const": "none", "description": "Rate limits are not distinguishable. A blocked run escalates." }
+        {
+          "const": "structured",
+          "description": "A reset time arrives as data. Auto-resume is possible."
+        },
+        {
+          "const": "heuristic",
+          "description": "A reset can be inferred from prose. Auto-resume is possible but approximate."
+        },
+        {
+          "const": "none",
+          "description": "Rate limits are not distinguishable. A blocked run escalates."
+        }
       ]
     },
 
     "stabilityTier": {
       "description": "How much the operator may depend on this runner. VISION §11 forbids a preview-tier runner from being LOAD-BEARING: routing will not select an `experimental` or `beta` runner unless some `stable` runner could take the identical work order (#64). The tier is the runner's own claim about itself, and is taken at its word.",
       "oneOf": [
-        { "const": "experimental", "description": "Preview. May change or break without notice." },
-        { "const": "beta", "description": "Preview. Stabilising, not yet guaranteed." },
-        { "const": "stable", "description": "GA. May be depended on, and may act as the fallback a preview runner needs." }
+        {
+          "const": "experimental",
+          "description": "Preview. May change or break without notice."
+        },
+        {
+          "const": "beta",
+          "description": "Preview. Stabilising, not yet guaranteed."
+        },
+        {
+          "const": "stable",
+          "description": "GA. May be depended on, and may act as the fallback a preview runner needs."
+        }
       ]
     },
 
@@ -120,7 +147,10 @@
   "allOf": [
     {
       "description": "A runner that cannot report cost cannot be trusted with a budget ceiling, so it must say so plainly rather than leaving the operator to infer it from a missing number.",
-      "if": { "properties": { "reportsCost": { "const": false } }, "required": ["reportsCost"] },
+      "if": {
+        "properties": { "reportsCost": { "const": false } },
+        "required": ["reportsCost"]
+      },
       "then": {
         "required": ["notes"],
         "properties": {

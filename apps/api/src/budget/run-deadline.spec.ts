@@ -14,7 +14,9 @@ describe('decideDeadline', () => {
   /** `minutes` after the run started. */
   const at = (minutes: number) => new Date(START.getTime() + minutes * 60_000);
 
-  const inputs = (overrides: Partial<Parameters<typeof decideDeadline>[0]> = {}) => ({
+  const inputs = (
+    overrides: Partial<Parameters<typeof decideDeadline>[0]> = {},
+  ) => ({
     startedAt: START,
     timeoutMinutes: 10,
     defaultTimeoutMinutes: 60,
@@ -96,8 +98,12 @@ describe('decideDeadline', () => {
       // A `0` reaching here means a misconfiguration, and the safe reading is
       // "no limit configured" rather than "every run is immediately overdue",
       // which would cancel the entire fleet on the first tick.
-      expect(decideDeadline(inputs({ timeoutMinutes: 0 }), at(5)).overdue).toBe(false);
-      expect(decideDeadline(inputs({ timeoutMinutes: -5 }), at(5)).overdue).toBe(false);
+      expect(decideDeadline(inputs({ timeoutMinutes: 0 }), at(5)).overdue).toBe(
+        false,
+      );
+      expect(
+        decideDeadline(inputs({ timeoutMinutes: -5 }), at(5)).overdue,
+      ).toBe(false);
     });
   });
 
@@ -110,21 +116,29 @@ describe('decideDeadline', () => {
     });
 
     it('with zero grace, fires immediately past the limit', () => {
-      expect(decideDeadline(inputs({ graceMinutes: 0 }), at(10)).overdue).toBe(false);
-      expect(decideDeadline(inputs({ graceMinutes: 0 }), at(10.1)).overdue).toBe(true);
+      expect(decideDeadline(inputs({ graceMinutes: 0 }), at(10)).overdue).toBe(
+        false,
+      );
+      expect(
+        decideDeadline(inputs({ graceMinutes: 0 }), at(10.1)).overdue,
+      ).toBe(true);
     });
 
     it('clamps a negative grace to zero rather than bringing the mark forward', () => {
       // A negative grace would make the control plane fire BEFORE the runner,
       // inverting the whole design.
-      expect(decideDeadline(inputs({ graceMinutes: -5 }), at(9)).overdue).toBe(false);
+      expect(decideDeadline(inputs({ graceMinutes: -5 }), at(9)).overdue).toBe(
+        false,
+      );
     });
 
     it('has a default long enough to clear a clean shutdown', () => {
       // Documented as clearing RUNNER_KILL_GRACE_MS (10s) plus a poll interval
       // (15s). If somebody shortens it below that, a runner shutting down
       // correctly starts getting cancelled mid-shutdown.
-      expect(DEFAULT_DEADLINE_GRACE_MINUTES * 60_000).toBeGreaterThan(10_000 + 15_000);
+      expect(DEFAULT_DEADLINE_GRACE_MINUTES * 60_000).toBeGreaterThan(
+        10_000 + 15_000,
+      );
     });
   });
 
@@ -136,11 +150,15 @@ describe('decideDeadline', () => {
       const verdict = decideDeadline(inputs({ timeoutMinutes: 10 }), at(15));
 
       expect(verdict.overdue).toBe(true);
-      expect(verdict.overdue === true && verdict.reason).toContain('15 minute(s)');
+      expect(verdict.overdue === true && verdict.reason).toContain(
+        '15 minute(s)',
+      );
       expect(verdict.overdue === true && verdict.reason).toContain(
         'ceiling of 10 minute(s)',
       );
-      expect(verdict.overdue === true && verdict.reason).toContain('2-minute grace');
+      expect(verdict.overdue === true && verdict.reason).toContain(
+        '2-minute grace',
+      );
     });
 
     it('says the runner did not stop it', () => {
@@ -149,7 +167,9 @@ describe('decideDeadline', () => {
       // plane stopped is one something decided to end.
       const verdict = decideDeadline(inputs(), at(30));
 
-      expect(verdict.overdue === true && verdict.reason).toContain('runner did not stop it');
+      expect(verdict.overdue === true && verdict.reason).toContain(
+        'runner did not stop it',
+      );
     });
 
     it('claims NOTHING about the cancellation', () => {
@@ -168,7 +188,10 @@ describe('decideDeadline', () => {
   });
 
   it('rounds elapsed minutes to one decimal rather than showing a float tail', () => {
-    const verdict = decideDeadline(inputs(), new Date(START.getTime() + 90_123));
+    const verdict = decideDeadline(
+      inputs(),
+      new Date(START.getTime() + 90_123),
+    );
 
     expect(verdict.elapsedMinutes).toBe(1.5);
   });

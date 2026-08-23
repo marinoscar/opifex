@@ -38,7 +38,12 @@ export class PushSubscriptionsService {
    */
   async subscribe(
     userId: string,
-    input: { endpoint: string; p256dh: string; auth: string; userAgent?: string },
+    input: {
+      endpoint: string;
+      p256dh: string;
+      auth: string;
+      userAgent?: string;
+    },
   ) {
     const subscription = await this.prisma.pushSubscription.upsert({
       where: { endpoint: input.endpoint },
@@ -121,7 +126,9 @@ export class PushSubscriptionsService {
       // would mean every future escalation counts a guaranteed failure and
       // the real devices' results get lost in the noise.
       await this.prisma.pushSubscription.deleteMany({ where: { id } });
-      this.logger.log(`Pruned a push subscription the push service reported gone`);
+      this.logger.log(
+        `Pruned a push subscription the push service reported gone`,
+      );
       return;
     }
 

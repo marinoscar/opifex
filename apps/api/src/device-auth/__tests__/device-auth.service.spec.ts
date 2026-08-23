@@ -28,9 +28,7 @@ describe('DeviceAuthService', () => {
       {
         role: {
           name: 'viewer',
-          rolePermissions: [
-            { permission: { name: 'user_settings:read' } },
-          ],
+          rolePermissions: [{ permission: { name: 'user_settings:read' } }],
         },
       },
     ],
@@ -154,15 +152,20 @@ describe('DeviceAuthService', () => {
       const call = mockPrisma.deviceCode.create.mock.calls[0][0];
       const expiresAt = call.data.expiresAt;
 
-      expect(new Date(expiresAt).getTime()).toBeGreaterThanOrEqual(beforeTime.getTime());
-      expect(new Date(expiresAt).getTime()).toBeLessThanOrEqual(afterTime.getTime());
+      expect(new Date(expiresAt).getTime()).toBeGreaterThanOrEqual(
+        beforeTime.getTime(),
+      );
+      expect(new Date(expiresAt).getTime()).toBeLessThanOrEqual(
+        afterTime.getTime(),
+      );
     });
   });
 
   describe('pollForToken', () => {
     // Use unique device codes for each test to avoid rate limiting issues
     let testCounter = 0;
-    const getUniqueDeviceCode = () => `device-code-${++testCounter}-${Date.now()}`;
+    const getUniqueDeviceCode = () =>
+      `device-code-${++testCounter}-${Date.now()}`;
 
     it('should throw authorization_pending when status is pending', async () => {
       const deviceCode = getUniqueDeviceCode();
@@ -373,12 +376,12 @@ describe('DeviceAuthService', () => {
     it('should throw NotFoundException for invalid user code', async () => {
       mockPrisma.deviceCode.findUnique.mockResolvedValue(null);
 
-      await expect(
-        service.getActivationInfo('INVALID-CODE'),
-      ).rejects.toThrow(NotFoundException);
-      await expect(
-        service.getActivationInfo('INVALID-CODE'),
-      ).rejects.toThrow('Invalid user code');
+      await expect(service.getActivationInfo('INVALID-CODE')).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(service.getActivationInfo('INVALID-CODE')).rejects.toThrow(
+        'Invalid user code',
+      );
     });
 
     it('should throw BadRequestException for expired code', async () => {

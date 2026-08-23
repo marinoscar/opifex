@@ -12,7 +12,7 @@ export interface TestUserOptions {
  */
 export async function loginAsTestUser(
   page: Page,
-  options: TestUserOptions
+  options: TestUserOptions,
 ): Promise<void> {
   await page.goto('/testing/login');
 
@@ -42,7 +42,7 @@ export async function loginAsTestUser(
  */
 export async function loginAsAdmin(
   page: Page,
-  email = 'admin@test.local'
+  email = 'admin@test.local',
 ): Promise<void> {
   await loginAsTestUser(page, { email, role: 'admin' });
 }
@@ -52,7 +52,7 @@ export async function loginAsAdmin(
  */
 export async function loginAsContributor(
   page: Page,
-  email = 'contributor@test.local'
+  email = 'contributor@test.local',
 ): Promise<void> {
   await loginAsTestUser(page, { email, role: 'contributor' });
 }
@@ -62,7 +62,7 @@ export async function loginAsContributor(
  */
 export async function loginAsViewer(
   page: Page,
-  email = 'viewer@test.local'
+  email = 'viewer@test.local',
 ): Promise<void> {
   await loginAsTestUser(page, { email, role: 'viewer' });
 }

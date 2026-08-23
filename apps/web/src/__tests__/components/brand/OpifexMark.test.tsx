@@ -25,7 +25,9 @@ describe('OpifexMark', () => {
 
   it('accepts a caller-supplied accessible name', () => {
     render(<OpifexMark title="Opifex home" />);
-    expect(screen.getByRole('img', { name: 'Opifex home' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: 'Opifex home' }),
+    ).toBeInTheDocument();
   });
 
   it('drops out of the accessibility tree entirely when decorative', () => {
@@ -34,7 +36,10 @@ describe('OpifexMark', () => {
     // leave an unnamed image in the tree, which is worse than either extreme.
     const { container } = render(<OpifexMark title={null} />);
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
-    expect(container.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(container.querySelector('svg')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    );
   });
 
   it('paints only in currentColor', () => {
@@ -63,7 +68,10 @@ describe('OpifexMark', () => {
     // The wrapper (a link or a button) owns focus; an SVG in the tab order is
     // an extra stop with nothing to activate.
     const { container } = render(<OpifexMark />);
-    expect(container.querySelector('svg')).toHaveAttribute('focusable', 'false');
+    expect(container.querySelector('svg')).toHaveAttribute(
+      'focusable',
+      'false',
+    );
   });
 });
 
@@ -78,7 +86,9 @@ describe('OpifexWordmark', () => {
     const svg = container.querySelector('svg')!;
     // Glyphs are filled, not stroked, so the `<text>` needs its own
     // `currentColor` — it does not inherit the mark group's stroke.
-    expect(svg.querySelector('text')?.getAttribute('fill')).toBe('currentColor');
+    expect(svg.querySelector('text')?.getAttribute('fill')).toBe(
+      'currentColor',
+    );
     expect(svg.outerHTML).not.toMatch(/#[0-9a-f]{3,8}\b/i);
   });
 

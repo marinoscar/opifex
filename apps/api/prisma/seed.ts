@@ -61,7 +61,10 @@ const PERMISSIONS = [
   { name: 'allowlist:write', description: 'Manage allowlisted emails' },
 
   // Storage management
-  { name: 'storage:read', description: 'Read object metadata, get download URLs' },
+  {
+    name: 'storage:read',
+    description: 'Read object metadata, get download URLs',
+  },
   { name: 'storage:write', description: 'Upload, update metadata' },
   { name: 'storage:delete_any', description: 'Admin: delete any object' },
 
@@ -73,14 +76,29 @@ const PERMISSIONS = [
   // set lives. Seeding is idempotent (upsert by name), so an existing
   // database picks these up on the next `npm run prisma:seed` without
   // disturbing what is already there.
-  { name: 'projects:read', description: 'View projects and watched repositories' },
-  { name: 'projects:write', description: 'Register and configure repositories' },
+  {
+    name: 'projects:read',
+    description: 'View projects and watched repositories',
+  },
+  {
+    name: 'projects:write',
+    description: 'Register and configure repositories',
+  },
   { name: 'runs:read', description: 'View runs and their event timelines' },
   { name: 'runs:cancel', description: 'Cancel a live run' },
-  { name: 'runs:write', description: 'Report run events (held by runners, not people)' },
+  {
+    name: 'runs:write',
+    description: 'Report run events (held by runners, not people)',
+  },
   { name: 'workorders:read', description: 'View work orders and the queue' },
-  { name: 'workorders:write', description: 'Hold, release, and clear quarantine' },
-  { name: 'runners:manage', description: 'Register runners and capability manifests' },
+  {
+    name: 'workorders:write',
+    description: 'Hold, release, and clear quarantine',
+  },
+  {
+    name: 'runners:manage',
+    description: 'Register runners and capability manifests',
+  },
   { name: 'escalations:read', description: 'View escalations' },
   { name: 'escalations:acknowledge', description: 'Acknowledge an escalation' },
 ] as const;

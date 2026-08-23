@@ -245,7 +245,10 @@ export type StatusTokenKey = RunStatus;
  * whole .27–1.0 luminance range usable, where the light set is squeezed into
  * .05–.16 by the 4.5:1 floor against a near-white page.
  */
-export const statusTokens: Record<ThemeModeKey, Record<StatusTokenKey, StatusToken>> = {
+export const statusTokens: Record<
+  ThemeModeKey,
+  Record<StatusTokenKey, StatusToken>
+> = {
   light: {
     running: { fg: '#0E7490', surface: '#ECFEFF' },
     succeeded: { fg: '#14532D', surface: '#F0FDF4' },
@@ -282,12 +285,13 @@ export const statusTokens: Record<ThemeModeKey, Record<StatusTokenKey, StatusTok
  * exists to cover (a play glyph reading "Running" against an hourglass
  * reading "Stalled"). Recorded rather than silently omitted.
  */
-export const CONFUSABLE_STATUS_GROUPS: readonly (readonly StatusTokenKey[])[] = [
-  ['succeeded', 'running'],
-  ['failed', 'quarantined', 'stalled'],
-  ['succeeded', 'stalled'],
-  ['succeeded', 'failed'],
-];
+export const CONFUSABLE_STATUS_GROUPS: readonly (readonly StatusTokenKey[])[] =
+  [
+    ['succeeded', 'running'],
+    ['failed', 'quarantined', 'stalled'],
+    ['succeeded', 'stalled'],
+    ['succeeded', 'failed'],
+  ];
 
 /**
  * Minimum WCAG relative-luminance difference required between any two statuses
@@ -319,7 +323,8 @@ export const elevation = {
     /** Cards, panels, the metric tiles. */
     card: '0 1px 2px rgba(15, 23, 42, 0.06), 0 2px 8px rgba(15, 23, 42, 0.08)',
     /** Menus, popovers, the bottom-nav overflow sheet. */
-    overlay: '0 4px 12px rgba(15, 23, 42, 0.12), 0 12px 32px rgba(15, 23, 42, 0.12)',
+    overlay:
+      '0 4px 12px rgba(15, 23, 42, 0.12), 0 12px 32px rgba(15, 23, 42, 0.12)',
   },
   dark: {
     card: '0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.32)',

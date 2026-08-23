@@ -2,7 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { GitBranchService } from '../github/git/git-branch.service';
 import { GitHubReadService } from '../github/read/github-read.service';
-import { GitHubWriteService, type WriteResult } from '../github/write/github-write.service';
+import {
+  GitHubWriteService,
+  type WriteResult,
+} from '../github/write/github-write.service';
 import {
   EXECUTION_RECORD_PATH,
   executionRecordCommitMessage,
@@ -61,14 +64,21 @@ export class WorkOrderRecordsService {
 
   async write(input: WriteRecordsInput): Promise<RecordsResult> {
     const { workOrder } = input;
-    const repo = { owner: workOrder.repositoryOwner, name: workOrder.repositoryName };
+    const repo = {
+      owner: workOrder.repositoryOwner,
+      name: workOrder.repositoryName,
+    };
 
     // ONE serialization. Both records carry these exact bytes, which is what
     // makes "verifiably identical" structural rather than a property somebody
     // has to keep testing.
     const document = serializeWorkOrder(workOrder);
 
-    const authorization = await this.writeAuthorization(repo, workOrder, document);
+    const authorization = await this.writeAuthorization(
+      repo,
+      workOrder,
+      document,
+    );
 
     const execution = await this.branches.createFactoryBranch({
       repo,
@@ -138,7 +148,10 @@ export class WorkOrderRecordsService {
     repo: { owner: string; name: string },
     workOrder: GeneratedWorkOrder,
   ): Promise<{ url: string; action: WriteResult['action'] } | null> {
-    const comments = await this.reads.listIssueComments(repo, workOrder.issueNumber);
+    const comments = await this.reads.listIssueComments(
+      repo,
+      workOrder.issueNumber,
+    );
 
     const match = comments.find(
       (comment) =>
@@ -151,7 +164,10 @@ export class WorkOrderRecordsService {
     );
 
     if (!match) return null;
-    return { url: match.url, action: 'comment.authorization-record' as WriteResult['action'] };
+    return {
+      url: match.url,
+      action: 'comment.authorization-record' as WriteResult['action'],
+    };
   }
 }
 

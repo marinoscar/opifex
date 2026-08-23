@@ -71,7 +71,8 @@ const MUST_QUOTE = /["\r\n,]/;
  */
 export function isFormulaText(text: string): boolean {
   if (text.length === 0) return false;
-  if (!(CSV_FORMULA_PREFIXES as readonly string[]).includes(text[0])) return false;
+  if (!(CSV_FORMULA_PREFIXES as readonly string[]).includes(text[0]))
+    return false;
   // `-5` / `+1.5e3` are numbers, not formulas. Neutralizing them would corrupt
   // every numeric column that can go negative.
   return !NUMERIC_TEXT.test(text);
@@ -92,10 +93,13 @@ export function neutralizeFormula(text: string): string {
  *
  * Numbers are stringified and never neutralized (see the module note).
  */
-export function escapeCsvField(value: string | number | null | undefined): string {
+export function escapeCsvField(
+  value: string | number | null | undefined,
+): string {
   if (value === null || value === undefined) return '';
 
-  const text = typeof value === 'number' ? String(value) : neutralizeFormula(value);
+  const text =
+    typeof value === 'number' ? String(value) : neutralizeFormula(value);
 
   // Leading/trailing whitespace is quoted too: it is semantically meaningful and
   // several parsers trim unquoted fields.
@@ -106,7 +110,9 @@ export function escapeCsvField(value: string | number | null | undefined): strin
 }
 
 /** One record → one CSV line (no trailing separator). */
-export function toCsvRow(fields: readonly (string | number | null | undefined)[]): string {
+export function toCsvRow(
+  fields: readonly (string | number | null | undefined)[],
+): string {
   return fields.map(escapeCsvField).join(CSV_FIELD_SEPARATOR);
 }
 

@@ -42,7 +42,11 @@ describe('RateLimitService', () => {
       );
 
       const snapshot = service.snapshot();
-      expect(snapshot).toMatchObject({ resource: 'core', limit: 5000, remaining: 4987 });
+      expect(snapshot).toMatchObject({
+        resource: 'core',
+        limit: 5000,
+        remaining: 4987,
+      });
       expect(snapshot!.resetAt.getTime()).toBe(Number(reset) * 1000);
     });
 
@@ -156,7 +160,10 @@ describe('RateLimitService', () => {
       service.recordConditionalHit();
       service.recordConditionalMiss();
 
-      expect(service.report()).toMatchObject({ conditionalHits: 2, conditionalMisses: 1 });
+      expect(service.report()).toMatchObject({
+        conditionalHits: 2,
+        conditionalMisses: 1,
+      });
     });
   });
 

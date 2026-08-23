@@ -1,5 +1,9 @@
 import { test as base, Page } from '@playwright/test';
-import { loginAsAdmin, loginAsContributor, loginAsViewer } from '../helpers/auth.helper';
+import {
+  loginAsAdmin,
+  loginAsContributor,
+  loginAsViewer,
+} from '../helpers/auth.helper';
 
 /**
  * Extended test fixtures with pre-authenticated pages.

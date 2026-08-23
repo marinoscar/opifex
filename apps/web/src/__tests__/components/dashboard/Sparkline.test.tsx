@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { screen } from '@testing-library/react';
 import { render } from '../../utils/test-utils';
-import { Sparkline, summarizeTrend } from '../../../components/dashboard/Sparkline';
+import {
+  Sparkline,
+  summarizeTrend,
+} from '../../../components/dashboard/Sparkline';
 
 describe('Sparkline', () => {
   /**
@@ -19,7 +22,9 @@ describe('Sparkline', () => {
     });
 
     it('renders nothing for a single point', () => {
-      const { container } = render(<Sparkline values={[42]} ariaLabel="Trend" />);
+      const { container } = render(
+        <Sparkline values={[42]} ariaLabel="Trend" />,
+      );
       expect(container).toBeEmptyDOMElement();
     });
 
@@ -99,8 +104,12 @@ describe('Sparkline', () => {
       render(<Sparkline values={[1, 2]} ariaLabel="Trend" />);
       const svg = screen.getByRole('img');
 
-      expect(svg.querySelector('polyline')?.getAttribute('stroke')).toBe('currentColor');
-      expect(svg.querySelector('circle')?.getAttribute('fill')).toBe('currentColor');
+      expect(svg.querySelector('polyline')?.getAttribute('stroke')).toBe(
+        'currentColor',
+      );
+      expect(svg.querySelector('circle')?.getAttribute('fill')).toBe(
+        'currentColor',
+      );
       expect(svg.innerHTML).not.toMatch(/#[0-9a-f]{3,6}/i);
     });
   });

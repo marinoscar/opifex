@@ -5,7 +5,10 @@ interface LoadingSpinnerProps {
   size?: number;
 }
 
-export function LoadingSpinner({ fullScreen = false, size = 40 }: LoadingSpinnerProps) {
+export function LoadingSpinner({
+  fullScreen = false,
+  size = 40,
+}: LoadingSpinnerProps) {
   if (fullScreen) {
     return (
       <Box

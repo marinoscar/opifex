@@ -1,7 +1,10 @@
 import { EscalationsService } from '../escalations/escalations.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { RunEventsService, type IngestResult } from '../run-events/run-events.service';
+import {
+  RunEventsService,
+  type IngestResult,
+} from '../run-events/run-events.service';
 import { SILENCE_THRESHOLDS_MS } from '../watchdog/silent-detection';
 import { FakeRunner } from './fake-runner';
 import {
@@ -10,7 +13,12 @@ import {
   POLL_INTERVAL_MS,
   RunPollerService,
 } from './run-poller.service';
-import type { RunHandle, Runner, RunPollResult, WorkOrderSpec } from './runner.types';
+import type {
+  RunHandle,
+  Runner,
+  RunPollResult,
+  WorkOrderSpec,
+} from './runner.types';
 
 /**
  * Driven by the real `FakeRunner` through the real seam.
@@ -33,7 +41,9 @@ describe('RunPollerService', () => {
   let updateMany: jest.Mock;
   let poller: RunPollerService;
 
-  const workOrder = (overrides: Partial<WorkOrderSpec> = {}): WorkOrderSpec => ({
+  const workOrder = (
+    overrides: Partial<WorkOrderSpec> = {},
+  ): WorkOrderSpec => ({
     identity: 'wo_acme-widgets_42_abc1234_a1',
     runId: RUN_ID,
     repository: { owner: 'acme', name: 'widgets' },
@@ -72,7 +82,10 @@ describe('RunPollerService', () => {
     // every unrelated test quietly exercising an overrun.
     findUnique = jest.fn().mockResolvedValue({
       costUsd: null,
-      workOrder: { identity: 'wo_acme-widgets_42_abc1234_a1', budgetCeilingUsd: null },
+      workOrder: {
+        identity: 'wo_acme-widgets_42_abc1234_a1',
+        budgetCeilingUsd: null,
+      },
     });
 
     const prisma = {
@@ -106,7 +119,9 @@ describe('RunPollerService', () => {
       submit: jest.fn(),
       cancel: jest.fn(),
       capabilities: jest.fn(),
-      poll: jest.fn(async () => queue.shift() ?? { status: 'running', events: [] }),
+      poll: jest.fn(
+        async () => queue.shift() ?? { status: 'running', events: [] },
+      ),
     } as unknown as Runner;
   }
 
@@ -118,7 +133,7 @@ describe('RunPollerService', () => {
   });
 
   describe('carrying events into ingestion', () => {
-    it('hands a real runner\'s events to ingestion', async () => {
+    it("hands a real runner's events to ingestion", async () => {
       // The whole point. Before this, `poll` drained into memory and nothing
       // called it, so loop detection compared signatures it never received and
       // the watchdog measured age from a lastEventAt that never moved.
@@ -132,14 +147,21 @@ describe('RunPollerService', () => {
       const [runId, events] = ingest.mock.calls[0];
       expect(runId).toBe(RUN_ID);
       expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({ type: 'run.started', source: 'runner-reported' });
+      expect(events[0]).toMatchObject({
+        type: 'run.started',
+        source: 'runner-reported',
+      });
       expect(result.eventsIngested).toBe(1);
     });
 
     it('does not call ingestion when there is nothing to carry', async () => {
       // Ingestion rejects an empty batch outright, so an unconditional call
       // would turn a quiet run into an error on every tick.
-      poller.track(RUN_ID, stubRunner({ status: 'running', events: [] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'running', events: [] }),
+        handle(),
+      );
 
       await poller.tick();
 
@@ -151,7 +173,11 @@ describe('RunPollerService', () => {
       // that re-returning a delivered event is expected. A poller that treated
       // that as an error would alarm on its own designed behaviour.
       ingest.mockResolvedValue({ accepted: 0, duplicates: 3 });
-      poller.track(RUN_ID, stubRunner({ status: 'running', events: [event()] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'running', events: [event()] }),
+        handle(),
+      );
 
       const result = await poller.tick();
 
@@ -173,19 +199,30 @@ describe('RunPollerService', () => {
       expect(ingest).toHaveBeenCalledTimes(2);
     });
 
-    it.each(['succeeded', 'failed'] as const)('stops polling once a run has %s', async (status) => {
-      poller.track(RUN_ID, stubRunner({ status, events: [event()] }), handle());
+    it.each(['succeeded', 'failed'] as const)(
+      'stops polling once a run has %s',
+      async (status) => {
+        poller.track(
+          RUN_ID,
+          stubRunner({ status, events: [event()] }),
+          handle(),
+        );
 
-      await poller.tick();
+        await poller.tick();
 
-      expect(poller.trackedCount()).toBe(0);
-    });
+        expect(poller.trackedCount()).toBe(0);
+      },
+    );
 
     it('leaves the run status to ingestion, never writing it itself', async () => {
       // The events are the record of what happened. A second writer deciding
       // the same fact from a different input is how two sources of truth
       // appear, and #53 already advances the run from its events.
-      poller.track(RUN_ID, stubRunner({ status: 'succeeded', events: [event()] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'succeeded', events: [event()] }),
+        handle(),
+      );
 
       await poller.tick();
 
@@ -198,7 +235,11 @@ describe('RunPollerService', () => {
       // A runner that lost the run may still hand back its last events on the
       // way out, and throwing those away would lose the only record of how it
       // ended.
-      poller.track(RUN_ID, stubRunner({ status: 'unknown', events: [event()] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'unknown', events: [event()] }),
+        handle(),
+      );
 
       const result = await poller.tick();
 
@@ -210,7 +251,11 @@ describe('RunPollerService', () => {
       // VISION §9's three failure modes stay distinct only if the control
       // plane refuses to guess between them. The child may genuinely still be
       // running; what is true is that nothing here can see it.
-      poller.track(RUN_ID, stubRunner({ status: 'unknown', events: [] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'unknown', events: [] }),
+        handle(),
+      );
 
       await poller.tick();
 
@@ -225,7 +270,11 @@ describe('RunPollerService', () => {
       // A run that finished between the poll and this write must stay
       // finished. The guard is in the WHERE clause rather than a read-then-
       // compare, so a concurrent writer cannot slip between them.
-      poller.track(RUN_ID, stubRunner({ status: 'unknown', events: [] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'unknown', events: [] }),
+        handle(),
+      );
 
       await poller.tick();
 
@@ -235,7 +284,11 @@ describe('RunPollerService', () => {
     });
 
     it('stops polling a lost run', async () => {
-      poller.track(RUN_ID, stubRunner({ status: 'unknown', events: [] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'unknown', events: [] }),
+        handle(),
+      );
 
       await poller.tick();
 
@@ -245,7 +298,11 @@ describe('RunPollerService', () => {
     it('says in the reason that nobody is watching', async () => {
       // #66 and the cockpit both read attentionReason, and a status with no
       // explanation sends an operator hunting rather than acting.
-      poller.track(RUN_ID, stubRunner({ status: 'unknown', events: [] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'unknown', events: [] }),
+        handle(),
+      );
       await poller.tick();
 
       expect(LOST_HANDLE_REASON).toContain('Nothing is polling this run');
@@ -258,19 +315,29 @@ describe('RunPollerService', () => {
       // Almost always an API restart: the handles were in memory and the child
       // was detached, so the run may still be executing while nothing can see
       // it.
-      findMany.mockResolvedValue([{ id: 'orphan-run', status: 'running', attentionReason: null }]);
+      findMany.mockResolvedValue([
+        { id: 'orphan-run', status: 'running', attentionReason: null },
+      ]);
 
       const result = await poller.tick();
 
       expect(result.lost).toBe(1);
       expect(updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ id: 'orphan-run' }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'orphan-run' }),
+        }),
       );
     });
 
     it('leaves a tracked run alone', async () => {
-      findMany.mockResolvedValue([{ id: RUN_ID, status: 'running', attentionReason: null }]);
-      poller.track(RUN_ID, stubRunner({ status: 'running', events: [] }), handle());
+      findMany.mockResolvedValue([
+        { id: RUN_ID, status: 'running', attentionReason: null },
+      ]);
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'running', events: [] }),
+        handle(),
+      );
 
       const result = await poller.tick();
 
@@ -283,7 +350,11 @@ describe('RunPollerService', () => {
       // updatedAt and making the cockpit look like something is happening when
       // nothing is.
       findMany.mockResolvedValue([
-        { id: 'orphan-run', status: 'stalled', attentionReason: LOST_HANDLE_REASON },
+        {
+          id: 'orphan-run',
+          status: 'stalled',
+          attentionReason: LOST_HANDLE_REASON,
+        },
       ]);
 
       const result = await poller.tick();
@@ -296,7 +367,11 @@ describe('RunPollerService', () => {
       // A run the watchdog stalled for silence is a different fact from one
       // nothing is watching, and collapsing them would hide the second.
       findMany.mockResolvedValue([
-        { id: 'orphan-run', status: 'stalled', attentionReason: 'Silent for 4 minutes' },
+        {
+          id: 'orphan-run',
+          status: 'stalled',
+          attentionReason: 'Silent for 4 minutes',
+        },
       ]);
 
       const result = await poller.tick();
@@ -317,7 +392,11 @@ describe('RunPollerService', () => {
       } as unknown as Runner;
 
       poller.track('bad-run', exploding, handle({ externalId: 'bad' }));
-      poller.track(RUN_ID, stubRunner({ status: 'running', events: [event()] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'running', events: [event()] }),
+        handle(),
+      );
 
       const result = await poller.tick();
 
@@ -330,7 +409,11 @@ describe('RunPollerService', () => {
       // safe, so leaving the run tracked is the correct recovery: the events
       // come back on the next poll rather than being lost.
       ingest.mockRejectedValue(new Error('database is down'));
-      poller.track(RUN_ID, stubRunner({ status: 'running', events: [event()] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'running', events: [event()] }),
+        handle(),
+      );
 
       const result = await poller.tick();
 
@@ -344,7 +427,11 @@ describe('RunPollerService', () => {
       // under Node's default policy — and a dead process is a dead factory,
       // the exact silent failure this system exists to eliminate.
       findMany.mockRejectedValue(new Error('database is down'));
-      poller.track(RUN_ID, stubRunner({ status: 'running', events: [event()] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'running', events: [event()] }),
+        handle(),
+      );
 
       const result = await poller.tick();
 
@@ -407,7 +494,10 @@ describe('RunPollerService', () => {
       return {
         id: RUN_ID,
         startedAt,
-        workOrder: { identity: 'wo_acme-widgets_42_abc1234_a1', wallClockTimeoutMinutes },
+        workOrder: {
+          identity: 'wo_acme-widgets_42_abc1234_a1',
+          wallClockTimeoutMinutes,
+        },
       };
     }
 
@@ -424,7 +514,9 @@ describe('RunPollerService', () => {
       expect(runner.cancel).toHaveBeenCalledWith(handle());
       expect(updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: { attentionReason: expect.stringContaining('ceiling of 10 minute(s)') },
+          data: {
+            attentionReason: expect.stringContaining('ceiling of 10 minute(s)'),
+          },
         }),
       );
     });
@@ -483,7 +575,9 @@ describe('RunPollerService', () => {
       // cancel would lose exactly this one.
       findMany.mockResolvedValue([liveRun(HOUR_AGO, 10)]);
       const runner = stubRunner();
-      (runner.cancel as jest.Mock).mockRejectedValue(new Error('runner is wedged'));
+      (runner.cancel as jest.Mock).mockRejectedValue(
+        new Error('runner is wedged'),
+      );
       poller.track(RUN_ID, runner, handle());
 
       const result = await poller.tick();
@@ -494,7 +588,8 @@ describe('RunPollerService', () => {
       // act on -- reporting a cancellation that did not happen would be the
       // one failure mode this whole pass is built to avoid.
       const written = updateMany.mock.calls.map(
-        ([arg]) => (arg as { data: { attentionReason: string } }).data.attentionReason,
+        ([arg]) =>
+          (arg as { data: { attentionReason: string } }).data.attentionReason,
       );
       expect(written.at(-1)).toContain('may STILL BE RUNNING');
       expect(written.at(-1)).toContain('runner refused');
@@ -513,7 +608,8 @@ describe('RunPollerService', () => {
       await poller.tick();
 
       const written = updateMany.mock.calls.map(
-        ([arg]) => (arg as { data: { attentionReason: string } }).data.attentionReason,
+        ([arg]) =>
+          (arg as { data: { attentionReason: string } }).data.attentionReason,
       );
 
       expect(written).toHaveLength(2);
@@ -525,7 +621,9 @@ describe('RunPollerService', () => {
     it('does not throw when the runner refuses to cancel', async () => {
       findMany.mockResolvedValue([liveRun(HOUR_AGO, 10)]);
       const runner = stubRunner();
-      (runner.cancel as jest.Mock).mockRejectedValue(new Error('runner is wedged'));
+      (runner.cancel as jest.Mock).mockRejectedValue(
+        new Error('runner is wedged'),
+      );
       poller.track(RUN_ID, runner, handle());
 
       await expect(poller.tick()).resolves.toBeDefined();
@@ -556,14 +654,21 @@ describe('RunPollerService', () => {
     function costed(costUsd: number | null, budgetCeilingUsd: number | null) {
       findUnique.mockResolvedValue({
         costUsd,
-        workOrder: { identity: 'wo_acme-widgets_42_abc1234_a1', budgetCeilingUsd },
+        workOrder: {
+          identity: 'wo_acme-widgets_42_abc1234_a1',
+          budgetCeilingUsd,
+        },
       });
     }
 
     /** Every `attentionReason` written, in order. */
     function written(): string[] {
       return updateMany.mock.calls
-        .map(([arg]) => (arg as { data: { attentionReason?: string } }).data.attentionReason)
+        .map(
+          ([arg]) =>
+            (arg as { data: { attentionReason?: string } }).data
+              .attentionReason,
+        )
         .filter((reason): reason is string => typeof reason === 'string');
     }
 
@@ -594,14 +699,20 @@ describe('RunPollerService', () => {
 
       expect(result.overBudget).toBe(1);
       expect(runner.cancel).not.toHaveBeenCalled();
-      expect(written().at(-1)).toContain('already finished, so nothing could be stopped');
+      expect(written().at(-1)).toContain(
+        'already finished, so nothing could be stopped',
+      );
       expect(written().at(-1)).not.toContain('cancelled it');
     });
 
     it('names both figures and the gap', async () => {
       // #65's first acceptance criterion, at the layer that persists it.
       costed(40, 5);
-      poller.track(RUN_ID, stubRunner({ status: 'succeeded', events: [event()] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'succeeded', events: [event()] }),
+        handle(),
+      );
 
       await poller.tick();
 
@@ -615,12 +726,20 @@ describe('RunPollerService', () => {
       // ever raised it. An operator who learns a $5 ceiling was passed by $35
       // can stop it being a habit.
       costed(40, 5);
-      poller.track(RUN_ID, stubRunner({ status: 'succeeded', events: [event()] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'succeeded', events: [event()] }),
+        handle(),
+      );
 
       await poller.tick();
 
       expect(raiseFrom).toHaveBeenCalledWith([
-        expect.objectContaining({ type: 'escalate', runId: RUN_ID, escalationKind: 'budget_exceeded' }),
+        expect.objectContaining({
+          type: 'escalate',
+          runId: RUN_ID,
+          escalationKind: 'budget_exceeded',
+        }),
       ]);
     });
 
@@ -638,7 +757,11 @@ describe('RunPollerService', () => {
 
     it('leaves a run whose order names no ceiling alone', async () => {
       costed(400, null);
-      poller.track(RUN_ID, stubRunner({ status: 'succeeded', events: [event()] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'succeeded', events: [event()] }),
+        handle(),
+      );
 
       expect((await poller.tick()).overBudget).toBe(0);
     });
@@ -647,7 +770,11 @@ describe('RunPollerService', () => {
       // Null is unknown, not zero. Judging an unknown against a ceiling would
       // either flag every silent run or clear it, and both are guesses.
       costed(null, 5);
-      poller.track(RUN_ID, stubRunner({ status: 'succeeded', events: [event()] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'succeeded', events: [event()] }),
+        handle(),
+      );
 
       expect((await poller.tick()).overBudget).toBe(0);
     });
@@ -670,7 +797,9 @@ describe('RunPollerService', () => {
     it('says it may still be spending when the runner refuses to cancel', async () => {
       costed(40, 5);
       const runner = stubRunner({ status: 'running', events: [event()] });
-      (runner.cancel as jest.Mock).mockRejectedValue(new Error('runner is wedged'));
+      (runner.cancel as jest.Mock).mockRejectedValue(
+        new Error('runner is wedged'),
+      );
       poller.track(RUN_ID, runner, handle());
 
       await poller.tick();
@@ -684,7 +813,11 @@ describe('RunPollerService', () => {
       // not discard the events already carried, nor stop the poller reaching
       // the rest of the fleet.
       findUnique.mockRejectedValue(new Error('database is down'));
-      poller.track(RUN_ID, stubRunner({ status: 'running', events: [event()] }), handle());
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'running', events: [event()] }),
+        handle(),
+      );
 
       const result = await poller.tick();
 

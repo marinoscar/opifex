@@ -14,7 +14,7 @@ import { ConfigService } from '@nestjs/config';
 export class TestEnvironmentGuard implements CanActivate {
   constructor(private readonly configService: ConfigService) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  canActivate(_context: ExecutionContext): boolean {
     const nodeEnv = this.configService.get<string>('nodeEnv');
 
     if (nodeEnv === 'production') {

@@ -89,7 +89,8 @@ export function DataTableFilterBar<Row>({
   // trusted.
   const activeDraft = useMemo<DataTableFilter | null>(() => {
     if (filterable.length === 0) return null;
-    if (draft && filterable.some((column) => column.id === draft.columnId)) return draft;
+    if (draft && filterable.some((column) => column.id === draft.columnId))
+      return draft;
     return draftFilterFor(filterable[0]);
   }, [draft, filterable]);
 
@@ -148,7 +149,9 @@ export function DataTableFilterBar<Row>({
         // The visible word "Filters" is preserved inside the accessible name
         // (WCAG 2.5.3), with the badge's count spelled out for screen readers,
         // which cannot see a superscript bubble.
-        aria-label={filters.length > 0 ? `Filters (${filters.length} active)` : 'Filters'}
+        aria-label={
+          filters.length > 0 ? `Filters (${filters.length} active)` : 'Filters'
+        }
         data-testid="datatable-filter-toggle"
         sx={{ minHeight: 44 }}
       >
@@ -249,7 +252,9 @@ export function DataTableFilterBar<Row>({
           </AppBar>
           <Divider />
 
-          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <DialogContent
+            sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}
+          >
             {editor}
 
             {filters.length > 0 && (

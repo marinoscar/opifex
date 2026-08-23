@@ -16,7 +16,10 @@ import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Box, ButtonBase, Typography } from '@mui/material';
 import type { DataTableColumn } from '../types';
-import { extractColumnValue, formatColumnValue } from '../desktop/columnAdapter';
+import {
+  extractColumnValue,
+  formatColumnValue,
+} from '../desktop/columnAdapter';
 
 /** Lines shown before a `truncate` value is clamped. */
 const CLAMP_LINES = 2;
@@ -102,13 +105,19 @@ export function ExpandableValue({ text, children }: ExpandableValueProps) {
 // ---------------------------------------------------------------------------
 
 /** The visual content of one column's cell — `render` wins, `value` is the fallback. */
-export function columnContent<Row>(column: DataTableColumn<Row>, row: Row): ReactNode {
+export function columnContent<Row>(
+  column: DataTableColumn<Row>,
+  row: Row,
+): ReactNode {
   if (column.render) return column.render(row);
   return formatColumnValue(extractColumnValue(column, row));
 }
 
 /** The plain-text form of a column's cell, for aria labels and clamp toggles. */
-export function columnText<Row>(column: DataTableColumn<Row>, row: Row): string {
+export function columnText<Row>(
+  column: DataTableColumn<Row>,
+  row: Row,
+): string {
   return formatColumnValue(extractColumnValue(column, row));
 }
 

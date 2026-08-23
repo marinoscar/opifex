@@ -91,7 +91,10 @@ export function encodeFilter(filter: DataTableFilter): string {
   return `${head}:${body}`;
 }
 
-function coerceScalar(raw: string, filterType: string | undefined): string | number | boolean {
+function coerceScalar(
+  raw: string,
+  filterType: string | undefined,
+): string | number | boolean {
   if (filterType === 'number') {
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? parsed : raw;
@@ -135,8 +138,7 @@ export function decodeFilter<Row>(
   } else if (arity === 2 || arity === 'many') {
     const parts = rawValue === '' ? [] : rawValue.split(',');
     value = parts.map((part) => coerceScalar(safeDecode(part), filterType)) as (
-      | string
-      | number
+      string | number
     )[];
   } else {
     value = coerceScalar(safeDecode(rawValue), filterType);
@@ -197,7 +199,8 @@ export function writeDataTableUrlState<Row>(
 
   if (state.filters !== undefined) {
     next.delete(filterParam);
-    for (const filter of state.filters) next.append(filterParam, encodeFilter(filter));
+    for (const filter of state.filters)
+      next.append(filterParam, encodeFilter(filter));
   }
 
   if (state.search !== undefined) {

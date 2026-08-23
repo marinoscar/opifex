@@ -1,5 +1,9 @@
 import { RBAC_EXTENSION_KEY } from '../auth/decorators/auth.decorator';
-import { applyRbacDocs, describeRequirements, REQUIREMENTS_MARKER } from './rbac-docs';
+import {
+  applyRbacDocs,
+  describeRequirements,
+  REQUIREMENTS_MARKER,
+} from './rbac-docs';
 import { DocOperation, MutableDocument } from './types';
 
 function operation(rbac?: unknown, description?: string): DocOperation {
@@ -18,14 +22,22 @@ describe('describeRequirements', () => {
     const line = describeRequirements(
       operation({ authenticated: true, roles: [], permissions: [] }),
     );
-    expect(line).toBe(`${REQUIREMENTS_MARKER} authentication only — any signed-in user may call this.`);
+    expect(line).toBe(
+      `${REQUIREMENTS_MARKER} authentication only — any signed-in user may call this.`,
+    );
   });
 
   it('names a single permission', () => {
     const line = describeRequirements(
-      operation({ authenticated: true, roles: [], permissions: ['users:read'] }),
+      operation({
+        authenticated: true,
+        roles: [],
+        permissions: ['users:read'],
+      }),
     );
-    expect(line).toBe(`${REQUIREMENTS_MARKER} authentication, plus permission \`users:read\`.`);
+    expect(line).toBe(
+      `${REQUIREMENTS_MARKER} authentication, plus permission \`users:read\`.`,
+    );
   });
 
   it('joins multiple permissions with "and", because the guard requires all of them', () => {
@@ -41,7 +53,11 @@ describe('describeRequirements', () => {
 
   it('presents multiple roles as alternatives, because the guard requires any of them', () => {
     const line = describeRequirements(
-      operation({ authenticated: true, roles: ['admin', 'contributor'], permissions: [] }),
+      operation({
+        authenticated: true,
+        roles: ['admin', 'contributor'],
+        permissions: [],
+      }),
     );
     expect(line).toContain('any of the system roles `admin`, `contributor`');
   });
@@ -78,23 +94,32 @@ describe('applyRbacDocs', () => {
 
   it('appends to a hand-written description instead of replacing it', () => {
     const doc = documentWith(
-      operation({ authenticated: true, roles: [], permissions: ['users:read'] }, 'Lists things.'),
+      operation(
+        { authenticated: true, roles: [], permissions: ['users:read'] },
+        'Lists things.',
+      ),
     );
     applyRbacDocs(doc);
 
-    const description = (doc.paths!['/api/thing'] as { get: DocOperation }).get.description!;
+    const description = (doc.paths!['/api/thing'] as { get: DocOperation }).get
+      .description!;
     expect(description).toContain('Lists things.');
     expect(description).toContain('`users:read`');
   });
 
   it('is idempotent, so re-running never stacks duplicate blocks', () => {
     const doc = documentWith(
-      operation({ authenticated: true, roles: [], permissions: ['users:read'] }),
+      operation({
+        authenticated: true,
+        roles: [],
+        permissions: ['users:read'],
+      }),
     );
     applyRbacDocs(doc);
     applyRbacDocs(doc);
 
-    const description = (doc.paths!['/api/thing'] as { get: DocOperation }).get.description!;
+    const description = (doc.paths!['/api/thing'] as { get: DocOperation }).get
+      .description!;
     expect(description.match(/\*\*Requires:\*\*/g)).toHaveLength(1);
   });
 
@@ -108,8 +133,8 @@ describe('applyRbacDocs', () => {
       },
     };
     expect(() => applyRbacDocs(doc)).not.toThrow();
-    expect((doc.paths!['/api/thing'] as Record<string, unknown>).parameters).toEqual([
-      { name: 'id', in: 'path' },
-    ]);
+    expect(
+      (doc.paths!['/api/thing'] as Record<string, unknown>).parameters,
+    ).toEqual([{ name: 'id', in: 'path' }]);
   });
 });

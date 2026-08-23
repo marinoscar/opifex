@@ -3,7 +3,11 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { TestAuthService } from './test-auth.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { createMockPrismaService, MockPrismaService, mockPrismaTransaction } from '../../test/mocks/prisma.mock';
+import {
+  createMockPrismaService,
+  MockPrismaService,
+  mockPrismaTransaction,
+} from '../../test/mocks/prisma.mock';
 import { TestLoginDto } from './dto/test-login.dto';
 
 describe('TestAuthService', () => {
@@ -44,14 +48,16 @@ describe('TestAuthService', () => {
 
     // Setup transaction mock to handle both array and callback forms
     mockPrismaTransaction.call({ $transaction: mockPrisma.$transaction });
-    (mockPrisma.$transaction as jest.Mock).mockImplementation(async (arg: any) => {
-      if (typeof arg === 'function') {
-        return arg(mockPrisma);
-      } else if (Array.isArray(arg)) {
-        return Promise.all(arg);
-      }
-      return arg;
-    });
+    (mockPrisma.$transaction as jest.Mock).mockImplementation(
+      async (arg: any) => {
+        if (typeof arg === 'function') {
+          return arg(mockPrisma);
+        } else if (Array.isArray(arg)) {
+          return Promise.all(arg);
+        }
+        return arg;
+      },
+    );
 
     mockJwtService = {
       sign: jest.fn().mockReturnValue('mock-jwt-token'),
@@ -452,7 +458,9 @@ describe('TestAuthService', () => {
       mockPrisma.user.findUnique.mockResolvedValue(null);
       mockPrisma.role.findUnique.mockResolvedValue(null); // Role not found
 
-      await expect(service.loginAsTestUser(dto)).rejects.toThrow('Role viewer not found');
+      await expect(service.loginAsTestUser(dto)).rejects.toThrow(
+        'Role viewer not found',
+      );
     });
 
     it('should replace existing roles when logging in', async () => {

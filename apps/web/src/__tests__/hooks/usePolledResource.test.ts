@@ -93,7 +93,11 @@ describe('usePolledResource', () => {
       const fetcher = vi.fn().mockResolvedValue(['a']);
 
       const { result } = renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: false }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: false,
+        }),
       );
 
       await act(async () => {
@@ -110,7 +114,11 @@ describe('usePolledResource', () => {
       const fetcher = vi.fn().mockResolvedValue(['a']);
 
       const { result } = renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: false }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: false,
+        }),
       );
 
       await act(async () => {
@@ -126,7 +134,11 @@ describe('usePolledResource', () => {
 
       const { result, rerender } = renderHookWithProviders(
         ({ enabled }: { enabled: boolean }) =>
-          usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled }),
+          usePolledResource<string[]>({
+            fetcher,
+            intervalMs: INTERVAL,
+            enabled,
+          }),
         { initialProps: { enabled: false } },
       );
 
@@ -147,7 +159,11 @@ describe('usePolledResource', () => {
       const { fetcher, resolve } = deferredFetcher();
 
       const { result } = renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: true,
+        }),
       );
 
       expect(result.current.state).toBe('loading');
@@ -167,7 +183,11 @@ describe('usePolledResource', () => {
       const { fetcher, resolve } = deferredFetcher();
 
       const { result } = renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: true,
+        }),
       );
 
       await act(async () => {
@@ -200,7 +220,11 @@ describe('usePolledResource', () => {
       const { fetcher, reject } = deferredFetcher();
 
       const { result } = renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: true,
+        }),
       );
 
       await act(async () => {
@@ -218,7 +242,11 @@ describe('usePolledResource', () => {
       const fetcher = vi.fn().mockResolvedValue(['a']);
 
       renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: true,
+        }),
       );
 
       await act(async () => {
@@ -246,7 +274,11 @@ describe('usePolledResource', () => {
       const { fetcher, resolve } = deferredFetcher();
 
       renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: true,
+        }),
       );
 
       await act(async () => {
@@ -272,7 +304,11 @@ describe('usePolledResource', () => {
       const { fetcher, signals } = deferredFetcher();
 
       const { unmount } = renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: true,
+        }),
       );
 
       expect(signals).toHaveLength(1);
@@ -287,7 +323,11 @@ describe('usePolledResource', () => {
       const { fetcher, signals, resolve } = deferredFetcher();
 
       const { result } = renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: true,
+        }),
       );
 
       await act(async () => {
@@ -314,7 +354,11 @@ describe('usePolledResource', () => {
       );
 
       const { result } = renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: true,
+        }),
       );
 
       await act(async () => {
@@ -340,7 +384,11 @@ describe('usePolledResource', () => {
       const fetcher = vi.fn().mockResolvedValue(['a']);
 
       renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: true,
+        }),
       );
 
       await act(async () => {
@@ -370,7 +418,11 @@ describe('usePolledResource', () => {
       const { fetcher, signals } = deferredFetcher();
 
       renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: true,
+        }),
       );
 
       await act(async () => {
@@ -390,7 +442,11 @@ describe('usePolledResource', () => {
         .mockResolvedValue(['back']);
 
       const { result } = renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: true,
+        }),
       );
 
       await flush();
@@ -463,7 +519,11 @@ describe('usePolledResource', () => {
         .mockRejectedValue(new Error('network down'));
 
       const { result } = renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: true,
+        }),
       );
 
       await flush();
@@ -486,7 +546,11 @@ describe('usePolledResource', () => {
       const fetcher = vi.fn().mockRejectedValue('just a string');
 
       const { result } = renderHookWithProviders(() =>
-        usePolledResource<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true }),
+        usePolledResource<string[]>({
+          fetcher,
+          intervalMs: INTERVAL,
+          enabled: true,
+        }),
       );
 
       await flush();
@@ -512,7 +576,9 @@ describe('usePolledResource', () => {
    */
   describe('StrictMode remount (#169)', () => {
     /** Mount under StrictMode, exactly as `main.tsx` does in development. */
-    function renderStrict<T>(options: Parameters<typeof usePolledResource<T>>[0]) {
+    function renderStrict<T>(
+      options: Parameters<typeof usePolledResource<T>>[0],
+    ) {
       return renderHookWithProviders(() => usePolledResource<T>(options), {
         reactStrictMode: true,
       });

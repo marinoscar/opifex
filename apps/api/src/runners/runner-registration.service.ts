@@ -128,7 +128,10 @@ export class RunnerRegistrationService implements OnModuleInit {
    * with a warning — the runner would vanish from routing while appearing
    * registered, which is the most confusing of the available failures.
    */
-  private async upsert(capabilities: RunnerCapabilities, enabled: boolean): Promise<void> {
+  private async upsert(
+    capabilities: RunnerCapabilities,
+    enabled: boolean,
+  ): Promise<void> {
     const shared = {
       displayName: capabilities.displayName,
       version: capabilities.version,

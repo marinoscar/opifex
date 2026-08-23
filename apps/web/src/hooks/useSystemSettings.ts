@@ -9,7 +9,9 @@ interface UseSystemSettingsReturn {
   error: string | null;
   isSaving: boolean;
   updateSettings: (updates: Partial<SystemSettings>) => Promise<void>;
-  replaceSettings: (settings: Omit<SystemSettings, 'updatedAt' | 'updatedBy' | 'version'>) => Promise<void>;
+  replaceSettings: (
+    settings: Omit<SystemSettings, 'updatedAt' | 'updatedBy' | 'version'>,
+  ) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -34,7 +36,8 @@ export function useSystemSettings(): UseSystemSettingsReturn {
         if (err instanceof ApiError && err.status === 403) {
           setError('You do not have permission to view system settings');
         } else {
-          const message = err instanceof ApiError ? err.message : 'Failed to load settings';
+          const message =
+            err instanceof ApiError ? err.message : 'Failed to load settings';
           setError(message);
         }
       }
@@ -55,19 +58,26 @@ export function useSystemSettings(): UseSystemSettingsReturn {
         setIsSaving(true);
         setError(null);
 
-        const data = await api.patch<SystemSettings>('/system-settings', updates, {
-          headers: {
-            'If-Match': settings.version.toString(),
+        const data = await api.patch<SystemSettings>(
+          '/system-settings',
+          updates,
+          {
+            headers: {
+              'If-Match': settings.version.toString(),
+            },
           },
-        });
+        );
 
         if (isMounted()) setSettings(data);
       } catch (err) {
         if (err instanceof ApiError && err.status === 409) {
           await fetchSettings();
-          throw new Error('Settings were updated elsewhere. Please review and try again.');
+          throw new Error(
+            'Settings were updated elsewhere. Please review and try again.',
+          );
         }
-        const message = err instanceof ApiError ? err.message : 'Failed to save settings';
+        const message =
+          err instanceof ApiError ? err.message : 'Failed to save settings';
         if (isMounted()) setError(message);
         throw err;
       } finally {
@@ -78,15 +88,21 @@ export function useSystemSettings(): UseSystemSettingsReturn {
   );
 
   const replaceSettings = useCallback(
-    async (newSettings: Omit<SystemSettings, 'updatedAt' | 'updatedBy' | 'version'>) => {
+    async (
+      newSettings: Omit<SystemSettings, 'updatedAt' | 'updatedBy' | 'version'>,
+    ) => {
       try {
         setIsSaving(true);
         setError(null);
 
-        const data = await api.put<SystemSettings>('/system-settings', newSettings);
+        const data = await api.put<SystemSettings>(
+          '/system-settings',
+          newSettings,
+        );
         if (isMounted()) setSettings(data);
       } catch (err) {
-        const message = err instanceof ApiError ? err.message : 'Failed to save settings';
+        const message =
+          err instanceof ApiError ? err.message : 'Failed to save settings';
         if (isMounted()) setError(message);
         throw err;
       } finally {

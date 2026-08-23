@@ -90,7 +90,7 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
       {
         name: 'User Settings',
         description:
-          'The calling user\'s own preferences, stored as a JSON document. Supports full replacement ' +
+          "The calling user's own preferences, stored as a JSON document. Supports full replacement " +
           '(`PUT`) and JSON Merge Patch (`PATCH`).',
       },
       {
@@ -177,7 +177,9 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
 ];
 
 /** Flattened, in group order. Emitted as the document's `tags` array. */
-export const OPENAPI_TAGS: OpenApiTag[] = TAG_GROUPS.flatMap((group) => group.tags);
+export const OPENAPI_TAGS: OpenApiTag[] = TAG_GROUPS.flatMap(
+  (group) => group.tags,
+);
 
 /** Emitted as `x-tagGroups`, the extension Scalar and Redoc read. */
 export const OPENAPI_TAG_GROUPS = TAG_GROUPS.map((group) => ({

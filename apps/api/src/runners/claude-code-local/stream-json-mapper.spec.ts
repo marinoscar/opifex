@@ -1,4 +1,7 @@
-import { explainErrors, validatorFor } from '../../../test/schemas/contract-validators';
+import {
+  explainErrors,
+  validatorFor,
+} from '../../../test/schemas/contract-validators';
 import {
   INIT_LINE,
   PERMISSION_DENIED_LINE,
@@ -76,13 +79,15 @@ describe('stream-json mapper', () => {
       // Without recursive key sorting, two identical calls serialised
       // differently would hash differently and a loop would look like
       // progress — precisely the failure #55 exists to catch.
-      expect(expectEvent(map(TOOL_USE_LINE_REORDERED_ARGS)).tool?.signature).toBe(
-        expectEvent(map(TOOL_USE_LINE)).tool?.signature,
-      );
+      expect(
+        expectEvent(map(TOOL_USE_LINE_REORDERED_ARGS)).tool?.signature,
+      ).toBe(expectEvent(map(TOOL_USE_LINE)).tool?.signature);
     });
 
     it('distinguishes calls that differ only deep inside their arguments', () => {
-      expect(toolSignature({ a: { b: { c: 1 } } })).not.toBe(toolSignature({ a: { b: { c: 2 } } }));
+      expect(toolSignature({ a: { b: { c: 1 } } })).not.toBe(
+        toolSignature({ a: { b: { c: 2 } } }),
+      );
       expect(toolSignature([1, 2, 3])).not.toBe(toolSignature([3, 2, 1]));
     });
 
@@ -112,13 +117,18 @@ describe('stream-json mapper', () => {
       // anyone should be reading a run's state from.
       const event = expectEvent(map(THINKING_LINE));
       expect(event.summary).toBe('Thinking');
-      expect(JSON.stringify(event)).not.toContain('Working out where the file is');
+      expect(JSON.stringify(event)).not.toContain(
+        'Working out where the file is',
+      );
     });
 
     it('truncates long prose to something a timeline can hold', () => {
       const long = {
         ...TEXT_LINE,
-        message: { ...TEXT_LINE.message, content: [{ type: 'text', text: 'x'.repeat(5_000) }] },
+        message: {
+          ...TEXT_LINE.message,
+          content: [{ type: 'text', text: 'x'.repeat(5_000) }],
+        },
       };
       const event = expectEvent(map(long));
 
@@ -162,14 +172,18 @@ describe('stream-json mapper', () => {
 
       expect(event.type).toBe('run.blocked');
       expect(event.blocked?.reason).toBe('rate-limit');
-      expect(event.blocked?.resetAt).toBe(new Date(1787438400 * 1000).toISOString());
+      expect(event.blocked?.resetAt).toBe(
+        new Date(1787438400 * 1000).toISOString(),
+      );
       expect(event.blocked?.detail).toBe('five_hour');
     });
 
     it('separates an exhausted quota from a window to wait out', () => {
       // #56 treats them differently and must: one clears at a known time, the
       // other needs a human to buy more.
-      expect(expectEvent(map(QUOTA_EXHAUSTED_LINE)).blocked?.reason).toBe('quota-exhausted');
+      expect(expectEvent(map(QUOTA_EXHAUSTED_LINE)).blocked?.reason).toBe(
+        'quota-exhausted',
+      );
     });
 
     it('omits resetAt rather than inventing one', () => {
@@ -178,7 +192,10 @@ describe('stream-json mapper', () => {
       // would park a run until a moment that means nothing.
       const undated = {
         ...RATE_LIMIT_BLOCKED_LINE,
-        rate_limit_info: { ...RATE_LIMIT_BLOCKED_LINE.rate_limit_info, resetsAt: 0 },
+        rate_limit_info: {
+          ...RATE_LIMIT_BLOCKED_LINE.rate_limit_info,
+          resetsAt: 0,
+        },
       };
       expect(expectEvent(map(undated)).blocked?.resetAt).toBeUndefined();
     });
@@ -234,7 +251,9 @@ describe('stream-json mapper', () => {
 
     it('counts permission denials, since a refused run reads differently', () => {
       const mapping = map(RESULT_SUCCESS_LINE);
-      expect(mapping.kind === 'result' && mapping.result.permissionDenials).toBe(1);
+      expect(
+        mapping.kind === 'result' && mapping.result.permissionDenials,
+      ).toBe(1);
     });
 
     it('reports an errored result as an error', () => {
@@ -249,7 +268,12 @@ describe('stream-json mapper', () => {
       // The schema keeps "not reported" and "spent nothing" distinct, and a
       // runner that could not report cost must not look like one that was
       // free.
-      const mapping = map({ type: 'result', subtype: 'success', is_error: false, uuid: 'x' });
+      const mapping = map({
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        uuid: 'x',
+      });
       if (mapping.kind !== 'result') throw new Error('expected a result');
 
       expect(mapping.result.costUsd).toBeUndefined();
@@ -265,11 +289,20 @@ describe('stream-json mapper', () => {
       const mapping = map(line);
 
       expect(mapping.kind).toBe('drop');
-      expect(mapping.kind === 'drop' && mapping.reason.length).toBeGreaterThan(0);
+      expect(mapping.kind === 'drop' && mapping.reason.length).toBeGreaterThan(
+        0,
+      );
     });
 
     it('drops anything that is not a stream-json object', () => {
-      for (const junk of [null, undefined, 42, 'a string', [], { no: 'type' }]) {
+      for (const junk of [
+        null,
+        undefined,
+        42,
+        'a string',
+        [],
+        { no: 'type' },
+      ]) {
         expect(map(junk).kind).toBe('drop');
       }
     });
@@ -307,12 +340,19 @@ describe('stream-json mapper', () => {
     it('never emits a terminal event, whatever it is given', () => {
       // The mapper cannot end a run. Only the exit code can, and a mapper
       // that could would give ingestion two contradictory endings.
-      const lines = [INIT_LINE, TOOL_USE_LINE, RESULT_SUCCESS_LINE, RESULT_ERROR_LINE];
+      const lines = [
+        INIT_LINE,
+        TOOL_USE_LINE,
+        RESULT_SUCCESS_LINE,
+        RESULT_ERROR_LINE,
+      ];
 
       for (const line of lines) {
         const mapping = map(line);
         if (mapping.kind === 'event') {
-          expect(['run.completed', 'run.failed']).not.toContain(mapping.event.type);
+          expect(['run.completed', 'run.failed']).not.toContain(
+            mapping.event.type,
+          );
         }
       }
     });
@@ -333,23 +373,34 @@ describe('stream-json mapper', () => {
     it('prefers the CLI timestamp over receipt time', () => {
       // occurredAt is when it HAPPENED per its source, and the gap between
       // that and storage is detection latency — success metric 1.
-      expect(expectEvent(map(TOOL_USE_LINE)).occurredAt).toBe('2026-08-22T22:02:45.080Z');
+      expect(expectEvent(map(TOOL_USE_LINE)).occurredAt).toBe(
+        '2026-08-22T22:02:45.080Z',
+      );
     });
 
     it('falls back to receipt time for the lines the CLI does not stamp', () => {
       // Only assistant and user lines carry a timestamp; for the rest,
       // receipt time is within milliseconds and is the honest best available.
-      expect(expectEvent(map(INIT_LINE)).occurredAt).toBe(CONTEXT.receivedAt.toISOString());
+      expect(expectEvent(map(INIT_LINE)).occurredAt).toBe(
+        CONTEXT.receivedAt.toISOString(),
+      );
     });
 
     it('ignores an unparseable timestamp rather than emitting one', () => {
-      const event = expectEvent(map({ ...TOOL_USE_LINE, timestamp: 'not a date' }));
+      const event = expectEvent(
+        map({ ...TOOL_USE_LINE, timestamp: 'not a date' }),
+      );
       expect(event.occurredAt).toBe(CONTEXT.receivedAt.toISOString());
     });
 
     it('stamps every event as runner-reported', () => {
       // VISION §9: a synthesized event must never masquerade as a report.
-      for (const line of [TOOL_USE_LINE, THINKING_LINE, RATE_LIMIT_BLOCKED_LINE, INIT_LINE]) {
+      for (const line of [
+        TOOL_USE_LINE,
+        THINKING_LINE,
+        RATE_LIMIT_BLOCKED_LINE,
+        INIT_LINE,
+      ]) {
         expect(expectEvent(map(line)).source).toBe('runner-reported');
       }
     });

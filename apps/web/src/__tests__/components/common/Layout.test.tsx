@@ -53,7 +53,9 @@ function renderAt(px: number) {
  * a responsive `sx` value cannot be read back off the element.
  */
 function emittedRulesFor(element: Element): string {
-  const emotionClass = [...element.classList].find((name) => name.startsWith('css-'));
+  const emotionClass = [...element.classList].find((name) =>
+    name.startsWith('css-'),
+  );
   expect(emotionClass, 'element carries no emotion class').toBeDefined();
 
   return [...document.querySelectorAll('style')]
@@ -78,12 +80,15 @@ describe('Layout', () => {
       ['phone', PHONE, 'mock-bottom-nav', 'mock-rail'],
       ['tablet', TABLET, 'mock-rail', 'mock-bottom-nav'],
       ['desktop', DESKTOP, 'mock-rail', 'mock-bottom-nav'],
-    ])('mounts one surface and only one at %s width', (_label, width, present, absent) => {
-      renderAt(width);
+    ])(
+      'mounts one surface and only one at %s width',
+      (_label, width, present, absent) => {
+        renderAt(width);
 
-      expect(screen.getByTestId(present)).toBeInTheDocument();
-      expect(screen.queryByTestId(absent)).not.toBeInTheDocument();
-    });
+        expect(screen.getByTestId(present)).toBeInTheDocument();
+        expect(screen.queryByTestId(absent)).not.toBeInTheDocument();
+      },
+    );
 
     it('never mounts both, and never mounts neither, across the sm boundary', async () => {
       // Walks the exact pixels either side of 600 — the seam where a drifted
@@ -98,7 +103,10 @@ describe('Layout', () => {
           screen.queryByTestId('mock-bottom-nav'),
         ].filter(Boolean);
 
-        expect(surfaces, `${width}px should have exactly one navigation surface`).toHaveLength(1);
+        expect(
+          surfaces,
+          `${width}px should have exactly one navigation surface`,
+        ).toHaveLength(1);
       }
     });
 
@@ -136,7 +144,9 @@ describe('Layout', () => {
     it('sets minWidth: 0 on the flex row that holds the rail and main', () => {
       renderAt(DESKTOP);
 
-      const row = screen.getByTestId('outlet-content').closest('main')!.parentElement!;
+      const row = screen
+        .getByTestId('outlet-content')
+        .closest('main')!.parentElement!;
       expect(getComputedStyle(row).display).toBe('flex');
       expect(getComputedStyle(row).minWidth).toBe('0px');
     });
@@ -154,9 +164,13 @@ describe('Layout', () => {
       const rules = emittedRulesFor(main);
 
       // pb: 10 → 80px, which clears the fixed BottomNav's height.
-      expect(rules).toMatch(/@media \(min-width:0px\)\{[^}]*padding-bottom:80px/);
+      expect(rules).toMatch(
+        /@media \(min-width:0px\)\{[^}]*padding-bottom:80px/,
+      );
       // pb: 3 → 24px at sm and up, matching the other three sides.
-      expect(rules).toMatch(/@media \(min-width:600px\)\{[^}]*padding-bottom:24px/);
+      expect(rules).toMatch(
+        /@media \(min-width:600px\)\{[^}]*padding-bottom:24px/,
+      );
     });
   });
 
@@ -182,18 +196,23 @@ describe('Layout', () => {
   describe('Integration', () => {
     it('renders for an authenticated user', () => {
       setViewportWidth(DESKTOP);
-      render(<Layout />, { wrapperOptions: { authenticated: true, user: mockUser } });
+      render(<Layout />, {
+        wrapperOptions: { authenticated: true, user: mockUser },
+      });
 
       expect(screen.getByTestId('mock-appbar')).toBeInTheDocument();
       expect(screen.getByTestId('outlet-content')).toBeInTheDocument();
     });
 
-    it.each([['light'], ['dark']] as const)('renders with the %s theme', (theme) => {
-      setViewportWidth(DESKTOP);
-      render(<Layout />, { wrapperOptions: { theme } });
+    it.each([['light'], ['dark']] as const)(
+      'renders with the %s theme',
+      (theme) => {
+        setViewportWidth(DESKTOP);
+        render(<Layout />, { wrapperOptions: { theme } });
 
-      expect(screen.getByTestId('mock-appbar')).toBeInTheDocument();
-      expect(screen.getByTestId('outlet-content')).toBeInTheDocument();
-    });
+        expect(screen.getByTestId('mock-appbar')).toBeInTheDocument();
+        expect(screen.getByTestId('outlet-content')).toBeInTheDocument();
+      },
+    );
   });
 });

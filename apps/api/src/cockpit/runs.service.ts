@@ -63,12 +63,19 @@ export class RunsService {
     pageSize?: number;
     needsAttention?: boolean;
     status?: string;
-  }): Promise<{ items: RunSummary[]; total: number; page: number; pageSize: number }> {
+  }): Promise<{
+    items: RunSummary[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? RUNS_DEFAULT_PAGE_SIZE;
 
     const where: Prisma.RunWhereInput = {
-      ...(query.status ? { status: query.status as Prisma.RunWhereInput['status'] } : {}),
+      ...(query.status
+        ? { status: query.status as Prisma.RunWhereInput['status'] }
+        : {}),
       ...(query.needsAttention
         ? { escalations: { some: { status: { in: UNRESOLVED as never } } } }
         : {}),
@@ -98,7 +105,10 @@ export class RunsService {
   }
 
   async findById(id: string): Promise<RunSummary> {
-    const row = await this.prisma.run.findUnique({ where: { id }, select: RUN_SELECT });
+    const row = await this.prisma.run.findUnique({
+      where: { id },
+      select: RUN_SELECT,
+    });
     if (!row) throw new NotFoundException(`Run ${id} not found`);
     return toRunSummary(row);
   }
@@ -119,7 +129,12 @@ export class RunsService {
   async events(
     runId: string,
     query: { page?: number; pageSize?: number },
-  ): Promise<{ items: RunEventView[]; total: number; page: number; pageSize: number }> {
+  ): Promise<{
+    items: RunEventView[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? EVENTS_DEFAULT_PAGE_SIZE;
 

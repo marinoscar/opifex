@@ -49,7 +49,9 @@ describe('RunWorkspaceService', () => {
       'github.token': 'ghp_fake_token_for_tests',
       ...overrides,
     };
-    const config = { get: (key: string) => values[key] } as unknown as ConfigService;
+    const config = {
+      get: (key: string) => values[key],
+    } as unknown as ConfigService;
     return new RunWorkspaceService(config);
   }
 
@@ -103,9 +105,9 @@ describe('RunWorkspaceService', () => {
       expect(workspace.reused).toBe(false);
       expect(workspace.headCommit).toBe(baseCommit);
       expect(await git(workspace.dir, 'rev-parse', 'HEAD')).toBe(baseCommit);
-      expect(await git(workspace.dir, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe(
-        'factory/42-abc1234-a1',
-      );
+      expect(
+        await git(workspace.dir, 'rev-parse', '--abbrev-ref', 'HEAD'),
+      ).toBe('factory/42-abc1234-a1');
     }, 30_000);
 
     it('pins the base commit rather than following the branch tip', async () => {
@@ -113,8 +115,12 @@ describe('RunWorkspaceService', () => {
       // has moved on; the run must still start from what was authorized.
       const workspace = await service.provision(request());
 
-      expect(await git(workspace.dir, 'rev-parse', 'HEAD')).not.toBe(laterCommit);
-      expect(await readFile(join(workspace.dir, 'README.md'), 'utf8')).toBe('# base\n');
+      expect(await git(workspace.dir, 'rev-parse', 'HEAD')).not.toBe(
+        laterCommit,
+      );
+      expect(await readFile(join(workspace.dir, 'README.md'), 'utf8')).toBe(
+        '# base\n',
+      );
     }, 30_000);
 
     it('reuses an existing workspace at the same commit', async () => {
@@ -127,7 +133,9 @@ describe('RunWorkspaceService', () => {
 
       expect(second.reused).toBe(true);
       expect(second.dir).toBe(first.dir);
-      expect(await readFile(join(second.dir, 'marker.txt'), 'utf8')).toContain('first run');
+      expect(await readFile(join(second.dir, 'marker.txt'), 'utf8')).toContain(
+        'first run',
+      );
     }, 30_000);
 
     it('rebuilds a workspace whose HEAD has moved off the base commit', async () => {
@@ -144,7 +152,9 @@ describe('RunWorkspaceService', () => {
 
       expect(second.reused).toBe(false);
       expect(await git(second.dir, 'rev-parse', 'HEAD')).toBe(baseCommit);
-      await expect(readFile(join(second.dir, 'work.txt'), 'utf8')).rejects.toThrow();
+      await expect(
+        readFile(join(second.dir, 'work.txt'), 'utf8'),
+      ).rejects.toThrow();
     }, 30_000);
 
     it('rebuilds a workspace that is not a git repository at all', async () => {
@@ -197,7 +207,9 @@ describe('RunWorkspaceService', () => {
       const doomed = { ...request(), baseCommit: 'f'.repeat(40) };
 
       await expect(service.provision(doomed)).rejects.toThrow(WorkspaceError);
-      await expect(exec('test', ['-d', service.directoryFor(doomed.identity)])).rejects.toThrow();
+      await expect(
+        exec('test', ['-d', service.directoryFor(doomed.identity)]),
+      ).rejects.toThrow();
     }, 60_000);
   });
 
@@ -218,9 +230,17 @@ describe('RunWorkspaceService', () => {
       await git(staging, 'config', 'user.email', 'factory@opifex.local');
       await git(staging, 'config', 'user.name', 'Opifex Factory');
       await git(staging, 'checkout', '--quiet', '-b', branch, baseCommit);
-      await writeFile(join(staging, 'work-order.json'), '{"identity":"probe"}\n');
+      await writeFile(
+        join(staging, 'work-order.json'),
+        '{"identity":"probe"}\n',
+      );
       await git(staging, 'add', '.');
-      await git(staging, 'commit', '-m', 'chore(factory): record the work order');
+      await git(
+        staging,
+        'commit',
+        '-m',
+        'chore(factory): record the work order',
+      );
       await git(staging, 'push', '--quiet', 'origin', branch);
 
       return {
@@ -234,10 +254,20 @@ describe('RunWorkspaceService', () => {
       // behind would change where every later test starts from, which is
       // exactly the pollution that made three of these fail while they were
       // being written.
-      await exec('git', ['push', '--quiet', origin, '--delete', request().branch]).catch(() => {});
-      await exec('git', ['push', '--quiet', origin, '--delete', 'factory/99-abc1234-a1']).catch(
-        () => {},
-      );
+      await exec('git', [
+        'push',
+        '--quiet',
+        origin,
+        '--delete',
+        request().branch,
+      ]).catch(() => {});
+      await exec('git', [
+        'push',
+        '--quiet',
+        origin,
+        '--delete',
+        'factory/99-abc1234-a1',
+      ]).catch(() => {});
     });
 
     it('starts from the branch tip so the agent can actually push', async () => {
@@ -256,7 +286,9 @@ describe('RunWorkspaceService', () => {
       // The record is present in the tree, which is what "at the record
       // commit" means locally — the clone is shallow, so there is no parent
       // to walk to.
-      expect(await readFile(join(workspace.dir, 'work-order.json'), 'utf8')).toContain('probe');
+      expect(
+        await readFile(join(workspace.dir, 'work-order.json'), 'utf8'),
+      ).toContain('probe');
     }, 60_000);
 
     it('leaves a push able to fast-forward', async () => {
@@ -266,11 +298,16 @@ describe('RunWorkspaceService', () => {
       await pushExecutionRecord(request().branch);
       const workspace = await service.provision(request());
 
-      await writeFile(join(workspace.dir, 'agent-work.txt'), 'what the agent did\n');
+      await writeFile(
+        join(workspace.dir, 'agent-work.txt'),
+        'what the agent did\n',
+      );
       await git(workspace.dir, 'add', '.');
       await git(workspace.dir, 'commit', '-m', 'feat: the agent did something');
 
-      await expect(git(workspace.dir, 'push', 'origin', request().branch)).resolves.toBeDefined();
+      await expect(
+        git(workspace.dir, 'push', 'origin', request().branch),
+      ).resolves.toBeDefined();
     }, 60_000);
 
     it('reuses a workspace already at the branch tip', async () => {
@@ -307,7 +344,9 @@ describe('RunWorkspaceService', () => {
       // arrives as an opaque non-zero exit.
       const workspace = await service.provision(request());
 
-      expect(await git(workspace.dir, 'config', '--local', 'user.name')).toBe('Opifex Factory');
+      expect(await git(workspace.dir, 'config', '--local', 'user.name')).toBe(
+        'Opifex Factory',
+      );
       expect(await git(workspace.dir, 'config', '--local', 'user.email')).toBe(
         'factory@opifex.local',
       );
@@ -317,7 +356,10 @@ describe('RunWorkspaceService', () => {
       // argv is world-readable through `ps`, and a token written into
       // .git/config outlives the run in a directory the agent itself reads.
       const workspace = await service.provision(request());
-      const gitConfig = await readFile(join(workspace.dir, '.git', 'config'), 'utf8');
+      const gitConfig = await readFile(
+        join(workspace.dir, '.git', 'config'),
+        'utf8',
+      );
 
       expect(gitConfig).not.toContain('ghp_fake_token_for_tests');
       expect(gitConfig).toContain(`$${GIT_TOKEN_ENV_VAR}`);
@@ -331,7 +373,10 @@ describe('RunWorkspaceService', () => {
       const workspace = await anonymous.provision(request());
 
       expect(workspace.headCommit).toBe(baseCommit);
-      const gitConfig = await readFile(join(workspace.dir, '.git', 'config'), 'utf8');
+      const gitConfig = await readFile(
+        join(workspace.dir, '.git', 'config'),
+        'utf8',
+      );
       expect(gitConfig).not.toContain('credential');
     }, 30_000);
 
@@ -349,7 +394,9 @@ describe('RunWorkspaceService', () => {
       // the same door — and it is the one that holds for the caller who
       // skipped the first.
       expect(() => service.directoryFor('../../etc')).toThrow(WorkspaceError);
-      expect(() => service.directoryFor('wo_a/../../b')).toThrow(WorkspaceError);
+      expect(() => service.directoryFor('wo_a/../../b')).toThrow(
+        WorkspaceError,
+      );
     });
 
     it('gives one identity one directory', () => {
@@ -368,7 +415,9 @@ describe('RunWorkspaceService', () => {
     }, 30_000);
 
     it('is a no-op for a workspace that never existed', async () => {
-      await expect(service.dispose('wo_never_1_0000000_a1')).resolves.toBeUndefined();
+      await expect(
+        service.dispose('wo_never_1_0000000_a1'),
+      ).resolves.toBeUndefined();
     });
   });
 });

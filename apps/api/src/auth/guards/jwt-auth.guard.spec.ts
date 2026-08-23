@@ -30,7 +30,9 @@ describe('JwtAuthGuard', () => {
     guard = module.get<JwtAuthGuard>(JwtAuthGuard);
 
     // Mock super.canActivate to avoid Passport initialization
-    jest.spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate').mockReturnValue(true);
+    jest
+      .spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate')
+      .mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -63,24 +65,36 @@ describe('JwtAuthGuard', () => {
       const result = await guard.canActivate(context);
 
       expect(result).toBe(true);
-      expect(reflector.getAllAndOverride).toHaveBeenCalledWith(IS_PUBLIC_KEY, expect.any(Array));
+      expect(reflector.getAllAndOverride).toHaveBeenCalledWith(
+        IS_PUBLIC_KEY,
+        expect.any(Array),
+      );
     });
 
     it('should call super.canActivate() for protected routes', () => {
       reflector.getAllAndOverride.mockReturnValue(false);
       const context = createMockContext();
-      const superSpy = jest.spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate');
+      const superSpy = jest.spyOn(
+        Object.getPrototypeOf(JwtAuthGuard.prototype),
+        'canActivate',
+      );
 
       guard.canActivate(context);
 
-      expect(reflector.getAllAndOverride).toHaveBeenCalledWith(IS_PUBLIC_KEY, expect.any(Array));
+      expect(reflector.getAllAndOverride).toHaveBeenCalledWith(
+        IS_PUBLIC_KEY,
+        expect.any(Array),
+      );
       expect(superSpy).toHaveBeenCalledWith(context);
     });
 
     it('should skip JWT validation when isPublic is true', async () => {
       reflector.getAllAndOverride.mockReturnValue(true);
       const context = createMockContext();
-      const superSpy = jest.spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate');
+      const superSpy = jest.spyOn(
+        Object.getPrototypeOf(JwtAuthGuard.prototype),
+        'canActivate',
+      );
 
       const result = await guard.canActivate(context);
 
@@ -97,7 +111,10 @@ describe('JwtAuthGuard', () => {
       guard.canActivate(context);
 
       // getAllAndOverride is called with both handler and class targets
-      expect(reflector.getAllAndOverride).toHaveBeenCalledWith(IS_PUBLIC_KEY, expect.any(Array));
+      expect(reflector.getAllAndOverride).toHaveBeenCalledWith(
+        IS_PUBLIC_KEY,
+        expect.any(Array),
+      );
       const callArgs = reflector.getAllAndOverride.mock.calls[0][1];
       expect(callArgs).toHaveLength(2); // Handler and class
     });
@@ -107,7 +124,10 @@ describe('JwtAuthGuard', () => {
     it('should handle undefined isPublic metadata', () => {
       reflector.getAllAndOverride.mockReturnValue(undefined);
       const context = createMockContext();
-      const superSpy = jest.spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate');
+      const superSpy = jest.spyOn(
+        Object.getPrototypeOf(JwtAuthGuard.prototype),
+        'canActivate',
+      );
 
       // undefined means not public, should call super.canActivate
       guard.canActivate(context);
@@ -119,7 +139,10 @@ describe('JwtAuthGuard', () => {
     it('should handle null isPublic metadata', () => {
       reflector.getAllAndOverride.mockReturnValue(null);
       const context = createMockContext();
-      const superSpy = jest.spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate');
+      const superSpy = jest.spyOn(
+        Object.getPrototypeOf(JwtAuthGuard.prototype),
+        'canActivate',
+      );
 
       // null means not public, should call super.canActivate
       guard.canActivate(context);
@@ -131,7 +154,10 @@ describe('JwtAuthGuard', () => {
     it('should handle false isPublic metadata explicitly', () => {
       reflector.getAllAndOverride.mockReturnValue(false);
       const context = createMockContext();
-      const superSpy = jest.spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate');
+      const superSpy = jest.spyOn(
+        Object.getPrototypeOf(JwtAuthGuard.prototype),
+        'canActivate',
+      );
 
       guard.canActivate(context);
 
@@ -148,7 +174,10 @@ describe('JwtAuthGuard', () => {
 
       // getAllAndOverride checks handler first, then class
       // This ensures method-level @Public() takes precedence over class-level
-      expect(reflector.getAllAndOverride).toHaveBeenCalledWith(IS_PUBLIC_KEY, expect.any(Array));
+      expect(reflector.getAllAndOverride).toHaveBeenCalledWith(
+        IS_PUBLIC_KEY,
+        expect.any(Array),
+      );
     });
 
     it('should pass correct metadata key to reflector', () => {
@@ -157,7 +186,10 @@ describe('JwtAuthGuard', () => {
 
       guard.canActivate(context);
 
-      expect(reflector.getAllAndOverride).toHaveBeenCalledWith(IS_PUBLIC_KEY, expect.any(Array));
+      expect(reflector.getAllAndOverride).toHaveBeenCalledWith(
+        IS_PUBLIC_KEY,
+        expect.any(Array),
+      );
     });
   });
 
@@ -219,7 +251,9 @@ describe('JwtAuthGuard', () => {
 
       const context = createMockContext('Bearer pat_invalidtoken');
 
-      await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
+      await expect(guard.canActivate(context)).rejects.toThrow(
+        UnauthorizedException,
+      );
       await expect(guard.canActivate(context)).rejects.toThrow(
         'Invalid or expired personal access token',
       );
@@ -227,9 +261,13 @@ describe('JwtAuthGuard', () => {
 
     it('should NOT route non-PAT Bearer tokens to PatService', async () => {
       reflector.getAllAndOverride.mockReturnValue(false);
-      const superSpy = jest.spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate').mockReturnValue(true);
+      const superSpy = jest
+        .spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate')
+        .mockReturnValue(true);
 
-      const context = createMockContext('Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9');
+      const context = createMockContext(
+        'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+      );
 
       await guard.canActivate(context);
 
@@ -239,7 +277,9 @@ describe('JwtAuthGuard', () => {
 
     it('should NOT route requests without Authorization header to PatService', async () => {
       reflector.getAllAndOverride.mockReturnValue(false);
-      const superSpy = jest.spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate').mockReturnValue(true);
+      const superSpy = jest
+        .spyOn(Object.getPrototypeOf(JwtAuthGuard.prototype), 'canActivate')
+        .mockReturnValue(true);
 
       const context = createMockContext(undefined);
 
@@ -263,10 +303,16 @@ describe('JwtAuthGuard', () => {
     it('should pass the full raw token (with pat_ prefix) to validateToken', async () => {
       reflector.getAllAndOverride.mockReturnValue(false);
 
-      const mockUser = { id: 'user-789', email: 'x@x.com', isActive: true, userRoles: [] };
+      const mockUser = {
+        id: 'user-789',
+        email: 'x@x.com',
+        isActive: true,
+        userRoles: [],
+      };
       patService.validateToken.mockResolvedValue(mockUser as any);
 
-      const rawToken = 'pat_0011223344556677889900aabbccddeeff00112233445566778899aabbccddee';
+      const rawToken =
+        'pat_0011223344556677889900aabbccddeeff00112233445566778899aabbccddee';
       const context = createMockContext(`Bearer ${rawToken}`);
 
       await guard.canActivate(context);

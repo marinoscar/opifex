@@ -43,7 +43,9 @@ export interface FeatureFlagRow {
 }
 
 /** Explode the settings record into alphabetically-ordered rows. */
-export function toFeatureFlagRows(flags: Record<string, boolean>): FeatureFlagRow[] {
+export function toFeatureFlagRows(
+  flags: Record<string, boolean>,
+): FeatureFlagRow[] {
   return Object.entries(flags)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, enabled]) => ({ key, enabled }));

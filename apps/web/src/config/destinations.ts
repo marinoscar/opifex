@@ -281,7 +281,9 @@ export const DESTINATIONS: readonly Destination[] = [
  * must resolve to Projects rather than to Runs, which it does because Runs
  * owns `/runs` and nothing else.
  */
-export function resolveActiveDestination(pathname: string): DestinationKey | null {
+export function resolveActiveDestination(
+  pathname: string,
+): DestinationKey | null {
   let best: { key: DestinationKey; length: number } | null = null;
 
   for (const [key, prefixes] of Object.entries(DESTINATION_ROUTES) as [
@@ -320,7 +322,11 @@ export const BOTTOM_NAV_MAX_ACTIONS = 4;
  * administrative are reference material, and reference material belongs
  * behind More rather than competing for one of three thumb-reachable slots.
  */
-export const BOTTOM_NAV_KEYS: readonly DestinationKey[] = ['dashboard', 'runs', 'queue'];
+export const BOTTOM_NAV_KEYS: readonly DestinationKey[] = [
+  'dashboard',
+  'runs',
+  'queue',
+];
 
 export interface BottomNavSplit {
   /** Rendered as real tabs, in `BOTTOM_NAV_KEYS` order. */
@@ -342,18 +348,24 @@ export interface BottomNavSplit {
  * than disappearing — the bar can be wrong about PRIORITY, never about
  * REACHABILITY.
  */
-export function bottomNavSplit(canSee: (destination: Destination) => boolean): BottomNavSplit {
+export function bottomNavSplit(
+  canSee: (destination: Destination) => boolean,
+): BottomNavSplit {
   const visible = DESTINATIONS.filter(canSee);
 
   const preferred = BOTTOM_NAV_KEYS.map((key) =>
     visible.find((destination) => destination.key === key),
-  ).filter((destination): destination is Destination => destination !== undefined);
+  ).filter(
+    (destination): destination is Destination => destination !== undefined,
+  );
 
   const primary = preferred.slice(0, BOTTOM_NAV_MAX_ACTIONS - 1);
   const primaryKeys = new Set(primary.map((destination) => destination.key));
 
   return {
     primary,
-    overflow: visible.filter((destination) => !primaryKeys.has(destination.key)),
+    overflow: visible.filter(
+      (destination) => !primaryKeys.has(destination.key),
+    ),
   };
 }

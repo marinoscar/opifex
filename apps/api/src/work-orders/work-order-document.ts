@@ -19,16 +19,23 @@ export const WORK_ORDER_SCHEMA_VERSION = '1.0.0';
  * So `serializeWorkOrder` is the single source of the string, and the records
  * service never re-stringifies.
  */
-export function toWorkOrderDocument(workOrder: GeneratedWorkOrder): WorkOrderDocument {
+export function toWorkOrderDocument(
+  workOrder: GeneratedWorkOrder,
+): WorkOrderDocument {
   return {
     schemaVersion: WORK_ORDER_SCHEMA_VERSION,
     identity: workOrder.identity,
     branch: workOrder.branch,
-    repository: { owner: workOrder.repositoryOwner, name: workOrder.repositoryName },
+    repository: {
+      owner: workOrder.repositoryOwner,
+      name: workOrder.repositoryName,
+    },
     baseCommit: workOrder.baseCommit,
     attempt: workOrder.attempt,
     issue: { number: workOrder.issueNumber, url: workOrder.issueUrl },
-    ...(workOrder.decisionRefs.length > 0 ? { decisionRefs: workOrder.decisionRefs } : {}),
+    ...(workOrder.decisionRefs.length > 0
+      ? { decisionRefs: workOrder.decisionRefs }
+      : {}),
     taskSpec: workOrder.taskSpec,
     acceptanceCriteria: workOrder.acceptanceCriteria,
     pathConstraints: workOrder.pathConstraints,

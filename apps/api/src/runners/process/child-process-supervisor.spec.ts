@@ -25,10 +25,14 @@ import {
 const NODE = process.execPath;
 
 /** Poll rather than sleep-and-hope: keeps the suite fast and non-flaky. */
-async function waitUntil(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
+async function waitUntil(
+  predicate: () => boolean,
+  timeoutMs = 5_000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
-    if (Date.now() > deadline) throw new Error('timed out waiting for condition');
+    if (Date.now() > deadline)
+      throw new Error('timed out waiting for condition');
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 }
@@ -148,7 +152,11 @@ describe('ChildProcessSupervisor', () => {
 
   describe('outcomes', () => {
     it('reports a non-zero exit code', async () => {
-      const proc = start({ command: NODE, args: ['-e', 'process.exit(3)'], cwd });
+      const proc = start({
+        command: NODE,
+        args: ['-e', 'process.exit(3)'],
+        cwd,
+      });
       await expect(proc.waitForExit()).resolves.toEqual({
         kind: 'exited',
         exitCode: 3,
@@ -211,7 +219,10 @@ describe('ChildProcessSupervisor', () => {
     it('closes stdin even when nothing is written', async () => {
       const proc = start({
         command: NODE,
-        args: ['-e', 'process.stdin.on("data",()=>{}).on("end",()=>process.exit(0))'],
+        args: [
+          '-e',
+          'process.stdin.on("data",()=>{}).on("end",()=>process.exit(0))',
+        ],
         cwd,
       });
 
@@ -236,7 +247,10 @@ describe('ChildProcessSupervisor', () => {
       const lines: string[] = [];
       const proc = start({
         command: NODE,
-        args: ['-e', 'process.stdout.write(process.env.OPIFEX_TEST_VAR + "\\n")'],
+        args: [
+          '-e',
+          'process.stdout.write(process.env.OPIFEX_TEST_VAR + "\\n")',
+        ],
         cwd,
         env: { OPIFEX_TEST_VAR: 'set-by-supervisor' },
         onLine: (line) => lines.push(line),
@@ -251,7 +265,10 @@ describe('ChildProcessSupervisor', () => {
     it('keeps stderr for a failure reason', async () => {
       const proc = start({
         command: NODE,
-        args: ['-e', 'process.stderr.write("something went wrong\\n");process.exit(1)'],
+        args: [
+          '-e',
+          'process.stderr.write("something went wrong\\n");process.exit(1)',
+        ],
         cwd,
       });
 
@@ -334,7 +351,11 @@ describe('ChildProcessSupervisor', () => {
       // cancel is what the watchdog reaches for once a run has gone wrong, so
       // an already-dead process must be a no-op rather than an error path at
       // the worst possible moment.
-      const proc = start({ command: NODE, args: ['-e', 'process.exit(0)'], cwd });
+      const proc = start({
+        command: NODE,
+        args: ['-e', 'process.exit(0)'],
+        cwd,
+      });
       await proc.waitForExit();
 
       expect(() => {
@@ -386,12 +407,18 @@ describe('ChildProcessSupervisor', () => {
 
       await waitUntil(() => ready.includes('armed'));
       proc.kill();
-      await expect(proc.waitForExit()).resolves.toMatchObject({ signal: 'SIGKILL' });
+      await expect(proc.waitForExit()).resolves.toMatchObject({
+        signal: 'SIGKILL',
+      });
 
       // Past the verification delay, so a false report would have landed.
-      await new Promise((resolve) => setTimeout(resolve, KILL_VERIFY_DELAY_MS + 500));
+      await new Promise((resolve) =>
+        setTimeout(resolve, KILL_VERIFY_DELAY_MS + 500),
+      );
 
-      expect(errors.filter((error) => error.message.includes('survived SIGKILL'))).toHaveLength(0);
+      expect(
+        errors.filter((error) => error.message.includes('survived SIGKILL')),
+      ).toHaveLength(0);
     }, 30_000);
 
     it('waits before checking, since the kernel reaps asynchronously', () => {

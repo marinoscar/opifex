@@ -46,8 +46,10 @@ export class WebPushTransport implements NotificationTransport {
   private readonly subject: string;
 
   constructor(private readonly config: ConfigService) {
-    this.publicKey = this.config.get<string>('notifications.vapidPublicKey') ?? '';
-    this.privateKey = this.config.get<string>('notifications.vapidPrivateKey') ?? '';
+    this.publicKey =
+      this.config.get<string>('notifications.vapidPublicKey') ?? '';
+    this.privateKey =
+      this.config.get<string>('notifications.vapidPrivateKey') ?? '';
     this.subject = this.config.get<string>('notifications.vapidSubject') ?? '';
 
     if (this.isConfigured()) {
@@ -73,7 +75,10 @@ export class WebPushTransport implements NotificationTransport {
     return this.publicKey;
   }
 
-  async send(target: NotificationTarget, payload: NotificationPayload): Promise<SendOutcome> {
+  async send(
+    target: NotificationTarget,
+    payload: NotificationPayload,
+  ): Promise<SendOutcome> {
     if (!this.isConfigured()) {
       return {
         targetId: target.id,
@@ -102,7 +107,12 @@ export class WebPushTransport implements NotificationTransport {
         },
       );
 
-      return { targetId: target.id, accepted: true, gone: false, statusCode: response.statusCode };
+      return {
+        targetId: target.id,
+        accepted: true,
+        gone: false,
+        statusCode: response.statusCode,
+      };
     } catch (error) {
       const statusCode = readStatus(error);
 

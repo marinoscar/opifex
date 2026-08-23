@@ -76,7 +76,7 @@ export type DeadlineVerdict =
       /** `limitMinutes + graceMinutes`: when the control plane became willing to act. */
       enforcedAfterMinutes: number;
       elapsedMinutes: number;
-          /**
+      /**
        * What is CERTAINLY true, and nothing more.
        *
        * Deliberately says nothing about the cancellation. This function is
@@ -96,7 +96,10 @@ export type DeadlineVerdict =
  * pinned to an instant cannot be tested at its boundary, and the boundary is
  * the only part of a deadline anyone gets wrong.
  */
-export function decideDeadline(inputs: DeadlineInputs, now: Date): DeadlineVerdict {
+export function decideDeadline(
+  inputs: DeadlineInputs,
+  now: Date,
+): DeadlineVerdict {
   const elapsedMinutes = round(
     (now.getTime() - inputs.startedAt.getTime()) / MS_PER_MINUTE,
   );

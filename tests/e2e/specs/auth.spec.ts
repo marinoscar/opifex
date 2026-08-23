@@ -1,15 +1,27 @@
 import { test, expect } from '@playwright/test';
-import { loginAsTestUser, loginAsAdmin, isLoggedIn } from '../helpers/auth.helper';
+import {
+  loginAsTestUser,
+  loginAsAdmin,
+  isLoggedIn,
+} from '../helpers/auth.helper';
 
 test.describe('Test Authentication', () => {
   test('test login page is accessible in development', async ({ page }) => {
     await page.goto('/testing/login');
 
     // Verify page elements
-    await expect(page.locator('text=Test Login - Development Only')).toBeVisible();
-    await expect(page.locator('[data-testid="test-email-input"]')).toBeVisible();
-    await expect(page.locator('[data-testid="test-role-select"]')).toBeVisible();
-    await expect(page.locator('[data-testid="test-login-button"]')).toBeVisible();
+    await expect(
+      page.locator('text=Test Login - Development Only'),
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-testid="test-email-input"]'),
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-testid="test-role-select"]'),
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-testid="test-login-button"]'),
+    ).toBeVisible();
   });
 
   test('can login as viewer (default role)', async ({ page }) => {

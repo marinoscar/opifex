@@ -276,9 +276,7 @@ describe('SystemSettingsService', () => {
 
       await expect(
         service.patchSettings(partialUpdate, mockUserId, 2),
-      ).rejects.toThrow(
-        'Settings version mismatch. Expected 2, found 1',
-      );
+      ).rejects.toThrow('Settings version mismatch. Expected 2, found 1');
 
       // Should not call update when version mismatch
       expect(mockPrisma.systemSettings.update).not.toHaveBeenCalled();
@@ -301,11 +299,7 @@ describe('SystemSettingsService', () => {
       mockPrisma.auditEvent.create.mockResolvedValue({} as any);
 
       // Current version is 1, expected version is 1
-      const result = await service.patchSettings(
-        partialUpdate,
-        mockUserId,
-        1,
-      );
+      const result = await service.patchSettings(partialUpdate, mockUserId, 1);
 
       expect(result).toBeDefined();
       expect(result.version).toBe(2);

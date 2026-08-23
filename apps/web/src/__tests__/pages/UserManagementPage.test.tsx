@@ -11,9 +11,7 @@ vi.mock('../../hooks/usePermissions', () => ({
 
 // Mock the child components
 vi.mock('../../components/admin/UserList', () => ({
-  UserList: vi.fn(() => (
-    <div data-testid="user-list">UserList Component</div>
-  )),
+  UserList: vi.fn(() => <div data-testid="user-list">UserList Component</div>),
 }));
 
 vi.mock('../../components/admin/AllowlistTable', () => ({
@@ -48,9 +46,13 @@ describe('UserManagementPage', () => {
       ]),
       roles: new Set(['admin']),
       hasPermission: (perm: string) =>
-        ['users:read', 'users:write', 'rbac:manage', 'allowlist:read', 'allowlist:write'].includes(
-          perm,
-        ),
+        [
+          'users:read',
+          'users:write',
+          'rbac:manage',
+          'allowlist:read',
+          'allowlist:write',
+        ].includes(perm),
       hasAnyPermission: vi.fn(),
       hasAllPermissions: vi.fn(),
       hasRole: vi.fn(),
@@ -95,7 +97,9 @@ describe('UserManagementPage', () => {
       const user = userEvent.setup();
       setPermissions(['users:read', 'allowlist:read']);
 
-      render(<UserManagementPage />, { wrapperOptions: { user: mockAdminUser } });
+      render(<UserManagementPage />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
       await user.click(screen.getByRole('tab', { name: /allowlist/i }));
 
       await waitFor(() => {
@@ -107,7 +111,9 @@ describe('UserManagementPage', () => {
       const user = userEvent.setup();
       setPermissions(['users:read']);
 
-      render(<UserManagementPage />, { wrapperOptions: { user: mockAdminUser } });
+      render(<UserManagementPage />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
 
       // Reachable: the Users tab is the reason the page exists for this user.
       expect(screen.getByTestId('user-list')).toBeInTheDocument();
@@ -115,8 +121,11 @@ describe('UserManagementPage', () => {
       await user.click(screen.getByRole('tab', { name: /allowlist/i }));
 
       await waitFor(() => {
-        expect(screen.getByText(/do not have permission to view the email allowlist/i))
-          .toBeInTheDocument();
+        expect(
+          screen.getByText(
+            /do not have permission to view the email allowlist/i,
+          ),
+        ).toBeInTheDocument();
       });
       expect(screen.queryByTestId('allowlist-table')).not.toBeInTheDocument();
     });
@@ -191,7 +200,7 @@ describe('UserManagementPage', () => {
       });
 
       expect(
-        screen.getByRole('heading', { name: /user management/i })
+        screen.getByRole('heading', { name: /user management/i }),
       ).toBeInTheDocument();
     });
 
@@ -201,7 +210,7 @@ describe('UserManagementPage', () => {
       });
 
       expect(
-        screen.getByText(/manage users and email allowlist/i)
+        screen.getByText(/manage users and email allowlist/i),
       ).toBeInTheDocument();
     });
 
@@ -233,7 +242,7 @@ describe('UserManagementPage', () => {
 
       expect(screen.getByRole('tab', { name: /users/i })).toBeInTheDocument();
       expect(
-        screen.getByRole('tab', { name: /allowlist/i })
+        screen.getByRole('tab', { name: /allowlist/i }),
       ).toBeInTheDocument();
     });
 
@@ -414,7 +423,7 @@ describe('UserManagementPage', () => {
       // Initially tab index should be 0 (Users)
       expect(screen.getByRole('tab', { name: /users/i })).toHaveAttribute(
         'aria-selected',
-        'true'
+        'true',
       );
 
       // Click Allowlist tab (index 1)
@@ -624,7 +633,7 @@ describe('UserManagementPage', () => {
       expect(screen.getByText(/user management/i)).toBeInTheDocument();
       expect(screen.getByRole('tab', { name: /users/i })).toHaveAttribute(
         'aria-selected',
-        'true'
+        'true',
       );
     });
 

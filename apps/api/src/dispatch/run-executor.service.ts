@@ -6,7 +6,10 @@ import { HardSpendCeilingService } from '../budget/hard-spend-ceiling';
 import { decideSpendAdmission } from '../budget/spend-admission';
 import { SpendLedgerService } from '../budget/spend-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ClaudeCodeLocalRunner, RunnerAtCapacityError } from '../runners/claude-code-local/claude-code-local.runner';
+import {
+  ClaudeCodeLocalRunner,
+  RunnerAtCapacityError,
+} from '../runners/claude-code-local/claude-code-local.runner';
 import { RunPollerService } from '../runners/run-poller.service';
 import type { Runner, WorkOrderSpec } from '../runners/runner.types';
 import type { GeneratedWorkOrder } from '../work-orders/work-order-generator';
@@ -83,12 +86,21 @@ export class RunExecutorService {
    * 4. **Track before returning.** An untracked run is one nothing polls, and
    *    the poller reports those as stalled within a tick.
    */
-  async dispatchWorkOrder(input: DispatchWorkOrderInput): Promise<ExecutionResult> {
+  async dispatchWorkOrder(
+    input: DispatchWorkOrderInput,
+  ): Promise<ExecutionResult> {
     const { workOrder } = input;
-    const decision = await this.dispatch.decide(workOrder.needs, workOrder.identity);
+    const decision = await this.dispatch.decide(
+      workOrder.needs,
+      workOrder.identity,
+    );
 
     if (decision.outcome === 'queued' || decision.runnerKey === null) {
-      return { outcome: 'queued', queueReason: decision.queueReason, reason: decision.reason };
+      return {
+        outcome: 'queued',
+        queueReason: decision.queueReason,
+        reason: decision.reason,
+      };
     }
 
     const runner = this.runnerFor(decision.runnerKey);
@@ -112,15 +124,24 @@ export class RunExecutorService {
     const spend = decideSpendAdmission(
       this.ceiling.value,
       await this.ledger.tally(this.ceiling.value.windowDays),
-      { ceilingUsd: workOrder.budgetCeilingUsd, runnerReportsCost: capabilities.reportsCost },
+      {
+        ceilingUsd: workOrder.budgetCeilingUsd,
+        runnerReportsCost: capabilities.reportsCost,
+      },
     );
 
     if (!spend.admit) {
       // Logged at warn rather than debug: this is money not being spent
       // because a limit said so, which is the system working, and an operator
       // who cannot see it working will assume it is not.
-      this.logger.warn(`${workOrder.identity} not dispatched — ${spend.reason}`);
-      return { outcome: 'queued', queueReason: spend.refusal, reason: spend.reason };
+      this.logger.warn(
+        `${workOrder.identity} not dispatched — ${spend.reason}`,
+      );
+      return {
+        outcome: 'queued',
+        queueReason: spend.refusal,
+        reason: spend.reason,
+      };
     }
 
     if (!this.enabled) {
@@ -131,7 +152,11 @@ export class RunExecutorService {
         `DISPATCH DISABLED — would have dispatched ${workOrder.identity} to ` +
         `${decision.runnerKey}@${capabilities.version}. Set DISPATCH_ENABLED=true to act.`;
       this.logger.warn(reason);
-      return { outcome: 'observed', wouldDispatchTo: decision.runnerKey, reason };
+      return {
+        outcome: 'observed',
+        wouldDispatchTo: decision.runnerKey,
+        reason,
+      };
     }
 
     // Generated here rather than by the database, because it has to be inside
@@ -203,9 +228,15 @@ export class RunExecutorService {
       // attempts to judge decomposition quality (metric 4), and a capacity
       // refusal is not an attempt: the row is removed rather than failed,
       // because a run that never started is not a run.
-      await this.prisma.run.delete({ where: { id: runId } }).catch(() => undefined);
+      await this.prisma.run
+        .delete({ where: { id: runId } })
+        .catch(() => undefined);
       this.logger.warn(`${workOrder.identity} re-queued: ${message}`);
-      return { outcome: 'queued', queueReason: 'capable-runners-are-at-capacity', reason: message };
+      return {
+        outcome: 'queued',
+        queueReason: 'capable-runners-are-at-capacity',
+        reason: message,
+      };
     }
 
     await this.prisma.run.updateMany({
@@ -213,7 +244,9 @@ export class RunExecutorService {
       data: { status: 'failed', endedAt: new Date(), attentionReason: message },
     });
 
-    this.logger.error(`${workOrder.identity} failed before it started: ${message}`);
+    this.logger.error(
+      `${workOrder.identity} failed before it started: ${message}`,
+    );
     return { outcome: 'failed', runId, reason: message };
   }
 
@@ -252,7 +285,10 @@ function toSpec(workOrder: GeneratedWorkOrder, runId: string): WorkOrderSpec {
   return {
     identity: workOrder.identity,
     runId,
-    repository: { owner: workOrder.repositoryOwner, name: workOrder.repositoryName },
+    repository: {
+      owner: workOrder.repositoryOwner,
+      name: workOrder.repositoryName,
+    },
     baseCommit: workOrder.baseCommit,
     branch: workOrder.branch,
     taskSpec: workOrder.taskSpec,

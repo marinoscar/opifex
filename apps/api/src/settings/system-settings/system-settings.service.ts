@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, Logger, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateSystemSettingsDto } from '../dto/update-system-settings.dto';
 import { PatchSystemSettingsDto } from '../dto/update-system-settings.dto';
@@ -48,7 +43,9 @@ export class SystemSettingsService {
           },
         },
       });
-      this.logger.warn('Created default system settings - seed may not have run');
+      this.logger.warn(
+        'Created default system settings - seed may not have run',
+      );
     }
 
     const value = settings.value as unknown as SystemSettingsValue;
@@ -89,9 +86,14 @@ export class SystemSettingsService {
     });
 
     // Create audit event
-    await this.createAuditEvent(userId, 'system_settings:replace', settings.id, {
-      newValue: validated,
-    });
+    await this.createAuditEvent(
+      userId,
+      'system_settings:replace',
+      settings.id,
+      {
+        newValue: validated,
+      },
+    );
 
     this.logger.log(`System settings replaced by user: ${userId}`);
 

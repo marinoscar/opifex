@@ -69,7 +69,10 @@ describe('GitHubReadService', () => {
 
       const { issues } = await service.listIssues(REPO);
 
-      expect(issues[0].labels.map((l) => l.name)).toEqual(['bug', 'factory:hold']);
+      expect(issues[0].labels.map((l) => l.name)).toEqual([
+        'bug',
+        'factory:hold',
+      ]);
     });
 
     it('ignores a mirror label that no constant names yet', async () => {
@@ -88,7 +91,9 @@ describe('GitHubReadService', () => {
       // Different question: "does this mirror label exist in the repository
       // yet" is what #42 must ask before applying one. The filtering rule is
       // about reading an issue's state, not the label catalogue.
-      http.paginate.mockResolvedValue(page([label('bug'), label('factory/dispatched')]));
+      http.paginate.mockResolvedValue(
+        page([label('bug'), label('factory/dispatched')]),
+      );
 
       const labels = await service.listRepositoryLabels(REPO);
 
@@ -124,7 +129,10 @@ describe('GitHubReadService', () => {
       // The quirk that has bitten every integration written against this
       // endpoint. Filtered here so no consumer has to know.
       http.paginate.mockResolvedValue(
-        page([rawIssue({ number: 1 }), rawIssue({ number: 2, pull_request: { url: 'x' } })]),
+        page([
+          rawIssue({ number: 1 }),
+          rawIssue({ number: 2, pull_request: { url: 'x' } }),
+        ]),
       );
 
       const { issues } = await service.listIssues(REPO);
@@ -140,7 +148,11 @@ describe('GitHubReadService', () => {
       expect(http.paginate).toHaveBeenCalledWith(
         '/repos/acme/app/issues',
         expect.objectContaining({
-          query: expect.objectContaining({ state: 'open', sort: 'updated', direction: 'desc' }),
+          query: expect.objectContaining({
+            state: 'open',
+            sort: 'updated',
+            direction: 'desc',
+          }),
         }),
       );
     });
@@ -148,9 +160,14 @@ describe('GitHubReadService', () => {
     it('passes `since` as an ISO instant', async () => {
       http.paginate.mockResolvedValue(page([]));
 
-      await service.listIssues(REPO, { since: new Date('2026-08-01T00:00:00Z') });
+      await service.listIssues(REPO, {
+        since: new Date('2026-08-01T00:00:00Z'),
+      });
 
-      const [, options] = http.paginate.mock.calls[0] as [string, { query: Record<string, unknown> }];
+      const [, options] = http.paginate.mock.calls[0] as [
+        string,
+        { query: Record<string, unknown> },
+      ];
       expect(options.query.since).toBe('2026-08-01T00:00:00.000Z');
     });
 
@@ -161,7 +178,10 @@ describe('GitHubReadService', () => {
 
       await service.listIssues(REPO);
 
-      const [, options] = http.paginate.mock.calls[0] as [string, { query: Record<string, unknown> }];
+      const [, options] = http.paginate.mock.calls[0] as [
+        string,
+        { query: Record<string, unknown> },
+      ];
       expect(options.query.labels).toBeUndefined();
     });
 
@@ -232,7 +252,9 @@ describe('GitHubReadService', () => {
     });
 
     it('treats a closed-unmerged PR as not merged', async () => {
-      http.paginate.mockResolvedValue(page([rawPull({ state: 'closed', merged_at: null })]));
+      http.paginate.mockResolvedValue(
+        page([rawPull({ state: 'closed', merged_at: null })]),
+      );
 
       const [pull] = await service.listPullRequests(REPO, { state: 'all' });
 
@@ -259,14 +281,21 @@ describe('GitHubReadService', () => {
         )
         .mockResolvedValueOnce(
           page([
-            { context: 'ci/legacy', state: 'success', updated_at: '2026-08-02T10:00:00Z' },
+            {
+              context: 'ci/legacy',
+              state: 'success',
+              updated_at: '2026-08-02T10:00:00Z',
+            },
           ]),
         );
 
       const checks = await service.listChecks(REPO, 'abc123');
 
       expect(checks).toHaveLength(2);
-      expect(checks.map((c) => c.system).sort()).toEqual(['check-run', 'commit-status']);
+      expect(checks.map((c) => c.system).sort()).toEqual([
+        'check-run',
+        'commit-status',
+      ]);
     });
 
     it('unwraps the check-runs envelope', async () => {
@@ -275,7 +304,10 @@ describe('GitHubReadService', () => {
       // reads as "no CI configured".
       const extractors: ((page: unknown) => unknown[])[] = [];
       http.paginate.mockImplementation(
-        async (_path: string, options: { extract?: (page: unknown) => unknown[] } = {}) => {
+        async (
+          _path: string,
+          options: { extract?: (page: unknown) => unknown[] } = {},
+        ) => {
           if (options.extract) extractors.push(options.extract);
           return page([]);
         },
@@ -295,8 +327,16 @@ describe('GitHubReadService', () => {
       // failed and passed.
       http.paginate.mockResolvedValueOnce(page([])).mockResolvedValueOnce(
         page([
-          { context: 'ci/build', state: 'success', updated_at: '2026-08-02T12:00:00Z' },
-          { context: 'ci/build', state: 'failure', updated_at: '2026-08-02T10:00:00Z' },
+          {
+            context: 'ci/build',
+            state: 'success',
+            updated_at: '2026-08-02T12:00:00Z',
+          },
+          {
+            context: 'ci/build',
+            state: 'failure',
+            updated_at: '2026-08-02T10:00:00Z',
+          },
         ]),
       );
 
@@ -313,7 +353,11 @@ describe('GitHubReadService', () => {
       http.paginate.mockResolvedValueOnce(page([])).mockResolvedValueOnce(
         page([
           { context: 'a', state: 'error', updated_at: '2026-08-02T10:00:00Z' },
-          { context: 'b', state: 'pending', updated_at: '2026-08-02T10:00:00Z' },
+          {
+            context: 'b',
+            state: 'pending',
+            updated_at: '2026-08-02T10:00:00Z',
+          },
         ]),
       );
 
@@ -335,7 +379,10 @@ describe('GitHubReadService', () => {
 
       await service.listChecks(REPO, 'abc123');
 
-      const [, options] = http.paginate.mock.calls[0] as [string, { query: Record<string, unknown> }];
+      const [, options] = http.paginate.mock.calls[0] as [
+        string,
+        { query: Record<string, unknown> },
+      ];
       // Without this a re-run leaves the previous failure in the result set
       // alongside the new pass.
       expect(options.query.filter).toBe('latest');
@@ -357,8 +404,16 @@ describe('GitHubReadService', () => {
       http.paginate.mockResolvedValue(
         page([
           labelEvent(),
-          { event: 'commented', actor: { login: 'x' }, created_at: '2026-08-02T11:00:00Z' },
-          { event: 'closed', actor: { login: 'x' }, created_at: '2026-08-02T12:00:00Z' },
+          {
+            event: 'commented',
+            actor: { login: 'x' },
+            created_at: '2026-08-02T11:00:00Z',
+          },
+          {
+            event: 'closed',
+            actor: { login: 'x' },
+            created_at: '2026-08-02T12:00:00Z',
+          },
         ]),
       );
 
@@ -369,7 +424,9 @@ describe('GitHubReadService', () => {
     });
 
     it('drops a label event with no label payload rather than crashing', async () => {
-      http.paginate.mockResolvedValue(page([{ event: 'labeled', created_at: '2026-08-02T10:00:00Z' }]));
+      http.paginate.mockResolvedValue(
+        page([{ event: 'labeled', created_at: '2026-08-02T10:00:00Z' }]),
+      );
 
       expect(await service.listLabelEvents(REPO, 312)).toEqual([]);
     });
@@ -380,7 +437,9 @@ describe('GitHubReadService', () => {
           page([labelEvent({ actor: { login: 'opifex', type: 'Bot' } })]),
         );
 
-        expect((await service.listLabelEvents(REPO, 312))[0].actorIsBot).toBe(true);
+        expect((await service.listLabelEvents(REPO, 312))[0].actorIsBot).toBe(
+          true,
+        );
       });
 
       it('flags a [bot] login even when GitHub types it as User', async () => {
@@ -390,13 +449,17 @@ describe('GitHubReadService', () => {
           page([labelEvent({ actor: { login: 'opifex[bot]', type: 'User' } })]),
         );
 
-        expect((await service.listLabelEvents(REPO, 312))[0].actorIsBot).toBe(true);
+        expect((await service.listLabelEvents(REPO, 312))[0].actorIsBot).toBe(
+          true,
+        );
       });
 
       it('does not flag a human', async () => {
         http.paginate.mockResolvedValue(page([labelEvent()]));
 
-        expect((await service.listLabelEvents(REPO, 312))[0].actorIsBot).toBe(false);
+        expect((await service.listLabelEvents(REPO, 312))[0].actorIsBot).toBe(
+          false,
+        );
       });
     });
 
@@ -406,7 +469,9 @@ describe('GitHubReadService', () => {
       it('is true when a human applied it and nobody removed it', async () => {
         http.paginate.mockResolvedValue(page([labelEvent()]));
 
-        expect(await service.wasLabelAppliedByHuman(REPO, 312, LABEL)).toBe(true);
+        expect(await service.wasLabelAppliedByHuman(REPO, 312, LABEL)).toBe(
+          true,
+        );
       });
 
       it('is false when a bot applied it', async () => {
@@ -417,18 +482,25 @@ describe('GitHubReadService', () => {
           page([labelEvent({ actor: { login: 'opifex[bot]', type: 'Bot' } })]),
         );
 
-        expect(await service.wasLabelAppliedByHuman(REPO, 312, LABEL)).toBe(false);
+        expect(await service.wasLabelAppliedByHuman(REPO, 312, LABEL)).toBe(
+          false,
+        );
       });
 
       it('is false when a human applied it and then removed it', async () => {
         http.paginate.mockResolvedValue(
           page([
             labelEvent(),
-            labelEvent({ event: 'unlabeled', created_at: '2026-08-02T11:00:00Z' }),
+            labelEvent({
+              event: 'unlabeled',
+              created_at: '2026-08-02T11:00:00Z',
+            }),
           ]),
         );
 
-        expect(await service.wasLabelAppliedByHuman(REPO, 312, LABEL)).toBe(false);
+        expect(await service.wasLabelAppliedByHuman(REPO, 312, LABEL)).toBe(
+          false,
+        );
       });
 
       it('is false when a bot re-applied a label a human had removed', async () => {
@@ -437,7 +509,10 @@ describe('GitHubReadService', () => {
         http.paginate.mockResolvedValue(
           page([
             labelEvent(),
-            labelEvent({ event: 'unlabeled', created_at: '2026-08-02T11:00:00Z' }),
+            labelEvent({
+              event: 'unlabeled',
+              created_at: '2026-08-02T11:00:00Z',
+            }),
             labelEvent({
               actor: { login: 'opifex[bot]', type: 'Bot' },
               created_at: '2026-08-02T12:00:00Z',
@@ -445,21 +520,30 @@ describe('GitHubReadService', () => {
           ]),
         );
 
-        expect(await service.wasLabelAppliedByHuman(REPO, 312, LABEL)).toBe(false);
+        expect(await service.wasLabelAppliedByHuman(REPO, 312, LABEL)).toBe(
+          false,
+        );
       });
 
       it('ignores events for other labels', async () => {
         http.paginate.mockResolvedValue(
-          page([labelEvent({ event: 'unlabeled', label: { name: 'bug' } }), labelEvent()]),
+          page([
+            labelEvent({ event: 'unlabeled', label: { name: 'bug' } }),
+            labelEvent(),
+          ]),
         );
 
-        expect(await service.wasLabelAppliedByHuman(REPO, 312, LABEL)).toBe(true);
+        expect(await service.wasLabelAppliedByHuman(REPO, 312, LABEL)).toBe(
+          true,
+        );
       });
 
       it('is false when the label was never applied at all', async () => {
         http.paginate.mockResolvedValue(page([]));
 
-        expect(await service.wasLabelAppliedByHuman(REPO, 312, LABEL)).toBe(false);
+        expect(await service.wasLabelAppliedByHuman(REPO, 312, LABEL)).toBe(
+          false,
+        );
       });
     });
   });
@@ -496,14 +580,19 @@ describe('GitHubReadService', () => {
         page([
           {
             sha: 'abc123',
-            commit: { message: 'feat: x', author: { date: '2026-08-02T10:00:00Z' } },
+            commit: {
+              message: 'feat: x',
+              author: { date: '2026-08-02T10:00:00Z' },
+            },
             author: { login: 'marinoscar' },
             html_url: 'https://github.com/acme/app/commit/abc123',
           },
         ]),
       );
 
-      const [commit] = await service.listCommits(REPO, { branch: 'factory/312-a3f91c2-a1' });
+      const [commit] = await service.listCommits(REPO, {
+        branch: 'factory/312-a3f91c2-a1',
+      });
 
       expect(commit.authoredAt).toEqual(new Date('2026-08-02T10:00:00Z'));
       expect(commit.sha).toBe('abc123');

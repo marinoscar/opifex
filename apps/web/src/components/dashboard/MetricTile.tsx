@@ -55,7 +55,10 @@ export interface MetricTileProps {
  * decides the verdict word. This is the part of the sparkline that carries the
  * information; the drawing is decoration.
  */
-export function describeTrend(metric: MetricDefinition, values: readonly number[]): string {
+export function describeTrend(
+  metric: MetricDefinition,
+  values: readonly number[],
+): string {
   const direction = summarizeTrend(values);
 
   if (direction === 'flat') {
@@ -72,7 +75,13 @@ export function describeTrend(metric: MetricDefinition, values: readonly number[
   }.`;
 }
 
-export function MetricTile({ metric, value, trend, state, phase }: MetricTileProps) {
+export function MetricTile({
+  metric,
+  value,
+  trend,
+  state,
+  phase,
+}: MetricTileProps) {
   const labelId = useId();
   const helpId = useId();
 
@@ -131,20 +140,32 @@ export function MetricTile({ metric, value, trend, state, phase }: MetricTilePro
 
         {hasTrend && (
           <Box sx={{ color: 'text.secondary', pb: 0.5 }}>
-            <Sparkline values={trend} ariaLabel={describeTrend(metric, trend)} />
+            <Sparkline
+              values={trend}
+              ariaLabel={describeTrend(metric, trend)}
+            />
           </Box>
         )}
       </Box>
 
       {/* VISION §10's "Why" cell, verbatim, plus its target where one exists.
           Wired to the tile through `aria-describedby` above. */}
-      <Typography id={helpId} variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+      <Typography
+        id={helpId}
+        variant="caption"
+        color="text.secondary"
+        sx={{ mt: 0.5 }}
+      >
         {metric.help}
         {metric.target ? ` ${metric.target}` : ''}
       </Typography>
 
       {isUnwired && phase && (
-        <Typography variant="caption" color="text.disabled" sx={{ mt: 'auto', pt: 1 }}>
+        <Typography
+          variant="caption"
+          color="text.disabled"
+          sx={{ mt: 'auto', pt: 1 }}
+        >
           Arrives in {phase}
         </Typography>
       )}

@@ -34,8 +34,13 @@ import type { ActionEvidence, ReconcileAction } from './actions.types';
  * diffing two ticks to find what changed becomes impossible and the log stops
  * being reviewable.
  */
-export function computeActions(observed: ObservedState, desired: DesiredState): ReconcileAction[] {
-  const issuesByNumber = new Map(observed.issues.map((issue) => [issue.number, issue]));
+export function computeActions(
+  observed: ObservedState,
+  desired: DesiredState,
+): ReconcileAction[] {
+  const issuesByNumber = new Map(
+    observed.issues.map((issue) => [issue.number, issue]),
+  );
 
   return [...desired.issues]
     .sort((a, b) => a.issueNumber - b.issueNumber)
@@ -45,7 +50,9 @@ export function computeActions(observed: ObservedState, desired: DesiredState): 
       // projection is built FROM the observation — but returning nothing is
       // safer than asserting inside a function whose whole value is that it
       // never throws during the observation week.
-      return issue ? actionsForIssue(desired.repository, issue, state, observed) : [];
+      return issue
+        ? actionsForIssue(desired.repository, issue, state, observed)
+        : [];
     });
 }
 
@@ -56,7 +63,12 @@ function actionsForIssue(
   observed: ObservedState,
 ): ReconcileAction[] {
   const workOrder = observed.workOrders
-    .filter((w) => w.issueNumber === issue.number && w.status !== 'superseded' && w.status !== 'cancelled')
+    .filter(
+      (w) =>
+        w.issueNumber === issue.number &&
+        w.status !== 'superseded' &&
+        w.status !== 'cancelled',
+    )
     .sort((a, b) => b.attempt - a.attempt)[0];
 
   const evidence: ActionEvidence = {
@@ -76,7 +88,10 @@ function actionsForIssue(
     case 'dispatch':
       actions.push({
         ...base,
-        type: workOrder?.status === 'quarantined' ? 'release-quarantine' : 'dispatch',
+        type:
+          workOrder?.status === 'quarantined'
+            ? 'release-quarantine'
+            : 'dispatch',
         reason: desired.reason,
       });
       break;

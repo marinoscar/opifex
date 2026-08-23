@@ -18,7 +18,9 @@ export class DeviceCodeCleanupTask {
 
     try {
       const count = await this.deviceAuthService.cleanupExpiredCodes();
-      this.logger.log(`Device code cleanup completed: ${count} records removed`);
+      this.logger.log(
+        `Device code cleanup completed: ${count} records removed`,
+      );
     } catch (error) {
       this.logger.error('Error during device code cleanup', error);
     }

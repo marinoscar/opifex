@@ -1,4 +1,8 @@
-import { createTestApp, closeTestApp, TestContext } from '../helpers/test-app.helper';
+import {
+  createTestApp,
+  closeTestApp,
+  TestContext,
+} from '../helpers/test-app.helper';
 import {
   createOpenApiDocument,
   isAuthenticatedOperation,
@@ -7,7 +11,11 @@ import {
 import { OPENAPI_TAGS, OPENAPI_TAG_GROUPS } from '../../src/openapi/tags';
 import { REQUIREMENTS_MARKER } from '../../src/openapi/rbac-docs';
 import { RBAC_EXTENSION_KEY } from '../../src/auth/decorators/auth.decorator';
-import { DocOperation, forEachOperation, MutableDocument } from '../../src/openapi/types';
+import {
+  DocOperation,
+  forEachOperation,
+  MutableDocument,
+} from '../../src/openapi/types';
 
 /**
  * Boots the real AppModule once and asserts the document it produces.
@@ -21,7 +29,11 @@ import { DocOperation, forEachOperation, MutableDocument } from '../../src/opena
 describe('OpenAPI document', () => {
   let context: TestContext;
   let document: MutableDocument;
-  let operations: Array<{ path: string; method: string; operation: DocOperation }>;
+  let operations: Array<{
+    path: string;
+    method: string;
+    operation: DocOperation;
+  }>;
 
   beforeAll(async () => {
     context = await createTestApp();
@@ -43,7 +55,11 @@ describe('OpenAPI document', () => {
 
   describe('branding and metadata', () => {
     it('is titled after this product', () => {
-      const info = document.info as { title: string; version: string; description: string };
+      const info = document.info as {
+        title: string;
+        version: string;
+        description: string;
+      };
       expect(info.title).toBe('OPIFEX API');
       expect(info.description).toContain('OPIFEX');
     });
@@ -75,8 +91,11 @@ describe('OpenAPI document', () => {
       // nestjs-zod's `cleanupOpenApiDoc` resolves it. An object schema with no
       // properties and no `additionalProperties` is that placeholder surviving,
       // which is precisely the defect this module was written to fix.
-      const schemas = (document.components as { schemas: Record<string, Record<string, unknown>> })
-        .schemas;
+      const schemas = (
+        document.components as {
+          schemas: Record<string, Record<string, unknown>>;
+        }
+      ).schemas;
       const empty = Object.entries(schemas)
         .filter(
           ([, schema]) =>
@@ -92,7 +111,8 @@ describe('OpenAPI document', () => {
     });
 
     it('omits the contact email rather than publishing an invalid empty one', () => {
-      const contact = (document.info as { contact?: Record<string, unknown> }).contact;
+      const contact = (document.info as { contact?: Record<string, unknown> })
+        .contact;
       expect(contact).toBeDefined();
       expect(contact).not.toHaveProperty('email');
     });
@@ -134,20 +154,28 @@ describe('OpenAPI document', () => {
       // `applyTagGroups` prunes: `Test Authentication` is declared but its module
       // is registered only outside production, and this suite runs with it on.
       const used = usedTags();
-      const published = (document.tags as Array<{ name: string }>).map((tag) => tag.name);
+      const published = (document.tags as Array<{ name: string }>).map(
+        (tag) => tag.name,
+      );
       expect(published.filter((tag) => !used.has(tag))).toEqual([]);
     });
 
     it('prunes rather than publishes a tag whose module is not registered here', () => {
       // The declaration is a superset of what any one environment uses; pruning
       // is what makes one static taxonomy correct in both.
-      const published = new Set((document.tags as Array<{ name: string }>).map((t) => t.name));
+      const published = new Set(
+        (document.tags as Array<{ name: string }>).map((t) => t.name),
+      );
       const declared = OPENAPI_TAGS.map((t) => t.name);
-      expect(declared.every((tag) => usedTags().has(tag) === published.has(tag))).toBe(true);
+      expect(
+        declared.every((tag) => usedTags().has(tag) === published.has(tag)),
+      ).toBe(true);
     });
 
     it('gives every declared tag a description', () => {
-      const undescribed = (document.tags as Array<{ name: string; description?: string }>)
+      const undescribed = (
+        document.tags as Array<{ name: string; description?: string }>
+      )
         .filter((tag) => !tag.description)
         .map((tag) => tag.name);
       expect(undescribed).toEqual([]);
@@ -156,13 +184,22 @@ describe('OpenAPI document', () => {
     it('places every tag in exactly one x-tagGroup', () => {
       const grouped = OPENAPI_TAG_GROUPS.flatMap((group) => group.tags);
       expect(new Set(grouped).size).toBe(grouped.length);
-      expect(new Set(grouped)).toEqual(new Set(OPENAPI_TAGS.map((tag) => tag.name)));
+      expect(new Set(grouped)).toEqual(
+        new Set(OPENAPI_TAGS.map((tag) => tag.name)),
+      );
     });
 
     it('publishes x-tagGroups covering exactly the published tags', () => {
-      const groups = document['x-tagGroups'] as Array<{ name: string; tags: string[] }>;
-      const published = (document.tags as Array<{ name: string }>).map((tag) => tag.name);
-      expect(groups.flatMap((group) => group.tags).sort()).toEqual([...published].sort());
+      const groups = document['x-tagGroups'] as Array<{
+        name: string;
+        tags: string[];
+      }>;
+      const published = (document.tags as Array<{ name: string }>).map(
+        (tag) => tag.name,
+      );
+      expect(groups.flatMap((group) => group.tags).sort()).toEqual(
+        [...published].sort(),
+      );
       expect(groups.map((group) => group.name)).toEqual(
         OPENAPI_TAG_GROUPS.filter((group) =>
           group.tags.some((tag) => published.includes(tag)),
@@ -185,14 +222,17 @@ describe('OpenAPI document', () => {
       for (const { path, method, operation } of operations) {
         const id = operation.operationId as string;
         const previous = seen.get(id);
-        if (previous) collisions.push(`${id}: ${previous} and ${method} ${path}`);
+        if (previous)
+          collisions.push(`${id}: ${previous} and ${method} ${path}`);
         else seen.set(id, `${method} ${path}`);
       }
       expect(collisions).toEqual([]);
     });
 
     it('drops the "Controller" noise a generator would otherwise bake into names', () => {
-      const ids = operations.map(({ operation }) => operation.operationId as string);
+      const ids = operations.map(
+        ({ operation }) => operation.operationId as string,
+      );
       expect(ids.some((id) => /Controller_/.test(id))).toBe(false);
       expect(ids).toContain('users_listUsers');
     });
@@ -200,7 +240,9 @@ describe('OpenAPI document', () => {
 
   describe('self-documenting RBAC', () => {
     const guarded = () =>
-      operations.filter(({ operation }) => operation[RBAC_EXTENSION_KEY] !== undefined);
+      operations.filter(
+        ({ operation }) => operation[RBAC_EXTENSION_KEY] !== undefined,
+      );
     const authenticated = () =>
       operations.filter(({ operation }) => isAuthenticatedOperation(operation));
 
@@ -210,7 +252,10 @@ describe('OpenAPI document', () => {
 
     it('states the requirements of every guarded operation in its description', () => {
       const silent = guarded()
-        .filter(({ operation }) => !(operation.description ?? '').includes(REQUIREMENTS_MARKER))
+        .filter(
+          ({ operation }) =>
+            !(operation.description ?? '').includes(REQUIREMENTS_MARKER),
+        )
         .map(({ path, method }) => `${method} ${path}`);
       expect(silent).toEqual([]);
     });
@@ -225,7 +270,8 @@ describe('OpenAPI document', () => {
     it('appends to the hand-written description rather than replacing it', () => {
       const withProse = guarded().find(
         ({ operation }) =>
-          (operation.description ?? '').split(REQUIREMENTS_MARKER)[0].trim().length > 0,
+          (operation.description ?? '').split(REQUIREMENTS_MARKER)[0].trim()
+            .length > 0,
       );
       expect(withProse).toBeDefined();
     });
@@ -235,7 +281,10 @@ describe('OpenAPI document', () => {
       // `@UseGuards(JwtAuthGuard)` with a bare `@ApiBearerAuth('JWT-auth')`
       // rather than `@Auth()`; they are still authenticated and must still say so.
       const silent = authenticated()
-        .filter(({ operation }) => !(operation.description ?? '').includes(REQUIREMENTS_MARKER))
+        .filter(
+          ({ operation }) =>
+            !(operation.description ?? '').includes(REQUIREMENTS_MARKER),
+        )
         .map(({ path, method }) => `${method} ${path}`);
       expect(silent).toEqual([]);
     });
@@ -244,14 +293,17 @@ describe('OpenAPI document', () => {
       const live = operations.find(
         ({ path, method }) => path === '/api/health/live' && method === 'get',
       );
-      expect(live?.operation.description ?? '').not.toContain(REQUIREMENTS_MARKER);
+      expect(live?.operation.description ?? '').not.toContain(
+        REQUIREMENTS_MARKER,
+      );
     });
   });
 
   describe('authentication schemes', () => {
     it('documents both bearer credentials, and only those two', () => {
-      const schemes = (document.components as { securitySchemes: Record<string, unknown> })
-        .securitySchemes;
+      const schemes = (
+        document.components as { securitySchemes: Record<string, unknown> }
+      ).securitySchemes;
       expect(Object.keys(schemes).sort()).toEqual(
         [SECURITY_SCHEMES.JWT_AUTH, SECURITY_SCHEMES.PAT_AUTH].sort(),
       );
@@ -265,14 +317,16 @@ describe('OpenAPI document', () => {
       // that cannot happen again.
       const declared = new Set(
         Object.keys(
-          (document.components as { securitySchemes: Record<string, unknown> }).securitySchemes,
+          (document.components as { securitySchemes: Record<string, unknown> })
+            .securitySchemes,
         ),
       );
       const undeclared: string[] = [];
       for (const { path, method, operation } of operations) {
         for (const entry of operation.security ?? []) {
           for (const name of Object.keys(entry)) {
-            if (!declared.has(name)) undeclared.push(`${method} ${path}: ${name}`);
+            if (!declared.has(name))
+              undeclared.push(`${method} ${path}: ${name}`);
           }
         }
       }
@@ -286,7 +340,9 @@ describe('OpenAPI document', () => {
       const missing = operations
         .filter(({ operation }) => isAuthenticatedOperation(operation))
         .filter(({ operation }) => {
-          const names = (operation.security ?? []).flatMap((entry) => Object.keys(entry));
+          const names = (operation.security ?? []).flatMap((entry) =>
+            Object.keys(entry),
+          );
           return (
             !names.includes(SECURITY_SCHEMES.JWT_AUTH) ||
             !names.includes(SECURITY_SCHEMES.PAT_AUTH)
@@ -307,16 +363,27 @@ describe('OpenAPI document', () => {
 
   describe('error envelope', () => {
     it('publishes the shared ErrorDto schema', () => {
-      const schemas = (document.components as { schemas: Record<string, unknown> }).schemas;
+      const schemas = (
+        document.components as { schemas: Record<string, unknown> }
+      ).schemas;
       expect(schemas.ErrorDto).toBeDefined();
     });
 
     it('publishes exactly the six keys the exception filter can emit', () => {
       const errorDto = (
-        document.components as { schemas: Record<string, { properties: Record<string, unknown> }> }
+        document.components as {
+          schemas: Record<string, { properties: Record<string, unknown> }>;
+        }
       ).schemas.ErrorDto;
       expect(Object.keys(errorDto.properties).sort()).toEqual(
-        ['code', 'details', 'message', 'path', 'statusCode', 'timestamp'].sort(),
+        [
+          'code',
+          'details',
+          'message',
+          'path',
+          'statusCode',
+          'timestamp',
+        ].sort(),
       );
     });
 
@@ -338,7 +405,10 @@ describe('OpenAPI document', () => {
     it('documents 401 and 403 on operations guarded by @Auth()', () => {
       const missing = operations
         .filter(({ operation }) => operation[RBAC_EXTENSION_KEY] !== undefined)
-        .filter(({ operation }) => !operation.responses?.['401'] || !operation.responses?.['403'])
+        .filter(
+          ({ operation }) =>
+            !operation.responses?.['401'] || !operation.responses?.['403'],
+        )
         .map(({ path, method }) => `${method} ${path}`);
       expect(missing).toEqual([]);
     });
@@ -355,7 +425,9 @@ describe('OpenAPI document', () => {
 
   describe('response envelope accuracy', () => {
     const jsonSchema = (path: string, method: string, status: string) => {
-      const found = operations.find((op) => op.path === path && op.method === method);
+      const found = operations.find(
+        (op) => op.path === path && op.method === method,
+      );
       return (
         found?.operation.responses?.[status] as {
           content?: Record<string, { schema?: Record<string, unknown> }>;
@@ -388,19 +460,28 @@ describe('OpenAPI document', () => {
     it('documents the nested list shape for /api/storage/objects', () => {
       // Different from /api/users on purpose: this is what the service returns.
       const schema = jsonSchema('/api/storage/objects', 'get', '200') as {
-        properties: { data: { properties: Record<string, { properties?: object }> } };
+        properties: {
+          data: { properties: Record<string, { properties?: object }> };
+        };
       };
-      expect(Object.keys(schema.properties.data.properties).sort()).toEqual(['items', 'meta']);
-      expect(Object.keys(schema.properties.data.properties.meta.properties ?? {}).sort()).toEqual(
-        ['page', 'pageSize', 'totalItems', 'totalPages'].sort(),
-      );
+      expect(Object.keys(schema.properties.data.properties).sort()).toEqual([
+        'items',
+        'meta',
+      ]);
+      expect(
+        Object.keys(
+          schema.properties.data.properties.meta.properties ?? {},
+        ).sort(),
+      ).toEqual(['page', 'pageSize', 'totalItems', 'totalPages'].sort());
     });
 
     it('leaves a 204 alone — there is nothing to envelope', () => {
       const logout = operations.find(
         ({ path, method }) => path === '/api/auth/logout' && method === 'post',
       );
-      expect(logout?.operation.responses?.['204']).not.toHaveProperty('content');
+      expect(logout?.operation.responses?.['204']).not.toHaveProperty(
+        'content',
+      );
     });
   });
 });

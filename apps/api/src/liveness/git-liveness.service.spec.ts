@@ -23,7 +23,13 @@ function runRow(overrides: Record<string, unknown> = {}) {
 }
 
 function ghCommit(sha: string, at: string) {
-  return { sha, message: 'feat: work', author: 'x', authoredAt: new Date(at), url: 'u' };
+  return {
+    sha,
+    message: 'feat: work',
+    author: 'x',
+    authoredAt: new Date(at),
+    url: 'u',
+  };
 }
 
 describe('GitLivenessService', () => {
@@ -40,7 +46,10 @@ describe('GitLivenessService', () => {
 
   beforeEach(() => {
     prisma = {
-      run: { findMany: jest.fn().mockResolvedValue([runRow()]), update: jest.fn().mockResolvedValue({}) },
+      run: {
+        findMany: jest.fn().mockResolvedValue([runRow()]),
+        update: jest.fn().mockResolvedValue({}),
+      },
       runEvent: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     github = {
@@ -63,11 +72,14 @@ describe('GitLivenessService', () => {
       await service.sweep();
 
       const [{ where }] = prisma.run.findMany.mock.calls[0];
-      expect(where).toEqual({ status: { in: ['running', 'stalled', 'blocked'] } });
+      expect(where).toEqual({
+        status: { in: ['running', 'stalled', 'blocked'] },
+      });
     });
 
     it('includes stalled runs, because a commit is evidence the watchdog was wrong', async () => {
-      const [{ where }] = (await service.sweep(), prisma.run.findMany.mock.calls[0]);
+      const [{ where }] =
+        (await service.sweep(), prisma.run.findMany.mock.calls[0]);
 
       expect(where.status.in).toContain('stalled');
     });
@@ -86,7 +98,9 @@ describe('GitLivenessService', () => {
     it('writes with skipDuplicates rather than reading first', async () => {
       // A read-then-write could interleave between two ticks. The unique
       // constraint on (runId, externalId) is where this belongs.
-      github.listCommits.mockResolvedValue([ghCommit('7c1d9ab', '2026-08-21T10:14:00Z')]);
+      github.listCommits.mockResolvedValue([
+        ghCommit('7c1d9ab', '2026-08-21T10:14:00Z'),
+      ]);
 
       await service.sweep();
 
@@ -97,16 +111,23 @@ describe('GitLivenessService', () => {
     it('counts an already-known event separately from a new one', async () => {
       // The watcher re-derives the same commit every tick; a conflict is the
       // expected outcome, not an error.
-      github.listCommits.mockResolvedValue([ghCommit('7c1d9ab', '2026-08-21T10:14:00Z')]);
+      github.listCommits.mockResolvedValue([
+        ghCommit('7c1d9ab', '2026-08-21T10:14:00Z'),
+      ]);
       prisma.runEvent.createMany.mockResolvedValue({ count: 0 });
 
       const result = await service.sweep();
 
-      expect(result).toMatchObject({ eventsRecorded: 0, eventsAlreadyKnown: 1 });
+      expect(result).toMatchObject({
+        eventsRecorded: 0,
+        eventsAlreadyKnown: 1,
+      });
     });
 
     it('stores the sender-chosen id as externalId', async () => {
-      github.listCommits.mockResolvedValue([ghCommit('7c1d9ab', '2026-08-21T10:14:00Z')]);
+      github.listCommits.mockResolvedValue([
+        ghCommit('7c1d9ab', '2026-08-21T10:14:00Z'),
+      ]);
 
       await service.sweep();
 
@@ -115,7 +136,9 @@ describe('GitLivenessService', () => {
     });
 
     it('records the event as git-derived, not runner-reported', async () => {
-      github.listCommits.mockResolvedValue([ghCommit('7c1d9ab', '2026-08-21T10:14:00Z')]);
+      github.listCommits.mockResolvedValue([
+        ghCommit('7c1d9ab', '2026-08-21T10:14:00Z'),
+      ]);
 
       await service.sweep();
 
@@ -131,11 +154,15 @@ describe('GitLivenessService', () => {
       prisma.run.findMany.mockResolvedValue([
         runRow({ events: [{ occurredAt: new Date('2026-08-21T10:00:00Z') }] }),
       ]);
-      github.listCommits.mockResolvedValue([ghCommit('7c1d9ab', '2026-08-21T11:00:00Z')]);
+      github.listCommits.mockResolvedValue([
+        ghCommit('7c1d9ab', '2026-08-21T11:00:00Z'),
+      ]);
 
       const result = await service.sweep();
 
-      expect(result.disagreements[0]).toMatchObject({ kind: 'git-ahead-of-runner' });
+      expect(result.disagreements[0]).toMatchObject({
+        kind: 'git-ahead-of-runner',
+      });
       expect(result.disagreements[0].detail).toContain('60 minutes behind');
     });
 
@@ -146,7 +173,9 @@ describe('GitLivenessService', () => {
 
       const result = await service.sweep();
 
-      expect(result.disagreements[0]).toMatchObject({ kind: 'runner-ahead-of-git' });
+      expect(result.disagreements[0]).toMatchObject({
+        kind: 'runner-ahead-of-git',
+      });
     });
 
     it('notices a pull request from a runner that never reported at all', async () => {
@@ -171,14 +200,18 @@ describe('GitLivenessService', () => {
 
       const result = await service.sweep();
 
-      expect(result.disagreements[0]).toMatchObject({ kind: 'git-completed-runner-silent' });
+      expect(result.disagreements[0]).toMatchObject({
+        kind: 'git-completed-runner-silent',
+      });
     });
 
     it('reports NO disagreement when both sources agree', async () => {
       prisma.run.findMany.mockResolvedValue([
         runRow({ events: [{ occurredAt: new Date('2026-08-21T10:59:00Z') }] }),
       ]);
-      github.listCommits.mockResolvedValue([ghCommit('7c1d9ab', '2026-08-21T11:00:00Z')]);
+      github.listCommits.mockResolvedValue([
+        ghCommit('7c1d9ab', '2026-08-21T11:00:00Z'),
+      ]);
 
       expect((await service.sweep()).disagreements).toEqual([]);
     });
@@ -189,7 +222,9 @@ describe('GitLivenessService', () => {
       prisma.run.findMany.mockResolvedValue([
         runRow({ events: [{ occurredAt: new Date('2026-08-21T10:00:00Z') }] }),
       ]);
-      github.listCommits.mockResolvedValue([ghCommit('7c1d9ab', '2026-08-21T11:00:00Z')]);
+      github.listCommits.mockResolvedValue([
+        ghCommit('7c1d9ab', '2026-08-21T11:00:00Z'),
+      ]);
 
       const result = await service.sweep();
 
@@ -202,7 +237,9 @@ describe('GitLivenessService', () => {
 
   describe('updating the run', () => {
     it('records the head commit it observed', async () => {
-      github.listCommits.mockResolvedValue([ghCommit('7c1d9ab', '2026-08-21T10:14:00Z')]);
+      github.listCommits.mockResolvedValue([
+        ghCommit('7c1d9ab', '2026-08-21T10:14:00Z'),
+      ]);
 
       await service.sweep();
 
@@ -260,7 +297,9 @@ describe('GitLivenessService', () => {
     });
 
     it('asks for checks once a head exists', async () => {
-      github.listCommits.mockResolvedValue([ghCommit('7c1d9ab', '2026-08-21T10:14:00Z')]);
+      github.listCommits.mockResolvedValue([
+        ghCommit('7c1d9ab', '2026-08-21T10:14:00Z'),
+      ]);
 
       await service.sweep();
 
@@ -274,8 +313,14 @@ describe('GitLivenessService', () => {
   describe('failure handling', () => {
     it('records a failure and keeps sweeping', async () => {
       prisma.run.findMany.mockResolvedValue([
-        runRow({ id: 'a', workOrder: { ...runRow().workOrder, identity: 'wo_a' } }),
-        runRow({ id: 'b', workOrder: { ...runRow().workOrder, identity: 'wo_b' } }),
+        runRow({
+          id: 'a',
+          workOrder: { ...runRow().workOrder, identity: 'wo_a' },
+        }),
+        runRow({
+          id: 'b',
+          workOrder: { ...runRow().workOrder, identity: 'wo_b' },
+        }),
       ]);
       github.listCommits
         .mockRejectedValueOnce(new Error('GitHub is down'))
@@ -283,7 +328,9 @@ describe('GitLivenessService', () => {
 
       const result = await service.sweep();
 
-      expect(result.failures).toEqual([{ run: 'wo_a', reason: 'GitHub is down' }]);
+      expect(result.failures).toEqual([
+        { run: 'wo_a', reason: 'GitHub is down' },
+      ]);
       expect(result.runsWatched).toBe(2);
     });
   });
@@ -292,7 +339,9 @@ describe('GitLivenessService', () => {
       // No OpenTelemetry SDK is registered here, so no span is exported and
       // the columns are null. Storing the noop span's inherited ids instead
       // would link the run detail to a trace with nothing in it.
-      github.listCommits.mockResolvedValue([ghCommit('c1', '2026-08-21T10:05:00Z')]);
+      github.listCommits.mockResolvedValue([
+        ghCommit('c1', '2026-08-21T10:05:00Z'),
+      ]);
 
       await service.sweep();
 

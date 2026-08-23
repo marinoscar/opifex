@@ -69,16 +69,16 @@ export function ThemeContextProvider({ children }: ThemeContextProviderProps) {
   };
 
   return (
-    <ThemeContext.Provider value={value}>
-      {children}
-    </ThemeContext.Provider>
+    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
   );
 }
 
 export function useThemeContext(): ThemeContextValue {
   const context = useContext(ThemeContext);
   if (!context) {
-    throw new Error('useThemeContext must be used within a ThemeContextProvider');
+    throw new Error(
+      'useThemeContext must be used within a ThemeContextProvider',
+    );
   }
   return context;
 }

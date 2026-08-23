@@ -5,7 +5,15 @@
   "description": "The normalized event floor every runner maps into (VISION.MD §9). Exactly six types. A seventh requires a schema version bump, which is the point: the floor is what makes runners comparable, and a floor that grows on demand is not a floor.",
   "type": "object",
   "unevaluatedProperties": false,
-  "required": ["schemaVersion", "eventId", "runId", "workOrderId", "type", "source", "occurredAt"],
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "runId",
+    "workOrderId",
+    "type",
+    "source",
+    "occurredAt"
+  ],
   "properties": {
     "schemaVersion": {
       "description": "Version of this schema the event claims to conform to. Stored with the event so an old payload stays readable after the schema moves on.",
@@ -76,7 +84,10 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "type": { "const": "run.progress" } }, "required": ["type"] },
+      "if": {
+        "properties": { "type": { "const": "run.progress" } },
+        "required": ["type"]
+      },
       "then": {
         "properties": {
           "tool": {
@@ -103,7 +114,10 @@
       }
     },
     {
-      "if": { "properties": { "type": { "const": "run.blocked" } }, "required": ["type"] },
+      "if": {
+        "properties": { "type": { "const": "run.blocked" } },
+        "required": ["type"]
+      },
       "then": {
         "required": ["blocked"],
         "properties": {
@@ -135,7 +149,10 @@
       }
     },
     {
-      "if": { "properties": { "type": { "const": "run.completed" } }, "required": ["type"] },
+      "if": {
+        "properties": { "type": { "const": "run.completed" } },
+        "required": ["type"]
+      },
       "then": {
         "properties": {
           "result": {
@@ -151,7 +168,10 @@
       }
     },
     {
-      "if": { "properties": { "type": { "const": "run.failed" } }, "required": ["type"] },
+      "if": {
+        "properties": { "type": { "const": "run.failed" } },
+        "required": ["type"]
+      },
       "then": {
         "required": ["failure"],
         "properties": {

@@ -102,7 +102,9 @@ export class PatService {
       data: { revokedAt: new Date() },
     });
 
-    this.logger.log(`Revoked PAT "${pat.name}" (${pat.id}) for user: ${userId}`);
+    this.logger.log(
+      `Revoked PAT "${pat.name}" (${pat.id}) for user: ${userId}`,
+    );
   }
 
   /**

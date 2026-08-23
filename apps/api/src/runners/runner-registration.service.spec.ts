@@ -37,7 +37,9 @@ describe('RunnerRegistrationService', () => {
   let prisma: PrismaService;
 
   function buildPrisma(): PrismaService {
-    runnerUpsert = jest.fn().mockResolvedValue({ id: 'runner-uuid', key: 'claude-code-local' });
+    runnerUpsert = jest
+      .fn()
+      .mockResolvedValue({ id: 'runner-uuid', key: 'claude-code-local' });
     capabilityUpsert = jest.fn().mockResolvedValue({});
 
     const tx = {
@@ -46,20 +48,26 @@ describe('RunnerRegistrationService', () => {
     };
 
     return {
-      $transaction: jest.fn(async (callback: (t: typeof tx) => unknown) => callback(tx)),
+      $transaction: jest.fn(async (callback: (t: typeof tx) => unknown) =>
+        callback(tx),
+      ),
     } as unknown as PrismaService;
   }
 
-  function build(options: {
-    enabled?: boolean;
-    capabilities?: Partial<RunnerCapabilities>;
-    capabilitiesThrows?: Error;
-  } = {}) {
+  function build(
+    options: {
+      enabled?: boolean;
+      capabilities?: Partial<RunnerCapabilities>;
+      capabilitiesThrows?: Error;
+    } = {},
+  ) {
     prisma = buildPrisma();
 
     const config = {
       get: (key: string) =>
-        key === 'runners.claudeCodeLocal.enabled' ? (options.enabled ?? true) : undefined,
+        key === 'runners.claudeCodeLocal.enabled'
+          ? (options.enabled ?? true)
+          : undefined,
     } as unknown as ConfigService;
 
     const runner = {
@@ -111,13 +119,17 @@ describe('RunnerRegistrationService', () => {
       // model yet must not be silently discarded at the boundary.
       await build().onModuleInit();
 
-      expect(capabilityUpsert.mock.calls[0][0].create.manifest).toEqual(CAPABILITIES.manifest);
+      expect(capabilityUpsert.mock.calls[0][0].create.manifest).toEqual(
+        CAPABILITIES.manifest,
+      );
     });
 
     it('records the version the runner observed', async () => {
       await build({ capabilities: { version: '3.0.1' } }).onModuleInit();
 
-      expect(runnerUpsert.mock.calls[0][0].update).toMatchObject({ version: '3.0.1' });
+      expect(runnerUpsert.mock.calls[0][0].update).toMatchObject({
+        version: '3.0.1',
+      });
     });
 
     it('writes both rows in one transaction', async () => {
@@ -135,7 +147,9 @@ describe('RunnerRegistrationService', () => {
   describe('the enabled flag', () => {
     it('enables the runner when the flag is on', async () => {
       await build({ enabled: true }).onModuleInit();
-      expect(runnerUpsert.mock.calls[0][0].update).toMatchObject({ enabled: true });
+      expect(runnerUpsert.mock.calls[0][0].update).toMatchObject({
+        enabled: true,
+      });
     });
 
     it('registers but disables the runner when the flag is off', async () => {
@@ -145,8 +159,12 @@ describe('RunnerRegistrationService', () => {
       await build({ enabled: false }).onModuleInit();
 
       expect(runnerUpsert).toHaveBeenCalled();
-      expect(runnerUpsert.mock.calls[0][0].update).toMatchObject({ enabled: false });
-      expect(runnerUpsert.mock.calls[0][0].create).toMatchObject({ enabled: false });
+      expect(runnerUpsert.mock.calls[0][0].update).toMatchObject({
+        enabled: false,
+      });
+      expect(runnerUpsert.mock.calls[0][0].create).toMatchObject({
+        enabled: false,
+      });
     });
 
     it('treats anything other than true as off', async () => {
@@ -155,8 +173,14 @@ describe('RunnerRegistrationService', () => {
         capabilities: jest.fn(async () => CAPABILITIES),
       } as unknown as ClaudeCodeLocalRunner;
 
-      await new RunnerRegistrationService(buildPrisma(), config, runner).onModuleInit();
-      expect(runnerUpsert.mock.calls[0][0].update).toMatchObject({ enabled: false });
+      await new RunnerRegistrationService(
+        buildPrisma(),
+        config,
+        runner,
+      ).onModuleInit();
+      expect(runnerUpsert.mock.calls[0][0].update).toMatchObject({
+        enabled: false,
+      });
     });
   });
 
@@ -175,8 +199,9 @@ describe('RunnerRegistrationService', () => {
     it('carries a changed capability through on the next boot', async () => {
       // A CLI upgrade that changed what the runner can do must reach the fleet,
       // or dispatch keeps routing on last month's manifest.
-      await build({ capabilities: { streamingFidelity: 'partial', maxConcurrency: 4 } })
-        .onModuleInit();
+      await build({
+        capabilities: { streamingFidelity: 'partial', maxConcurrency: 4 },
+      }).onModuleInit();
 
       expect(capabilityUpsert.mock.calls[0][0].update).toMatchObject({
         streamingFidelity: 'partial',
@@ -196,14 +221,20 @@ describe('RunnerRegistrationService', () => {
         capabilities: { maxConcurrency: 0, version: 'unavailable' },
       }).onModuleInit();
 
-      expect(capabilityUpsert.mock.calls[0][0].create).toMatchObject({ maxConcurrency: 0 });
-      expect(runnerUpsert.mock.calls[0][0].update).toMatchObject({ version: 'unavailable' });
+      expect(capabilityUpsert.mock.calls[0][0].create).toMatchObject({
+        maxConcurrency: 0,
+      });
+      expect(runnerUpsert.mock.calls[0][0].update).toMatchObject({
+        version: 'unavailable',
+      });
     });
 
     it('leaves the fleet unchanged when a runner cannot describe itself', async () => {
       // Writing a partial row would be worse than writing none: dispatch would
       // route against whatever half of the manifest survived.
-      await build({ capabilitiesThrows: new Error('probe exploded') }).onModuleInit();
+      await build({
+        capabilitiesThrows: new Error('probe exploded'),
+      }).onModuleInit();
 
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
@@ -214,13 +245,17 @@ describe('RunnerRegistrationService', () => {
       // one runner could not be written down would take all of them out over
       // the least important of them.
       const service = build();
-      (prisma.$transaction as jest.Mock).mockRejectedValue(new Error('database is down'));
+      (prisma.$transaction as jest.Mock).mockRejectedValue(
+        new Error('database is down'),
+      );
 
       await expect(service.onModuleInit()).resolves.toBeUndefined();
     });
 
     it('does not stop the API booting when capabilities throws', async () => {
-      const service = build({ capabilitiesThrows: new Error('probe exploded') });
+      const service = build({
+        capabilitiesThrows: new Error('probe exploded'),
+      });
       await expect(service.onModuleInit()).resolves.toBeUndefined();
     });
   });

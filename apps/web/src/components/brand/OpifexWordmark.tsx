@@ -24,7 +24,10 @@
 
 import type { SVGProps } from 'react';
 
-export interface OpifexWordmarkProps extends Omit<SVGProps<SVGSVGElement>, 'children'> {
+export interface OpifexWordmarkProps extends Omit<
+  SVGProps<SVGSVGElement>,
+  'children'
+> {
   /** Rendered height in px. Width follows the 132:24 viewBox aspect ratio. */
   height?: number;
   /** Accessible name. `null` marks the lockup decorative (`aria-hidden`). */

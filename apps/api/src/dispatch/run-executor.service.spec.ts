@@ -37,7 +37,9 @@ describe('RunExecutorService', () => {
     reportsCost: true,
   } as unknown as RunnerCapabilities;
 
-  const workOrder = (overrides: Partial<GeneratedWorkOrder> = {}): GeneratedWorkOrder =>
+  const workOrder = (
+    overrides: Partial<GeneratedWorkOrder> = {},
+  ): GeneratedWorkOrder =>
     ({
       identity: 'wo_acme-widgets_42_abc1234_a1',
       branch: 'factory/42-abc1234-a1',
@@ -118,7 +120,9 @@ describe('RunExecutorService', () => {
   }
 
   function ledgerOf(value: SpendTally): SpendLedgerService {
-    return { tally: jest.fn().mockResolvedValue(value) } as unknown as SpendLedgerService;
+    return {
+      tally: jest.fn().mockResolvedValue(value),
+    } as unknown as SpendLedgerService;
   }
 
   function build(enabled = true): RunExecutorService {
@@ -163,7 +167,10 @@ describe('RunExecutorService', () => {
   }
 
   const dispatch = () =>
-    executor.dispatchWorkOrder({ workOrder: workOrder(), workOrderId: WORK_ORDER_ID });
+    executor.dispatchWorkOrder({
+      workOrder: workOrder(),
+      workOrderId: WORK_ORDER_ID,
+    });
 
   describe('the happy path', () => {
     beforeEach(() => {
@@ -197,14 +204,17 @@ describe('RunExecutorService', () => {
       // the agent unable to push.
       await dispatch();
 
-      expect(write.mock.invocationCallOrder[0]).toBeLessThan(submit.mock.invocationCallOrder[0]);
+      expect(write.mock.invocationCallOrder[0]).toBeLessThan(
+        submit.mock.invocationCallOrder[0],
+      );
     });
 
     it('passes the same run id to the records, the spec and the poller', async () => {
       // Three places that must agree, and nothing joins them if they do not:
       // the commit trailer, the events, and what gets polled.
       const result = await dispatch();
-      if (result.outcome !== 'dispatched') throw new Error('expected a dispatch');
+      if (result.outcome !== 'dispatched')
+        throw new Error('expected a dispatch');
 
       expect(write.mock.calls[0][0].runId).toBe(result.runId);
       expect(submit.mock.calls[0][0].runId).toBe(result.runId);
@@ -247,7 +257,10 @@ describe('RunExecutorService', () => {
 
       const result = await dispatch();
 
-      expect(result).toMatchObject({ outcome: 'queued', queueReason: 'capable-runners-are-at-capacity' });
+      expect(result).toMatchObject({
+        outcome: 'queued',
+        queueReason: 'capable-runners-are-at-capacity',
+      });
       expect(runCreate).not.toHaveBeenCalled();
       expect(submit).not.toHaveBeenCalled();
     });
@@ -256,7 +269,10 @@ describe('RunExecutorService', () => {
       // A registration left behind by an older deployment. The work order is
       // fine; the fleet is not.
       executor = build();
-      decide.mockResolvedValue({ ...DISPATCHABLE, runnerKey: 'some-other-runner' });
+      decide.mockResolvedValue({
+        ...DISPATCHABLE,
+        runnerKey: 'some-other-runner',
+      });
 
       const result = await dispatch();
 
@@ -277,7 +293,10 @@ describe('RunExecutorService', () => {
       // do it.
       const result = await dispatch();
 
-      expect(result).toMatchObject({ outcome: 'observed', wouldDispatchTo: 'claude-code-local' });
+      expect(result).toMatchObject({
+        outcome: 'observed',
+        wouldDispatchTo: 'claude-code-local',
+      });
       expect(decide).toHaveBeenCalledTimes(1);
       expect(runCreate).not.toHaveBeenCalled();
       expect(write).not.toHaveBeenCalled();
@@ -331,7 +350,9 @@ describe('RunExecutorService', () => {
       // Routing reads the database; the ceiling counts live children. The two
       // can legitimately disagree by one, and #66 counts attempts to judge
       // decomposition quality — a capacity refusal is not an attempt.
-      submit.mockRejectedValue(new RunnerAtCapacityError('claude-code-local is at its ceiling'));
+      submit.mockRejectedValue(
+        new RunnerAtCapacityError('claude-code-local is at its ceiling'),
+      );
 
       const result = await dispatch();
 
@@ -361,7 +382,9 @@ describe('RunExecutorService', () => {
       submit.mockRejectedValue(new Error('could not start claude'));
       await dispatch();
 
-      expect(runUpdateMany.mock.calls[0][0].data.attentionReason).toContain('could not start');
+      expect(runUpdateMany.mock.calls[0][0].data.attentionReason).toContain(
+        'could not start',
+      );
     });
 
     it('fails the run when the RECORDS step throws, and never submits', async () => {
@@ -414,7 +437,9 @@ describe('RunExecutorService', () => {
       });
 
       expect(result.outcome).toBe('queued');
-      expect(result.outcome === 'queued' && result.queueReason).toBe('hard-spend-ceiling-reached');
+      expect(result.outcome === 'queued' && result.queueReason).toBe(
+        'hard-spend-ceiling-reached',
+      );
       expect(runCreate).not.toHaveBeenCalled();
       expect(write).not.toHaveBeenCalled();
       expect(submit).not.toHaveBeenCalled();
@@ -461,7 +486,9 @@ describe('RunExecutorService', () => {
       // is really a test that neither is dropped on the way in.
       const runner = {
         submit,
-        capabilities: jest.fn().mockResolvedValue({ ...CAPABILITIES, reportsCost: false }),
+        capabilities: jest
+          .fn()
+          .mockResolvedValue({ ...CAPABILITIES, reportsCost: false }),
       } as unknown as ClaudeCodeLocalRunner;
 
       const executorWithBlindRunner = new RunExecutorService(
@@ -504,11 +531,14 @@ describe('RunExecutorService', () => {
       expect(submit).toHaveBeenCalledTimes(1);
     });
 
-    it('tallies over the ceiling\'s own window, not a window of its own choosing', async () => {
+    it("tallies over the ceiling's own window, not a window of its own choosing", async () => {
       ceiling = { limitUsd: 100, malformed: null, windowDays: 7 };
       const ledger = ledgerOf(tally);
       const executorWithLedger = new RunExecutorService(
-        { run: { create: runCreate }, workOrder: { update: workOrderUpdate } } as unknown as PrismaService,
+        {
+          run: { create: runCreate },
+          workOrder: { update: workOrderUpdate },
+        } as unknown as PrismaService,
         { get: () => true } as unknown as ConfigService,
         { decide } as unknown as DispatchService,
         { write } as unknown as WorkOrderRecordsService,

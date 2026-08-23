@@ -8,5 +8,8 @@
   "occurredAt": "2026-08-21T10:00:00.000Z",
   "summary": "Checked out a3f91c2 on factory/312-a3f91c2-a1",
   "runner": "claude-code-local@2.1.223",
-  "trace": { "traceId": "4bf92f3577b34da6a3ce929d0e0e4736", "spanId": "00f067aa0ba902b7" }
+  "trace": {
+    "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "spanId": "00f067aa0ba902b7"
+  }
 }

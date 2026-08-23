@@ -24,7 +24,10 @@ export interface CardSortControlProps<Row> {
   sort: DataTableSortConfig;
 }
 
-export function CardSortControl<Row>({ columns, sort }: CardSortControlProps<Row>) {
+export function CardSortControl<Row>({
+  columns,
+  sort,
+}: CardSortControlProps<Row>) {
   const sortable = columns.filter((column) => column.sortable);
   if (sortable.length === 0) return null;
 
@@ -34,7 +37,13 @@ export function CardSortControl<Row>({ columns, sort }: CardSortControlProps<Row
   return (
     <Box
       data-testid="datatable-card-sort"
-      sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, minWidth: 0 }}
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        mb: 1.5,
+        minWidth: 0,
+      }}
     >
       <TextField
         select
@@ -60,11 +69,15 @@ export function CardSortControl<Row>({ columns, sort }: CardSortControlProps<Row
         ))}
       </TextField>
 
-      <Tooltip title={direction === 'asc' ? 'Sort ascending' : 'Sort descending'}>
+      <Tooltip
+        title={direction === 'asc' ? 'Sort ascending' : 'Sort descending'}
+      >
         <span>
           <IconButton
             aria-label={
-              direction === 'asc' ? 'Sorted ascending, switch to descending' : 'Sorted descending, switch to ascending'
+              direction === 'asc'
+                ? 'Sorted ascending, switch to descending'
+                : 'Sorted descending, switch to ascending'
             }
             disabled={!current}
             onClick={() =>

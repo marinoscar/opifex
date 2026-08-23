@@ -1,7 +1,10 @@
 import { ConfigService } from '@nestjs/config';
 
 import { GitHubHttpService } from '../github/github-http.service';
-import { GitHubNotFoundError, GitHubRateLimitError } from '../github/github.errors';
+import {
+  GitHubNotFoundError,
+  GitHubRateLimitError,
+} from '../github/github.errors';
 import { RateLimitService } from '../github/rate-limit.service';
 import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -72,7 +75,9 @@ describe('ReconcilerService', () => {
       prisma as unknown as PrismaService,
       // Recording is a separate concern from reconciling — these suites are
       // about what the tick DECIDES, and #50's own spec covers persistence.
-      { record: jest.fn().mockResolvedValue(undefined) } as unknown as ReconcileLogService,
+      {
+        record: jest.fn().mockResolvedValue(undefined),
+      } as unknown as ReconcileLogService,
       // Projection is its own suite (`work-order-projection.service.spec.ts`).
       // A double here keeps these tests about what the TICK does with it.
       workOrders as unknown as WorkOrderProjectionService,
@@ -88,9 +93,15 @@ describe('ReconcilerService', () => {
         result: await work(),
       })),
     };
-    repositories = { listObserved: jest.fn().mockResolvedValue([repository()]) };
+    repositories = {
+      listObserved: jest.fn().mockResolvedValue([repository()]),
+    };
     github = {
-      listIssues: jest.fn().mockResolvedValue({ issues: [], truncated: false, allFromCache: false }),
+      listIssues: jest.fn().mockResolvedValue({
+        issues: [],
+        truncated: false,
+        allFromCache: false,
+      }),
       listCommits: jest.fn().mockResolvedValue([{ sha: 'a'.repeat(40) }]),
     };
     workOrders = { project: jest.fn().mockResolvedValue(emptyProjection()) };
@@ -129,12 +140,14 @@ describe('ReconcilerService', () => {
       // If any read happened outside it, two overlapping ticks would both hit
       // GitHub — which is the whole thing the lease exists to prevent.
       let observedInside = false;
-      lease.withLease.mockImplementation(async (work: () => Promise<unknown>) => {
-        expect(github.listIssues).not.toHaveBeenCalled();
-        const result = await work();
-        observedInside = github.listIssues.mock.calls.length > 0;
-        return { acquired: true, result };
-      });
+      lease.withLease.mockImplementation(
+        async (work: () => Promise<unknown>) => {
+          expect(github.listIssues).not.toHaveBeenCalled();
+          const result = await work();
+          observedInside = github.listIssues.mock.calls.length > 0;
+          return { acquired: true, result };
+        },
+      );
 
       await build().tick();
 
@@ -170,7 +183,10 @@ describe('ReconcilerService', () => {
         repository({ id: 'a', name: 'one' }),
         repository({ id: 'b', name: 'two' }),
       ]);
-      http.canSpend.mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValue(false);
+      http.canSpend
+        .mockReturnValueOnce(true)
+        .mockReturnValueOnce(true)
+        .mockReturnValue(false);
 
       const record = await build().tick();
 
@@ -185,7 +201,14 @@ describe('ReconcilerService', () => {
         repository({ id: 'c', name: 'three' }),
       ]);
       github.listIssues.mockRejectedValue(
-        new GitHubRateLimitError('exhausted', 403, 'GET', '/x', new Date(Date.now() + 3600_000), false),
+        new GitHubRateLimitError(
+          'exhausted',
+          403,
+          'GET',
+          '/x',
+          new Date(Date.now() + 3600_000),
+          false,
+        ),
       );
 
       const record = await build().tick();
@@ -237,8 +260,14 @@ describe('ReconcilerService', () => {
         repository({ id: 'b', name: 'fine' }),
       ]);
       github.listIssues
-        .mockRejectedValueOnce(new GitHubNotFoundError('Not Found', 404, 'GET', '/x'))
-        .mockResolvedValue({ issues: [], truncated: false, allFromCache: false });
+        .mockRejectedValueOnce(
+          new GitHubNotFoundError('Not Found', 404, 'GET', '/x'),
+        )
+        .mockResolvedValue({
+          issues: [],
+          truncated: false,
+          allFromCache: false,
+        });
 
       const record = await build().tick();
 
@@ -374,7 +403,10 @@ describe('ReconcilerService', () => {
       const record = await build().tick();
 
       expect(record.actions).toEqual([
-        expect.objectContaining({ type: 'remove-mirror-label', label: 'factory/dispatched' }),
+        expect.objectContaining({
+          type: 'remove-mirror-label',
+          label: 'factory/dispatched',
+        }),
       ]);
     });
 
@@ -392,7 +424,9 @@ describe('ReconcilerService', () => {
       const record = await build().tick();
 
       expect(record.durationMs).toBeGreaterThanOrEqual(0);
-      expect(record.finishedAt.getTime()).toBeGreaterThanOrEqual(record.startedAt.getTime());
+      expect(record.finishedAt.getTime()).toBeGreaterThanOrEqual(
+        record.startedAt.getTime(),
+      );
     });
 
     it('is recorded even for a tick that computed nothing', async () => {
@@ -421,7 +455,11 @@ describe('ReconcilerService', () => {
 
     it('reports when a whole tick was served from cache and cost no quota', async () => {
       // The number that says whether polling is affordable at all (#40).
-      github.listIssues.mockResolvedValue({ issues: [], truncated: false, allFromCache: true });
+      github.listIssues.mockResolvedValue({
+        issues: [],
+        truncated: false,
+        allFromCache: true,
+      });
 
       expect((await build().tick()).allFromCache).toBe(true);
     });
@@ -432,8 +470,16 @@ describe('ReconcilerService', () => {
         repository({ id: 'b', name: 'two' }),
       ]);
       github.listIssues
-        .mockResolvedValueOnce({ issues: [], truncated: false, allFromCache: true })
-        .mockResolvedValueOnce({ issues: [], truncated: false, allFromCache: false });
+        .mockResolvedValueOnce({
+          issues: [],
+          truncated: false,
+          allFromCache: true,
+        })
+        .mockResolvedValueOnce({
+          issues: [],
+          truncated: false,
+          allFromCache: false,
+        });
 
       expect((await build().tick()).allFromCache).toBe(false);
     });
@@ -469,7 +515,11 @@ describe('ReconcilerService', () => {
     };
 
     function withIssues(issues: unknown[]): void {
-      github.listIssues.mockResolvedValue({ issues, truncated: false, allFromCache: false });
+      github.listIssues.mockResolvedValue({
+        issues,
+        truncated: false,
+        allFromCache: false,
+      });
     }
 
     it('pins the tip of the default branch onto the pass', async () => {
@@ -482,7 +532,9 @@ describe('ReconcilerService', () => {
         { owner: 'acme', name: 'app' },
         expect.objectContaining({ branch: 'main' }),
       );
-      expect(workOrders.project.mock.calls[0][0].baseCommit).toBe('a'.repeat(40));
+      expect(workOrders.project.mock.calls[0][0].baseCommit).toBe(
+        'a'.repeat(40),
+      );
     });
 
     it('resolves the head ONCE for a repository, not once per issue', async () => {
@@ -513,7 +565,14 @@ describe('ReconcilerService', () => {
       // The steady state, and the reason this is affordable on every tick.
       withIssues([READY_ISSUE]);
       prisma.workOrder.findMany.mockResolvedValue([
-        { id: 'wo', identity: 'wo_app_312_aaaaaaa_a1', issueNumber: 312, attempt: 1, status: 'queued', runs: [] },
+        {
+          id: 'wo',
+          identity: 'wo_app_312_aaaaaaa_a1',
+          issueNumber: 312,
+          attempt: 1,
+          status: 'queued',
+          runs: [],
+        },
       ]);
 
       await build().tick();
@@ -542,7 +601,12 @@ describe('ReconcilerService', () => {
       workOrders.project.mockResolvedValue({
         ...emptyProjection(),
         rejected: [
-          { issueNumber: 312, problems: [], message: 'TBD is not a criterion', bodyDigest: 'abc' },
+          {
+            issueNumber: 312,
+            problems: [],
+            message: 'TBD is not a criterion',
+            bodyDigest: 'abc',
+          },
         ],
       });
 
@@ -562,7 +626,9 @@ describe('ReconcilerService', () => {
       ]);
       workOrders.project.mockResolvedValue({
         ...emptyProjection(),
-        rejected: [{ issueNumber: 312, problems: [], message: 'no', bodyDigest: 'abc' }],
+        rejected: [
+          { issueNumber: 312, problems: [], message: 'no', bodyDigest: 'abc' },
+        ],
       });
 
       const record = await build().tick();

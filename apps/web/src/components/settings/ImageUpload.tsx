@@ -16,7 +16,9 @@ export function ImageUpload({ onUpload, disabled = false }: ImageUploadProps) {
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -79,14 +81,20 @@ export function ImageUpload({ onUpload, disabled = false }: ImageUploadProps) {
       <Button
         variant="outlined"
         size="small"
-        startIcon={isUploading ? <CircularProgress size={16} /> : <UploadIcon />}
+        startIcon={
+          isUploading ? <CircularProgress size={16} /> : <UploadIcon />
+        }
         onClick={() => fileInputRef.current?.click()}
         disabled={disabled || isUploading}
       >
         {isUploading ? 'Uploading...' : 'Upload Custom Image'}
       </Button>
       {error && (
-        <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
+        <Typography
+          variant="caption"
+          color="error"
+          sx={{ display: 'block', mt: 0.5 }}
+        >
           {error}
         </Typography>
       )}

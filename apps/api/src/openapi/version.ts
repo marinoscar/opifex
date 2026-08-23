@@ -28,7 +28,9 @@ export function resolveApiVersion(): string {
   // but a runaway loop is not possible.
   for (let depth = 0; depth < 6; depth += 1) {
     try {
-      const parsed = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
+      const parsed = JSON.parse(
+        readFileSync(join(dir, 'package.json'), 'utf8'),
+      ) as {
         version?: unknown;
       };
       if (typeof parsed.version === 'string' && parsed.version.length > 0) {

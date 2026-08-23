@@ -1,4 +1,8 @@
-import { generateWorkOrder, type GenerationInput, type IssueProjection } from './work-order-generator';
+import {
+  generateWorkOrder,
+  type GenerationInput,
+  type IssueProjection,
+} from './work-order-generator';
 import { workOrderIdentity } from './work-order-identity';
 
 const BASE = 'a3f91c2000000000000000000000000000000000';
@@ -26,7 +30,8 @@ function input(overrides: Partial<GenerationInput> = {}): GenerationInput {
 
 /** Narrow to the success arm, failing loudly rather than reading undefined. */
 function generated(result: ReturnType<typeof generateWorkOrder>) {
-  if (!result.ok) throw new Error(`Expected generation to succeed: ${result.message}`);
+  if (!result.ok)
+    throw new Error(`Expected generation to succeed: ${result.message}`);
   return result.workOrder;
 }
 
@@ -61,17 +66,25 @@ describe('generateWorkOrder', () => {
     it('stores the criteria it actually assessed, trimmed', () => {
       const workOrder = generated(
         generateWorkOrder(
-          input({ issue: issue({ acceptanceCriteria: ['  A token is required for access  ', ''] }) }),
+          input({
+            issue: issue({
+              acceptanceCriteria: ['  A token is required for access  ', ''],
+            }),
+          }),
         ),
       );
 
-      expect(workOrder.acceptanceCriteria).toEqual(['A token is required for access']);
+      expect(workOrder.acceptanceCriteria).toEqual([
+        'A token is required for access',
+      ]);
     });
 
     it('keeps the owner, which the identity drops', () => {
       // The identity uses the repository NAME alone, per VISION §4. The owner
       // still has to reach the row, or nothing can find the repository again.
-      expect(generated(generateWorkOrder(input())).repositoryOwner).toBe('marinoscar');
+      expect(generated(generateWorkOrder(input())).repositoryOwner).toBe(
+        'marinoscar',
+      );
     });
 
     it('defaults ceilings to null rather than to a number nobody chose', () => {
@@ -85,10 +98,15 @@ describe('generateWorkOrder', () => {
 
     it('carries ceilings when they are given', () => {
       const workOrder = generated(
-        generateWorkOrder(input({ budgetCeilingUsd: 5, wallClockTimeoutMinutes: 30 })),
+        generateWorkOrder(
+          input({ budgetCeilingUsd: 5, wallClockTimeoutMinutes: 30 }),
+        ),
       );
 
-      expect(workOrder).toMatchObject({ budgetCeilingUsd: 5, wallClockTimeoutMinutes: 30 });
+      expect(workOrder).toMatchObject({
+        budgetCeilingUsd: 5,
+        wallClockTimeoutMinutes: 30,
+      });
     });
   });
 
@@ -109,9 +127,13 @@ describe('generateWorkOrder', () => {
     });
 
     it('produces a different work order at a different base', () => {
-      const moved = generated(generateWorkOrder(input({ baseCommit: 'b'.repeat(40) })));
+      const moved = generated(
+        generateWorkOrder(input({ baseCommit: 'b'.repeat(40) })),
+      );
 
-      expect(moved.identity).not.toBe(generated(generateWorkOrder(input())).identity);
+      expect(moved.identity).not.toBe(
+        generated(generateWorkOrder(input())).identity,
+      );
     });
   });
 
@@ -130,7 +152,9 @@ describe('generateWorkOrder', () => {
     it('keeps the same base across a retry', () => {
       // Abandon-and-re-run means the same starting tree, a fresh run — not a
       // fresh base (VISION §3.4).
-      expect(generated(generateWorkOrder(input({ attempt: 2 }))).baseCommit).toBe(BASE);
+      expect(
+        generated(generateWorkOrder(input({ attempt: 2 }))).baseCommit,
+      ).toBe(BASE);
     });
 
     it('agrees with the identity helper', () => {
@@ -143,17 +167,23 @@ describe('generateWorkOrder', () => {
   describe('refusing a spec that cannot be run against', () => {
     it('rejects an issue with no acceptance criteria', () => {
       // VISION §10: "throughput ceiling is spec quality, not token budget."
-      const result = generateWorkOrder(input({ issue: issue({ acceptanceCriteria: [] }) }));
+      const result = generateWorkOrder(
+        input({ issue: issue({ acceptanceCriteria: [] }) }),
+      );
 
       expect(result.ok).toBe(false);
-      expect(result.ok === false && result.message).toContain('no definition of done');
+      expect(result.ok === false && result.message).toContain(
+        'no definition of done',
+      );
     });
 
     it('rejects untestable criteria with the specific reason', () => {
       // #62: "rejected with a specific reason." The reason travels back to a
       // GitHub comment, so the author can fix their issue rather than guess.
       const result = generateWorkOrder(
-        input({ issue: issue({ acceptanceCriteria: ['The endpoint is fast'] }) }),
+        input({
+          issue: issue({ acceptanceCriteria: ['The endpoint is fast'] }),
+        }),
       );
 
       expect(result.ok).toBe(false);
@@ -161,24 +191,34 @@ describe('generateWorkOrder', () => {
     });
 
     it('rejects an issue with no task spec', () => {
-      const result = generateWorkOrder(input({ issue: issue({ taskSpec: '   ' }) }));
+      const result = generateWorkOrder(
+        input({ issue: issue({ taskSpec: '   ' }) }),
+      );
 
       expect(result.ok).toBe(false);
-      expect(result.ok === false && result.message).toContain('nothing to tell a runner to do');
+      expect(result.ok === false && result.message).toContain(
+        'nothing to tell a runner to do',
+      );
     });
 
     it('rejects an issue with no link back to itself', () => {
       // #62 makes provenance REQUIRED, not optional. VISION §5: a hole in the
       // chain is not detectable after the fact.
-      const result = generateWorkOrder(input({ issue: issue({ issueUrl: '' }) }));
+      const result = generateWorkOrder(
+        input({ issue: issue({ issueUrl: '' }) }),
+      );
 
       expect(result.ok).toBe(false);
-      expect(result.ok === false && result.message).toContain('link back to the issue');
+      expect(result.ok === false && result.message).toContain(
+        'link back to the issue',
+      );
     });
 
     it('reports every problem at once, not the first one', () => {
       const result = generateWorkOrder(
-        input({ issue: issue({ issueUrl: '', taskSpec: '', acceptanceCriteria: [] }) }),
+        input({
+          issue: issue({ issueUrl: '', taskSpec: '', acceptanceCriteria: [] }),
+        }),
       );
 
       expect(result.ok === false && result.problems).toHaveLength(3);
@@ -194,7 +234,9 @@ describe('generateWorkOrder', () => {
     });
 
     it('produces no work order at all when it refuses', () => {
-      const result = generateWorkOrder(input({ issue: issue({ acceptanceCriteria: ['TBD'] }) }));
+      const result = generateWorkOrder(
+        input({ issue: issue({ acceptanceCriteria: ['TBD'] }) }),
+      );
 
       expect(result).not.toHaveProperty('workOrder');
     });

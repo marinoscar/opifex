@@ -20,7 +20,9 @@ describe('EmptyState', () => {
     );
 
     expect(screen.getByText('Every run is progressing.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'View all runs' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'View all runs' }),
+    ).toBeInTheDocument();
   });
 
   it('omits the detail and action when not given them', () => {
@@ -48,7 +50,9 @@ describe('EmptyState', () => {
  */
 describe('EmptyState versus NotWiredState', () => {
   it('says different things about the world', () => {
-    const { container: empty } = render(<EmptyState title="Nothing needs attention." />);
+    const { container: empty } = render(
+      <EmptyState title="Nothing needs attention." />,
+    );
     const { container: unwired } = render(
       <NotWiredState
         variant="compact"
@@ -65,9 +69,16 @@ describe('EmptyState versus NotWiredState', () => {
   });
 
   it('is drawn differently: solid and confident versus dashed and recessive', () => {
-    const { container: empty } = render(<EmptyState title="Nothing needs attention." />);
+    const { container: empty } = render(
+      <EmptyState title="Nothing needs attention." />,
+    );
     const { container: unwired } = render(
-      <NotWiredState variant="compact" title="Not wired" detail="Not yet." phase="Phase 3" />,
+      <NotWiredState
+        variant="compact"
+        title="Not wired"
+        detail="Not yet."
+        phase="Phase 3"
+      />,
     );
 
     const emptyStyle = getComputedStyle(empty.firstElementChild as Element);

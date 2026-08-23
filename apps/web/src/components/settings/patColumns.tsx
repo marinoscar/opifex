@@ -112,7 +112,8 @@ export function buildPatColumns(): DataTableColumn<PersonalAccessToken>[] {
       value: (token) => STATUS_LABELS[getTokenStatus(token)],
       render: (token) => {
         const status = getTokenStatus(token);
-        if (status === 'active') return <Chip label="Active" color="success" size="small" />;
+        if (status === 'active')
+          return <Chip label="Active" color="success" size="small" />;
         if (status === 'expired') return <Chip label="Expired" size="small" />;
         return <Chip label="Revoked" color="error" size="small" />;
       },
@@ -149,7 +150,8 @@ export function buildPatColumns(): DataTableColumn<PersonalAccessToken>[] {
       label: 'Last Used',
       priority: 'detail',
       width: 120,
-      value: (token) => (token.lastUsedAt ? formatDate(token.lastUsedAt) : 'Never'),
+      value: (token) =>
+        token.lastUsedAt ? formatDate(token.lastUsedAt) : 'Never',
     },
   ];
 }

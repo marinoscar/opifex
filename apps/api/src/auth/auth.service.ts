@@ -41,9 +41,7 @@ export class AuthService {
    * Handles Google OAuth login
    * Creates or updates user, links identity, checks admin bootstrap
    */
-  async handleGoogleLogin(
-    profile: GoogleProfile,
-  ): Promise<FullTokenResponse> {
+  async handleGoogleLogin(profile: GoogleProfile): Promise<FullTokenResponse> {
     this.logger.log(`Google login attempt for email: ${profile.email}`);
 
     // Check allowlist before any user lookup/creation
@@ -59,7 +57,7 @@ export class AuthService {
     }
 
     // Check if identity already exists
-    let identity = await this.prisma.userIdentity.findUnique({
+    const identity = await this.prisma.userIdentity.findUnique({
       where: {
         provider_providerSubject: {
           provider: 'google',
@@ -246,7 +244,10 @@ export class AuthService {
           this.logger.error(
             'CRITICAL: Admin role not found in database. Database seeds have not been run.',
           );
-          throw new DatabaseSeedException('Role "admin"', 'npm run prisma:seed');
+          throw new DatabaseSeedException(
+            'Role "admin"',
+            'npm run prisma:seed',
+          );
         }
 
         await tx.userRole.upsert({
@@ -336,8 +337,14 @@ export class AuthService {
     },
     options?: { accessTtlMinutes?: number; refreshTtlDays?: number },
   ): Promise<FullTokenResponse> {
-    const accessToken = this.generateAccessToken(user, options?.accessTtlMinutes);
-    const refreshToken = await this.createRefreshToken(user.id, options?.refreshTtlDays);
+    const accessToken = this.generateAccessToken(
+      user,
+      options?.accessTtlMinutes,
+    );
+    const refreshToken = await this.createRefreshToken(
+      user.id,
+      options?.refreshTtlDays,
+    );
 
     return {
       accessToken: accessToken.token,
@@ -370,7 +377,9 @@ export class AuthService {
       this.configService.get<number>('jwt.accessTtlMinutes', 15);
 
     return {
-      token: this.jwtService.sign(payload, { expiresIn: `${accessTtlMinutes}m` }),
+      token: this.jwtService.sign(payload, {
+        expiresIn: `${accessTtlMinutes}m`,
+      }),
       expiresIn: accessTtlMinutes * 60,
     };
   }
@@ -378,7 +387,10 @@ export class AuthService {
   /**
    * Create a new refresh token
    */
-  private async createRefreshToken(userId: string, ttlDaysOverride?: number): Promise<string> {
+  private async createRefreshToken(
+    userId: string,
+    ttlDaysOverride?: number,
+  ): Promise<string> {
     const refreshTtlDays =
       ttlDaysOverride ??
       this.configService.get<number>('jwt.refreshTtlDays', 14);
@@ -502,10 +514,7 @@ export class AuthService {
   async cleanupExpiredTokens(): Promise<number> {
     const result = await this.prisma.refreshToken.deleteMany({
       where: {
-        OR: [
-          { expiresAt: { lt: new Date() } },
-          { revokedAt: { not: null } },
-        ],
+        OR: [{ expiresAt: { lt: new Date() } }, { revokedAt: { not: null } }],
       },
     });
 
@@ -523,7 +532,9 @@ export class AuthService {
   /**
    * Validates JWT payload and returns user with roles and permissions
    */
-  async validateJwtPayload(payload: JwtPayload): Promise<AuthenticatedUser | null> {
+  async validateJwtPayload(
+    payload: JwtPayload,
+  ): Promise<AuthenticatedUser | null> {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       include: {
@@ -635,7 +646,11 @@ export class AuthService {
    * Check if email matches the initial admin email
    */
   private isInitialAdminEmail(email: string): boolean {
-    const initialAdminEmail = this.configService.get<string>('INITIAL_ADMIN_EMAIL');
-    return initialAdminEmail ? email === initialAdminEmail.toLowerCase() : false;
+    const initialAdminEmail = this.configService.get<string>(
+      'INITIAL_ADMIN_EMAIL',
+    );
+    return initialAdminEmail
+      ? email === initialAdminEmail.toLowerCase()
+      : false;
   }
 }

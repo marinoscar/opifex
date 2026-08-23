@@ -5,15 +5,17 @@ import {
   closeTestApp,
 } from './helpers/test-app.helper';
 import { resetPrismaMock, prismaMock } from './mocks/prisma.mock';
-import { setupBaseMocks, setupMockUserList } from './fixtures/mock-setup.helper';
 import {
-  createMockTestUser,
+  setupBaseMocks,
+  setupMockUserList,
+} from './fixtures/mock-setup.helper';
+import {
   createMockAdminUser,
   createMockViewerUser,
   createMockContributorUser,
   authHeader,
 } from './helpers/auth-mock.helper';
-import { createMockUser, mockRoles } from './fixtures/test-data.factory';
+import { mockRoles } from './fixtures/test-data.factory';
 
 describe('Users (Integration)', () => {
   let context: TestContext;
@@ -33,9 +35,7 @@ describe('Users (Integration)', () => {
 
   describe('GET /api/users', () => {
     it('should return 401 if not authenticated', async () => {
-      await request(context.app.getHttpServer())
-        .get('/api/users')
-        .expect(401);
+      await request(context.app.getHttpServer()).get('/api/users').expect(401);
     });
 
     it('should return 403 if user lacks users:read permission', async () => {
@@ -148,7 +148,9 @@ describe('Users (Integration)', () => {
           .expect(200);
 
         expect(response.body.data.total).toBe(2);
-        expect(response.body.data.items.every((u: any) => u.isActive === true)).toBe(true);
+        expect(
+          response.body.data.items.every((u: any) => u.isActive === true),
+        ).toBe(true);
       });
 
       // Requires mock to properly handle isActive filter
@@ -168,7 +170,9 @@ describe('Users (Integration)', () => {
           .expect(200);
 
         expect(response.body.data.total).toBe(2);
-        expect(response.body.data.items.every((u: any) => u.isActive === false)).toBe(true);
+        expect(
+          response.body.data.items.every((u: any) => u.isActive === false),
+        ).toBe(true);
       });
 
       it('should reject invalid isActive values', async () => {
@@ -206,8 +210,16 @@ describe('Users (Integration)', () => {
 
       setupMockUserList([
         { email: admin.email, roleName: 'admin' },
-        { email: 'user1@example.com', roleName: 'viewer', displayName: 'John Doe' },
-        { email: 'user2@example.com', roleName: 'viewer', displayName: 'Jane Smith' },
+        {
+          email: 'user1@example.com',
+          roleName: 'viewer',
+          displayName: 'John Doe',
+        },
+        {
+          email: 'user2@example.com',
+          roleName: 'viewer',
+          displayName: 'Jane Smith',
+        },
       ]);
 
       const response = await request(context.app.getHttpServer())
@@ -463,7 +475,9 @@ describe('Users (Integration)', () => {
       const viewer = await createMockViewerUser(context, 'test@example.com');
 
       // Mock role.findMany to return the contributor role
-      prismaMock.role.findMany.mockResolvedValue([mockRoles.contributor] as any);
+      prismaMock.role.findMany.mockResolvedValue([
+        mockRoles.contributor,
+      ] as any);
 
       const response = await request(context.app.getHttpServer())
         .put(`/api/users/${viewer.id}/roles`)
@@ -479,7 +493,9 @@ describe('Users (Integration)', () => {
       const admin = await createMockAdminUser(context);
       const viewer = await createMockViewerUser(context, 'test@example.com');
 
-      prismaMock.role.findMany.mockResolvedValue([mockRoles.contributor] as any);
+      prismaMock.role.findMany.mockResolvedValue([
+        mockRoles.contributor,
+      ] as any);
 
       const response = await request(context.app.getHttpServer())
         .put(`/api/users/${viewer.id}/roles`)

@@ -63,7 +63,8 @@ export class GitHubWriteService {
     private readonly http: GitHubHttpService,
     private readonly config: ConfigService,
   ) {
-    this.writesEnabled = this.config.get<boolean>('github.writesEnabled') ?? false;
+    this.writesEnabled =
+      this.config.get<boolean>('github.writesEnabled') ?? false;
 
     if (!this.writesEnabled) {
       this.logger.log(
@@ -92,10 +93,13 @@ export class GitHubWriteService {
       WriteAction.AddLabel,
       `Add '${label}' to ${repo.owner}/${repo.name}#${issueNumber}`,
       async () => {
-        await this.http.request(`/repos/${repo.owner}/${repo.name}/issues/${issueNumber}/labels`, {
-          method: 'POST',
-          body: { labels: [label] },
-        });
+        await this.http.request(
+          `/repos/${repo.owner}/${repo.name}/issues/${issueNumber}/labels`,
+          {
+            method: 'POST',
+            body: { labels: [label] },
+          },
+        );
         return { url: null, noop: false };
       },
     );
@@ -310,5 +314,8 @@ export class GitHubWriteService {
  * weeks — so the message is checked, not the status alone.
  */
 function isLabelNotPresent(error: unknown): boolean {
-  return error instanceof GitHubNotFoundError && /label does not exist/i.test(error.message);
+  return (
+    error instanceof GitHubNotFoundError &&
+    /label does not exist/i.test(error.message)
+  );
 }

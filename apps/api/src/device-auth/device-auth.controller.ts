@@ -189,7 +189,8 @@ export class DeviceAuthController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary: 'List device sessions',
-    description: "Returns a paginated list of the current user's approved device sessions.",
+    description:
+      "Returns a paginated list of the current user's approved device sessions.",
   })
   @ApiQuery({
     name: 'page',

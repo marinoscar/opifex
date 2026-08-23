@@ -65,12 +65,13 @@ export function UserMenu() {
       (!destination.permission || hasPermission(destination.permission)),
   );
 
-  const initials = user.displayName
-    ?.split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2) || user.email[0].toUpperCase();
+  const initials =
+    user.displayName
+      ?.split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2) || user.email[0].toUpperCase();
 
   return (
     <>

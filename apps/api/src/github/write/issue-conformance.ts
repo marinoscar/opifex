@@ -1,4 +1,8 @@
-import { ISSUE_TEMPLATES, type IssueKind, type IssueTemplate } from './issue-templates';
+import {
+  ISSUE_TEMPLATES,
+  type IssueKind,
+  type IssueTemplate,
+} from './issue-templates';
 
 export interface ConformanceFailure {
   /** `missing-section`, `empty-acceptance-criteria`, `untestable-criteria`. */
@@ -78,8 +82,15 @@ export function checkConformance(
     const content = sections.get(criteriaSection.toLowerCase());
     // Only checked when the section is present — a missing one was already
     // reported above, and saying both would be two failures for one mistake.
-    if (content !== undefined && content.length > 0 && !hasTestableCriteria(content)) {
-      failures.push({ reason: 'untestable-criteria', section: criteriaSection });
+    if (
+      content !== undefined &&
+      content.length > 0 &&
+      !hasTestableCriteria(content)
+    ) {
+      failures.push({
+        reason: 'untestable-criteria',
+        section: criteriaSection,
+      });
     }
   }
 

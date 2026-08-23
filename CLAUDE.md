@@ -66,6 +66,7 @@ Every feature and bug fix MUST be tracked by a GitHub issue, filed **before** im
 Every feature or fix MUST be developed in a Git worktree. The main checkout stays on `main` at all times.
 
 ### Worktree Location & Naming
+
 - All worktrees live under `worktrees/` in the repo root (git-ignored, never committed)
 - Use **flat short names**: `worktrees/<short-name>` (e.g., `worktrees/add-export`, `worktrees/fix-auth-bug`)
 - The branch name follows conventional format: `feat/<short-name>`, `fix/<short-name>`, etc.
@@ -73,6 +74,7 @@ Every feature or fix MUST be developed in a Git worktree. The main checkout stay
 ### Workflow (Claude MUST follow)
 
 **Starting feature work:**
+
 0. Ensure a tracking issue exists, per [MANDATORY: Issue-Driven Development (Traceability)](#mandatory-issue-driven-development-traceability) above.
 1. From the main checkout, create the worktree:
    ```bash
@@ -83,6 +85,7 @@ Every feature or fix MUST be developed in a Git worktree. The main checkout stay
 3. Commits follow all existing commit rules (see below)
 
 **Finishing feature work:**
+
 1. Ensure all changes are committed inside the worktree
 2. Push the branch and **open the pull request** — see
    [MANDATORY: Always Open a Pull Request](#mandatory-always-open-a-pull-request).
@@ -95,6 +98,7 @@ Every feature or fix MUST be developed in a Git worktree. The main checkout stay
 4. The branch remains, now with an open PR against it
 
 ### Rules
+
 - NEVER checkout feature branches in the main working directory
 - NEVER work on features directly in the main checkout
 - One worktree per feature branch (Git enforces this)
@@ -108,8 +112,9 @@ no required checks, and leaves the `Issue → PR → Commit` edge of the provena
 missing — which VISION.MD §5 is explicit is not detectable after the fact.
 
 ### When to open it
+
 - **As soon as the work is reviewable.** Don't sit on a finished branch waiting to be
-  asked. Opening the PR *is* the last step of the task, not a separate errand.
+  asked. Opening the PR _is_ the last step of the task, not a separate errand.
 - **Open it early as a draft** if the work is real but incomplete, or if you want CI to
   run against it while you keep going. A draft PR is always better than an invisible
   branch.
@@ -118,21 +123,24 @@ missing — which VISION.MD §5 is explicit is not detectable after the fact.
   review would have no natural scope.
 
 ### What it must contain
+
 - **Fill in `.github/pull_request_template.md`.** Treat its headings as a layout to
   populate, not as suggestions to skim.
 - **A closing keyword is required**: `Fixes #123` / `Closes #123` / `Resolves #123`, so
-  the issue closes on merge. VISION.MD §5: *"No PR without one — a single orphan puts a
-  hole in the graph."*
+  the issue closes on merge. VISION.MD §5: _"No PR without one — a single orphan puts a
+  hole in the graph."_
 - **Say what you could not verify.** A PR that claims more than was actually run is worse
   than one that admits a gap, because the gap is then invisible to the reviewer too.
 
 ### After it is open
+
 - **Drive it to green.** A red or conflicted PR is work now, not "waiting on review".
   Diagnose the failure, fix it, and push — do not report the failure and stop.
 - **Never reuse a merged PR** for follow-up work. A merged PR is finished; restart the
   branch from the latest `main` and open a new one.
 
 ### The one exception
+
 If the human explicitly says not to open a PR yet, don't. Their instruction wins over
 this rule — but push the branch anyway and tell them the PR is waiting on their word, so
 the work is at least recoverable.
@@ -150,6 +158,7 @@ says otherwise. Do **not** create branches outside that workflow.
 ---
 
 ### Core Commit Rules (MANDATORY)
+
 1. **Commit early, commit often.** Do not leave large uncommitted change sets.
 2. Each commit must be **small, coherent, and reviewable**.
 3. **One intent per commit** (no “misc fixes” bundles).
@@ -159,11 +168,13 @@ says otherwise. Do **not** create branches outside that workflow.
 ---
 
 ### Commit Message Standard (MANDATORY: Conventional Commits)
+
 Use this format:
 
 `<type>(<scope>): <short imperative summary>`
 
 Allowed types:
+
 - `feat:` new functionality
 - `fix:` bug fix
 - `refactor:` internal change, no behavior change
@@ -172,9 +183,11 @@ Allowed types:
 - `chore:` tooling, deps, formatting, build, CI
 
 Scopes (pick one relevant area):
+
 - `api`, `web`, `db`, `infra`, `auth`, `chat`, `ui`, `core`, `jobs`, `docs`, `tests`
 
 Examples:
+
 - `feat(chat): add permit search prompt builder`
 - `fix(api): handle missing location gracefully`
 - `test(api): cover permit filter edge cases`
@@ -183,41 +196,51 @@ Examples:
 ---
 
 ### Commit Cadence (MANDATORY)
+
 Make commits at these checkpoints:
 
-1) **Scaffold / wiring**
+1. **Scaffold / wiring**
+
 - New files, routes, handlers, basic plumbing (even if incomplete).
 - Example: `feat(api): scaffold permit lookup endpoint`
 
-2) **Core functionality**
+2. **Core functionality**
+
 - Implement the smallest working slice end-to-end.
 - Example: `feat(core): implement permit filtering by location radius`
 
-3) **Edge cases + validation**
+3. **Edge cases + validation**
+
 - Input validation, error handling, fallback behavior.
 - Example: `fix(api): validate lat/lng inputs and return 400`
 
-4) **Tests**
+4. **Tests**
+
 - Unit/integration tests for the new behavior and critical edge cases.
 - Example: `test(api): add coverage for location filter and empty results`
 
-5) **Cleanup**
+5. **Cleanup**
+
 - Remove dead code, rename for clarity, small refactors strictly related to the change.
 - Example: `refactor(core): extract permit query builder`
 
-6) **Docs (if needed)**
+6. **Docs (if needed)**
+
 - Only if the task requires it.
 - Example: `docs(api): document permit endpoint parameters`
 
 ---
 
 ### What to Include / Exclude (MANDATORY)
+
 #### Include
+
 - Code + tests for the same feature area
 - Minimal config changes needed to run/build/test
 - Small, related refactors that reduce complexity for the feature
 
 #### Exclude
+
 - Repo-wide formatting changes unless required
 - Dependency upgrades unless required
 - Unrelated cleanup in neighboring modules
@@ -225,16 +248,20 @@ Make commits at these checkpoints:
 ---
 
 ### Commit Command Sequence (MANDATORY)
+
 Before committing:
+
 1. `git status`
 2. `git diff`
 3. Stage intentionally:
    - `git add -p` (preferred) or `git add <files>`
 
 Commit:
+
 - `git commit -m "<type>(<scope>): <summary>"`
 
 After commit:
+
 - `git status`
 
 Repeat until the next checkpoint is complete, then commit again.
@@ -242,23 +269,29 @@ Repeat until the next checkpoint is complete, then commit again.
 ---
 
 ### Handling Mixed Changes (MANDATORY)
+
 If you accidentally made unrelated edits:
+
 - Revert them before committing, or
 - Split into separate commits (preferred). Only keep the unrelated commit if explicitly requested.
 
 ---
 
 ### If Tests Cannot Be Run (MANDATORY)
+
 If you cannot run tests for a valid reason (missing env, tool not available):
+
 - Still commit, but include a clear note in the commit body.
 
 Example:
+
 - Subject: `feat(api): implement permit search by address`
 - Body: `Notes: tests not run (DB env not available).`
 
 ---
 
 ### Golden Rule (MANDATORY)
+
 If the diff feels “big,” you waited too long. **Split the work and commit sooner.**
 
 ## Architecture Principles
@@ -311,6 +344,7 @@ cd apps/api && npm run prisma:migrate
 ## API Endpoints (MVP)
 
 ### Authentication
+
 - `GET /api/auth/providers` - List enabled OAuth providers
 - `GET /api/auth/google` - Initiate Google OAuth
 - `GET /api/auth/google/callback` - OAuth callback
@@ -320,6 +354,7 @@ cd apps/api && npm run prisma:migrate
 - `GET /api/auth/me` - Get current user
 
 ### Device Authorization (RFC 8628)
+
 - `POST /api/auth/device/code` - Generate device code (Public)
 - `POST /api/auth/device/token` - Poll for authorization (Public)
 - `GET /api/auth/device/activate` - Get activation info
@@ -328,12 +363,14 @@ cd apps/api && npm run prisma:migrate
 - `DELETE /api/auth/device/sessions/{id}` - Revoke device session
 
 ### Users (Admin-only)
+
 - `GET /api/users` - List users (paginated)
 - `GET /api/users/{id}` - Get user by ID
 - `PATCH /api/users/{id}` - Update user (roles, activation)
 - `PUT /api/users/{id}/roles` - Update user roles
 
 ### Settings
+
 - `GET /api/user-settings` - Get current user's settings
 - `PUT /api/user-settings` - Replace user settings
 - `PATCH /api/user-settings` - Partial update user settings
@@ -342,11 +379,13 @@ cd apps/api && npm run prisma:migrate
 - `PATCH /api/system-settings` - Partial update system settings (Admin)
 
 ### Allowlist (Admin-only)
+
 - `GET /api/allowlist` - List allowlisted emails (paginated, filterable)
 - `POST /api/allowlist` - Add email to allowlist
 - `DELETE /api/allowlist/{id}` - Remove email from allowlist
 
 ### Storage Objects
+
 - `POST /api/storage/objects/upload/init` - Initialize resumable upload
 - `GET /api/storage/objects/:id/upload/status` - Get upload progress
 - `POST /api/storage/objects/:id/upload/complete` - Complete multipart upload
@@ -359,22 +398,26 @@ cd apps/api && npm run prisma:migrate
 - `PATCH /api/storage/objects/:id/metadata` - Update metadata
 
 ### Personal Access Tokens
+
 - `POST /api/pat` - Create a new personal access token
 - `GET /api/pat` - List current user's tokens
 - `DELETE /api/pat/{id}` - Revoke a token
 
 ### Health
+
 - `GET /api/health/live` - Liveness check
 - `GET /api/health/ready` - Readiness check (includes DB)
 
 ## RBAC Model
 
 ### Roles
+
 - **Admin**: Full access, manage users and system settings
 - **Contributor**: Standard capabilities, manage own settings
 - **Viewer**: Least privilege (default), manage own settings
 
 ### Key Permissions
+
 - `system_settings:read/write` - System settings access
 - `user_settings:read/write` - User settings access
 - `users:read/write` - User management
@@ -404,22 +447,26 @@ cd apps/api && npm run prisma:migrate
 The application uses an **email allowlist** to restrict access to pre-authorized users only.
 
 ### How It Works
+
 1. Admins add email addresses to the allowlist before users can login
 2. During OAuth login, the user's email is checked against the allowlist
 3. If the email is not in the allowlist, login is denied with a clear error message
 4. Exception: `INITIAL_ADMIN_EMAIL` always bypasses the allowlist check
 
 ### Configuration
+
 - `INITIAL_ADMIN_EMAIL` environment variable grants initial admin access
 - This email is automatically added to the allowlist during database seeding
 
 ### Admin Management
+
 - Access allowlist management at `/admin/users` (Allowlist tab)
 - Two tabs available:
   - **Users**: Manage existing registered users
   - **Allowlist**: Pre-authorize email addresses for future logins
 
 ### Status Tracking
+
 - **Pending**: Email added to allowlist but user hasn't logged in yet
 - **Claimed**: User has successfully logged in and created an account
 - Claimed entries cannot be removed (prevents accidentally removing existing user access)
@@ -445,11 +492,13 @@ The application uses an **email allowlist** to restrict access to pre-authorized
 Key variables (see `infra/compose/.env.example` for full list):
 
 **Application:**
+
 - `NODE_ENV` - Environment (development/production)
 - `PORT` - API port (default: 3000)
 - `APP_URL` - Base URL (default: http://localhost:3535)
 
 **Database (individual connection parameters):**
+
 - `POSTGRES_HOST` - Database hostname (default: localhost)
 - `POSTGRES_PORT` - Database port (default: 5432)
 - `POSTGRES_USER` - Database user (default: postgres)
@@ -460,6 +509,7 @@ Key variables (see `infra/compose/.env.example` for full list):
 Note: `DATABASE_URL` is constructed automatically from these variables at runtime.
 
 **Authentication:**
+
 - `JWT_SECRET` - JWT signing secret (min 32 chars)
 - `JWT_ACCESS_TTL_MINUTES` - Access token TTL (default: 15)
 - `JWT_REFRESH_TTL_DAYS` - Refresh token TTL (default: 14)
@@ -470,6 +520,7 @@ Note: `DATABASE_URL` is constructed automatically from these variables at runtim
 - `DEVICE_TOKEN_EXPIRY_DAYS` - Token lifetime for device sessions in days (default: 7)
 
 **Observability:**
+
 - `OTEL_ENABLED` - Enable OpenTelemetry (default: true)
 - `OTEL_EXPORTER_OTLP_ENDPOINT` - OTEL Collector endpoint
 - `UPTRACE_DSN` - Uptrace connection string
@@ -477,6 +528,7 @@ Note: `DATABASE_URL` is constructed automatically from these variables at runtim
 ## Common Patterns
 
 ### Adding a New API Endpoint
+
 1. Create controller method with decorators for auth/RBAC
 2. Add service method with business logic
 3. Update OpenAPI annotations
@@ -484,6 +536,7 @@ Note: `DATABASE_URL` is constructed automatically from these variables at runtim
 5. Update API.md if needed
 
 ### Adding a New Setting
+
 1. Update Zod schema for validation
 2. Add migration if schema structure changes
 3. Update TypeScript types
@@ -494,6 +547,7 @@ Note: `DATABASE_URL` is constructed automatically from these variables at runtim
 **CRITICAL REQUIREMENT**: This project uses specialized subagents for all development work. You MUST delegate tasks to the appropriate subagent. Do NOT attempt to perform development tasks directly without using the designated agent.
 
 ### Why Subagents Are Mandatory
+
 - Each agent contains domain-specific knowledge from the System Specification
 - Agents ensure consistent patterns and conventions across the codebase
 - Agents have the full context needed for their specialized area
@@ -503,14 +557,14 @@ Note: `DATABASE_URL` is constructed automatically from these variables at runtim
 
 Definitions live in [`.claude/agents/`](.claude/agents/) — each file carries the domain conventions, exemplar paths and boundaries for its area.
 
-| Agent | Model | Domain | MUST Use For |
-|-------|-------|--------|--------------|
-| `backend-dev` | inherit | NestJS API, Fastify, auth, RBAC | **ANY** backend code: endpoints, services, guards, middleware, JWT, OAuth |
-| `frontend-dev` | inherit | React, MUI, TypeScript | **ANY** frontend code: components, pages, hooks, theming, responsive design |
-| `database-dev` | sonnet | PostgreSQL, Prisma | **ANY** database work: schema changes, migrations, seeds, queries |
-| `testing-dev` | sonnet | Jest, Supertest, Vitest, RTL | **ANY** testing: unit tests, integration tests, typecheck, test fixtures |
-| `docs-dev` | sonnet | Technical documentation | **ANY** documentation: ARCHITECTURE.md, SECURITY.md, API.md, README updates |
-| `ops-dev` | haiku | Routine operations | Rebuilding/restarting containers, running Prisma migrations, running typecheck. NEVER for state-changing git operations |
+| Agent          | Model   | Domain                          | MUST Use For                                                                                                            |
+| -------------- | ------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `backend-dev`  | inherit | NestJS API, Fastify, auth, RBAC | **ANY** backend code: endpoints, services, guards, middleware, JWT, OAuth                                               |
+| `frontend-dev` | inherit | React, MUI, TypeScript          | **ANY** frontend code: components, pages, hooks, theming, responsive design                                             |
+| `database-dev` | sonnet  | PostgreSQL, Prisma              | **ANY** database work: schema changes, migrations, seeds, queries                                                       |
+| `testing-dev`  | sonnet  | Jest, Supertest, Vitest, RTL    | **ANY** testing: unit tests, integration tests, typecheck, test fixtures                                                |
+| `docs-dev`     | sonnet  | Technical documentation         | **ANY** documentation: ARCHITECTURE.md, SECURITY.md, API.md, README updates                                             |
+| `ops-dev`      | haiku   | Routine operations              | Rebuilding/restarting containers, running Prisma migrations, running typecheck. NEVER for state-changing git operations |
 
 ### Mandatory Delegation Rules
 
@@ -526,6 +580,7 @@ Definitions live in [`.claude/agents/`](.claude/agents/) — each file carries t
 For tasks spanning multiple domains, you MUST invoke multiple agents sequentially:
 
 **Example: "Add a new user preference setting"**
+
 1. `database-dev` → Add migration for schema change
 2. `backend-dev` → Implement API endpoint
 3. `frontend-dev` → Build UI component
@@ -533,6 +588,7 @@ For tasks spanning multiple domains, you MUST invoke multiple agents sequentiall
 5. `docs-dev` → Update API documentation
 
 ### Usage Examples
+
 ```
 # Backend work - MUST use backend-dev
 "Use backend-dev to implement the user settings endpoint"
@@ -554,6 +610,7 @@ For tasks spanning multiple domains, you MUST invoke multiple agents sequentiall
 ```
 
 ### What You Should NOT Do Directly
+
 - Do NOT write NestJS controllers, services, or guards without `backend-dev`
 - Do NOT create React components or pages without `frontend-dev`
 - Do NOT modify Prisma schema or create migrations without `database-dev`
@@ -561,6 +618,7 @@ For tasks spanning multiple domains, you MUST invoke multiple agents sequentiall
 - Do NOT update documentation files without `docs-dev`
 
 The only exceptions are:
+
 - Reading files to understand context
 - Answering questions about the codebase
 - Planning and coordination between agents

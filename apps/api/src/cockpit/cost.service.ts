@@ -50,7 +50,9 @@ export class CostService {
       select: {
         startedAt: true,
         costUsd: true,
-        workOrder: { select: { repository: { select: { owner: true, name: true } } } },
+        workOrder: {
+          select: { repository: { select: { owner: true, name: true } } },
+        },
       },
       orderBy: { startedAt: 'asc' },
     });
@@ -59,7 +61,10 @@ export class CostService {
       .map((run) => ({ ...run, cost: toNumberOrNull(run.costUsd) }))
       .filter((run): run is typeof run & { cost: number } => run.cost !== null);
 
-    const byRepository = new Map<string, { total: number; runs: number; without: number }>();
+    const byRepository = new Map<
+      string,
+      { total: number; runs: number; without: number }
+    >();
     for (const run of runs) {
       const key = `${run.workOrder.repository.owner}/${run.workOrder.repository.name}`;
       const entry = byRepository.get(key) ?? { total: 0, runs: 0, without: 0 };
@@ -83,7 +88,10 @@ export class CostService {
       // Null, not 0, when nothing reported a cost. "No run reported a cost"
       // and "the factory spent nothing" are different claims, and only one of
       // them is ever true of a factory that has run something.
-      totalUsd: withCost.length === 0 ? null : round(sum(withCost.map((run) => run.cost))),
+      totalUsd:
+        withCost.length === 0
+          ? null
+          : round(sum(withCost.map((run) => run.cost))),
       runs: runs.length,
       runsWithoutCost: runs.length - withCost.length,
       byRepository: [...byRepository]

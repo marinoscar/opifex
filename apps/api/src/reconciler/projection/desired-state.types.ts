@@ -79,12 +79,7 @@ export type WorkOrderStatusLike =
   | 'cancelled';
 
 export type RunStatusLike =
-  | 'running'
-  | 'succeeded'
-  | 'stalled'
-  | 'blocked'
-  | 'failed'
-  | 'quarantined';
+  'running' | 'succeeded' | 'stalled' | 'blocked' | 'failed' | 'quarantined';
 
 // ---------------------------------------------------------------------------
 // The projection

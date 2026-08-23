@@ -2,7 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { PatService } from './pat.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { createMockPrismaService, MockPrismaService } from '../../test/mocks/prisma.mock';
+import {
+  createMockPrismaService,
+  MockPrismaService,
+} from '../../test/mocks/prisma.mock';
 import { CreatePatDto } from './dto/create-pat.dto';
 import { createHash } from 'node:crypto';
 
@@ -43,7 +46,11 @@ describe('PatService', () => {
             {
               roleId: 'role-1',
               permissionId: 'perm-1',
-              permission: { id: 'perm-1', name: 'user_settings:read', description: null },
+              permission: {
+                id: 'perm-1',
+                name: 'user_settings:read',
+                description: null,
+              },
             },
           ],
         },
@@ -55,10 +62,7 @@ describe('PatService', () => {
     mockPrisma = createMockPrismaService();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        PatService,
-        { provide: PrismaService, useValue: mockPrisma },
-      ],
+      providers: [PatService, { provide: PrismaService, useValue: mockPrisma }],
     }).compile();
 
     service = module.get<PatService>(PatService);
@@ -74,9 +78,15 @@ describe('PatService', () => {
 
   describe('createToken', () => {
     it('should return raw token starting with pat_', async () => {
-      const dto: CreatePatDto = { name: 'My Token', durationValue: 30, durationUnit: 'days' };
+      const dto: CreatePatDto = {
+        name: 'My Token',
+        durationValue: 30,
+        durationUnit: 'days',
+      };
 
-      mockPrisma.personalAccessToken.create.mockResolvedValue(mockPatRecord as any);
+      mockPrisma.personalAccessToken.create.mockResolvedValue(
+        mockPatRecord as any,
+      );
 
       const result = await service.createToken(mockUserId, dto);
 
@@ -85,9 +95,15 @@ describe('PatService', () => {
     });
 
     it('should store the SHA256 hash of the token (not the raw token)', async () => {
-      const dto: CreatePatDto = { name: 'Secure Token', durationValue: 7, durationUnit: 'days' };
+      const dto: CreatePatDto = {
+        name: 'Secure Token',
+        durationValue: 7,
+        durationUnit: 'days',
+      };
 
-      mockPrisma.personalAccessToken.create.mockResolvedValue(mockPatRecord as any);
+      mockPrisma.personalAccessToken.create.mockResolvedValue(
+        mockPatRecord as any,
+      );
 
       await service.createToken(mockUserId, dto);
 
@@ -97,7 +113,8 @@ describe('PatService', () => {
         }),
       });
 
-      const callArg = (mockPrisma.personalAccessToken.create as jest.Mock).mock.calls[0][0];
+      const callArg = (mockPrisma.personalAccessToken.create as jest.Mock).mock
+        .calls[0][0];
       const storedHash = callArg.data.tokenHash;
 
       // Verify it's a valid SHA256 hex string (64 chars, lowercase hex)
@@ -105,24 +122,39 @@ describe('PatService', () => {
     });
 
     it('should compute the correct SHA256 hash for the raw token', async () => {
-      const dto: CreatePatDto = { name: 'Test', durationValue: 1, durationUnit: 'days' };
+      const dto: CreatePatDto = {
+        name: 'Test',
+        durationValue: 1,
+        durationUnit: 'days',
+      };
 
-      mockPrisma.personalAccessToken.create.mockResolvedValue(mockPatRecord as any);
+      mockPrisma.personalAccessToken.create.mockResolvedValue(
+        mockPatRecord as any,
+      );
 
       const result = await service.createToken(mockUserId, dto);
 
-      const callArg = (mockPrisma.personalAccessToken.create as jest.Mock).mock.calls[0][0];
+      const callArg = (mockPrisma.personalAccessToken.create as jest.Mock).mock
+        .calls[0][0];
       const storedHash = callArg.data.tokenHash;
 
       // Verify the stored hash matches the SHA256 of the returned raw token
-      const expectedHash = createHash('sha256').update(result.token).digest('hex');
+      const expectedHash = createHash('sha256')
+        .update(result.token)
+        .digest('hex');
       expect(storedHash).toBe(expectedHash);
     });
 
     it('should set tokenPrefix to pat_ + first 4 hex chars', async () => {
-      const dto: CreatePatDto = { name: 'Token', durationValue: 1, durationUnit: 'days' };
+      const dto: CreatePatDto = {
+        name: 'Token',
+        durationValue: 1,
+        durationUnit: 'days',
+      };
 
-      mockPrisma.personalAccessToken.create.mockResolvedValue(mockPatRecord as any);
+      mockPrisma.personalAccessToken.create.mockResolvedValue(
+        mockPatRecord as any,
+      );
 
       const result = await service.createToken(mockUserId, dto);
 
@@ -130,21 +162,29 @@ describe('PatService', () => {
       const hexPart = result.token.slice(4); // Remove "pat_"
       const expectedPrefix = `pat_${hexPart.slice(0, 4)}`;
 
-      const callArg = (mockPrisma.personalAccessToken.create as jest.Mock).mock.calls[0][0];
+      const callArg = (mockPrisma.personalAccessToken.create as jest.Mock).mock
+        .calls[0][0];
       expect(callArg.data.tokenPrefix).toBe(expectedPrefix);
     });
 
     describe('expiresAt calculation', () => {
       it('should calculate expiresAt correctly for "days" unit', async () => {
-        const dto: CreatePatDto = { name: 'Token', durationValue: 30, durationUnit: 'days' };
+        const dto: CreatePatDto = {
+          name: 'Token',
+          durationValue: 30,
+          durationUnit: 'days',
+        };
 
-        mockPrisma.personalAccessToken.create.mockResolvedValue(mockPatRecord as any);
+        mockPrisma.personalAccessToken.create.mockResolvedValue(
+          mockPatRecord as any,
+        );
 
         const before = new Date();
         await service.createToken(mockUserId, dto);
         const after = new Date();
 
-        const callArg = (mockPrisma.personalAccessToken.create as jest.Mock).mock.calls[0][0];
+        const callArg = (mockPrisma.personalAccessToken.create as jest.Mock)
+          .mock.calls[0][0];
         const expiresAt: Date = callArg.data.expiresAt;
 
         // Should be approximately 30 days from now
@@ -153,39 +193,57 @@ describe('PatService', () => {
         const expectedMax = new Date(after);
         expectedMax.setDate(expectedMax.getDate() + 30);
 
-        expect(expiresAt.getTime()).toBeGreaterThanOrEqual(expectedMin.getTime());
+        expect(expiresAt.getTime()).toBeGreaterThanOrEqual(
+          expectedMin.getTime(),
+        );
         expect(expiresAt.getTime()).toBeLessThanOrEqual(expectedMax.getTime());
       });
 
       it('should calculate expiresAt correctly for "minutes" unit', async () => {
-        const dto: CreatePatDto = { name: 'Token', durationValue: 15, durationUnit: 'minutes' };
+        const dto: CreatePatDto = {
+          name: 'Token',
+          durationValue: 15,
+          durationUnit: 'minutes',
+        };
 
-        mockPrisma.personalAccessToken.create.mockResolvedValue(mockPatRecord as any);
+        mockPrisma.personalAccessToken.create.mockResolvedValue(
+          mockPatRecord as any,
+        );
 
         const before = new Date();
         await service.createToken(mockUserId, dto);
         const after = new Date();
 
-        const callArg = (mockPrisma.personalAccessToken.create as jest.Mock).mock.calls[0][0];
+        const callArg = (mockPrisma.personalAccessToken.create as jest.Mock)
+          .mock.calls[0][0];
         const expiresAt: Date = callArg.data.expiresAt;
 
         const expectedMin = new Date(before.getTime() + 15 * 60 * 1000);
         const expectedMax = new Date(after.getTime() + 15 * 60 * 1000);
 
-        expect(expiresAt.getTime()).toBeGreaterThanOrEqual(expectedMin.getTime());
+        expect(expiresAt.getTime()).toBeGreaterThanOrEqual(
+          expectedMin.getTime(),
+        );
         expect(expiresAt.getTime()).toBeLessThanOrEqual(expectedMax.getTime());
       });
 
       it('should calculate expiresAt correctly for "months" unit', async () => {
-        const dto: CreatePatDto = { name: 'Token', durationValue: 3, durationUnit: 'months' };
+        const dto: CreatePatDto = {
+          name: 'Token',
+          durationValue: 3,
+          durationUnit: 'months',
+        };
 
-        mockPrisma.personalAccessToken.create.mockResolvedValue(mockPatRecord as any);
+        mockPrisma.personalAccessToken.create.mockResolvedValue(
+          mockPatRecord as any,
+        );
 
         const before = new Date();
         await service.createToken(mockUserId, dto);
         const after = new Date();
 
-        const callArg = (mockPrisma.personalAccessToken.create as jest.Mock).mock.calls[0][0];
+        const callArg = (mockPrisma.personalAccessToken.create as jest.Mock)
+          .mock.calls[0][0];
         const expiresAt: Date = callArg.data.expiresAt;
 
         // Should be approximately 3 months from now
@@ -195,15 +253,25 @@ describe('PatService', () => {
         expectedMax.setMonth(expectedMax.getMonth() + 3);
 
         // Allow a 1-second window for test execution time
-        expect(expiresAt.getTime()).toBeGreaterThanOrEqual(expectedMin.getTime() - 1000);
-        expect(expiresAt.getTime()).toBeLessThanOrEqual(expectedMax.getTime() + 1000);
+        expect(expiresAt.getTime()).toBeGreaterThanOrEqual(
+          expectedMin.getTime() - 1000,
+        );
+        expect(expiresAt.getTime()).toBeLessThanOrEqual(
+          expectedMax.getTime() + 1000,
+        );
       });
     });
 
     it('should return the correct shape from createToken', async () => {
-      const dto: CreatePatDto = { name: 'Shape Test', durationValue: 30, durationUnit: 'days' };
+      const dto: CreatePatDto = {
+        name: 'Shape Test',
+        durationValue: 30,
+        durationUnit: 'days',
+      };
 
-      mockPrisma.personalAccessToken.create.mockResolvedValue(mockPatRecord as any);
+      mockPrisma.personalAccessToken.create.mockResolvedValue(
+        mockPatRecord as any,
+      );
 
       const result = await service.createToken(mockUserId, dto);
 
@@ -218,9 +286,15 @@ describe('PatService', () => {
     });
 
     it('should pass correct userId and name to Prisma create', async () => {
-      const dto: CreatePatDto = { name: 'Named Token', durationValue: 30, durationUnit: 'days' };
+      const dto: CreatePatDto = {
+        name: 'Named Token',
+        durationValue: 30,
+        durationUnit: 'days',
+      };
 
-      mockPrisma.personalAccessToken.create.mockResolvedValue(mockPatRecord as any);
+      mockPrisma.personalAccessToken.create.mockResolvedValue(
+        mockPatRecord as any,
+      );
 
       await service.createToken(mockUserId, dto);
 
@@ -241,9 +315,14 @@ describe('PatService', () => {
 
   describe('listTokens', () => {
     it('should call findMany with correct userId filter', async () => {
-      const mockTokens = [mockPatRecord, { ...mockPatRecord, id: 'pat-id-456', name: 'Other Token' }];
+      const mockTokens = [
+        mockPatRecord,
+        { ...mockPatRecord, id: 'pat-id-456', name: 'Other Token' },
+      ];
 
-      mockPrisma.personalAccessToken.findMany.mockResolvedValue(mockTokens as any);
+      mockPrisma.personalAccessToken.findMany.mockResolvedValue(
+        mockTokens as any,
+      );
 
       const result = await service.listTokens(mockUserId);
 
@@ -276,7 +355,9 @@ describe('PatService', () => {
     });
 
     it('should return tokens ordered by createdAt desc', async () => {
-      mockPrisma.personalAccessToken.findMany.mockResolvedValue([mockPatRecord] as any);
+      mockPrisma.personalAccessToken.findMany.mockResolvedValue([
+        mockPatRecord,
+      ] as any);
 
       await service.listTokens(mockUserId);
 
@@ -296,7 +377,9 @@ describe('PatService', () => {
     it('should set revokedAt on the token', async () => {
       const patId = 'pat-id-123';
 
-      mockPrisma.personalAccessToken.findFirst.mockResolvedValue(mockPatRecord as any);
+      mockPrisma.personalAccessToken.findFirst.mockResolvedValue(
+        mockPatRecord as any,
+      );
       mockPrisma.personalAccessToken.update.mockResolvedValue({
         ...mockPatRecord,
         revokedAt: new Date(),
@@ -313,7 +396,9 @@ describe('PatService', () => {
     it('should find token by id and userId (ownership check)', async () => {
       const patId = 'pat-id-123';
 
-      mockPrisma.personalAccessToken.findFirst.mockResolvedValue(mockPatRecord as any);
+      mockPrisma.personalAccessToken.findFirst.mockResolvedValue(
+        mockPatRecord as any,
+      );
       mockPrisma.personalAccessToken.update.mockResolvedValue({
         ...mockPatRecord,
         revokedAt: new Date(),
@@ -329,13 +414,13 @@ describe('PatService', () => {
     it('should throw NotFoundException when token not found', async () => {
       mockPrisma.personalAccessToken.findFirst.mockResolvedValue(null);
 
-      await expect(service.revokeToken(mockUserId, 'nonexistent-id')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.revokeToken(mockUserId, 'nonexistent-id'),
+      ).rejects.toThrow(NotFoundException);
 
-      await expect(service.revokeToken(mockUserId, 'nonexistent-id')).rejects.toThrow(
-        'Token not found',
-      );
+      await expect(
+        service.revokeToken(mockUserId, 'nonexistent-id'),
+      ).rejects.toThrow('Token not found');
     });
 
     it('should throw NotFoundException when token is already revoked', async () => {
@@ -344,15 +429,17 @@ describe('PatService', () => {
         revokedAt: new Date(Date.now() - 3600000), // revoked 1 hour ago
       };
 
-      mockPrisma.personalAccessToken.findFirst.mockResolvedValue(revokedPat as any);
-
-      await expect(service.revokeToken(mockUserId, revokedPat.id)).rejects.toThrow(
-        NotFoundException,
+      mockPrisma.personalAccessToken.findFirst.mockResolvedValue(
+        revokedPat as any,
       );
 
-      await expect(service.revokeToken(mockUserId, revokedPat.id)).rejects.toThrow(
-        'Token already revoked',
-      );
+      await expect(
+        service.revokeToken(mockUserId, revokedPat.id),
+      ).rejects.toThrow(NotFoundException);
+
+      await expect(
+        service.revokeToken(mockUserId, revokedPat.id),
+      ).rejects.toThrow('Token already revoked');
 
       // Should not call update
       expect(mockPrisma.personalAccessToken.update).not.toHaveBeenCalled();
@@ -374,13 +461,20 @@ describe('PatService', () => {
         user: mockUserWithRelations,
       };
 
-      mockPrisma.personalAccessToken.findUnique.mockResolvedValue(patWithUser as any);
-      mockPrisma.personalAccessToken.update.mockResolvedValue(patWithUser as any);
+      mockPrisma.personalAccessToken.findUnique.mockResolvedValue(
+        patWithUser as any,
+      );
+      mockPrisma.personalAccessToken.update.mockResolvedValue(
+        patWithUser as any,
+      );
 
       const result = await service.validateToken(rawToken);
 
       expect(result).not.toBeNull();
-      expect(result).toMatchObject({ id: mockUserId, email: 'test@example.com' });
+      expect(result).toMatchObject({
+        id: mockUserId,
+        email: 'test@example.com',
+      });
     });
 
     it('should compute SHA256 hash of token before lookup', async () => {
@@ -401,7 +495,9 @@ describe('PatService', () => {
     it('should return null when token does not exist', async () => {
       mockPrisma.personalAccessToken.findUnique.mockResolvedValue(null);
 
-      const result = await service.validateToken('pat_nonexistent_token_hash_here');
+      const result = await service.validateToken(
+        'pat_nonexistent_token_hash_here',
+      );
 
       expect(result).toBeNull();
     });
@@ -416,7 +512,9 @@ describe('PatService', () => {
         user: mockUserWithRelations,
       };
 
-      mockPrisma.personalAccessToken.findUnique.mockResolvedValue(expiredPat as any);
+      mockPrisma.personalAccessToken.findUnique.mockResolvedValue(
+        expiredPat as any,
+      );
 
       const result = await service.validateToken(rawToken);
 
@@ -433,7 +531,9 @@ describe('PatService', () => {
         user: mockUserWithRelations,
       };
 
-      mockPrisma.personalAccessToken.findUnique.mockResolvedValue(revokedPat as any);
+      mockPrisma.personalAccessToken.findUnique.mockResolvedValue(
+        revokedPat as any,
+      );
 
       const result = await service.validateToken(rawToken);
 
@@ -450,7 +550,9 @@ describe('PatService', () => {
         user: { ...mockUserWithRelations, isActive: false },
       };
 
-      mockPrisma.personalAccessToken.findUnique.mockResolvedValue(patWithInactiveUser as any);
+      mockPrisma.personalAccessToken.findUnique.mockResolvedValue(
+        patWithInactiveUser as any,
+      );
 
       const result = await service.validateToken(rawToken);
 
@@ -513,7 +615,9 @@ describe('PatService', () => {
     });
 
     it('should return count of deleted records', async () => {
-      mockPrisma.personalAccessToken.deleteMany.mockResolvedValue({ count: 42 });
+      mockPrisma.personalAccessToken.deleteMany.mockResolvedValue({
+        count: 42,
+      });
 
       const result = await service.cleanupExpiredTokens();
 
@@ -535,7 +639,8 @@ describe('PatService', () => {
       await service.cleanupExpiredTokens();
       const after = new Date();
 
-      const callArg = (mockPrisma.personalAccessToken.deleteMany as jest.Mock).mock.calls[0][0];
+      const callArg = (mockPrisma.personalAccessToken.deleteMany as jest.Mock)
+        .mock.calls[0][0];
       const revokedThreshold: Date = callArg.where.OR[1].revokedAt.lt;
 
       // Threshold should be approximately 30 days ago
@@ -544,8 +649,12 @@ describe('PatService', () => {
       const expectedMax = new Date(after);
       expectedMax.setDate(expectedMax.getDate() - 30);
 
-      expect(revokedThreshold.getTime()).toBeGreaterThanOrEqual(expectedMin.getTime());
-      expect(revokedThreshold.getTime()).toBeLessThanOrEqual(expectedMax.getTime());
+      expect(revokedThreshold.getTime()).toBeGreaterThanOrEqual(
+        expectedMin.getTime(),
+      );
+      expect(revokedThreshold.getTime()).toBeLessThanOrEqual(
+        expectedMax.getTime(),
+      );
     });
   });
 });

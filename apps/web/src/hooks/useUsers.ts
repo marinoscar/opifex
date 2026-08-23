@@ -66,7 +66,8 @@ export function useUsers(): UseUsersResult {
           setTotalPages(response.totalPages);
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to fetch users';
+        const message =
+          err instanceof Error ? err.message : 'Failed to fetch users';
         if (isMounted()) {
           setError(message);
           setUsers([]);
@@ -90,7 +91,8 @@ export function useUsers(): UseUsersResult {
           );
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to update user';
+        const message =
+          err instanceof Error ? err.message : 'Failed to update user';
         if (isMounted()) setError(message);
         throw err;
       }

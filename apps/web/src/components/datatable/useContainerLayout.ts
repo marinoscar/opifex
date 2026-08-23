@@ -90,7 +90,9 @@ export function layoutForWidth(
  * Returns `null` until a real (non-zero) width has been observed, which is the
  * caller's signal to use a viewport fallback instead of guessing.
  */
-export function useContainerWidth(ref: RefObject<HTMLElement | null>): number | null {
+export function useContainerWidth(
+  ref: RefObject<HTMLElement | null>,
+): number | null {
   const [width, setWidth] = useState<number | null>(null);
 
   // Ignore a 0/absent measurement rather than resolving to `mobile` for a

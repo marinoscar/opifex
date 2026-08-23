@@ -1,4 +1,8 @@
-import type { SilenceVerdict, StreamingFidelity, WatchedRunState } from './watchdog.types';
+import type {
+  SilenceVerdict,
+  StreamingFidelity,
+  WatchedRunState,
+} from './watchdog.types';
 
 /**
  * How long a run may go quiet before it is silent, by declared fidelity.
@@ -52,7 +56,10 @@ const JUDGEABLE: readonly string[] = ['running', 'stalled'];
  * path, with no model involvement: this is arithmetic on timestamps, and it
  * has to stay that way.
  */
-export function detectSilentRuns(runs: WatchedRunState[], now: Date): SilenceVerdict[] {
+export function detectSilentRuns(
+  runs: WatchedRunState[],
+  now: Date,
+): SilenceVerdict[] {
   const verdicts: SilenceVerdict[] = [];
 
   for (const run of runs) {
@@ -92,7 +99,9 @@ export function detectSilentRuns(runs: WatchedRunState[], now: Date): SilenceVer
 }
 
 export function thresholdFor(fidelity: StreamingFidelity | null): number {
-  return fidelity === null ? UNDECLARED_THRESHOLD_MS : SILENCE_THRESHOLDS_MS[fidelity];
+  return fidelity === null
+    ? UNDECLARED_THRESHOLD_MS
+    : SILENCE_THRESHOLDS_MS[fidelity];
 }
 
 /**
@@ -102,7 +111,11 @@ export function thresholdFor(fidelity: StreamingFidelity | null): number {
  * because this is the one decision in the system that destroys work — and a
  * verdict nobody can check is one they will eventually stop trusting.
  */
-function describe(run: WatchedRunState, silentForMs: number, thresholdMs: number): string {
+function describe(
+  run: WatchedRunState,
+  silentForMs: number,
+  thresholdMs: number,
+): string {
   const observed = run.lastEventAt
     ? `last event of any source at ${run.lastEventAt.toISOString()}`
     : `no event of any source since the run started at ${run.startedAt.toISOString()}`;

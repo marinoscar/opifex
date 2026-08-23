@@ -48,7 +48,10 @@ describe('useRunQueue', () => {
     renderHookWithProviders(() => useRunQueue());
     await act(async () => {});
 
-    expect(mockGet).toHaveBeenCalledWith({ limit: QUEUE_PANEL_LIMIT }, expect.any(AbortSignal));
+    expect(mockGet).toHaveBeenCalledWith(
+      { limit: QUEUE_PANEL_LIMIT },
+      expect.any(AbortSignal),
+    );
   });
 
   it('honours an explicit limit', async () => {
@@ -58,6 +61,9 @@ describe('useRunQueue', () => {
     renderHookWithProviders(() => useRunQueue(20));
     await act(async () => {});
 
-    expect(mockGet).toHaveBeenCalledWith({ limit: 20 }, expect.any(AbortSignal));
+    expect(mockGet).toHaveBeenCalledWith(
+      { limit: 20 },
+      expect.any(AbortSignal),
+    );
   });
 });

@@ -17,7 +17,9 @@ describe('NotFoundPage', () => {
   it('says plainly that nothing is routed here', () => {
     render(<NotFoundPage />, { wrapperOptions: { route: '/nope' } });
 
-    expect(screen.getByRole('heading', { level: 1, name: /page not found/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: /page not found/i }),
+    ).toBeInTheDocument();
   });
 
   it('echoes the attempted path verbatim, in the mono token', () => {
@@ -34,10 +36,9 @@ describe('NotFoundPage', () => {
   it('offers a way back to the cockpit', () => {
     render(<NotFoundPage />, { wrapperOptions: { route: '/nope' } });
 
-    expect(screen.getByRole('link', { name: /back to the cockpit/i })).toHaveAttribute(
-      'href',
-      '/',
-    );
+    expect(
+      screen.getByRole('link', { name: /back to the cockpit/i }),
+    ).toHaveAttribute('href', '/');
   });
 
   describe('The destination list', () => {
@@ -47,9 +48,15 @@ describe('NotFoundPage', () => {
       render(<NotFoundPage />, { wrapperOptions: { route: '/nope' } });
 
       const list = screen.getByRole('list', { name: /where you can go/i });
-      expect(within(list).getByRole('link', { name: /user settings/i })).toBeInTheDocument();
-      expect(within(list).queryByRole('link', { name: /user management/i })).not.toBeInTheDocument();
-      expect(within(list).queryByRole('link', { name: /system settings/i })).not.toBeInTheDocument();
+      expect(
+        within(list).getByRole('link', { name: /user settings/i }),
+      ).toBeInTheDocument();
+      expect(
+        within(list).queryByRole('link', { name: /user management/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(list).queryByRole('link', { name: /system settings/i }),
+      ).not.toBeInTheDocument();
     });
 
     it('lists the admin destinations for a user holding their permissions', () => {
@@ -58,10 +65,14 @@ describe('NotFoundPage', () => {
       });
 
       const list = screen.getByRole('list', { name: /where you can go/i });
-      expect(within(list).getAllByRole('link')).toHaveLength(DESTINATIONS.length);
+      expect(within(list).getAllByRole('link')).toHaveLength(
+        DESTINATIONS.length,
+      );
       for (const destination of DESTINATIONS) {
         expect(
-          within(list).getByRole('link', { name: new RegExp(destination.label, 'i') }),
+          within(list).getByRole('link', {
+            name: new RegExp(destination.label, 'i'),
+          }),
         ).toHaveAttribute('href', destination.path);
       }
     });

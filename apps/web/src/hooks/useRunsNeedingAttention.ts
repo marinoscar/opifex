@@ -13,7 +13,10 @@
  */
 
 import { useCallback } from 'react';
-import { COCKPIT_ENDPOINTS, COCKPIT_POLL_INTERVAL_MS } from '../config/cockpitApi';
+import {
+  COCKPIT_ENDPOINTS,
+  COCKPIT_POLL_INTERVAL_MS,
+} from '../config/cockpitApi';
 import { getRunsNeedingAttention } from '../services/api';
 import type { RunSummary } from '../types/cockpit';
 import { usePolledResource } from './usePolledResource';
@@ -29,8 +32,9 @@ import type { UsePolledResourceResult } from './usePolledResource';
  */
 export const ATTENTION_PANEL_LIMIT = 5;
 
-export interface UseRunsNeedingAttentionResult
-  extends UsePolledResourceResult<RunSummary[]> {
+export interface UseRunsNeedingAttentionResult extends UsePolledResourceResult<
+  RunSummary[]
+> {
   phase: string;
 }
 

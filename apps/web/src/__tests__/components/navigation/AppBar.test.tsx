@@ -36,8 +36,12 @@ describe('AppBar', () => {
     it('renders no drawer toggle', () => {
       render(<AppBar />);
 
-      expect(screen.queryByRole('button', { name: /toggle drawer/i })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /menu/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /toggle drawer/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /menu/i }),
+      ).not.toBeInTheDocument();
       expect(screen.queryByTestId('MenuIcon')).not.toBeInTheDocument();
     });
 
@@ -55,7 +59,9 @@ describe('AppBar', () => {
 
       await act(async () => setViewportWidth(375));
 
-      expect(screen.queryByRole('button', { name: /menu/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /menu/i }),
+      ).not.toBeInTheDocument();
       expect(screen.getAllByRole('button')).toHaveLength(2);
     });
   });
@@ -64,7 +70,9 @@ describe('AppBar', () => {
     it('should render theme toggle button', () => {
       render(<AppBar />);
 
-      const toggleButton = screen.getByRole('button', { name: /toggle theme/i });
+      const toggleButton = screen.getByRole('button', {
+        name: /toggle theme/i,
+      });
       expect(toggleButton).toBeInTheDocument();
     });
 
@@ -73,7 +81,9 @@ describe('AppBar', () => {
         wrapperOptions: { theme: 'light' },
       });
 
-      const toggleButton = screen.getByRole('button', { name: /toggle theme/i });
+      const toggleButton = screen.getByRole('button', {
+        name: /toggle theme/i,
+      });
       expect(toggleButton).toBeInTheDocument();
       // Dark mode icon (moon) should be shown when in light mode
     });
@@ -83,7 +93,9 @@ describe('AppBar', () => {
         wrapperOptions: { theme: 'dark' },
       });
 
-      const toggleButton = screen.getByRole('button', { name: /toggle theme/i });
+      const toggleButton = screen.getByRole('button', {
+        name: /toggle theme/i,
+      });
       expect(toggleButton).toBeInTheDocument();
       // Light mode icon (sun) should be shown when in dark mode
     });
@@ -93,7 +105,9 @@ describe('AppBar', () => {
 
       render(<AppBar />);
 
-      const toggleButton = screen.getByRole('button', { name: /toggle theme/i });
+      const toggleButton = screen.getByRole('button', {
+        name: /toggle theme/i,
+      });
       await user.click(toggleButton);
 
       // Theme should have toggled (via ThemeContext)
@@ -135,7 +149,9 @@ describe('AppBar', () => {
       const brand = screen.getByRole('link', { name: 'Opifex' });
       expect(brand.tagName).toBe('A');
       expect(brand).toHaveAttribute('href', '/');
-      expect(within(brand).getByRole('img', { name: 'Opifex' })).toBeInTheDocument();
+      expect(
+        within(brand).getByRole('img', { name: 'Opifex' }),
+      ).toBeInTheDocument();
     });
 
     it('is reachable and activatable from the keyboard', async () => {
@@ -153,7 +169,9 @@ describe('AppBar', () => {
       // other than what it draws. The name is written down once, in the SVG.
       render(<AppBar />);
 
-      expect(screen.getByRole('link', { name: 'Opifex' })).not.toHaveAttribute('aria-label');
+      expect(screen.getByRole('link', { name: 'Opifex' })).not.toHaveAttribute(
+        'aria-label',
+      );
     });
   });
 
@@ -179,7 +197,9 @@ describe('AppBar', () => {
       render(<AppBar />);
 
       expect(screen.getByRole('link', { name: 'Opifex' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /toggle theme/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /toggle theme/i }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -187,7 +207,9 @@ describe('AppBar', () => {
     it('should have accessible theme toggle button', () => {
       render(<AppBar />);
 
-      const toggleButton = screen.getByRole('button', { name: /toggle theme/i });
+      const toggleButton = screen.getByRole('button', {
+        name: /toggle theme/i,
+      });
       expect(toggleButton).toHaveAccessibleName();
     });
 

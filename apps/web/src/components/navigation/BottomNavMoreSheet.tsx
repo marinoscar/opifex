@@ -78,7 +78,9 @@ export function BottomNavMoreSheet({
   // under it reads as a failure to load rather than as an absence.
   const populatedSections = SECTIONS.map((section) => ({
     ...section,
-    destinations: destinations.filter((destination) => destination.section === section.key),
+    destinations: destinations.filter(
+      (destination) => destination.section === section.key,
+    ),
   })).filter((section) => section.destinations.length > 0);
 
   return (
@@ -137,7 +139,9 @@ export function BottomNavMoreSheet({
                     to={destination.path}
                     onClick={onClose}
                     selected={activeKey === destination.key}
-                    aria-current={activeKey === destination.key ? 'page' : undefined}
+                    aria-current={
+                      activeKey === destination.key ? 'page' : undefined
+                    }
                   >
                     <ListItemIcon sx={{ minWidth: 40 }}>
                       <destination.Icon />

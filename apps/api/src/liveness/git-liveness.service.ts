@@ -95,9 +95,17 @@ export class GitLivenessService {
           }
         }
 
-        await this.updateRun(run.watched.runId, derived.lastActivityAt, observation);
+        await this.updateRun(
+          run.watched.runId,
+          derived.lastActivityAt,
+          observation,
+        );
 
-        const disagreement = this.compare(run, derived.lastActivityAt, observation);
+        const disagreement = this.compare(
+          run,
+          derived.lastActivityAt,
+          observation,
+        );
         if (disagreement) result.disagreements.push(disagreement);
       } catch (error) {
         result.failures.push({
@@ -110,7 +118,9 @@ export class GitLivenessService {
     if (result.disagreements.length > 0) {
       // Logged rather than reconciled. See `LivenessDisagreement`.
       for (const d of result.disagreements) {
-        this.logger.warn(`Liveness disagreement on ${d.workOrderIdentity} (${d.kind}): ${d.detail}`);
+        this.logger.warn(
+          `Liveness disagreement on ${d.workOrderIdentity} (${d.kind}): ${d.detail}`,
+        );
       }
     }
 
@@ -126,7 +136,10 @@ export class GitLivenessService {
   private async observe(run: WatchedRun): Promise<GitObservation> {
     const repo = run.repository;
 
-    const commits = await this.github.listCommits(repo, { branch: run.branch, maxPages: 2 });
+    const commits = await this.github.listCommits(repo, {
+      branch: run.branch,
+      maxPages: 2,
+    });
     const pulls = await this.github.listPullRequests(repo, {
       state: 'all',
       head: `${repo.owner}:${run.branch}`,
@@ -172,7 +185,10 @@ export class GitLivenessService {
    * re-derives the same commit event on every tick, and a conflict is the
    * expected outcome rather than an error.
    */
-  private async record(event: RunEventPayload, workOrderIdentity: string): Promise<boolean> {
+  private async record(
+    event: RunEventPayload,
+    workOrderIdentity: string,
+  ): Promise<boolean> {
     // The same span-per-event treatment runner-reported ingestion gets. Both
     // liveness sources land in the ONE work order trace (VISION §9), which is
     // the point of deriving the trace id from the identity: this runs on a
@@ -212,7 +228,8 @@ export class GitLivenessService {
     lastActivityAt: Date | null,
     observation: GitObservation,
   ): Promise<void> {
-    const head = observation.pullRequest?.headSha ?? observation.commits[0]?.sha ?? null;
+    const head =
+      observation.pullRequest?.headSha ?? observation.commits[0]?.sha ?? null;
 
     await this.prisma.run.update({
       where: { id: runId },
@@ -221,7 +238,8 @@ export class GitLivenessService {
         // and letting an older git observation overwrite a newer runner event
         // would make a live run look stale — manufacturing the silence #54 is
         // watching for.
-        ...(lastActivityAt && lastActivityAt > (observation.run.startedAt ?? new Date(0))
+        ...(lastActivityAt &&
+        lastActivityAt > (observation.run.startedAt ?? new Date(0))
           ? { lastEventAt: lastActivityAt }
           : {}),
         ...(head ? { headCommit: head } : {}),

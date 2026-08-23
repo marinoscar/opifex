@@ -51,8 +51,8 @@ watchdog's core move — so the two properties that matter most are:
 **It keeps the capability manifest honest.** The manifest already declares
 `invocationModel: 'process'` and `executionLocus: 'own_infrastructure'`.
 Choosing the SDK would make the first of those false, and #61 is explicit about
-what that costs: *"overstating it produces a control plane that trusts signal it
-is not actually receiving."* The manifest is a declaration, and a declaration
+what that costs: _"overstating it produces a control plane that trusts signal it
+is not actually receiving."_ The manifest is a declaration, and a declaration
 that does not match the mechanism is the one kind of lie this design cannot
 absorb.
 

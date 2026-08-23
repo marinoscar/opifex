@@ -1,9 +1,17 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { toNumberOrNull } from '../common/decimal';
 import { PrismaService } from '../prisma/prisma.service';
 import { FactoryMetrics } from '../telemetry/factory-metrics.service';
-import { RunEventValidator, type ValidationFailure } from './run-event-validator';
+import {
+  RunEventValidator,
+  type ValidationFailure,
+} from './run-event-validator';
 import {
   toPrismaEventSource,
   toPrismaEventType,
@@ -147,7 +155,10 @@ export class RunEventsService {
 
     await this.advanceRun(runId, events);
 
-    return { accepted: created.count, duplicates: events.length - created.count };
+    return {
+      accepted: created.count,
+      duplicates: events.length - created.count,
+    };
   }
 
   /**
@@ -163,8 +174,14 @@ export class RunEventsService {
    * that is already instrumented has the real parent context, and overwriting
    * it would sever its spans from ours.
    */
-  private toRow(runId: string, event: RunEventPayload, workOrderIdentity: string) {
-    const toolSignature = event.tool ? `${event.tool.name}:${event.tool.signature}` : null;
+  private toRow(
+    runId: string,
+    event: RunEventPayload,
+    workOrderIdentity: string,
+  ) {
+    const toolSignature = event.tool
+      ? `${event.tool.name}:${event.tool.signature}`
+      : null;
 
     const emitted = this.metrics.recordRunEvent({
       workOrderIdentity,
@@ -190,7 +207,9 @@ export class RunEventsService {
       // reset time collapses park-and-auto-resume into kill-and-re-run,
       // which VISION §9 calls the most common supervision bug.
       blockedReason: event.blocked?.reason ?? null,
-      blockedUntil: event.blocked?.resetAt ? new Date(event.blocked.resetAt) : null,
+      blockedUntil: event.blocked?.resetAt
+        ? new Date(event.blocked.resetAt)
+        : null,
       costUsd: event.cost?.usd ?? null,
       tokensInput: event.cost?.tokensInput ?? null,
       tokensOutput: event.cost?.tokensOutput ?? null,
@@ -207,7 +226,10 @@ export class RunEventsService {
    * ever moved FORWARD: a late-arriving old event must not make a live run
    * look staler than it is.
    */
-  private async advanceRun(runId: string, events: RunEventPayload[]): Promise<void> {
+  private async advanceRun(
+    runId: string,
+    events: RunEventPayload[],
+  ): Promise<void> {
     const newest = events
       .map((event) => new Date(event.occurredAt))
       .reduce((latest, at) => (at > latest ? at : latest));
@@ -217,12 +239,17 @@ export class RunEventsService {
     await this.prisma.run.updateMany({
       // The guard is in the WHERE clause rather than a read-then-compare, so
       // two concurrent deliveries cannot both decide they are newest.
-      where: { id: runId, OR: [{ lastEventAt: null }, { lastEventAt: { lt: newest } }] },
+      where: {
+        id: runId,
+        OR: [{ lastEventAt: null }, { lastEventAt: { lt: newest } }],
+      },
       data: {
         lastEventAt: newest,
         // Carried onto the run so #56 can schedule a resume without re-reading
         // the event stream. Only set when the batch actually contained a block.
-        ...(blocked?.blocked?.resetAt ? { resumesAt: new Date(blocked.blocked.resetAt) } : {}),
+        ...(blocked?.blocked?.resetAt
+          ? { resumesAt: new Date(blocked.blocked.resetAt) }
+          : {}),
       },
     });
 
@@ -288,21 +315,30 @@ export class RunEventsService {
 
     if (costUsd !== null) {
       await this.prisma.run.updateMany({
-        where: { id: runId, OR: [{ costUsd: null }, { costUsd: { lt: costUsd } }] },
+        where: {
+          id: runId,
+          OR: [{ costUsd: null }, { costUsd: { lt: costUsd } }],
+        },
         data: { costUsd },
       });
     }
 
     if (tokensInput !== null && tokensInput !== undefined) {
       await this.prisma.run.updateMany({
-        where: { id: runId, OR: [{ tokensInput: null }, { tokensInput: { lt: tokensInput } }] },
+        where: {
+          id: runId,
+          OR: [{ tokensInput: null }, { tokensInput: { lt: tokensInput } }],
+        },
         data: { tokensInput },
       });
     }
 
     if (tokensOutput !== null && tokensOutput !== undefined) {
       await this.prisma.run.updateMany({
-        where: { id: runId, OR: [{ tokensOutput: null }, { tokensOutput: { lt: tokensOutput } }] },
+        where: {
+          id: runId,
+          OR: [{ tokensOutput: null }, { tokensOutput: { lt: tokensOutput } }],
+        },
         data: { tokensOutput },
       });
     }

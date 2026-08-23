@@ -99,13 +99,19 @@ describe('BottomNav', () => {
 
     it('appears and disappears across the sm boundary', async () => {
       renderPhone();
-      expect(screen.getByRole('button', { name: 'Cockpit' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Cockpit' }),
+      ).toBeInTheDocument();
 
       await act(async () => setViewportWidth(600));
-      expect(screen.queryByRole('button', { name: 'Cockpit' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Cockpit' }),
+      ).not.toBeInTheDocument();
 
       await act(async () => setViewportWidth(599));
-      expect(screen.getByRole('button', { name: 'Cockpit' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Cockpit' }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -124,9 +130,10 @@ describe('BottomNav', () => {
         setPermissions(granted, granted.length > 0);
         const { unmount } = renderPhone();
 
-        expect(barActions().length, `permissions: [${granted.join(', ')}]`).toBeLessThanOrEqual(
-          BOTTOM_NAV_MAX_ACTIONS,
-        );
+        expect(
+          barActions().length,
+          `permissions: [${granted.join(', ')}]`,
+        ).toBeLessThanOrEqual(BOTTOM_NAV_MAX_ACTIONS);
 
         unmount();
       }
@@ -136,10 +143,14 @@ describe('BottomNav', () => {
       renderPhone();
 
       expect(barActions()).toHaveLength(4);
-      expect(screen.getByRole('button', { name: 'Cockpit' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Cockpit' }),
+      ).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Runs' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Queue' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'More destinations' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'More destinations' }),
+      ).toBeInTheDocument();
     });
 
     it('keeps the same three tabs for a user with no admin permissions', () => {
@@ -165,8 +176,12 @@ describe('BottomNav', () => {
       setPermissions(['runs:read']);
       renderPhone();
 
-      expect(screen.queryByRole('button', { name: 'Queue' })).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Cockpit' })).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Queue' }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Cockpit' }),
+      ).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Runs' })).toBeInTheDocument();
     });
 
@@ -176,7 +191,9 @@ describe('BottomNav', () => {
       renderPhone();
 
       expect(screen.getByText('Cockpit')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'More destinations' })).toHaveTextContent('More');
+      expect(
+        screen.getByRole('button', { name: 'More destinations' }),
+      ).toHaveTextContent('More');
     });
   });
 
@@ -184,8 +201,12 @@ describe('BottomNav', () => {
     it('selects the primary that owns the route', () => {
       renderPhone('/queue');
 
-      expect(screen.getByRole('button', { name: 'Queue' })).toHaveClass('Mui-selected');
-      expect(screen.getByRole('button', { name: 'Cockpit' })).not.toHaveClass('Mui-selected');
+      expect(screen.getByRole('button', { name: 'Queue' })).toHaveClass(
+        'Mui-selected',
+      );
+      expect(screen.getByRole('button', { name: 'Cockpit' })).not.toHaveClass(
+        'Mui-selected',
+      );
     });
 
     it('selects More when the route belongs to an overflow destination', () => {
@@ -193,17 +214,17 @@ describe('BottomNav', () => {
       // /settings would be a lie about location, not a tasteful absence.
       renderPhone('/settings');
 
-      expect(screen.getByRole('button', { name: 'More destinations' })).toHaveClass(
-        'Mui-selected',
-      );
+      expect(
+        screen.getByRole('button', { name: 'More destinations' }),
+      ).toHaveClass('Mui-selected');
     });
 
     it('resolves a child route to its parent destination', () => {
       renderPhone('/admin/users/abc-123');
 
-      expect(screen.getByRole('button', { name: 'More destinations' })).toHaveClass(
-        'Mui-selected',
-      );
+      expect(
+        screen.getByRole('button', { name: 'More destinations' }),
+      ).toHaveClass('Mui-selected');
     });
 
     it('selects NOTHING on a route no destination owns', () => {
@@ -234,7 +255,9 @@ describe('BottomNav', () => {
       await user.click(screen.getByRole('button', { name: 'Runs' }));
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Runs' })).toHaveClass('Mui-selected');
+        expect(screen.getByRole('button', { name: 'Runs' })).toHaveClass(
+          'Mui-selected',
+        );
       });
     });
 
@@ -245,7 +268,9 @@ describe('BottomNav', () => {
       for (const name of ['Runs', 'Queue', 'Cockpit']) {
         await user.click(screen.getByRole('button', { name }));
         await waitFor(() => {
-          expect(screen.getByRole('button', { name })).toHaveClass('Mui-selected');
+          expect(screen.getByRole('button', { name })).toHaveClass(
+            'Mui-selected',
+          );
         });
       }
     });
@@ -256,9 +281,13 @@ describe('BottomNav', () => {
       const user = userEvent.setup();
       renderPhone('/');
 
-      await user.click(screen.getByRole('button', { name: 'More destinations' }));
+      await user.click(
+        screen.getByRole('button', { name: 'More destinations' }),
+      );
 
-      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
+      const sheet = await screen.findByRole('dialog', {
+        name: 'More destinations',
+      });
       const { overflow } = bottomNavSplit(() => true);
 
       for (const destination of overflow) {
@@ -283,13 +312,21 @@ describe('BottomNav', () => {
       // Collected BEFORE the sheet opens: the modal marks the rest of the
       // document `aria-hidden`, so a role query would not find the bar's own
       // tabs while it is up — correctly, since they are not reachable then.
-      const onBar = barActions().map((action) => action.getAttribute('aria-label'));
+      const onBar = barActions().map((action) =>
+        action.getAttribute('aria-label'),
+      );
 
-      await user.click(screen.getByRole('button', { name: 'More destinations' }));
-      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
+      await user.click(
+        screen.getByRole('button', { name: 'More destinations' }),
+      );
+      const sheet = await screen.findByRole('dialog', {
+        name: 'More destinations',
+      });
 
       for (const destination of DESTINATIONS) {
-        const inSheet = within(sheet).queryByRole('link', { name: destination.label });
+        const inSheet = within(sheet).queryByRole('link', {
+          name: destination.label,
+        });
         expect(
           onBar.includes(destination.label) || inSheet !== null,
           `${destination.key} is unreachable`,
@@ -302,10 +339,16 @@ describe('BottomNav', () => {
       setPermissions(VIEWER_PERMISSIONS);
       renderPhone('/');
 
-      await user.click(screen.getByRole('button', { name: 'More destinations' }));
-      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
+      await user.click(
+        screen.getByRole('button', { name: 'More destinations' }),
+      );
+      const sheet = await screen.findByRole('dialog', {
+        name: 'More destinations',
+      });
 
-      expect(within(sheet).getByRole('link', { name: 'User Settings' })).toBeInTheDocument();
+      expect(
+        within(sheet).getByRole('link', { name: 'User Settings' }),
+      ).toBeInTheDocument();
       expect(
         within(sheet).queryByRole('link', { name: 'User Management' }),
       ).not.toBeInTheDocument();
@@ -319,10 +362,16 @@ describe('BottomNav', () => {
       setPermissions(['system_settings:read'], false);
       renderPhone('/');
 
-      await user.click(screen.getByRole('button', { name: 'More destinations' }));
-      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
+      await user.click(
+        screen.getByRole('button', { name: 'More destinations' }),
+      );
+      const sheet = await screen.findByRole('dialog', {
+        name: 'More destinations',
+      });
 
-      expect(within(sheet).getByRole('link', { name: 'System Settings' })).toBeInTheDocument();
+      expect(
+        within(sheet).getByRole('link', { name: 'System Settings' }),
+      ).toBeInTheDocument();
       expect(
         within(sheet).queryByRole('link', { name: 'User Management' }),
       ).not.toBeInTheDocument();
@@ -332,12 +381,22 @@ describe('BottomNav', () => {
       const user = userEvent.setup();
       renderPhone('/');
 
-      await user.click(screen.getByRole('button', { name: 'More destinations' }));
-      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
+      await user.click(
+        screen.getByRole('button', { name: 'More destinations' }),
+      );
+      const sheet = await screen.findByRole('dialog', {
+        name: 'More destinations',
+      });
 
-      expect(within(sheet).getByRole('list', { name: 'Operate' })).toBeInTheDocument();
-      expect(within(sheet).getByRole('list', { name: 'Account' })).toBeInTheDocument();
-      expect(within(sheet).getByRole('list', { name: 'Administration' })).toBeInTheDocument();
+      expect(
+        within(sheet).getByRole('list', { name: 'Operate' }),
+      ).toBeInTheDocument();
+      expect(
+        within(sheet).getByRole('list', { name: 'Account' }),
+      ).toBeInTheDocument();
+      expect(
+        within(sheet).getByRole('list', { name: 'Administration' }),
+      ).toBeInTheDocument();
     });
 
     it('drops a section that empties under permission filtering', async () => {
@@ -346,11 +405,19 @@ describe('BottomNav', () => {
       setPermissions([]);
       renderPhone('/');
 
-      await user.click(screen.getByRole('button', { name: 'More destinations' }));
-      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
+      await user.click(
+        screen.getByRole('button', { name: 'More destinations' }),
+      );
+      const sheet = await screen.findByRole('dialog', {
+        name: 'More destinations',
+      });
 
-      expect(within(sheet).queryByRole('list', { name: 'Administration' })).not.toBeInTheDocument();
-      expect(within(sheet).queryByText('Administration')).not.toBeInTheDocument();
+      expect(
+        within(sheet).queryByRole('list', { name: 'Administration' }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(sheet).queryByText('Administration'),
+      ).not.toBeInTheDocument();
     });
 
     it('closes when a destination is chosen', async () => {
@@ -359,23 +426,31 @@ describe('BottomNav', () => {
       const user = userEvent.setup();
       renderPhone('/');
 
-      await user.click(screen.getByRole('button', { name: 'More destinations' }));
-      const sheet = await screen.findByRole('dialog', { name: 'More destinations' });
-      await user.click(within(sheet).getByRole('link', { name: 'User Settings' }));
+      await user.click(
+        screen.getByRole('button', { name: 'More destinations' }),
+      );
+      const sheet = await screen.findByRole('dialog', {
+        name: 'More destinations',
+      });
+      await user.click(
+        within(sheet).getByRole('link', { name: 'User Settings' }),
+      );
 
       await waitFor(() => {
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       });
-      expect(screen.getByRole('button', { name: 'More destinations' })).toHaveClass(
-        'Mui-selected',
-      );
+      expect(
+        screen.getByRole('button', { name: 'More destinations' }),
+      ).toHaveClass('Mui-selected');
     });
 
     it('closes on Escape without navigating', async () => {
       const user = userEvent.setup();
       renderPhone('/');
 
-      await user.click(screen.getByRole('button', { name: 'More destinations' }));
+      await user.click(
+        screen.getByRole('button', { name: 'More destinations' }),
+      );
       await screen.findByRole('dialog', { name: 'More destinations' });
 
       await user.keyboard('{Escape}');
@@ -384,7 +459,9 @@ describe('BottomNav', () => {
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       });
       // Still on `/`, so the Cockpit tab is still the selected one.
-      expect(screen.getByRole('button', { name: 'Cockpit' })).toHaveClass('Mui-selected');
+      expect(screen.getByRole('button', { name: 'Cockpit' })).toHaveClass(
+        'Mui-selected',
+      );
     });
 
     it('reports its expanded state on the trigger', async () => {

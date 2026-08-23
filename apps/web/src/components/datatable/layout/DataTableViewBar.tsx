@@ -54,7 +54,11 @@ import DensitySmallIcon from '@mui/icons-material/DensitySmall';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import TuneIcon from '@mui/icons-material/Tune';
 import ViewColumnIcon from '@mui/icons-material/ViewColumn';
-import type { DataTableColumn, DataTableDensity, DataTableLayout } from '../types';
+import type {
+  DataTableColumn,
+  DataTableDensity,
+  DataTableLayout,
+} from '../types';
 import { DENSITY_LABELS, DENSITY_OPTIONS, pickerColumns } from './layoutModel';
 
 /** Class on the hidden-column count badge, so the count is assertable. */
@@ -103,7 +107,9 @@ export function DataTableViewBar<Row>({
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const hideable = pickerColumns(columns, layout);
-  const hiddenCount = hideable.filter((column) => !visibleColumnIds.has(column.id)).length;
+  const hiddenCount = hideable.filter(
+    (column) => !visibleColumnIds.has(column.id),
+  ).length;
 
   const densityToggle = (
     <ToggleButtonGroup
@@ -163,10 +169,17 @@ export function DataTableViewBar<Row>({
                 disableRipple
                 // The MenuItem is the control; the checkbox is its state, so it
                 // is named by the item rather than announcing itself twice.
-                slotProps={{ input: { 'aria-labelledby': `datatable-column-label-${column.id}` } }}
+                slotProps={{
+                  input: {
+                    'aria-labelledby': `datatable-column-label-${column.id}`,
+                  },
+                }}
               />
             </ListItemIcon>
-            <ListItemText id={`datatable-column-label-${column.id}`} primary={column.label} />
+            <ListItemText
+              id={`datatable-column-label-${column.id}`}
+              primary={column.label}
+            />
           </MenuItem>
         );
       }
@@ -217,7 +230,11 @@ export function DataTableViewBar<Row>({
           aria-expanded={sheetOpen}
           // Keeps the visible word "View" inside the accessible name
           // (WCAG 2.5.3) while spelling out a count no icon can convey.
-          aria-label={hiddenCount > 0 ? `View options (${hiddenCount} columns hidden)` : 'View options'}
+          aria-label={
+            hiddenCount > 0
+              ? `View options (${hiddenCount} columns hidden)`
+              : 'View options'
+          }
           data-testid="datatable-view-button"
           sx={{ minHeight: 44 }}
         >
@@ -245,7 +262,9 @@ export function DataTableViewBar<Row>({
               onClick={(event) => setAnchorEl(event.currentTarget)}
               aria-haspopup="menu"
               aria-expanded={Boolean(anchorEl)}
-              aria-label={hiddenCount > 0 ? `Columns (${hiddenCount} hidden)` : 'Columns'}
+              aria-label={
+                hiddenCount > 0 ? `Columns (${hiddenCount} hidden)` : 'Columns'
+              }
               data-testid="datatable-columns-button"
               sx={{ minHeight: 44 }}
             >
@@ -257,7 +276,9 @@ export function DataTableViewBar<Row>({
             anchorEl={anchorEl}
             open={Boolean(anchorEl)}
             onClose={() => setAnchorEl(null)}
-            slotProps={{ list: { 'aria-label': 'Column visibility', dense: false } }}
+            slotProps={{
+              list: { 'aria-label': 'Column visibility', dense: false },
+            }}
             data-testid="datatable-columns-menu"
           >
             {hideable.length === 0 && (
@@ -322,7 +343,14 @@ export function DataTableViewBar<Row>({
           </AppBar>
           <Divider />
 
-          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+          <DialogContent
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+              minWidth: 0,
+            }}
+          >
             <Box>
               <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
                 Density

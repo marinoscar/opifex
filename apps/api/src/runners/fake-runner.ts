@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
-import { RUN_EVENT_SCHEMA_VERSION, type RunEventPayload } from '../run-events/run-event.types';
+import {
+  RUN_EVENT_SCHEMA_VERSION,
+  type RunEventPayload,
+} from '../run-events/run-event.types';
 import type {
   RunHandle,
   Runner,
@@ -134,7 +137,10 @@ export class FakeRunner implements Runner {
   // -------------------------------------------------------------------------
 
   /** Queue an arbitrary event for the next poll. */
-  emit(identity: string, event: Partial<RunEventPayload> & { type: RunEventPayload['type'] }): void {
+  emit(
+    identity: string,
+    event: Partial<RunEventPayload> & { type: RunEventPayload['type'] },
+  ): void {
     const run = this.require(identity);
     run.pending.push(this.event(run.handle, run.workOrder, event.type, event));
   }
@@ -185,7 +191,10 @@ export class FakeRunner implements Runner {
 
   private require(identity: string): FakeRun {
     const run = this.runs.get(identity);
-    if (!run) throw new Error(`FakeRunner has no run for ${identity} — submit it first`);
+    if (!run)
+      throw new Error(
+        `FakeRunner has no run for ${identity} — submit it first`,
+      );
     return run;
   }
 

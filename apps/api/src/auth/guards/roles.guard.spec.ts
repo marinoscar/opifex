@@ -14,16 +14,15 @@ describe('RolesGuard', () => {
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        RolesGuard,
-        { provide: Reflector, useValue: reflector },
-      ],
+      providers: [RolesGuard, { provide: Reflector, useValue: reflector }],
     }).compile();
 
     guard = module.get<RolesGuard>(RolesGuard);
   });
 
-  function createMockContext(user: Partial<AuthenticatedUser> | null = null): ExecutionContext {
+  function createMockContext(
+    user: Partial<AuthenticatedUser> | null = null,
+  ): ExecutionContext {
     return {
       switchToHttp: () => ({
         getRequest: () => ({ user }),
@@ -33,7 +32,9 @@ describe('RolesGuard', () => {
     } as any;
   }
 
-  function createUserWithRoles(roleNames: string[]): Partial<AuthenticatedUser> {
+  function createUserWithRoles(
+    roleNames: string[],
+  ): Partial<AuthenticatedUser> {
     return {
       id: 'user-id',
       email: 'test@example.com',
@@ -103,27 +104,41 @@ describe('RolesGuard', () => {
 
     it('should handle user with multiple roles', () => {
       reflector.getAllAndOverride.mockReturnValue(['contributor']);
-      const context = createMockContext(createUserWithRoles(['viewer', 'contributor']));
+      const context = createMockContext(
+        createUserWithRoles(['viewer', 'contributor']),
+      );
 
       expect(guard.canActivate(context)).toBe(true);
     });
 
     it('should allow when user has one of multiple required roles (first match)', () => {
-      reflector.getAllAndOverride.mockReturnValue(['admin', 'contributor', 'viewer']);
+      reflector.getAllAndOverride.mockReturnValue([
+        'admin',
+        'contributor',
+        'viewer',
+      ]);
       const context = createMockContext(createUserWithRoles(['admin']));
 
       expect(guard.canActivate(context)).toBe(true);
     });
 
     it('should allow when user has one of multiple required roles (middle match)', () => {
-      reflector.getAllAndOverride.mockReturnValue(['admin', 'contributor', 'viewer']);
+      reflector.getAllAndOverride.mockReturnValue([
+        'admin',
+        'contributor',
+        'viewer',
+      ]);
       const context = createMockContext(createUserWithRoles(['contributor']));
 
       expect(guard.canActivate(context)).toBe(true);
     });
 
     it('should allow when user has one of multiple required roles (last match)', () => {
-      reflector.getAllAndOverride.mockReturnValue(['admin', 'contributor', 'viewer']);
+      reflector.getAllAndOverride.mockReturnValue([
+        'admin',
+        'contributor',
+        'viewer',
+      ]);
       const context = createMockContext(createUserWithRoles(['viewer']));
 
       expect(guard.canActivate(context)).toBe(true);

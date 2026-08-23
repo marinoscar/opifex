@@ -26,7 +26,10 @@ vi.mock('../../services/api', () => ({
   getActivityFeed: vi.fn(),
 }));
 
-import { useActivityFeed, ACTIVITY_FEED_LIMIT } from '../../hooks/useActivityFeed';
+import {
+  useActivityFeed,
+  ACTIVITY_FEED_LIMIT,
+} from '../../hooks/useActivityFeed';
 import { getActivityFeed } from '../../services/api';
 
 const mockGet = vi.mocked(getActivityFeed);
@@ -54,6 +57,9 @@ describe('useActivityFeed', () => {
     await act(async () => {});
 
     expect(ACTIVITY_FEED_LIMIT).toBeLessThan(20);
-    expect(mockGet).toHaveBeenCalledWith({ limit: ACTIVITY_FEED_LIMIT }, expect.any(AbortSignal));
+    expect(mockGet).toHaveBeenCalledWith(
+      { limit: ACTIVITY_FEED_LIMIT },
+      expect.any(AbortSignal),
+    );
   });
 });

@@ -446,7 +446,10 @@ describe('useAllowlist', () => {
         await result.current.addEmail('another@example.com');
       });
 
-      expect(api.addToAllowlist).toHaveBeenCalledWith('another@example.com', undefined);
+      expect(api.addToAllowlist).toHaveBeenCalledWith(
+        'another@example.com',
+        undefined,
+      );
     });
 
     it('should handle errors during email addition', async () => {

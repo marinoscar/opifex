@@ -37,7 +37,11 @@ function ghIssue(number: number, inputLabels: string[]) {
     body: null,
     state: 'open' as const,
     author: 'marinoscar',
-    labels: inputLabels.map((name) => ({ name, color: 'ededed', description: null })),
+    labels: inputLabels.map((name) => ({
+      name,
+      color: 'ededed',
+      description: null,
+    })),
     inputLabels,
     unknownInputLabels: [],
     observedMirrorLabels: [],
@@ -131,17 +135,22 @@ describe('factory input labels, through a whole tick', () => {
         ]),
       } as unknown as RepositoriesService,
       github as unknown as GitHubReadService,
-      { canSpend: jest.fn().mockReturnValue(true) } as unknown as GitHubHttpService,
+      {
+        canSpend: jest.fn().mockReturnValue(true),
+      } as unknown as GitHubHttpService,
       new RateLimitService(),
       prisma as unknown as PrismaService,
       // Recording is a separate concern from reconciling — these suites are
       // about what the tick DECIDES, and #50's own spec covers persistence.
-      { record: jest.fn().mockResolvedValue(undefined) } as unknown as ReconcileLogService,
+      {
+        record: jest.fn().mockResolvedValue(undefined),
+      } as unknown as ReconcileLogService,
       // These tests are about what an input LABEL makes the tick decide. The
       // projection has its own suite; a double keeps a work order write out of
       // assertions about intents.
-      { project: jest.fn().mockResolvedValue(emptyProjection()) } as unknown as
-        WorkOrderProjectionService,
+      {
+        project: jest.fn().mockResolvedValue(emptyProjection()),
+      } as unknown as WorkOrderProjectionService,
     );
   });
 
@@ -194,7 +203,10 @@ describe('factory input labels, through a whole tick', () => {
     it('releases the quarantine when a HUMAN applied it', async () => {
       github.wasLabelAppliedByHuman.mockResolvedValue(true);
 
-      const record = await tickWith([INPUT_LABELS.CLEAR_QUARANTINE], [quarantinedWorkOrder()]);
+      const record = await tickWith(
+        [INPUT_LABELS.CLEAR_QUARANTINE],
+        [quarantinedWorkOrder()],
+      );
 
       expect(github.wasLabelAppliedByHuman).toHaveBeenCalledWith(
         { owner: 'acme', name: 'app' },
@@ -209,10 +221,15 @@ describe('factory input labels, through a whole tick', () => {
       // at all: the label list can only say the label is present.
       github.wasLabelAppliedByHuman.mockResolvedValue(false);
 
-      const record = await tickWith([INPUT_LABELS.CLEAR_QUARANTINE], [quarantinedWorkOrder()]);
+      const record = await tickWith(
+        [INPUT_LABELS.CLEAR_QUARANTINE],
+        [quarantinedWorkOrder()],
+      );
 
       expect(record.projections[0].issues[0].intent).toBe('quarantined');
-      expect(record.actions.map((a) => a.type)).not.toContain('release-quarantine');
+      expect(record.actions.map((a) => a.type)).not.toContain(
+        'release-quarantine',
+      );
     });
 
     it('reports the refusal in the record rather than failing silently', async () => {
@@ -222,7 +239,10 @@ describe('factory input labels, through a whole tick', () => {
       // and a log message nobody persists is not a report.
       github.wasLabelAppliedByHuman.mockResolvedValue(false);
 
-      const record = await tickWith([INPUT_LABELS.CLEAR_QUARANTINE], [quarantinedWorkOrder()]);
+      const record = await tickWith(
+        [INPUT_LABELS.CLEAR_QUARANTINE],
+        [quarantinedWorkOrder()],
+      );
 
       const projected = record.projections[0].issues[0];
       expect(projected.intent).toBe('quarantined');
@@ -242,7 +262,10 @@ describe('factory input labels, through a whole tick', () => {
         new GitHubNotFoundError('Not Found', 404, 'GET', '/timeline'),
       );
 
-      const record = await tickWith([INPUT_LABELS.CLEAR_QUARANTINE], [quarantinedWorkOrder()]);
+      const record = await tickWith(
+        [INPUT_LABELS.CLEAR_QUARANTINE],
+        [quarantinedWorkOrder()],
+      );
 
       expect(record.projections[0].issues[0].intent).toBe('quarantined');
       // And the tick itself still completes — one unverifiable issue must not
@@ -278,7 +301,9 @@ describe('conformance with .github/labels.yml', () => {
     'utf8',
   );
 
-  const declared = [...labelsYml.matchAll(/^- name: "(factory[:/][^"]+)"$/gm)].map((m) => m[1]);
+  const declared = [
+    ...labelsYml.matchAll(/^- name: "(factory[:/][^"]+)"$/gm),
+  ].map((m) => m[1]);
 
   it('finds the factory labels in the taxonomy file', () => {
     // Guards the guard: a parser that matched nothing would make every
@@ -287,13 +312,17 @@ describe('conformance with .github/labels.yml', () => {
   });
 
   it('implements every input label the taxonomy declares', () => {
-    const declaredInputs = declared.filter((name) => name.startsWith('factory:'));
+    const declaredInputs = declared.filter((name) =>
+      name.startsWith('factory:'),
+    );
 
     expect(declaredInputs.sort()).toEqual([...ALL_INPUT_LABELS].sort());
   });
 
   it('implements every mirror label the taxonomy declares', () => {
-    const declaredMirrors = declared.filter((name) => name.startsWith('factory/'));
+    const declaredMirrors = declared.filter((name) =>
+      name.startsWith('factory/'),
+    );
 
     expect(declaredMirrors.sort()).toEqual([...ALL_MIRROR_LABELS].sort());
   });

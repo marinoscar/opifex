@@ -35,7 +35,10 @@ import {
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { usePermissions } from '../../hooks/usePermissions';
-import { bottomNavSplit, resolveActiveDestination } from '../../config/destinations';
+import {
+  bottomNavSplit,
+  resolveActiveDestination,
+} from '../../config/destinations';
 import type { DestinationKey } from '../../config/destinations';
 import { BottomNavMoreSheet } from './BottomNavMoreSheet';
 
@@ -57,7 +60,8 @@ export function BottomNav() {
   if (!isCompactWindow) return null;
 
   const { primary, overflow } = bottomNavSplit(
-    (destination) => !destination.permission || hasPermission(destination.permission),
+    (destination) =>
+      !destination.permission || hasPermission(destination.permission),
   );
 
   // No overflow, no More action: a trigger that opens an empty sheet is a
@@ -86,12 +90,18 @@ export function BottomNav() {
   if (resolved !== null) {
     if (primary.some((destination) => destination.key === resolved)) {
       active = resolved;
-    } else if (showMore && overflow.some((destination) => destination.key === resolved)) {
+    } else if (
+      showMore &&
+      overflow.some((destination) => destination.key === resolved)
+    ) {
       active = 'more';
     }
   }
 
-  const handleChange = (_: React.SyntheticEvent, value: DestinationKey | 'more') => {
+  const handleChange = (
+    _: React.SyntheticEvent,
+    value: DestinationKey | 'more',
+  ) => {
     if (value === 'more') {
       setMoreOpen(true);
       return;

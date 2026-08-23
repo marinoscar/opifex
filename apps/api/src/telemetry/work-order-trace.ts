@@ -36,7 +36,9 @@ const TRACE_NAMESPACE = 'opifex/work-order/';
  * is.
  */
 export function traceIdForWorkOrder(identity: string): string {
-  const digest = createHash('sha256').update(TRACE_NAMESPACE + identity).digest('hex');
+  const digest = createHash('sha256')
+    .update(TRACE_NAMESPACE + identity)
+    .digest('hex');
   return nonZero(digest.slice(0, 32), 32);
 }
 
@@ -49,7 +51,9 @@ export function traceIdForWorkOrder(identity: string): string {
  * point.
  */
 export function rootSpanIdForWorkOrder(identity: string): string {
-  const digest = createHash('sha256').update(TRACE_NAMESPACE + identity).digest('hex');
+  const digest = createHash('sha256')
+    .update(TRACE_NAMESPACE + identity)
+    .digest('hex');
   return nonZero(digest.slice(32, 48), 16);
 }
 
@@ -60,7 +64,10 @@ export function rootSpanIdForWorkOrder(identity: string): string {
  * genuinely not created in this process, and sampling decisions treat a
  * remote parent differently.
  */
-export function workOrderContext(identity: string, parent: Context = context.active()): Context {
+export function workOrderContext(
+  identity: string,
+  parent: Context = context.active(),
+): Context {
   return trace.setSpanContext(parent, {
     traceId: traceIdForWorkOrder(identity),
     spanId: rootSpanIdForWorkOrder(identity),

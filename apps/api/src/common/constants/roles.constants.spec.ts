@@ -38,7 +38,9 @@ const seedSource = rawSeedSource
 
 /** Every `{ name: 'x', description: … }` entry in the seed's PERMISSIONS array. */
 function seededPermissionNames(): string[] {
-  const block = seedSource.match(/const PERMISSIONS = \[([\s\S]*?)\n\] as const;/);
+  const block = seedSource.match(
+    /const PERMISSIONS = \[([\s\S]*?)\n\] as const;/,
+  );
   expect(block).not.toBeNull();
   return [...block![1].matchAll(/\{\s*name:\s*'([^']+)'/g)].map((m) => m[1]);
 }
@@ -51,7 +53,9 @@ function seededRolePermissions(): Record<string, string[]> {
   expect(block).not.toBeNull();
 
   const result: Record<string, string[]> = {};
-  for (const role of [...block![1].matchAll(/^ {2}(\w+): \[([\s\S]*?)^ {2}\],$/gm)]) {
+  for (const role of [
+    ...block![1].matchAll(/^ {2}(\w+): \[([\s\S]*?)^ {2}\],$/gm),
+  ]) {
     result[role[1]] = [...role[2].matchAll(/'([^']+)'/g)].map((m) => m[1]);
   }
   return result;

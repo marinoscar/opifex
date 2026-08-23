@@ -66,44 +66,50 @@ export interface EscalationForNotification {
  * "this can wait until morning" from "this is costing money" fails the only
  * test that matters at 2am.
  */
-const CONSEQUENCES: Record<string, { blastRadius: string; ifIgnored: string }> = {
-  run_stalled: {
-    blastRadius: 'One run. Its work order stays open and nothing downstream of it proceeds.',
-    ifIgnored:
-      'The run stays stopped. No spend, no damage — just no progress, indefinitely. ' +
-      'This is the four-hours-dead case: safe to leave until morning, wasteful to leave until Monday.',
-  },
-  run_looping: {
-    blastRadius: 'One run, still consuming tokens on a repeating action that is not progressing.',
-    ifIgnored:
-      'Spend continues with no output. Re-running it unchanged would loop again — the work ' +
-      'order needs decomposing, which is a decision only you can make right now.',
-  },
-  run_failed: {
-    blastRadius: 'One run, ended. Its branch and any commits it made are intact.',
-    ifIgnored: 'Nothing worsens. The work order simply never completes until someone re-plans it.',
-  },
-  quarantined: {
-    blastRadius:
-      'One work order, and every retry of it. Opifex will not touch it again without you.',
-    ifIgnored:
-      'It stays parked forever. Quarantine is deliberate — VISION §8 makes a human the only ' +
-      'way out — so nothing clears this on its own.',
-  },
-  budget_exceeded: {
-    blastRadius: 'One run stopped at its ceiling. Spend has already happened.',
-    ifIgnored:
-      'No further spend: the ceiling held. The work is incomplete until you raise the ceiling ' +
-      'or split the work order.',
-  },
-  system: {
-    blastRadius:
-      'The control plane itself. Detection and dispatch may be degraded across every repository.',
-    ifIgnored:
-      'Opifex may stop noticing that runs have gone quiet — which is the failure it exists to ' +
-      'prevent, now invisible.',
-  },
-};
+const CONSEQUENCES: Record<string, { blastRadius: string; ifIgnored: string }> =
+  {
+    run_stalled: {
+      blastRadius:
+        'One run. Its work order stays open and nothing downstream of it proceeds.',
+      ifIgnored:
+        'The run stays stopped. No spend, no damage — just no progress, indefinitely. ' +
+        'This is the four-hours-dead case: safe to leave until morning, wasteful to leave until Monday.',
+    },
+    run_looping: {
+      blastRadius:
+        'One run, still consuming tokens on a repeating action that is not progressing.',
+      ifIgnored:
+        'Spend continues with no output. Re-running it unchanged would loop again — the work ' +
+        'order needs decomposing, which is a decision only you can make right now.',
+    },
+    run_failed: {
+      blastRadius:
+        'One run, ended. Its branch and any commits it made are intact.',
+      ifIgnored:
+        'Nothing worsens. The work order simply never completes until someone re-plans it.',
+    },
+    quarantined: {
+      blastRadius:
+        'One work order, and every retry of it. Opifex will not touch it again without you.',
+      ifIgnored:
+        'It stays parked forever. Quarantine is deliberate — VISION §8 makes a human the only ' +
+        'way out — so nothing clears this on its own.',
+    },
+    budget_exceeded: {
+      blastRadius:
+        'One run stopped at its ceiling. Spend has already happened.',
+      ifIgnored:
+        'No further spend: the ceiling held. The work is incomplete until you raise the ceiling ' +
+        'or split the work order.',
+    },
+    system: {
+      blastRadius:
+        'The control plane itself. Detection and dispatch may be degraded across every repository.',
+      ifIgnored:
+        'Opifex may stop noticing that runs have gone quiet — which is the failure it exists to ' +
+        'prevent, now invisible.',
+    },
+  };
 
 const UNKNOWN_CONSEQUENCE = {
   blastRadius: 'Unknown — this escalation kind has no recorded consequence.',

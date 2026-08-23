@@ -5,7 +5,10 @@ import { GitHubHttpService } from '../github-http.service';
 import { GitHubReadService } from '../read/github-read.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GitHubWriteService } from './github-write.service';
-import { GitHubIssueGateService, type IssueCandidate } from './issue-gate.service';
+import {
+  GitHubIssueGateService,
+  type IssueCandidate,
+} from './issue-gate.service';
 
 const REPO = { owner: 'acme', name: 'app' };
 
@@ -34,9 +37,13 @@ describe('GitHubIssueGateService', () => {
   let service: GitHubIssueGateService;
 
   function build(writesEnabled = true) {
-    writes = new GitHubWriteService(http as unknown as GitHubHttpService, {
-      get: (key: string) => (key === 'github.writesEnabled' ? writesEnabled : undefined),
-    } as never);
+    writes = new GitHubWriteService(
+      http as unknown as GitHubHttpService,
+      {
+        get: (key: string) =>
+          key === 'github.writesEnabled' ? writesEnabled : undefined,
+      } as never,
+    );
 
     return new GitHubIssueGateService(
       http as unknown as GitHubHttpService,
@@ -47,7 +54,11 @@ describe('GitHubIssueGateService', () => {
   }
 
   beforeEach(() => {
-    http = { request: jest.fn().mockResolvedValue({ data: { number: 400, html_url: 'u' } }) };
+    http = {
+      request: jest
+        .fn()
+        .mockResolvedValue({ data: { number: 400, html_url: 'u' } }),
+    };
     read = { listIssues: jest.fn().mockResolvedValue({ issues: [] }) };
     prisma = { auditEvent: { create: jest.fn().mockResolvedValue({}) } };
     service = build();
@@ -71,9 +82,15 @@ describe('GitHubIssueGateService', () => {
     });
 
     it('applies the template label, deduplicated against any extras', async () => {
-      await service.createIssue(REPO, { ...GOOD_CANDIDATE, labels: ['feature', 'api'] });
+      await service.createIssue(REPO, {
+        ...GOOD_CANDIDATE,
+        labels: ['feature', 'api'],
+      });
 
-      const [, options] = http.request.mock.calls[0] as [string, { body: { labels: string[] } }];
+      const [, options] = http.request.mock.calls[0] as [
+        string,
+        { body: { labels: string[] } },
+      ];
       expect([...options.body.labels].sort()).toEqual(['api', 'feature']);
     });
 
@@ -84,7 +101,10 @@ describe('GitHubIssueGateService', () => {
         { data: { action: string; meta: Record<string, unknown> } },
       ];
       expect(data.action).toBe('issue_creation.accepted');
-      expect(data.meta).toMatchObject({ proposedBy: 'supervisor:decomposition', issueNumber: 400 });
+      expect(data.meta).toMatchObject({
+        proposedBy: 'supervisor:decomposition',
+        issueNumber: 400,
+      });
     });
   });
 
@@ -105,7 +125,10 @@ describe('GitHubIssueGateService', () => {
     });
 
     it('opens nothing when it refuses', async () => {
-      await service.createIssue(REPO, { ...GOOD_CANDIDATE, body: 'nothing here' });
+      await service.createIssue(REPO, {
+        ...GOOD_CANDIDATE,
+        body: 'nothing here',
+      });
 
       expect(http.request).not.toHaveBeenCalled();
     });
@@ -114,13 +137,19 @@ describe('GitHubIssueGateService', () => {
       // The dedupe check reads every open issue in the repository. Refusing a
       // malformed candidate before spending that budget is the difference
       // between a cheap gate and one an operator turns off.
-      await service.createIssue(REPO, { ...GOOD_CANDIDATE, body: 'nothing here' });
+      await service.createIssue(REPO, {
+        ...GOOD_CANDIDATE,
+        body: 'nothing here',
+      });
 
       expect(read.listIssues).not.toHaveBeenCalled();
     });
 
     it('records the refusal', async () => {
-      await service.createIssue(REPO, { ...GOOD_CANDIDATE, body: 'nothing here' });
+      await service.createIssue(REPO, {
+        ...GOOD_CANDIDATE,
+        body: 'nothing here',
+      });
 
       const [{ data }] = prisma.auditEvent.create.mock.calls[0] as [
         { data: { action: string } },
@@ -155,10 +184,18 @@ describe('GitHubIssueGateService', () => {
 
     it('accepts against unrelated open issues', async () => {
       read.listIssues.mockResolvedValue({
-        issues: [openIssue(1, 'Rotate the JWT signing secret', 'It has never changed.')],
+        issues: [
+          openIssue(
+            1,
+            'Rotate the JWT signing secret',
+            'It has never changed.',
+          ),
+        ],
       });
 
-      expect((await service.createIssue(REPO, GOOD_CANDIDATE)).accepted).toBe(true);
+      expect((await service.createIssue(REPO, GOOD_CANDIDATE)).accepted).toBe(
+        true,
+      );
     });
 
     it('compares against OPEN issues only', async () => {
@@ -172,7 +209,11 @@ describe('GitHubIssueGateService', () => {
     it('reports the closest match when several are similar', async () => {
       read.listIssues.mockResolvedValue({
         issues: [
-          openIssue(100, 'Add CSV export somewhere', 'unrelated body text entirely here'),
+          openIssue(
+            100,
+            'Add CSV export somewhere',
+            'unrelated body text entirely here',
+          ),
           openIssue(
             312,
             'Add CSV export to the reports page',
@@ -183,7 +224,9 @@ describe('GitHubIssueGateService', () => {
 
       const outcome = await service.createIssue(REPO, GOOD_CANDIDATE);
 
-      expect(!outcome.accepted && outcome.refusal).toMatchObject({ issueNumber: 312 });
+      expect(!outcome.accepted && outcome.refusal).toMatchObject({
+        issueNumber: 312,
+      });
     });
 
     it('records the duplicate refusal with its score', async () => {
@@ -201,9 +244,13 @@ describe('GitHubIssueGateService', () => {
     });
 
     it('tolerates an open issue with an empty body', async () => {
-      read.listIssues.mockResolvedValue({ issues: [{ number: 5, title: 'x', body: null }] });
+      read.listIssues.mockResolvedValue({
+        issues: [{ number: 5, title: 'x', body: null }],
+      });
 
-      expect((await service.createIssue(REPO, GOOD_CANDIDATE)).accepted).toBe(true);
+      expect((await service.createIssue(REPO, GOOD_CANDIDATE)).accepted).toBe(
+        true,
+      );
     });
   });
 
@@ -238,7 +285,9 @@ describe('GitHubIssueGateService', () => {
       return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
         const path = join(dir, entry.name);
         if (entry.isDirectory()) return allSourceFiles(path);
-        return entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.spec.ts')
+        return entry.isFile() &&
+          entry.name.endsWith('.ts') &&
+          !entry.name.endsWith('.spec.ts')
           ? [path]
           : [];
       });
@@ -252,7 +301,8 @@ describe('GitHubIssueGateService', () => {
      * this test flagged it. The method alone matches every comment and label
      * write. Only the two together are issue creation.
      */
-    const CREATES_AN_ISSUE = /`\/repos\/\$\{[^}]+\}\/\$\{[^}]+\}\/issues`[\s\S]{0,200}?method: 'POST'/;
+    const CREATES_AN_ISSUE =
+      /`\/repos\/\$\{[^}]+\}\/\$\{[^}]+\}\/issues`[\s\S]{0,200}?method: 'POST'/;
 
     it('is the only file that posts to the issues collection', () => {
       const offenders = allSourceFiles(SRC)
@@ -275,13 +325,19 @@ describe('GitHubIssueGateService', () => {
     });
 
     it('is not on the write service, so there is no ungated adapter to reach for', () => {
-      const writeService = readFileSync(join(__dirname, 'github-write.service.ts'), 'utf8');
+      const writeService = readFileSync(
+        join(__dirname, 'github-write.service.ts'),
+        'utf8',
+      );
 
       expect(writeService).not.toMatch(/\bcreateIssue\s*\(/);
     });
 
     it('routes its own write through the kill switch rather than around it', () => {
-      const source = readFileSync(join(__dirname, 'issue-gate.service.ts'), 'utf8');
+      const source = readFileSync(
+        join(__dirname, 'issue-gate.service.ts'),
+        'utf8',
+      );
 
       expect(source).toContain('guardedWrite');
     });

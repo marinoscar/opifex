@@ -56,7 +56,10 @@ describe('useRunsNeedingAttention', () => {
     await act(async () => {});
 
     // Five, because the panel is a triage surface rather than a work list.
-    expect(mockGet).toHaveBeenCalledWith({ limit: ATTENTION_PANEL_LIMIT }, expect.any(AbortSignal));
+    expect(mockGet).toHaveBeenCalledWith(
+      { limit: ATTENTION_PANEL_LIMIT },
+      expect.any(AbortSignal),
+    );
   });
 
   it('reports an empty escalation list as empty, not as unwired', async () => {

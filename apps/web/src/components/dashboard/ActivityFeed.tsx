@@ -29,7 +29,11 @@ import { EmptyState } from '../common/EmptyState';
 import { PanelCard } from './PanelCard';
 import { useActivityFeed } from '../../hooks/useActivityFeed';
 import { formatRelativeTime } from '../../utils/time';
-import type { RunEvent, RunEventSource, RunEventType } from '../../types/cockpit';
+import type {
+  RunEvent,
+  RunEventSource,
+  RunEventType,
+} from '../../types/cockpit';
 
 /**
  * Where the claim came from, in the operator's words rather than the wire's.
@@ -97,7 +101,11 @@ export function ActivityFeed() {
               '&:last-of-type': { borderBottom: 'none' },
             }}
           >
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{ alignItems: 'baseline', flexWrap: 'wrap' }}
+            >
               <Typography variant="body2" color="text.primary">
                 {EVENT_TYPE_LABELS[event.type]}
               </Typography>

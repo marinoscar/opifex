@@ -8,7 +8,9 @@ import { RUN_EVENT_SCHEMA_VERSION } from './run-event.types';
 
 const RUN_ID = '018f2c31-7a4e-7c3b-9f21-4d5e6a7b8c9d';
 
-function event(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function event(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     schemaVersion: RUN_EVENT_SCHEMA_VERSION,
     eventId: 'clr-0001',
@@ -21,7 +23,6 @@ function event(overrides: Record<string, unknown> = {}): Record<string, unknown>
   };
 }
 
-
 /**
  * The error body from a rejected batch.
  *
@@ -32,7 +33,11 @@ function event(overrides: Record<string, unknown> = {}): Record<string, unknown>
  */
 async function rejection(promise: Promise<unknown>): Promise<{
   message: string;
-  rejected: { index: number; eventId: string | null; failures: { path: string; message: string }[] }[];
+  rejected: {
+    index: number;
+    eventId: string | null;
+    failures: { path: string; message: string }[];
+  }[];
 }> {
   try {
     await promise;
@@ -90,7 +95,9 @@ describe('RunEventsService', () => {
         'run.progress',
         'run.completed',
       ]) {
-        await expect(service.ingest(RUN_ID, [event({ type })])).resolves.toMatchObject({
+        await expect(
+          service.ingest(RUN_ID, [event({ type })]),
+        ).resolves.toMatchObject({
           accepted: 1,
         });
       }
@@ -100,27 +107,33 @@ describe('RunEventsService', () => {
         ]),
       ).resolves.toMatchObject({ accepted: 1 });
       await expect(
-        service.ingest(RUN_ID, [event({ type: 'run.failed', failure: { reason: 'red' } })]),
+        service.ingest(RUN_ID, [
+          event({ type: 'run.failed', failure: { reason: 'red' } }),
+        ]),
       ).resolves.toMatchObject({ accepted: 1 });
     });
 
     it('rejects a seventh type with a clear error', async () => {
-      await expect(service.ingest(RUN_ID, [event({ type: 'run.paused' })])).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(
+        service.ingest(RUN_ID, [event({ type: 'run.paused' })]),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('rejects an event with no source', async () => {
       const { source, ...noSource } = event();
       expect(source).toBeDefined();
 
-      await expect(service.ingest(RUN_ID, [noSource])).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.ingest(RUN_ID, [noSource])).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
 
     it('names every failure by path, not just the first', async () => {
       // A runner author fixing one field per round trip is the friction that
       // leads to someone disabling validation.
-      const body = await rejection(service.ingest(RUN_ID, [{ eventId: 'x', type: 'run.paused' }]));
+      const body = await rejection(
+        service.ingest(RUN_ID, [{ eventId: 'x', type: 'run.paused' }]),
+      );
 
       expect(body.rejected[0].failures.length).toBeGreaterThan(1);
       expect(body.rejected[0].failures[0]).toHaveProperty('path');
@@ -146,15 +159,21 @@ describe('RunEventsService', () => {
         // Accepting these would let a runner manufacture exactly the
         // masquerade VISION §9 forbids — claiming the control plane concluded
         // something it did not.
-        const body = await rejection(service.ingest(RUN_ID, [event({ source })]));
+        const body = await rejection(
+          service.ingest(RUN_ID, [event({ source })]),
+        );
 
-        expect(body.rejected[0].failures[0].message).toContain('produced by Opifex');
+        expect(body.rejected[0].failures[0].message).toContain(
+          'produced by Opifex',
+        );
       },
     );
 
     it('rejects an event claiming a different run than the URL', async () => {
       const body = await rejection(
-        service.ingest(RUN_ID, [event({ runId: '018f0000-0000-7000-8000-000000000000' })]),
+        service.ingest(RUN_ID, [
+          event({ runId: '018f0000-0000-7000-8000-000000000000' }),
+        ]),
       );
 
       expect(body.rejected[0].failures[0].path).toBe('/runId');
@@ -190,7 +209,10 @@ describe('RunEventsService', () => {
       prisma.runEvent.createMany.mockResolvedValue({ count: 1 });
 
       await expect(
-        service.ingest(RUN_ID, [event({ eventId: 'a' }), event({ eventId: 'b' })]),
+        service.ingest(RUN_ID, [
+          event({ eventId: 'a' }),
+          event({ eventId: 'b' }),
+        ]),
       ).resolves.toEqual({ accepted: 1, duplicates: 1 });
     });
   });
@@ -202,20 +224,28 @@ describe('RunEventsService', () => {
       await service.ingest(RUN_ID, [
         event({
           type: 'run.blocked',
-          blocked: { reason: 'rate-limit', resetAt: '2026-08-21T18:00:00.000Z' },
+          blocked: {
+            reason: 'rate-limit',
+            resetAt: '2026-08-21T18:00:00.000Z',
+          },
         }),
       ]);
 
       const [{ data }] = prisma.runEvent.createMany.mock.calls[0];
       expect(data[0].blockedReason).toBe('rate-limit');
-      expect(data[0].blockedUntil).toEqual(new Date('2026-08-21T18:00:00.000Z'));
+      expect(data[0].blockedUntil).toEqual(
+        new Date('2026-08-21T18:00:00.000Z'),
+      );
     });
 
     it('carries the reset time onto the run, so #56 need not re-read events', async () => {
       await service.ingest(RUN_ID, [
         event({
           type: 'run.blocked',
-          blocked: { reason: 'rate-limit', resetAt: '2026-08-21T18:00:00.000Z' },
+          blocked: {
+            reason: 'rate-limit',
+            resetAt: '2026-08-21T18:00:00.000Z',
+          },
         }),
       ]);
 
@@ -238,7 +268,10 @@ describe('RunEventsService', () => {
   describe('other fields carried through', () => {
     it('stores the tool signature loop detection needs', async () => {
       await service.ingest(RUN_ID, [
-        event({ type: 'run.progress', tool: { name: 'Bash', signature: 'sha256:abc' } }),
+        event({
+          type: 'run.progress',
+          tool: { name: 'Bash', signature: 'sha256:abc' },
+        }),
       ]);
 
       const [{ data }] = prisma.runEvent.createMany.mock.calls[0];
@@ -297,11 +330,15 @@ describe('RunEventsService', () => {
     it('404s for an unknown run', async () => {
       prisma.run.findUnique.mockResolvedValue(null);
 
-      await expect(service.ingest(RUN_ID, [event()])).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.ingest(RUN_ID, [event()])).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('rejects an empty batch', async () => {
-      await expect(service.ingest(RUN_ID, [])).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.ingest(RUN_ID, [])).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
   });
   /**
@@ -336,7 +373,9 @@ describe('RunEventsService', () => {
         .map(([arg]) => arg as { data: Record<string, unknown> })
         .filter(
           (call) =>
-            'costUsd' in call.data || 'tokensInput' in call.data || 'tokensOutput' in call.data,
+            'costUsd' in call.data ||
+            'tokensInput' in call.data ||
+            'tokensOutput' in call.data,
         );
     }
 
@@ -345,7 +384,9 @@ describe('RunEventsService', () => {
 
       await service.ingest(RUN_ID, [event({ cost: { usd: 4.25 } })]);
 
-      expect(costWrites().map((call) => call.data)).toContainEqual({ costUsd: 4.25 });
+      expect(costWrites().map((call) => call.data)).toContainEqual({
+        costUsd: 4.25,
+      });
     });
 
     it('sums from the STORED rows, not from the batch', async () => {
@@ -367,7 +408,9 @@ describe('RunEventsService', () => {
       );
       // 4.25, not 8.50: the figure came from the table, which holds each
       // event once however many times it was delivered.
-      expect(costWrites().map((call) => call.data)).toContainEqual({ costUsd: 4.25 });
+      expect(costWrites().map((call) => call.data)).toContainEqual({
+        costUsd: 4.25,
+      });
     });
 
     it('writes nothing when no event reported anything', async () => {
@@ -387,7 +430,9 @@ describe('RunEventsService', () => {
 
       await service.ingest(RUN_ID, [event({ cost: { usd: 0 } })]);
 
-      expect(costWrites().map((call) => call.data)).toContainEqual({ costUsd: 0 });
+      expect(costWrites().map((call) => call.data)).toContainEqual({
+        costUsd: 0,
+      });
     });
 
     it('guards the write so an older, smaller figure cannot win', async () => {
@@ -399,10 +444,15 @@ describe('RunEventsService', () => {
 
       await service.ingest(RUN_ID, [event({ cost: { usd: 4.25 } })]);
 
-      const write = costWrites().find((call) => 'costUsd' in call.data) as unknown as {
+      const write = costWrites().find(
+        (call) => 'costUsd' in call.data,
+      ) as unknown as {
         where: { OR: unknown[] };
       };
-      expect(write.where.OR).toEqual([{ costUsd: null }, { costUsd: { lt: 4.25 } }]);
+      expect(write.where.OR).toEqual([
+        { costUsd: null },
+        { costUsd: { lt: 4.25 } },
+      ]);
     });
 
     it('carries tokens too, independently of cost', async () => {
@@ -410,12 +460,16 @@ describe('RunEventsService', () => {
       // one write would drop the tokens whenever the cost was absent.
       stored({ tokensInput: 100, tokensOutput: 362 });
 
-      await service.ingest(RUN_ID, [event({ cost: { tokensInput: 100, tokensOutput: 362 } })]);
+      await service.ingest(RUN_ID, [
+        event({ cost: { tokensInput: 100, tokensOutput: 362 } }),
+      ]);
 
       const written = costWrites().map((call) => call.data);
       expect(written).toContainEqual({ tokensInput: 100 });
       expect(written).toContainEqual({ tokensOutput: 362 });
-      expect(written).not.toContainEqual(expect.objectContaining({ costUsd: expect.anything() }));
+      expect(written).not.toContainEqual(
+        expect.objectContaining({ costUsd: expect.anything() }),
+      );
     });
 
     it('converts a Decimal sum rather than stringifying it', async () => {
@@ -424,12 +478,18 @@ describe('RunEventsService', () => {
       // services, one of which produced NaN against a double.
       stored({ costUsd: null });
       prisma.runEvent.aggregate.mockResolvedValue({
-        _sum: { costUsd: { toNumber: () => 7.49 }, tokensInput: null, tokensOutput: null },
+        _sum: {
+          costUsd: { toNumber: () => 7.49 },
+          tokensInput: null,
+          tokensOutput: null,
+        },
       });
 
       await service.ingest(RUN_ID, [event({ cost: { usd: 7.49 } })]);
 
-      expect(costWrites().map((call) => call.data)).toContainEqual({ costUsd: 7.49 });
+      expect(costWrites().map((call) => call.data)).toContainEqual({
+        costUsd: 7.49,
+      });
     });
   });
 });

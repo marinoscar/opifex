@@ -160,7 +160,10 @@ describe('AddEmailDialog', () => {
       await user.click(submitButton);
 
       await waitFor(() => {
-        expect(mockOnAdd).toHaveBeenCalledWith('user+tag@example.com', undefined);
+        expect(mockOnAdd).toHaveBeenCalledWith(
+          'user+tag@example.com',
+          undefined,
+        );
       });
     });
   });
@@ -412,9 +415,7 @@ describe('AddEmailDialog', () => {
       // Buttons should be disabled
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /cancel/i })).toBeDisabled();
-        expect(
-          screen.getByRole('button', { name: /adding/i }),
-        ).toBeDisabled();
+        expect(screen.getByRole('button', { name: /adding/i })).toBeDisabled();
       });
 
       // Resolve the promise

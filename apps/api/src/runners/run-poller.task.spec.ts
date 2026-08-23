@@ -2,7 +2,11 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
-import { POLL_INTERVAL_MS, RunPollerService, type PollTickResult } from './run-poller.service';
+import {
+  POLL_INTERVAL_MS,
+  RunPollerService,
+  type PollTickResult,
+} from './run-poller.service';
 import { RunPollerTask } from './run-poller.task';
 
 describe('RunPollerTask', () => {
@@ -28,7 +32,11 @@ describe('RunPollerTask', () => {
         key === 'runners.claudeCodeLocal.enabled' ? enabled : undefined,
     } as unknown as ConfigService;
 
-    const scheduler = { addInterval, deleteInterval, doesExist } as unknown as SchedulerRegistry;
+    const scheduler = {
+      addInterval,
+      deleteInterval,
+      doesExist,
+    } as unknown as SchedulerRegistry;
     const poller = { tick } as unknown as RunPollerService;
 
     return new RunPollerTask(config, scheduler, poller);
@@ -101,7 +109,9 @@ describe('RunPollerTask', () => {
       // stops being read, and this one competes for attention with the
       // escalations that matter. Asserted against the logger, because that is
       // the thing whose silence is the requirement.
-      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
+      const log = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => {});
       try {
         await build(true).runOnce();
         expect(log).not.toHaveBeenCalled();
@@ -111,7 +121,9 @@ describe('RunPollerTask', () => {
     });
 
     it('reports a tick that carried events', async () => {
-      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
+      const log = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => {});
       try {
         tick.mockResolvedValue({ ...QUIET, polled: 2, eventsIngested: 7 });
         await build(true).runOnce();
@@ -129,7 +141,9 @@ describe('RunPollerTask', () => {
     ])('reports %s even with no events', async (_label, overrides) => {
       // Both are things an operator needs to see, and both can happen on a
       // tick that ingested nothing at all.
-      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
+      const log = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => {});
       try {
         tick.mockResolvedValue({ ...QUIET, ...overrides });
         await build(true).runOnce();

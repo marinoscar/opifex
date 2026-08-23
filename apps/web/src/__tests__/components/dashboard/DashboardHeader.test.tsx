@@ -17,7 +17,9 @@ describe('DashboardHeader', () => {
       />,
     );
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Cockpit' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Cockpit' }),
+    ).toBeInTheDocument();
   });
 
   describe('the indicator says which of four things is true', () => {
@@ -60,7 +62,9 @@ describe('DashboardHeader', () => {
         />,
       );
 
-      expect(screen.getByText(/^Live — updated \d{1,2}[:.]\d{2}/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/^Live — updated \d{1,2}[:.]\d{2}/),
+      ).toBeInTheDocument();
     });
 
     it('live without a timestamp says only Live', () => {
@@ -90,7 +94,9 @@ describe('DashboardHeader', () => {
         />,
       );
 
-      expect(screen.getByText(/^Stale since \d{1,2}[:.]\d{2}/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/^Stale since \d{1,2}[:.]\d{2}/),
+      ).toBeInTheDocument();
       expect(screen.queryByText(/ago/)).not.toBeInTheDocument();
     });
 
@@ -138,7 +144,9 @@ describe('DashboardHeader', () => {
         />,
       );
 
-      expect(screen.queryByRole('button', { name: /refresh/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /refresh/i }),
+      ).not.toBeInTheDocument();
     });
 
     it('is present and calls back when there is', async () => {

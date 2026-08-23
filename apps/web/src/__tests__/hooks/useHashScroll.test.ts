@@ -13,7 +13,10 @@ import { renderHookWithProviders } from '../utils/hook-utils';
 import { useHashScroll } from '../../hooks/useHashScroll';
 
 /** Puts a real anchor in the document for the hook to find. */
-function mountTarget(id: string, attributes: Record<string, string> = {}): HTMLElement {
+function mountTarget(
+  id: string,
+  attributes: Record<string, string> = {},
+): HTMLElement {
   const element = document.createElement('div');
   element.id = id;
   for (const [name, value] of Object.entries(attributes)) {
@@ -136,7 +139,10 @@ describe('useHashScroll', () => {
         wrapperOptions: { route: '/settings#theme' },
       });
 
-      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'start',
+      });
     });
 
     it('jumps when the user has asked for reduced motion', () => {
@@ -159,7 +165,10 @@ describe('useHashScroll', () => {
         wrapperOptions: { route: '/settings#theme' },
       });
 
-      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        behavior: 'auto',
+        block: 'start',
+      });
     });
   });
 });

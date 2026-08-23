@@ -85,12 +85,12 @@ const mediaQueryListRegistry = new Set<MockMediaQueryListEntry>();
 function evaluateMediaQuery(query: string, width: number): boolean {
   const normalized = query.replace(/^@media\s*/, '').trim();
 
-  const minWidths = [...normalized.matchAll(/\(min-width:\s*([\d.]+)px\)/g)].map((m) =>
-    parseFloat(m[1]),
-  );
-  const maxWidths = [...normalized.matchAll(/\(max-width:\s*([\d.]+)px\)/g)].map((m) =>
-    parseFloat(m[1]),
-  );
+  const minWidths = [
+    ...normalized.matchAll(/\(min-width:\s*([\d.]+)px\)/g),
+  ].map((m) => parseFloat(m[1]));
+  const maxWidths = [
+    ...normalized.matchAll(/\(max-width:\s*([\d.]+)px\)/g),
+  ].map((m) => parseFloat(m[1]));
 
   if (minWidths.length === 0 && maxWidths.length === 0) {
     return false;
@@ -139,8 +139,12 @@ Object.defineProperty(window, 'matchMedia', {
       },
       media: query,
       onchange: null,
-      addListener: vi.fn((listener: ChangeListener) => entry.listeners.add(listener)),
-      removeListener: vi.fn((listener: ChangeListener) => entry.listeners.delete(listener)),
+      addListener: vi.fn((listener: ChangeListener) =>
+        entry.listeners.add(listener),
+      ),
+      removeListener: vi.fn((listener: ChangeListener) =>
+        entry.listeners.delete(listener),
+      ),
       addEventListener: vi.fn((type: string, listener: ChangeListener) => {
         if (type === 'change') entry.listeners.add(listener);
       }),
@@ -213,7 +217,7 @@ global.IntersectionObserver = IntersectionObserverMock as any;
 // Setup MSW server
 beforeAll(() => {
   server.listen({
-    onUnhandledRequest: 'warn' // Changed from 'error' to 'warn' for debugging
+    onUnhandledRequest: 'warn', // Changed from 'error' to 'warn' for debugging
   });
 });
 
