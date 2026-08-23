@@ -204,6 +204,8 @@ describe('destinations — the table itself', () => {
    *   system-settings.controller.ts → PERMISSIONS.SYSTEM_SETTINGS_READ
    *   cockpit/queue.controller.ts   → PERMISSIONS.WORKORDERS_READ   (#80)
    *   cockpit/runs.controller.ts    → PERMISSIONS.RUNS_READ         (#80)
+   *   cockpit/cost.controller.ts    → PERMISSIONS.RUNS_READ         (#80)
+   *   repositories.controller.ts    → PERMISSIONS.PROJECTS_READ     (#43)
    * Nothing else in `apps/api` guards a page this app routes to.
    */
   const ENFORCED_PERMISSIONS = [
@@ -211,6 +213,7 @@ describe('destinations — the table itself', () => {
     'system_settings:read',
     'workorders:read',
     'runs:read',
+    'projects:read',
   ];
 
   it('gates the admin destinations on the permission the API enforces', () => {
@@ -248,10 +251,24 @@ describe('destinations — the table itself', () => {
     expect(byKey.runs.permission).toBe('runs:read');
   });
 
+  it('gates cost on the permission its controller enforces', () => {
+    // `runs:read`, not `projects:read`: cost lives on the run, and gating an
+    // aggregate more loosely than its rows would let somebody total up runs
+    // they cannot open.
+    expect(byKey.cost.permission).toBe('runs:read');
+  });
+
+  it('gates projects on the permission the REPOSITORIES controller enforces', () => {
+    // #80 flipped this without writing a new endpoint. `GET /api/repositories`
+    // (#43) has been gated on `projects:read` since Phase 1; what was missing
+    // was the flip, not a controller.
+    expect(byKey.projects.permission).toBe('projects:read');
+  });
+
   it('gives every PLANNED destination no permission at all', () => {
-    // `apps/api` has no projects or cost module, so there is no
-    // `projects:read` gate to require here yet. This is the assertion that
-    // stops one being invented ahead of the endpoint.
+    // The rule survives having nothing left to apply it to: a destination
+    // added tomorrow must not carry a permission before its endpoint does.
+    // Kept rather than deleted for exactly that reason.
     for (const destination of DESTINATIONS) {
       if (destination.status !== 'planned') continue;
       expect(
@@ -262,16 +279,30 @@ describe('destinations — the table itself', () => {
   });
 
   it('marks exactly the destinations with a real API as live', () => {
-    // `queue` joined on #80, in the same pull request as its endpoint. That
-    // simultaneity is the rule this file's header sets, and this list is what
-    // makes breaking it fail rather than merely be noticed in review.
+    // `queue`, `runs`, `cost` and `projects` all joined across #80, each in
+    // the same pull request as the endpoint that backs it. That simultaneity
+    // is the rule this file's header sets, and this list is what makes
+    // breaking it fail rather than merely be noticed in review.
     const live = DESTINATIONS.filter((d) => d.status === 'live').map((d) => d.key);
-    expect(live.sort()).toEqual(['dashboard', 'queue', 'runs', 'settings', 'system', 'users']);
+    expect(live.sort()).toEqual([
+      'cost',
+      'dashboard',
+      'projects',
+      'queue',
+      'runs',
+      'settings',
+      'system',
+      'users',
+    ]);
   });
 
-  it('leaves the still-unbuilt cockpit destinations planned', () => {
+  it('has no planned destinations left', () => {
+    // Every destination in the table is now backed by a real endpoint. This
+    // asserts the END of #80's flips rather than deleting the check — a new
+    // planned destination should show up here as a failure to be re-stated,
+    // not slip in unnoticed.
     const planned = DESTINATIONS.filter((d) => d.status === 'planned').map((d) => d.key);
-    expect(planned.sort()).toEqual(['cost', 'projects']);
+    expect(planned).toEqual([]);
   });
 
   it('puts every destination in a declared section', () => {

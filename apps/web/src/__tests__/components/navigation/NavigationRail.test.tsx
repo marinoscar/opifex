@@ -55,6 +55,7 @@ const ADMIN_PERMISSIONS = [
   'system_settings:read',
   'workorders:read',
   'runs:read',
+  'projects:read',
 ];
 
 /**
@@ -66,7 +67,7 @@ const ADMIN_PERMISSIONS = [
  * viewer, it is a user the API cannot produce. Testing navigation against one
  * would assert that a Viewer cannot see the Queue, which is false.
  */
-const VIEWER_PERMISSIONS = ['workorders:read', 'runs:read'];
+const VIEWER_PERMISSIONS = ['workorders:read', 'runs:read', 'projects:read'];
 
 describe('NavigationRail', () => {
   beforeEach(() => {
@@ -91,15 +92,27 @@ describe('NavigationRail', () => {
       }
     });
 
-    it('offers the planned cockpit destinations to every authenticated user', () => {
-      // They carry no permission BECAUSE no controller enforces one — see
-      // `config/destinations.ts`. A Viewer must still see them, or the app's
-      // shape is visible only to admins.
+    it('offers every cockpit destination to a plain VIEWER', () => {
+      // #80 gave all four a real permission, which is only safe because
+      // `prisma/seed.ts` grants the read side of each to viewer, contributor
+      // and admin alike. If it did not, the app's shape would be visible only
+      // to admins — which is what this test has always been guarding, first
+      // when the destinations were unpermissioned and now that they are not.
       render(<NavigationRail />);
 
       expect(screen.getByRole('link', { name: 'Runs' })).toHaveAttribute('href', '/runs');
       expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('href', '/projects');
       expect(screen.getByRole('link', { name: 'Cost' })).toHaveAttribute('href', '/cost');
+    });
+
+    it('hides Projects from a user without projects:read', () => {
+      // The permission is real and enforced by RepositoriesController, so the
+      // navigation must reflect it rather than offering a link that 403s.
+      setPermissions([]);
+
+      render(<NavigationRail />);
+
+      expect(screen.queryByRole('link', { name: 'Projects' })).not.toBeInTheDocument();
     });
 
     it('offers the Queue to a viewer, who really does hold workorders:read', () => {

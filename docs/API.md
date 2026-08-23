@@ -1617,6 +1617,71 @@ about where dispatch commented.
 }
 ```
 
+#### `GET /api/cost/summary`
+
+Spend over a window, with the unmeasured part counted. Requires `runs:read`.
+
+| Query | Type | Default | Notes |
+|---|---|---|---|
+| `days` | number | `30` | Window length, 1–90. |
+
+**Read `totalUsd` and `runsWithoutCost` together.** `Run.costUsd` is nullable
+because a runner may not report cost at all — `reportsCost` is in the capability
+manifest (#32) precisely so a runner that does not is a supported case, not a
+broken one. So a total over a window where most runs reported nothing is a
+**floor, not a figure**, and a cost screen showing only the total would
+understate spend while looking precise. VISION §10 makes cost per merged PR the
+economic-viability metric; an understated numerator flatters it.
+
+`totalUsd` is `null`, never `0`, when nothing reported — per repository as well
+as overall. "No run reported a cost" and "the factory spent nothing" are
+different claims.
+
+`byRepository` sorts biggest spender first with **unknowns last**: a `null`
+sorting high would put the least informative row where the eye lands.
+
+`byDay` carries only days that had reported spend, oldest first — the same rule
+the metrics trend follows. Totals round to cents, because a `Decimal(10,4)`
+column summed as floats produces tails like `0.30000000000000004`, and a cost
+screen showing that has lost the reader over an artefact of the language.
+
+**`quota` is always `null`, and present rather than omitted.** VISION §11's
+shared quota is the agent subscription, and nothing records consumption against
+a window capacity — `RunEvent.blockedUntil` holds a reset *time*, never a burn
+rate. The GitHub rate limit *is* measured and could be divided by its window;
+that would answer a different question under this one's label. The field is
+named so a cost-and-quota screen (#86) can say "unavailable" rather than looking
+like quota was forgotten. Same absence that makes `quotaBurn` null in
+`/metrics/summary`.
+
+```json
+{
+  "data": {
+    "generatedAt": "2026-08-23T05:00:00.000Z",
+    "window": { "from": "2026-07-24T05:00:00.000Z", "to": "2026-08-23T05:00:00.000Z" },
+    "totalUsd": 5.3,
+    "runs": 5,
+    "runsWithoutCost": 2,
+    "byRepository": [
+      { "repository": "probe-owner/alpha", "totalUsd": 5.3, "runs": 3, "runsWithoutCost": 0 },
+      { "repository": "probe-owner/beta", "totalUsd": null, "runs": 2, "runsWithoutCost": 2 }
+    ],
+    "byDay": [
+      { "date": "2026-08-18", "totalUsd": 5 },
+      { "date": "2026-08-21", "totalUsd": 0.3 }
+    ],
+    "quota": null
+  }
+}
+```
+
+#### Projects and repositories
+
+There is **no cockpit endpoint for these.** `GET /api/repositories` (see
+[Repositories](#repositories)) has been gated on `projects:read` since #43 and
+already answers what the projects screen asks. Adding a read model beside it
+would have been a second way to read the same rows, differing only in shape.
+
 #### `GET /api/metrics/summary`
 
 The six VISION §10 success metrics, in one request. Requires `runs:read`.
