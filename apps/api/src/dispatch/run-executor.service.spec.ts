@@ -390,4 +390,143 @@ describe('RunExecutorService', () => {
       expect(workOrderUpdate).not.toHaveBeenCalled();
     });
   });
+  /**
+   * The spend gate (#65), at the only place that spends money.
+   *
+   * The gate's own truth table lives in `budget/spend-admission.spec.ts` and
+   * is exhaustive there. What is asserted HERE is the wiring: that a refusal
+   * actually stops the money, that the right three facts reach the gate, and
+   * that a refusal is not quietly downgraded into an observation.
+   */
+  describe('the spend gate', () => {
+    it('creates no run, writes no records and submits nothing when refused', async () => {
+      // The assertion that matters is the absence of the side effects, not the
+      // returned outcome: an executor that returned "queued" and had already
+      // created the row would look correct from the outside and leave a
+      // phantom `running` run for the watchdog to find.
+      ceiling = { limitUsd: 10, malformed: null, windowDays: 30 };
+      tally = { ...tally, totalUsd: 10, reportedUsd: 10 };
+      executor = build();
+
+      const result = await executor.dispatchWorkOrder({
+        workOrder: workOrder(),
+        workOrderId: WORK_ORDER_ID,
+      });
+
+      expect(result.outcome).toBe('queued');
+      expect(result.outcome === 'queued' && result.queueReason).toBe('hard-spend-ceiling-reached');
+      expect(runCreate).not.toHaveBeenCalled();
+      expect(write).not.toHaveBeenCalled();
+      expect(submit).not.toHaveBeenCalled();
+      expect(track).not.toHaveBeenCalled();
+    });
+
+    it('refuses with no ceiling configured, which is the default for a fresh install', async () => {
+      ceiling = { limitUsd: null, malformed: null, windowDays: 30 };
+      executor = build();
+
+      const result = await executor.dispatchWorkOrder({
+        workOrder: workOrder(),
+        workOrderId: WORK_ORDER_ID,
+      });
+
+      expect(result.outcome === 'queued' && result.queueReason).toBe(
+        'no-hard-spend-ceiling-configured',
+      );
+      expect(submit).not.toHaveBeenCalled();
+    });
+
+    it('refuses BEFORE the observation-mode check, not after it', async () => {
+      // An install running with dispatch off is the one that most needs to
+      // hear its ceiling is unset -- there is still time to fix it. Reporting
+      // "would have dispatched" for a work order the gate would have refused
+      // is the same lie as reporting it for one routing would have queued,
+      // which this file already tests for a few blocks up.
+      ceiling = { limitUsd: null, malformed: null, windowDays: 30 };
+      executor = build(false);
+
+      const result = await executor.dispatchWorkOrder({
+        workOrder: workOrder(),
+        workOrderId: WORK_ORDER_ID,
+      });
+
+      expect(result.outcome).toBe('queued');
+      expect(result.outcome === 'queued' && result.queueReason).toBe(
+        'no-hard-spend-ceiling-configured',
+      );
+    });
+
+    it('refuses an order with no ceiling routed to a runner that reports no cost', async () => {
+      // Both halves have to reach the gate for this to be decidable, so this
+      // is really a test that neither is dropped on the way in.
+      const runner = {
+        submit,
+        capabilities: jest.fn().mockResolvedValue({ ...CAPABILITIES, reportsCost: false }),
+      } as unknown as ClaudeCodeLocalRunner;
+
+      const executorWithBlindRunner = new RunExecutorService(
+        { run: { create: runCreate } } as unknown as PrismaService,
+        { get: () => true } as unknown as ConfigService,
+        { decide } as unknown as DispatchService,
+        { write } as unknown as WorkOrderRecordsService,
+        { track } as unknown as RunPollerService,
+        runner,
+        ceilingOf(ceiling),
+        ledgerOf(tally),
+      );
+
+      const result = await executorWithBlindRunner.dispatchWorkOrder({
+        workOrder: workOrder({ budgetCeilingUsd: null }),
+        workOrderId: WORK_ORDER_ID,
+      });
+
+      expect(result.outcome === 'queued' && result.queueReason).toBe(
+        'work-order-cannot-be-budgeted',
+      );
+      expect(runCreate).not.toHaveBeenCalled();
+    });
+
+    it('dispatches normally when there is headroom', async () => {
+      // The other side of the fixture default, asserted explicitly rather
+      // than left implicit in the rest of the file: if the gate were refusing
+      // everything, every other test here would still pass for the wrong
+      // reason only if it asserted outcomes it does not assert.
+      ceiling = { limitUsd: 100, malformed: null, windowDays: 30 };
+      tally = { ...tally, totalUsd: 1, reportedUsd: 1 };
+      executor = build();
+
+      const result = await executor.dispatchWorkOrder({
+        workOrder: workOrder(),
+        workOrderId: WORK_ORDER_ID,
+      });
+
+      expect(result.outcome).toBe('dispatched');
+      expect(submit).toHaveBeenCalledTimes(1);
+    });
+
+    it('tallies over the ceiling\'s own window, not a window of its own choosing', async () => {
+      ceiling = { limitUsd: 100, malformed: null, windowDays: 7 };
+      const ledger = ledgerOf(tally);
+      const executorWithLedger = new RunExecutorService(
+        { run: { create: runCreate }, workOrder: { update: workOrderUpdate } } as unknown as PrismaService,
+        { get: () => true } as unknown as ConfigService,
+        { decide } as unknown as DispatchService,
+        { write } as unknown as WorkOrderRecordsService,
+        { track } as unknown as RunPollerService,
+        {
+          submit,
+          capabilities: jest.fn().mockResolvedValue(CAPABILITIES),
+        } as unknown as ClaudeCodeLocalRunner,
+        ceilingOf(ceiling),
+        ledger,
+      );
+
+      await executorWithLedger.dispatchWorkOrder({
+        workOrder: workOrder(),
+        workOrderId: WORK_ORDER_ID,
+      });
+
+      expect(ledger.tally).toHaveBeenCalledWith(7);
+    });
+  });
 });
