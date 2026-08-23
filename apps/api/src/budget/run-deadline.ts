@@ -76,7 +76,16 @@ export type DeadlineVerdict =
       /** `limitMinutes + graceMinutes`: when the control plane became willing to act. */
       enforcedAfterMinutes: number;
       elapsedMinutes: number;
-      /** One line naming both figures, for `attentionReason`. */
+          /**
+       * What is CERTAINLY true, and nothing more.
+       *
+       * Deliberately says nothing about the cancellation. This function is
+       * pure and runs before anything is attempted, so it cannot know whether
+       * the cancel succeeded, failed, or was even possible -- and a reason
+       * asserting "the control plane cancelled it" would be exactly the
+       * synthesized event masquerading as a report that VISION §9 forbids.
+       * The caller appends the outcome once it is a fact.
+       */
       reason: string;
     };
 
@@ -118,7 +127,7 @@ export function decideDeadline(inputs: DeadlineInputs, now: Date): DeadlineVerdi
     reason:
       `Ran for ${elapsedMinutes} minute(s) against a wall-clock ceiling of ` +
       `${limitMinutes} minute(s). Its runner did not stop it within the ` +
-      `${inputs.graceMinutes}-minute grace period, so the control plane cancelled it.`,
+      `${inputs.graceMinutes}-minute grace period.`,
   };
 }
 

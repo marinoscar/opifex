@@ -289,12 +289,24 @@ export class RunPollerService {
   }
 
   /**
-   * Cancel through the seam, record the figure, and never try twice.
+   * Cancel through the seam, record what is true, and never try twice.
    *
-   * The order matters. `attentionReason` is written FIRST, because a cancel
-   * that throws still leaves a run that has provably passed its ceiling and an
-   * operator who needs to know why -- writing the reason only on success would
-   * lose exactly the case worth reporting.
+   * ## Why the reason is written twice
+   *
+   * Because two different things are true at two different moments, and
+   * writing one sentence for both would make the first one a claim nobody had
+   * earned yet.
+   *
+   * `decideDeadline` returns only what is CERTAIN before anything is
+   * attempted: the run passed its ceiling and its runner did not stop it. That
+   * is written first, so a `cancel` that throws -- or a process that dies
+   * mid-pass -- still leaves an operator the reason. Whether the control plane
+   * then actually stopped it is a separate fact, appended once it IS a fact.
+   *
+   * The alternative, writing "the control plane cancelled it" up front, was
+   * what this code did until a probe against real rows printed that sentence
+   * for three runs the control plane could not cancel at all. VISION §9: a
+   * synthesized event must never masquerade as a report.
    */
   private async cancelForDeadline(
     runId: string,
@@ -307,27 +319,37 @@ export class RunPollerService {
     // it is an escalation, not something to retry in a loop.
     this.deadlineEnforced.add(runId);
 
-    await this.prisma.run.updateMany({
-      where: { id: runId, status: { in: LIVE_STATUSES as unknown as never } },
-      data: { attentionReason: reason },
-    });
+    await this.record(runId, reason);
 
     const entry = this.tracked.get(runId);
     if (!entry) return;
 
     try {
       await entry.runner.cancel(entry.handle);
-      this.logger.warn(`${identity}: ${reason}`);
+      await this.record(runId, `${reason} The control plane cancelled it.`);
+      this.logger.warn(`${identity}: ${reason} The control plane cancelled it.`);
     } catch (error) {
       // Not rethrown: one runner refusing to cancel must not stop the pass
-      // from reaching the next overdue run. The reason is already recorded, so
-      // the run is not silently over its ceiling -- it is loudly over it and
-      // still going, which is the accurate report.
-      this.logger.error(
-        `${identity}: passed its wall-clock ceiling and the runner refused to cancel it, so ` +
-          `it may STILL BE RUNNING: ${asMessage(error)}`,
-      );
+      // from reaching the next overdue run. And the recorded reason says it
+      // MAY still be running rather than that it was stopped -- which is the
+      // accurate report, and the one an operator has to act on.
+      const outcome =
+        `${reason} The control plane tried to cancel it and the runner refused, so it may ` +
+        `STILL BE RUNNING: ${asMessage(error)}`;
+      await this.record(runId, outcome);
+      this.logger.error(`${identity}: ${outcome}`);
     }
+  }
+
+  /**
+   * Write an `attentionReason`, guarded so a run that reached a terminal state
+   * between the read and this write is not dragged back out of it.
+   */
+  private async record(runId: string, reason: string): Promise<void> {
+    await this.prisma.run.updateMany({
+      where: { id: runId, status: { in: LIVE_STATUSES as unknown as never } },
+      data: { attentionReason: reason },
+    });
   }
 
   /**
