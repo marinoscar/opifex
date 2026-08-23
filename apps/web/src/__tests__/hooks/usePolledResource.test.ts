@@ -493,4 +493,112 @@ describe('usePolledResource', () => {
       expect(result.current.error).toBe('Failed to load');
     });
   });
+  /**
+   * Issue #169. The cockpit's first screen was blank for a full poll interval
+   * on every load, in a real browser, while the API served every request in
+   * ~50 ms. 1,770 web tests passed throughout, because none of them mounted
+   * the hook the way React actually mounts it in development.
+   *
+   * React StrictMode runs effects mount -> unmount -> mount on the SAME
+   * component instance. Refs survive that simulated remount; the abort does
+   * not. So the first mount armed `sessionStartedRef` and fired a request, the
+   * simulated unmount aborted it, and the second mount found the ref already
+   * armed and declined to re-fire. Nothing was in flight, and nothing would be
+   * until `setInterval` ticked.
+   *
+   * The rule these tests encode: the guard tracks whether a request is
+   * OUTSTANDING OR COMPLETED, never merely whether one was once started. Any
+   * path that abandons the request must disarm the guard so a remount re-arms.
+   */
+  describe('StrictMode remount (#169)', () => {
+    /** Mount under StrictMode, exactly as `main.tsx` does in development. */
+    function renderStrict<T>(options: Parameters<typeof usePolledResource<T>>[0]) {
+      return renderHookWithProviders(() => usePolledResource<T>(options), {
+        reactStrictMode: true,
+      });
+    }
+
+    it('has a live request in flight after the double-invoke', async () => {
+      const { fetcher, signals } = deferredFetcher();
+
+      renderStrict<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true });
+
+      // The assertion that fails without the fix: not "a request was made"
+      // (one was, and it was killed), but "a request is ALIVE". Every signal
+      // aborted means the panel is waiting on nothing.
+      expect(signals.length).toBeGreaterThan(0);
+      expect(signals.some((signal) => !signal.aborted)).toBe(true);
+      expect(fetcher).toHaveBeenCalled();
+    });
+
+    it('renders data without waiting for the first poll tick', async () => {
+      const fetcher = vi.fn().mockResolvedValue(['run-1']);
+
+      const { result } = renderStrict<string[]>({
+        fetcher,
+        intervalMs: INTERVAL,
+        enabled: true,
+      });
+
+      // Zero timer advance. This is the user-visible bug: 30 seconds of
+      // spinners on the primary screen, which reads as "the factory is quiet"
+      // rather than "the dashboard has not answered yet".
+      await flush();
+
+      expect(result.current.state).toBe('ready');
+      expect(result.current.data).toEqual(['run-1']);
+    });
+
+    it('still fires exactly one request per session, not one per invoke', async () => {
+      const fetcher = vi.fn().mockResolvedValue(['run-1']);
+
+      renderStrict<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true });
+      await flush();
+
+      // Re-arming must not turn into re-fetching. The first mount's request is
+      // aborted before it settles, so the replacement is the only one that
+      // counts -- two calls, one of them dead, and no third from the poll
+      // timer we have not advanced to.
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not double-fire on a reschedule, which is what the guard is for', async () => {
+      // A failure changes `delayMs`, which re-runs the polling effect. That
+      // path must NOT re-fire immediately, or backoff would be defeated the
+      // instant it was applied -- which is the entire reason
+      // `sessionStartedRef` exists. Re-arming it on abandonment must not cost
+      // us that.
+      const fetcher = vi
+        .fn()
+        .mockResolvedValueOnce(['run-1']) // the aborted mount-1 request
+        .mockResolvedValueOnce(['run-1']) // its mount-2 replacement
+        .mockRejectedValue(new Error('down'));
+
+      const { result } = renderStrict<string[]>({
+        fetcher,
+        intervalMs: INTERVAL,
+        enabled: true,
+      });
+      await flush();
+
+      expect(result.current.state).toBe('ready');
+      const afterMount = fetcher.mock.calls.length;
+
+      // One tick: the failure that bumps failureCount and so changes delayMs.
+      await flush(INTERVAL);
+      expect(fetcher).toHaveBeenCalledTimes(afterMount + 1);
+      expect(result.current.error).toBe('down');
+
+      // The reschedule itself buys no request at all...
+      await flush();
+      expect(fetcher).toHaveBeenCalledTimes(afterMount + 1);
+
+      // ...and the next one waits out the DOUBLED interval, not the base one.
+      await flush(INTERVAL);
+      expect(fetcher).toHaveBeenCalledTimes(afterMount + 1);
+
+      await flush(INTERVAL);
+      expect(fetcher).toHaveBeenCalledTimes(afterMount + 2);
+    });
+  });
 });
