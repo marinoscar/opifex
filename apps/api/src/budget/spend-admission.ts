@@ -185,9 +185,17 @@ function describeSpend(tally: SpendTally): string {
   const parts: string[] = [];
 
   if (tally.estimatedUsd > 0) {
+    // `runsWithoutCost` minus `unboundedRuns`, not `runsWithoutCost`. Only the
+    // difference actually contributed to `estimatedUsd`; attributing the whole
+    // unreported count to it would spread the estimate across runs that
+    // contributed nothing, and understate the per-run figure by exactly the
+    // amount that is unknown. Found by running this against real rows, where
+    // two unreported runs -- one with a ceiling, one without -- produced
+    // "$5.00 estimated from the ceilings of 2 run(s)".
+    const estimatedFrom = tally.runsWithoutCost - tally.unboundedRuns;
     parts.push(
       `spent at most ${usd(tally.totalUsd)} (${usd(tally.reportedUsd)} reported, ` +
-        `${usd(tally.estimatedUsd)} estimated from the ceilings of ${tally.runsWithoutCost} ` +
+        `${usd(tally.estimatedUsd)} estimated from the ceilings of ${estimatedFrom} ` +
         `run(s) that reported nothing)`,
     );
   } else {

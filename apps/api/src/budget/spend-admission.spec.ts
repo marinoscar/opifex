@@ -179,6 +179,27 @@ describe('decideSpendAdmission', () => {
       expect(verdict.reason).toContain('4 run(s)');
     });
 
+    it('attributes the estimate only to the runs that actually contributed to it', () => {
+      // Found by running the gate against real rows: two unreported runs, one
+      // with a ceiling and one without, reported "$5.00 estimated from the
+      // ceilings of 2 run(s)". The unbounded one contributed nothing, and
+      // counting it here would understate the per-run figure by exactly the
+      // amount nobody can measure.
+      const verdict = decideSpendAdmission(
+        ceiling(100),
+        tally({
+          totalUsd: 8.47,
+          reportedUsd: 3.47,
+          estimatedUsd: 5,
+          runsWithoutCost: 2,
+          unboundedRuns: 1,
+        }),
+        order(),
+      );
+
+      expect(verdict.reason).toContain('$5.00 estimated from the ceilings of 1 run(s)');
+    });
+
     it('says the figure is a floor when some runs cannot be bounded at all', () => {
       // The one thing that must never be silent: a floor read as a total is
       // how a ceiling gets passed with nothing appearing to go wrong.
