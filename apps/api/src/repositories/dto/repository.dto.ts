@@ -56,6 +56,16 @@ const repositoryPolicySchema = z.object({
    * exists is the whole point of doing labels first.
    */
   mirrorLabelsEnabled: z.boolean().optional(),
+  /**
+   * Opifex may comment on an issue to say why its spec was rejected (#155).
+   *
+   * A fourth switch rather than a reuse of `mirrorLabelsEnabled`, because the
+   * two writes differ in kind: a mirror label restates a status the operator
+   * already asked to see, and this is unsolicited prose addressed to a human
+   * on their own issue. Turning on labels is not a request to start giving
+   * people feedback.
+   */
+  specFeedbackEnabled: z.boolean().optional(),
   /** Per-run spend ceiling in USD. Null clears it. */
   budgetCeilingUsd: z.number().positive().max(10000).nullable().optional(),
   /** Per-run wall-clock ceiling in minutes. Null clears it. */
@@ -98,6 +108,7 @@ export const repositoryResponseSchema = z.object({
   observeEnabled: z.boolean(),
   dispatchEnabled: z.boolean(),
   mirrorLabelsEnabled: z.boolean(),
+  specFeedbackEnabled: z.boolean(),
   budgetCeilingUsd: z.string().nullable(),
   wallClockTimeoutMinutes: z.number().int().nullable(),
   pathConstraints: z.array(z.string()),
