@@ -14,10 +14,14 @@ import { describeFailure, runCommand, type CommandResult } from '../process/run-
  * A subprocess needs somewhere to work, and "somewhere" is not incidental —
  * it is where VISION §3.4's recovery model becomes real. Recovery is
  * abandon-and-re-run **from the pinned base commit**, never session
- * resumption, and that only means something if the base commit is actually
- * what the process starts from. So the workspace is checked out at
- * `baseCommit` by sha, not at a branch tip that may have moved between the
- * work order being written and the run starting.
+ * resumption, and that only means something if the run genuinely starts from
+ * what was authorized.
+ *
+ * So the start point is resolved rather than assumed: the factory branch's tip
+ * when #63 has already committed the execution record to it, and `baseCommit`
+ * otherwise. Both are pinned — see `startPoint` for why the branch is not a
+ * moving target and why checking out `baseCommit` unconditionally would make
+ * every agent's push fail.
  *
  * ## Idempotency lives here
  *
@@ -98,8 +102,8 @@ export class RunWorkspaceService {
     await mkdir(dir, { recursive: true });
 
     try {
-      await this.clone(dir, request);
-      return { dir, reused: false, headCommit: request.baseCommit };
+      const headCommit = await this.clone(dir, request);
+      return { dir, reused: false, headCommit };
     } catch (error) {
       // A failed provision leaves nothing behind. Otherwise the next attempt
       // finds a directory, fails to confirm it, and pays for a delete it
@@ -136,12 +140,19 @@ export class RunWorkspaceService {
     if (!branch.ok || branch.stdout.trim() !== request.branch) return null;
 
     const head = await this.git(dir, ['rev-parse', 'HEAD']);
-    if (!head.ok || head.stdout.trim() !== request.baseCommit) return null;
+    if (!head.ok) return null;
+
+    // Reusable only if HEAD is still where provisioning would put it. That is
+    // the base commit for a branch that does not exist yet, and the branch tip
+    // once the execution record is on it (#63) — so the check asks the remote
+    // rather than assuming either.
+    const expected = await this.startPoint(dir, request);
+    if (head.stdout.trim() !== expected.commit) return null;
 
     return { dir, reused: true, headCommit: head.stdout.trim() };
   }
 
-  private async clone(dir: string, request: WorkspaceRequest): Promise<void> {
+  private async clone(dir: string, request: WorkspaceRequest): Promise<string> {
     const url = this.remoteUrl(request.repository);
 
     await this.expect(dir, ['init', '--quiet', '--initial-branch=main'], 'initialise a repository');
@@ -150,21 +161,22 @@ export class RunWorkspaceService {
     await this.configureCredentials(dir);
     await this.configureCommitter(dir);
 
-    // Fetch the base commit BY SHA rather than cloning a branch: the work
-    // order pins a commit, and fetching a branch would take whatever its tip
-    // happens to be now — which is a different run from the one that was
-    // authorized (#63).
+    // Fetch BY SHA rather than by ref name: whichever commit `startPoint`
+    // resolves to, it is fetched as a fixed object, so nothing moves under the
+    // run between resolving it and checking it out.
     //
-    // `--depth 1` because none of the history before the base commit is part
+    // `--depth 1` because none of the history before the start point is part
     // of the work, and a full clone of a real repository is minutes of wall
     // clock on every attempt.
+    const start = await this.startPoint(dir, request);
+
     const shallow = await this.git(dir, [
       'fetch',
       '--quiet',
       '--depth',
       '1',
       'origin',
-      request.baseCommit,
+      start.commit,
     ]);
 
     if (!shallow.ok) {
@@ -173,7 +185,7 @@ export class RunWorkspaceService {
       // mirror may not. Falling back to a full fetch keeps this runner usable
       // against those without pretending the shallow path is universal.
       this.logger.warn(
-        `Shallow fetch of ${request.baseCommit} failed (${describeFailure(shallow)}); ` +
+        `Shallow fetch of ${start.commit} failed (${describeFailure(shallow)}); ` +
           'retrying as a full fetch',
       );
       await this.expect(dir, ['fetch', '--quiet', 'origin'], 'fetch the repository');
@@ -181,9 +193,55 @@ export class RunWorkspaceService {
 
     await this.expect(
       dir,
-      ['checkout', '--quiet', '-b', request.branch, request.baseCommit],
-      `check out ${request.baseCommit} as ${request.branch}`,
+      ['checkout', '--quiet', '-b', request.branch, start.commit],
+      `check out ${start.commit} as ${request.branch}`,
     );
+
+    return start.commit;
+  }
+
+  /**
+   * Where this workspace should start: the branch tip, or the base commit.
+   *
+   * ## Why this is not simply the base commit
+   *
+   * #63 writes the EXECUTION RECORD as the branch's first commit, so by the
+   * time a runner is handed the work the remote branch is already one commit
+   * ahead of `baseCommit`. A workspace checked out at `baseCommit` would
+   * therefore be behind its own remote, and the agent's push would be rejected
+   * as a non-fast-forward — after the whole run had been paid for.
+   *
+   * That failure only appears once dispatch actually joins #63 to #61, which
+   * is why it survived both of their test suites.
+   *
+   * ## And why it does not weaken the pin
+   *
+   * Fetching a BRANCH whose tip is whatever it happens to be now would be a
+   * different run from the one that was authorized. This is narrower: the
+   * branch is `factory/<issue>-<sha7>-a<attempt>`, which is content-addressed
+   * over the same coordinates as the identity (#62), so its only legitimate
+   * contents are the execution record for THIS work order. The commit named by
+   * `baseCommit` is still its parent.
+   */
+  private async startPoint(
+    dir: string,
+    request: WorkspaceRequest,
+  ): Promise<{ commit: string; fromBranch: boolean }> {
+    const remote = await this.git(dir, ['ls-remote', '--exit-code', 'origin', request.branch]);
+    if (!remote.ok) return { commit: request.baseCommit, fromBranch: false };
+
+    const sha = remote.stdout.trim().split(/\s+/)[0];
+    if (!/^[0-9a-f]{40}$/.test(sha)) {
+      // Unparseable rather than absent. Falling back to the base commit would
+      // reintroduce the push rejection silently, so this says so out loud.
+      this.logger.warn(
+        `Could not read the tip of ${request.branch} from origin; starting from ` +
+          `${request.baseCommit}, and a push may be rejected`,
+      );
+      return { commit: request.baseCommit, fromBranch: false };
+    }
+
+    return { commit: sha, fromBranch: true };
   }
 
   /**

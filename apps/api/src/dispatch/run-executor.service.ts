@@ -1,0 +1,240 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
+
+import { PrismaService } from '../prisma/prisma.service';
+import { ClaudeCodeLocalRunner, RunnerAtCapacityError } from '../runners/claude-code-local/claude-code-local.runner';
+import { RunPollerService } from '../runners/run-poller.service';
+import type { Runner, WorkOrderSpec } from '../runners/runner.types';
+import type { GeneratedWorkOrder } from '../work-orders/work-order-generator';
+import { WorkOrderRecordsService } from '../work-orders/work-order-records.service';
+import { DispatchService } from './dispatch.service';
+import type { QueueReason } from './dispatch-policy';
+
+/**
+ * Hands an authorized work order to a runner.
+ *
+ * ## The gap this closes
+ *
+ * Every piece existed and none of them were joined. #62 turned an issue into a
+ * work order, #63 wrote its records, #64 decided which runner should take it,
+ * #61 implemented that runner, #147 registered it and polled it — and nothing
+ * called `submit()`. `decide()` returned a decision to nobody. The seam was
+ * complete, registered, routable, pollable, and unreachable.
+ *
+ * ## This is the first thing in the system that spends money
+ *
+ * VISION §3.5 gates on reversibility, not importance, and this action is not
+ * reversible: it starts an agent that costs real money against a real
+ * subscription. So it is off unless explicitly enabled, and when off it still
+ * runs the whole decision and reports what it WOULD have done — which is
+ * VISION §12's observation-week posture applied to execution rather than to
+ * labels.
+ */
+
+export type ExecutionResult =
+  | {
+      outcome: 'dispatched';
+      runId: string;
+      runnerKey: string;
+      reason: string;
+    }
+  | { outcome: 'queued'; queueReason: QueueReason | null; reason: string }
+  | { outcome: 'failed'; runId: string; reason: string }
+  | {
+      outcome: 'observed';
+      /** Where it would have gone. Null when it would have queued anyway. */
+      wouldDispatchTo: string | null;
+      reason: string;
+    };
+
+@Injectable()
+export class RunExecutorService {
+  private readonly logger = new Logger(RunExecutorService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+    private readonly dispatch: DispatchService,
+    private readonly records: WorkOrderRecordsService,
+    private readonly poller: RunPollerService,
+    private readonly claudeCodeLocal: ClaudeCodeLocalRunner,
+  ) {}
+
+  /**
+   * Decide, record, submit, track.
+   *
+   * The order is not arbitrary and each step has a reason it cannot move:
+   *
+   * 1. **Decide first**, so a work order nothing can take never gets a `Run`
+   *    row. A queue is a normal outcome (#64), not a failure.
+   * 2. **Create the run before submitting.** There has to be a row for an
+   *    event to attach to before the first event can arrive, which is exactly
+   *    why `WorkOrderSpec.runId` is passed IN rather than returned by
+   *    `submit`.
+   * 3. **Write the records before submitting.** #63's execution record is the
+   *    branch's first commit, and the runner's workspace starts from that
+   *    branch — writing them afterwards would leave the agent unable to push.
+   * 4. **Track before returning.** An untracked run is one nothing polls, and
+   *    the poller reports those as stalled within a tick.
+   */
+  async dispatchWorkOrder(input: DispatchWorkOrderInput): Promise<ExecutionResult> {
+    const { workOrder } = input;
+    const decision = await this.dispatch.decide(workOrder.needs, workOrder.identity);
+
+    if (decision.outcome === 'queued' || decision.runnerKey === null) {
+      return { outcome: 'queued', queueReason: decision.queueReason, reason: decision.reason };
+    }
+
+    const runner = this.runnerFor(decision.runnerKey);
+    if (!runner) {
+      // Routing chose a runner this build cannot instantiate — a registration
+      // left behind by an older deployment, most likely. Queue rather than
+      // fail: the work order is fine, the fleet is not.
+      const reason = `Routing chose ${decision.runnerKey}, which this build has no implementation for`;
+      this.logger.error(reason);
+      return { outcome: 'queued', queueReason: null, reason };
+    }
+
+    const capabilities = await runner.capabilities();
+
+    if (!this.enabled) {
+      // The whole decision, none of the consequences. VISION §12 asks for
+      // exactly this before an outward action is switched on: a record of what
+      // it would have done, produced by the same code path that will do it.
+      const reason =
+        `DISPATCH DISABLED — would have dispatched ${workOrder.identity} to ` +
+        `${decision.runnerKey}@${capabilities.version}. Set DISPATCH_ENABLED=true to act.`;
+      this.logger.warn(reason);
+      return { outcome: 'observed', wouldDispatchTo: decision.runnerKey, reason };
+    }
+
+    // Generated here rather than by the database, because it has to be inside
+    // the work-order spec the runner receives and on the records written
+    // before the run exists.
+    const runId = randomUUID();
+
+    await this.prisma.run.create({
+      data: {
+        id: runId,
+        workOrderId: input.workOrderId,
+        runnerKey: decision.runnerKey,
+        runnerVersion: capabilities.version,
+        status: 'running',
+      },
+    });
+
+    try {
+      await this.records.write({
+        workOrder,
+        runnerKey: decision.runnerKey,
+        runnerVersion: capabilities.version,
+        runId,
+      });
+
+      const handle = await runner.submit(toSpec(workOrder, runId));
+      this.poller.track(runId, runner, handle);
+
+      await this.prisma.workOrder.update({
+        where: { id: input.workOrderId },
+        data: { status: 'dispatched' },
+      });
+
+      const reason = `Dispatched ${workOrder.identity} to ${decision.runnerKey} as run ${runId}`;
+      this.logger.log(reason);
+
+      return {
+        outcome: 'dispatched',
+        runId,
+        runnerKey: decision.runnerKey,
+        reason,
+      };
+    } catch (error) {
+      return this.recover(runId, workOrder, error);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+
+  /**
+   * Something failed after the run row existed. Leave nothing phantom behind.
+   *
+   * A `running` row with no process is the worst available outcome: the
+   * watchdog will find it ninety seconds later and report a silent run, which
+   * is true but useless — the run never started, and the reason is already
+   * known right here.
+   */
+  private async recover(
+    runId: string,
+    workOrder: GeneratedWorkOrder,
+    error: unknown,
+  ): Promise<ExecutionResult> {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (error instanceof RunnerAtCapacityError) {
+      // NOT a failed run. The runner's own backstop refused after routing said
+      // yes — routing reads the database while the ceiling counts live
+      // children, so the two can legitimately disagree by one. #66 counts
+      // attempts to judge decomposition quality (metric 4), and a capacity
+      // refusal is not an attempt: the row is removed rather than failed,
+      // because a run that never started is not a run.
+      await this.prisma.run.delete({ where: { id: runId } }).catch(() => undefined);
+      this.logger.warn(`${workOrder.identity} re-queued: ${message}`);
+      return { outcome: 'queued', queueReason: 'capable-runners-are-at-capacity', reason: message };
+    }
+
+    await this.prisma.run.updateMany({
+      where: { id: runId, status: 'running' },
+      data: { status: 'failed', endedAt: new Date(), attentionReason: message },
+    });
+
+    this.logger.error(`${workOrder.identity} failed before it started: ${message}`);
+    return { outcome: 'failed', runId, reason: message };
+  }
+
+  /**
+   * The key routing chose, as something that can be submitted to.
+   *
+   * A switch over one runner rather than a registry abstraction. VISION §3.7
+   * says not to build the second runner until it is needed, and a registry for
+   * a single entry is how the second one starts looking easy while the first
+   * becomes hard to read. Adding one here is a line.
+   */
+  private runnerFor(key: string): Runner | null {
+    return key === ClaudeCodeLocalRunner.KEY ? this.claudeCodeLocal : null;
+  }
+
+  private get enabled(): boolean {
+    return this.config.get<boolean>('dispatch.enabled') === true;
+  }
+}
+
+export interface DispatchWorkOrderInput {
+  workOrder: GeneratedWorkOrder;
+  /** The `WorkOrder` row's id. The generated document carries the identity. */
+  workOrderId: string;
+}
+
+/**
+ * The work order as the seam receives it.
+ *
+ * A translation rather than a cast, and the notable thing is what is NOT
+ * carried across: there is no runner field, because VISION §6 requires that a
+ * work order never name one. The seam type has no such field to fill, which is
+ * what makes the rule structural rather than a convention.
+ */
+function toSpec(workOrder: GeneratedWorkOrder, runId: string): WorkOrderSpec {
+  return {
+    identity: workOrder.identity,
+    runId,
+    repository: { owner: workOrder.repositoryOwner, name: workOrder.repositoryName },
+    baseCommit: workOrder.baseCommit,
+    branch: workOrder.branch,
+    taskSpec: workOrder.taskSpec,
+    acceptanceCriteria: workOrder.acceptanceCriteria,
+    pathConstraints: workOrder.pathConstraints,
+    budgetCeilingUsd: workOrder.budgetCeilingUsd,
+    wallClockTimeoutMinutes: workOrder.wallClockTimeoutMinutes,
+    needs: workOrder.needs,
+  };
+}
