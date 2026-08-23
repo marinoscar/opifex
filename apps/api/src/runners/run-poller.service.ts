@@ -1,10 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { decideBudgetOverrun } from '../budget/budget-overrun';
 import {
   DEFAULT_DEADLINE_GRACE_MINUTES,
   decideDeadline,
 } from '../budget/run-deadline';
+import { toNumberOrNull } from '../common/decimal';
+import { EscalationsService } from '../escalations/escalations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RunEventsService } from '../run-events/run-events.service';
 import { SILENCE_THRESHOLDS_MS } from '../watchdog/silent-detection';
@@ -92,6 +95,8 @@ export interface PollTickResult {
   failed: number;
   /** Runs cancelled for passing their wall-clock ceiling (#180). */
   timedOut: number;
+  /** Runs found to have passed their work order's budget ceiling (#182). */
+  overBudget: number;
 }
 
 @Injectable()
@@ -110,10 +115,14 @@ export class RunPollerService {
    */
   private readonly deadlineEnforced = new Set<string>();
 
+  /** Runs this process has already acted on for their budget (#182). */
+  private readonly budgetEnforced = new Set<string>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly runEvents: RunEventsService,
     private readonly config: ConfigService,
+    private readonly escalations: EscalationsService,
   ) {}
 
   /**
@@ -134,6 +143,7 @@ export class RunPollerService {
     // across a long-lived process, and it has nothing left to guard once the
     // run is no longer tracked.
     this.deadlineEnforced.delete(runId);
+    this.budgetEnforced.delete(runId);
   }
 
   /** How many runs this process can currently poll. */
@@ -157,6 +167,7 @@ export class RunPollerService {
       lost: 0,
       failed: 0,
       timedOut: 0,
+      overBudget: 0,
     };
 
     // BEFORE polling, not after. A run that is already past its ceiling
@@ -218,6 +229,23 @@ export class RunPollerService {
       const ingested = await this.runEvents.ingest(runId, poll.events);
       result.eventsIngested += ingested.accepted;
       result.duplicates += ingested.duplicates;
+
+      // Checked HERE, immediately after ingestion, because this is the one
+      // moment when everything needed is true at once: the roll-up (#183) has
+      // just written the run's cost, ingestion has just written its terminal
+      // status if it ended, and the run is still in `tracked` -- so if it can
+      // be stopped, the handle to stop it with is still in hand. A tick later
+      // it would have been forgotten.
+      //
+      // Guarded separately: a budget check that throws must not lose the
+      // events already ingested above, nor stop the poller reaching the rest
+      // of the fleet.
+      try {
+        await this.enforceBudget(runId, poll.status === 'running', result);
+      } catch (error) {
+        result.failed += 1;
+        this.logger.error(`Could not check run ${runId} against its budget: ${asMessage(error)}`);
+      }
     }
 
     if (poll.status === 'unknown') {
@@ -232,6 +260,107 @@ export class RunPollerService {
     // from a different input is how two sources of truth appear.
     if (poll.status === 'succeeded' || poll.status === 'failed') {
       this.forget(runId);
+    }
+  }
+
+  /**
+   * Act on a work order's budget ceiling once its run has passed it (#182).
+   *
+   * ## Two arms, and only one of them fires today
+   *
+   * A run that is STILL LIVE is cancelled through the seam. A run that has
+   * already FINISHED cannot be — so it is recorded and escalated instead, and
+   * the record says which of the two happened rather than implying the
+   * stronger one.
+   *
+   * With the current fleet only the second arm can fire. `claude-code-local`
+   * reports cost once, on its final `result` line: the per-message `usage` is
+   * a streaming snapshot rather than a running total, and summing it produces
+   * a number that is simply wrong. So its dollar figure never arrives while
+   * there is still something to stop.
+   *
+   * The first arm is not therefore dead code — it is the seam's contract held
+   * up for any runner that reports incrementally, exactly as the wall-clock
+   * sweep (#180) is. What would be wrong is shipping only the first arm and
+   * calling the budget enforced: from outside it would look identical to a
+   * working ceiling while never once firing.
+   *
+   * ## Escalated, not just logged
+   *
+   * `budget_exceeded` has been in `EscalationKind` since the schema was
+   * written and nothing has ever raised it. An operator who learns a $5
+   * ceiling was passed by $35 can stop it being a habit; one who finds out
+   * from a monthly bill cannot. `raiseFrom` dedupes per `(run, kind)`, so a
+   * re-check on a later tick cannot page twice for the same overrun.
+   */
+  private async enforceBudget(
+    runId: string,
+    runIsLive: boolean,
+    result: PollTickResult,
+  ): Promise<void> {
+    if (this.budgetEnforced.has(runId)) return;
+
+    const run = await this.prisma.run.findUnique({
+      where: { id: runId },
+      select: {
+        costUsd: true,
+        workOrder: { select: { identity: true, budgetCeilingUsd: true } },
+      },
+    });
+    if (!run) return;
+
+    const verdict = decideBudgetOverrun({
+      costUsd: toNumberOrNull(run.costUsd),
+      ceilingUsd: toNumberOrNull(run.workOrder?.budgetCeilingUsd ?? null),
+      runIsLive,
+    });
+
+    if (!verdict.over) return;
+
+    this.budgetEnforced.add(runId);
+    result.overBudget += 1;
+
+    const identity = run.workOrder?.identity ?? runId;
+
+    // The certain part first, for the reason the deadline sweep writes twice:
+    // a cancel that throws still leaves a run that has provably passed its
+    // ceiling and an operator who needs to know by how much.
+    await this.record(runId, verdict.reason);
+
+    const outcome = verdict.stoppable
+      ? await this.stopForBudget(runId, identity, verdict.reason)
+      : `${verdict.reason} The run had already finished, so nothing could be stopped.`;
+
+    await this.record(runId, outcome);
+    await this.escalations.raiseFrom([
+      {
+        type: 'escalate',
+        runId,
+        escalationKind: 'budget_exceeded',
+        reason: outcome,
+        detectionSource: 'control-plane',
+      } as unknown as Parameters<EscalationsService['raiseFrom']>[0][number],
+    ]);
+
+    this.logger.warn(`${identity}: ${outcome}`);
+  }
+
+  /** Cancel through the seam, and say honestly whether it worked. */
+  private async stopForBudget(runId: string, identity: string, reason: string): Promise<string> {
+    const entry = this.tracked.get(runId);
+    if (!entry) {
+      return `${reason} No runner handle in this process, so nothing could stop it.`;
+    }
+
+    try {
+      await entry.runner.cancel(entry.handle);
+      return `${reason} The control plane cancelled it.`;
+    } catch (error) {
+      this.logger.error(`${identity}: refused cancel after passing its budget`);
+      return (
+        `${reason} The control plane tried to cancel it and the runner refused, so it may ` +
+        `STILL BE RUNNING and still spending: ${asMessage(error)}`
+      );
     }
   }
 
