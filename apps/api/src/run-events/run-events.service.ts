@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
+import { toNumberOrNull } from '../common/decimal';
 import { PrismaService } from '../prisma/prisma.service';
 import { FactoryMetrics } from '../telemetry/factory-metrics.service';
 import { RunEventValidator, type ValidationFailure } from './run-event-validator';
@@ -224,6 +225,87 @@ export class RunEventsService {
         ...(blocked?.blocked?.resetAt ? { resumesAt: new Date(blocked.blocked.resetAt) } : {}),
       },
     });
+
+    await this.rollUpCost(runId);
+  }
+
+  /**
+   * Carry the reported cost from the events onto the run (#183).
+   *
+   * ## Why this has to exist at all
+   *
+   * `RunEvent.costUsd` was written from the first day of ingestion and nothing
+   * ever moved it onto the run, so `Run.costUsd` was `null` for every run that
+   * had ever executed. Everything downstream reads the run, not the events:
+   * `GET /api/cost`, VISION §10's metric 5, and the spend ledger's MEASURED
+   * arm. All three were structurally empty and honestly reporting it, which is
+   * why nothing looked broken.
+   *
+   * ## Summed from the stored rows, not from the batch
+   *
+   * `run-event.schema.json` defines `cost` as *"incremental cost and tokens
+   * attributed to THIS event"*, so the run's figure is the sum of its events.
+   * The subtlety is where that sum is computed.
+   *
+   * Summing the batch would be wrong: `advanceRun` receives every VALIDATED
+   * event, including the ones `createMany({ skipDuplicates })` then skips --
+   * `duplicates` is derived from the shortfall precisely because the insert
+   * does not say which were skipped. A redelivered terminal event would be
+   * correctly recognised at the event table and then summed a second time
+   * here, silently doubling recorded spend.
+   *
+   * Aggregating over the stored rows sidesteps that entirely: a redelivered
+   * event exists once, so it contributes once, whatever the batch contained.
+   * It is idempotent by construction rather than by care.
+   *
+   * It is also correct for both reporting shapes the fleet can have. A runner
+   * that reports incrementally sums to its true total; `claude-code-local`,
+   * which reports once on its final `result` line, sums to that single figure.
+   * Neither needs the control plane to know which it is.
+   *
+   * ## `null` and `0` stay distinct
+   *
+   * Postgres `SUM` over a column where every row is null returns null, not
+   * zero -- which is exactly the distinction the capability manifest's
+   * `reportsCost` exists to preserve. A runner that reported nothing must not
+   * end up looking like one that spent nothing.
+   *
+   * ## Monotonic, like `lastEventAt`
+   *
+   * The guard is in the WHERE clause for the same reason: two concurrent
+   * ingests can compute their sums and land out of order, and the older,
+   * smaller figure must not win. A sum over an append-only table only ever
+   * grows, so `lt` is the whole guard.
+   */
+  private async rollUpCost(runId: string): Promise<void> {
+    const totals = await this.prisma.runEvent.aggregate({
+      where: { runId },
+      _sum: { costUsd: true, tokensInput: true, tokensOutput: true },
+    });
+
+    const costUsd = toNumberOrNull(totals._sum.costUsd);
+    const { tokensInput, tokensOutput } = totals._sum;
+
+    if (costUsd !== null) {
+      await this.prisma.run.updateMany({
+        where: { id: runId, OR: [{ costUsd: null }, { costUsd: { lt: costUsd } }] },
+        data: { costUsd },
+      });
+    }
+
+    if (tokensInput !== null && tokensInput !== undefined) {
+      await this.prisma.run.updateMany({
+        where: { id: runId, OR: [{ tokensInput: null }, { tokensInput: { lt: tokensInput } }] },
+        data: { tokensInput },
+      });
+    }
+
+    if (tokensOutput !== null && tokensOutput !== undefined) {
+      await this.prisma.run.updateMany({
+        where: { id: runId, OR: [{ tokensOutput: null }, { tokensOutput: { lt: tokensOutput } }] },
+        data: { tokensOutput },
+      });
+    }
   }
 }
 

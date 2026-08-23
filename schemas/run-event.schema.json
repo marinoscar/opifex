@@ -64,7 +64,7 @@
       "required": ["traceId"]
     },
     "cost": {
-      "description": "Incremental cost and tokens attributed to this event. Absent means NOT REPORTED, which is different from zero — VISION §6 makes cost reporting a declared capability, so a runner that cannot report cost must not look like one that spent nothing.",
+      "description": "Cost and tokens attributed to THIS EVENT, and only this event. INCREMENTAL, never cumulative: the control plane sums a run's events to get its total (#183), so a runner that repeated a running total on every event would multiply its own spend. A runner that can only report once should report once, on its terminal event, with the whole figure \u2014 which is what claude-code-local does. Absent means NOT REPORTED, which is different from zero \u2014 VISION \u00a76 makes cost reporting a declared capability, so a runner that cannot report cost must not look like one that spent nothing.",
       "type": "object",
       "unevaluatedProperties": false,
       "properties": {
