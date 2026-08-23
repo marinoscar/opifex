@@ -66,10 +66,71 @@ export type RunEvent = {
     tokensInput?: number;
     tokensOutput?: number;
   };
+  /**
+   * Tool name plus a normalized argument signature. OPTIONAL, because a non-streaming runner cannot supply it — the capability manifest declares which can. Loop detection (#55) is built entirely on this field, and defining it now rather than later is what avoids a version bump the moment Phase 3 arrives.
+   */
+  tool?: {
+    name: string;
+    /**
+     * A stable digest of the arguments, computed by the sender. A digest rather than the raw arguments because arguments can be enormous and can contain secrets, and loop detection only ever compares them for equality.
+     */
+    signature: string;
+    /**
+     * Optional free-text phase label, e.g. 'running tests'.
+     */
+    phase?: string;
+  };
+  /**
+   * REQUIRED on a blocked event. This is what separates 'park and auto-resume' from 'kill and re-run' — VISION §9's three failure modes collapse into two without it, and the collapse is the most common supervision bug.
+   */
+  blocked?: {
+    /**
+     * Machine-readable. `unknown` is permitted and is NOT a synonym for the others: a run blocked for a reason the runner cannot name still parks, but #56 escalates it rather than parking forever, because nothing can compute when it would resume.
+     */
+    reason:
+      | 'rate-limit'
+      | 'quota-exhausted'
+      | 'awaiting-approval'
+      | 'upstream-unavailable'
+      | 'unknown';
+    /**
+     * When the block is expected to clear. Absent when the runner cannot say — see `reason: unknown`.
+     */
+    resetAt?: string;
+    detail?: string;
+  };
+  result?: {
+    branch?: string;
+    headCommit?: string;
+    pullRequestUrl?: string;
+  };
+  failure?: {
+    reason: string;
+    /**
+     * The runner's own view of whether a retry could succeed. Advisory: policy decides, per VISION §3.6 — no model output takes effect without passing through deterministic policy.
+     */
+    retryable?: boolean;
+  };
 };
 
 /** The version a producer should write, from the schema's `default`. */
 export const RUN_EVENT_SCHEMA_VERSION = '1.0.0';
+
+/** Every value `reason` may take. Closed — adding one is a major bump (ADR-0010). */
+export const RUN_EVENT_REASON = [
+  'rate-limit',
+  'quota-exhausted',
+  'awaiting-approval',
+  'upstream-unavailable',
+  'unknown',
+] as const;
+
+/** Every value `source` may take. Closed — adding one is a major bump (ADR-0010). */
+export const RUN_EVENT_SOURCE = [
+  'runner-reported',
+  'git-derived',
+  'control-plane-synthesized',
+] as const;
 
 /** Every value `type` may take. Closed — adding one is a major bump (ADR-0010). */
 export const RUN_EVENT_TYPE = [
@@ -79,11 +140,4 @@ export const RUN_EVENT_TYPE = [
   'run.blocked',
   'run.completed',
   'run.failed',
-] as const;
-
-/** Every value `source` may take. Closed — adding one is a major bump (ADR-0010). */
-export const RUN_EVENT_SOURCE = [
-  'runner-reported',
-  'git-derived',
-  'control-plane-synthesized',
 ] as const;

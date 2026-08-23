@@ -35,11 +35,12 @@
  * evaluate the `allOf` branches correctly.
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { compile } from 'json-schema-to-typescript';
+import * as prettier from 'prettier';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEMA_DIR = join(REPO_ROOT, 'schemas');
@@ -64,6 +65,38 @@ const BANNER = `/**
  * is the contract. Edit that, re-run the generator, and commit both.
  * \`npm run contracts:check\` fails CI when this file and the schema disagree.
  */`;
+
+/**
+ * Fold `allOf[*].then.properties` into the root as optional properties.
+ *
+ * JSON Schema's `if`/`then` has no static TypeScript equivalent — the honest
+ * translation is a discriminated union, and deriving one from arbitrary `if`
+ * conditions is a different project. Without this, the generated `RunEvent`
+ * silently lacks `tool`, `blocked`, `result` and `failure` entirely, because
+ * they are only ever introduced inside a conditional branch.
+ *
+ * So the type describes the SUPERSET: every conditionally-required property,
+ * present and optional. That is deliberately weaker than the schema, and the
+ * gap is covered where it belongs — Ajv validates the real conditions at the
+ * boundary, so a `run.blocked` event with no `blocked` object is rejected at
+ * ingestion even though the type would have allowed it. The type is the shape;
+ * the validator is the contract.
+ *
+ * `required` from the branches is deliberately not merged: doing so would make
+ * every event need every conditional field.
+ */
+function foldConditionalBranches(schema) {
+  const branches = Array.isArray(schema.allOf) ? schema.allOf : [];
+  const folded = { ...schema.properties };
+  for (const branch of branches) {
+    for (const [name, definition] of Object.entries(
+      branch?.then?.properties ?? {},
+    )) {
+      if (!(name in folded)) folded[name] = definition;
+    }
+  }
+  return { ...schema, properties: folded };
+}
 
 /** `unevaluatedProperties: false` is invisible to the generator; this is not. */
 function closeObjects(node) {
@@ -131,12 +164,37 @@ function runtimeConstants(stem, schema) {
     );
   }
 
-  for (const [name, property] of Object.entries(schema.properties ?? {})) {
-    if (!Array.isArray(property.enum) || name === 'schemaVersion') continue;
-    const values = property.enum.map((v) => `'${v}'`).join(', ');
+  // Walked, not just read off the top level: `blocked.reason` lives inside an
+  // `allOf`/`then` branch, and a closed set is exactly as closed there as it is
+  // at the root. The property NAME keys the constant, so the same enum reached
+  // by two paths emits once.
+  const enums = new Map();
+  const walk = (node, propertyName) => {
+    if (Array.isArray(node))
+      return node.forEach((item) => walk(item, propertyName));
+    if (node === null || typeof node !== 'object') return;
+    if (
+      Array.isArray(node.enum) &&
+      propertyName &&
+      propertyName !== 'schemaVersion'
+    ) {
+      enums.set(propertyName, node.enum);
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'properties' && value && typeof value === 'object') {
+        for (const [name, sub] of Object.entries(value)) walk(sub, name);
+      } else {
+        walk(value, propertyName);
+      }
+    }
+  };
+  walk(schema, null);
+
+  for (const [name, values] of [...enums].sort()) {
+    const literals = values.map((v) => `'${v}'`).join(', ');
     lines.push(
       `/** Every value \`${name}\` may take. Closed — adding one is a major bump (ADR-0010). */`,
-      `export const ${prefix}_${SCREAMING(name)} = [${values}] as const;`,
+      `export const ${prefix}_${SCREAMING(name)} = [${literals}] as const;`,
       '',
     );
   }
@@ -144,6 +202,10 @@ function runtimeConstants(stem, schema) {
 }
 
 async function main() {
+  const check = process.argv.includes('--check');
+  const prettierConfig = await prettier.resolveConfig(
+    join(REPO_ROOT, 'apps/api/src/contracts/generated/index.ts'),
+  );
   const files = {};
 
   for (const [stem, typeName] of Object.entries(CONTRACTS)) {
@@ -151,12 +213,16 @@ async function main() {
       readFileSync(join(SCHEMA_DIR, `${stem}.schema.json`), 'utf8'),
     );
 
-    const compiled = await compile(closeObjects(schema), typeName, {
-      bannerComment: '',
-      declareExternallyReferenced: true,
-      enableConstEnums: false,
-      style: { singleQuote: true },
-    });
+    const compiled = await compile(
+      closeObjects(foldConditionalBranches(schema)),
+      typeName,
+      {
+        bannerComment: '',
+        declareExternallyReferenced: true,
+        enableConstEnums: false,
+        style: { singleQuote: true },
+      },
+    );
 
     const types = dropRootIndexSignature(compiled);
 
@@ -178,13 +244,46 @@ async function main() {
     ``,
   ].join('\n');
 
+  // Formatted here rather than by a separate `prettier --write` step, so
+  // --check compares the same bytes that --write would produce. A check that
+  // formatted differently from the generator would fail on formatting alone.
+  for (const [name, contents] of Object.entries(files)) {
+    files[name] = await prettier.format(contents, {
+      ...prettierConfig,
+      parser: 'typescript',
+    });
+  }
+
+  const stale = [];
   for (const dir of OUTPUT_DIRS) {
     const absolute = join(REPO_ROOT, dir);
-    mkdirSync(absolute, { recursive: true });
+    if (!check) mkdirSync(absolute, { recursive: true });
+
     for (const [name, contents] of Object.entries(files)) {
-      writeFileSync(join(absolute, name), contents);
+      const path = join(absolute, name);
+      if (check) {
+        // Compared against what is on disk rather than against `git diff`:
+        // a git-based check cannot tell "stale" from "not committed yet", so
+        // it fails during ordinary local work and teaches people to ignore it.
+        const current = existsSync(path) ? readFileSync(path, 'utf8') : null;
+        if (current !== contents) stale.push(join(dir, name));
+      } else {
+        writeFileSync(path, contents);
+      }
     }
-    console.log(`${dir}: ${Object.keys(files).length} files`);
+    if (!check) console.log(`${dir}: ${Object.keys(files).length} files`);
+  }
+
+  if (check) {
+    if (stale.length > 0) {
+      console.error(
+        'Generated contract types are out of date with schemas/:\n' +
+          stale.map((file) => `  ${file}`).join('\n') +
+          '\n\nRun `npm run contracts:generate` and commit the result.',
+      );
+      process.exit(1);
+    }
+    console.log('Generated contract types are current.');
   }
 }
 

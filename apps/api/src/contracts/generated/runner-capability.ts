@@ -95,15 +95,15 @@ export type RunnerCapabilityManifest = {
 /** The version a producer should write, from the schema's `default`. */
 export const RUNNER_CAPABILITY_SCHEMA_VERSION = '1.1.0';
 
+/** Every value `executionLocus` may take. Closed — adding one is a major bump (ADR-0010). */
+export const RUNNER_CAPABILITY_EXECUTION_LOCUS = [
+  'own_infrastructure',
+  'vendor_cloud',
+] as const;
+
 /** Every value `invocationModel` may take. Closed — adding one is a major bump (ADR-0010). */
 export const RUNNER_CAPABILITY_INVOCATION_MODEL = [
   'process',
   'http_api',
   'hosted_job',
-] as const;
-
-/** Every value `executionLocus` may take. Closed — adding one is a major bump (ADR-0010). */
-export const RUNNER_CAPABILITY_EXECUTION_LOCUS = [
-  'own_infrastructure',
-  'vendor_cloud',
 ] as const;

@@ -86,3 +86,11 @@ export interface WorkOrder {
 
 /** The version a producer should write, from the schema's `default`. */
 export const WORK_ORDER_SCHEMA_VERSION = '1.0.0';
+
+/** Every value `needs` may take. Closed — adding one is a major bump (ADR-0010). */
+export const WORK_ORDER_NEEDS = [
+  'full-streaming',
+  'cost-reporting',
+  'structured-rate-limits',
+  'own-infrastructure',
+] as const;
