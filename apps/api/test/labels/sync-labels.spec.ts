@@ -27,7 +27,8 @@ interface Label {
 
 type Task =
   | { fn: 'declaredLabels'; source: string }
-  | { fn: 'diffLabels'; declared: Label[]; actual: Label[] };
+  | { fn: 'diffLabels'; declared: Label[]; actual: Label[] }
+  | { fn: 'validateLabels'; labels: Label[] };
 
 function run<T>(task: Task): T {
   const output = execFileSync('node', [HARNESS], {
@@ -47,6 +48,9 @@ const diff = (declared: Label[], actual: Label[]) =>
     changed: (Label & { differences: string[] })[];
     extra: string[];
   }>({ fn: 'diffLabels', declared, actual });
+
+const validate = (labels: Label[]) =>
+  run<{ problems: string[] }>({ fn: 'validateLabels', labels }).problems;
 
 const label = (over: Partial<Label> = {}): Label => ({
   name: 'factory:hold',
@@ -90,6 +94,55 @@ describe('sync-labels.mjs', () => {
       expect(names).toEqual(
         expect.arrayContaining(['factory/dispatched', 'factory/blocked']),
       );
+    });
+  });
+
+  describe('validating before writing anything (#197)', () => {
+    // The first real --apply created four labels and died on the fifth with
+    // HTTP 422. Half-applied is the worst state available: the drift report
+    // shrinks, the label list looks partly right, and nothing says the run did
+    // not finish.
+
+    it('rejects a description longer than GitHub allows', () => {
+      const problems = validate([label({ description: 'x'.repeat(101) })]);
+      expect(problems).toHaveLength(1);
+      expect(problems[0]).toContain('101 characters');
+      expect(problems[0]).toContain('100');
+    });
+
+    it('accepts one of exactly 100', () => {
+      expect(validate([label({ description: 'x'.repeat(100) })])).toEqual([]);
+    });
+
+    it('rejects a colour that is not six hex digits', () => {
+      expect(validate([label({ color: 'fff' })])[0]).toContain(
+        'not six hex digits',
+      );
+    });
+
+    it('rejects a duplicate name, which would apply twice and drift once', () => {
+      expect(validate([label(), label()])[0]).toContain('more than once');
+    });
+
+    it('names every offender at once, not the first', () => {
+      // One per attempt would mean discovering the file's problems one round
+      // trip at a time, which is how #197 was found.
+      const problems = validate([
+        label({ name: 'a', description: 'x'.repeat(101) }),
+        label({ name: 'b', color: 'nothex' }),
+      ]);
+      expect(problems).toHaveLength(2);
+    });
+
+    it("passes this repository's real taxonomy", () => {
+      // The file was unappliable as written until #197: three mirror labels had
+      // descriptions over the cap. This is the assertion that keeps it
+      // appliable.
+      const source = readFileSync(
+        join(__dirname, '..', '..', '..', '..', '.github', 'labels.yml'),
+        'utf8',
+      );
+      expect(validate(declaredFrom(source))).toEqual([]);
     });
   });
 
