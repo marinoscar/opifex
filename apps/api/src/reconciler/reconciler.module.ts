@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { DispatchModule } from '../dispatch/dispatch.module';
 import { EscalationsModule } from '../escalations/escalations.module';
 import { GitHubReadModule } from '../github/read/github-read.module';
 import { GitHubWriteModule } from '../github/write/github-write.module';
@@ -67,6 +68,12 @@ import { TickLeaseService } from './tick-lease.service';
     // without `DISPATCH_ENABLED`, and seeing what the factory would work on is
     // the artifact VISION §12 asks the observation week to produce.
     WorkOrdersModule,
+    // Draining the queue those work orders land in (#153). Held by the TASK,
+    // not by `ReconcilerService` — dispatch is the most consequential action
+    // in the system, and the component that decides what should happen must
+    // not be able to start a run. Gated twice: `Repository.dispatchEnabled`
+    // per repository and `DISPATCH_ENABLED` globally, both default off.
+    DispatchModule,
   ],
   controllers: [ReconcilerController],
   providers: [

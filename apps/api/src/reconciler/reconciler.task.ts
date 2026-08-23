@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
+import { DispatchQueueService } from '../dispatch/dispatch-queue.service';
 import { EscalationsService } from '../escalations/escalations.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
 import { EscalationDispatcher } from '../notifications/escalation-dispatcher.service';
@@ -40,6 +41,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     private readonly reconciler: ReconcilerService,
     private readonly executor: MirrorLabelExecutor,
     private readonly specFeedback: SpecFeedbackExecutor,
+    private readonly dispatchQueue: DispatchQueueService,
     private readonly repositories: RepositoriesService,
     private readonly liveness: GitLivenessService,
     private readonly watchdog: WatchdogService,
@@ -283,6 +285,35 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Hand queued work orders to a runner.
+   *
+   * Independently caught, like every other outward step. Runs BEFORE the
+   * mirror-label gate and outside `actions.length === 0`, for the same reason
+   * spec feedback does: a queued work order produces no ACTION — the diff
+   * engine's actions are about issues — so gating dispatch on the action list
+   * would mean the queue never drains on a quiet tick, which is most of them.
+   *
+   * Runs AFTER the tick, so a work order projected by this very tick can be
+   * dispatched by it rather than waiting another 60 seconds.
+   *
+   * Both gates live below this: `Repository.dispatchEnabled` is checked per
+   * work order in the queue service, and `DISPATCH_ENABLED` inside the
+   * executor — which still runs the whole decision when off and reports what
+   * it WOULD have done, because that is the observation-week artifact.
+   */
+  private async drainDispatchQueue(): Promise<void> {
+    try {
+      await this.dispatchQueue.drain();
+    } catch (error) {
+      this.logger.error(
+        `Draining the dispatch queue failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   private async runOnce(): Promise<void> {
     try {
       // Liveness FIRST, so the tick's projection sees the freshest run state.
@@ -326,6 +357,11 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // would silence feedback in exactly the repository where nothing else
       // is happening.
       await this.reportSpecRejections(record);
+
+      // Also before the early return, and for the same reason: a queued work
+      // order produces no action, so gating this on the action list would
+      // mean the queue never drains on a quiet tick.
+      await this.drainDispatchQueue();
 
       if (actions.length === 0) return;
 

@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
+import { DispatchQueueService } from '../dispatch/dispatch-queue.service';
 import { EscalationsService } from '../escalations/escalations.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
 import { EscalationDispatcher } from '../notifications/escalation-dispatcher.service';
@@ -53,6 +54,7 @@ describe('ReconcilerTask', () => {
   let tick: jest.Mock;
   let report: jest.Mock;
   let execute: jest.Mock;
+  let drain: jest.Mock;
   let listObserved: jest.Mock;
   let task: ReconcilerTask;
 
@@ -68,6 +70,14 @@ describe('ReconcilerTask', () => {
       failures: [],
     });
     execute = jest.fn().mockResolvedValue({ executed: 0, noops: 0, suppressed: 0, failures: [] });
+    drain = jest.fn().mockResolvedValue({
+      dispatched: 0,
+      stillQueued: 0,
+      observed: 0,
+      failed: 0,
+      unrebuildable: 0,
+      repositoriesDisabled: 0,
+    });
     listObserved = jest.fn().mockResolvedValue([]);
 
     task = new ReconcilerTask(
@@ -77,6 +87,7 @@ describe('ReconcilerTask', () => {
       { tick } as unknown as ReconcilerService,
       { execute } as unknown as MirrorLabelExecutor,
       { report } as unknown as SpecFeedbackExecutor,
+      { drain } as unknown as DispatchQueueService,
       { listObserved } as unknown as RepositoriesService,
       { sweep: jest.fn().mockResolvedValue({ runsWatched: 0, eventsRecorded: 0, disagreements: [] }) } as unknown as GitLivenessService,
       {
@@ -106,6 +117,56 @@ describe('ReconcilerTask', () => {
         }),
       } as unknown as EscalationDispatcher,
     );
+  });
+
+  describe('the dispatch queue', () => {
+    it('is drained on a tick that computed no actions at all', async () => {
+      // A queued work order produces no ACTION — the diff engine's actions are
+      // about issues. Gating dispatch on the action list would mean the queue
+      // never drains on a quiet tick, which is most of them.
+      await run();
+
+      expect(drain).toHaveBeenCalledTimes(1);
+    });
+
+    it('is drained even when no repository has mirror labels enabled', async () => {
+      // Dispatch is behind its own gates, not the label flag.
+      listObserved.mockResolvedValue([]);
+
+      await run();
+
+      expect(drain).toHaveBeenCalled();
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('is drained AFTER the tick, so this tick can dispatch what it projected', async () => {
+      const order: string[] = [];
+      tick.mockImplementation(async () => {
+        order.push('tick');
+        return tickRecord();
+      });
+      drain.mockImplementation(async () => {
+        order.push('drain');
+        return {
+          dispatched: 0,
+          stillQueued: 0,
+          observed: 0,
+          failed: 0,
+          unrebuildable: 0,
+          repositoriesDisabled: 0,
+        };
+      });
+
+      await run();
+
+      expect(order).toEqual(['tick', 'drain']);
+    });
+
+    it('does not stop the tick when draining throws', async () => {
+      drain.mockRejectedValue(new Error('database gone'));
+
+      await expect(run()).resolves.toBeUndefined();
+    });
   });
 
   describe('spec feedback', () => {
