@@ -82,20 +82,46 @@ the Context section, where a reader will find it.
 
 ## Adding one
 
-1. **Open a discussion issue first.** VISION §5 gives decision discussion its
-   own row in the artifact table — the issue is where options get argued, the
-   ADR is where the outcome lands. A dedicated issue form and the convention
-   that the ADR's PR closes its discussion issue are [#114](https://github.com/marinoscar/opifex/issues/114);
-   until that lands, an ordinary issue and a closing keyword do the same job.
-2. Copy `0000-template.md` to `NNNN-short-slug.md` with the next free number.
-3. Fill in every section. `Alternatives considered` is not optional — an
-   alternative dismissed without a stated reason gets relitigated.
-4. Open the PR with `Status: Proposed`, flip it to `Accepted` in the same PR
-   once the discussion has settled, and add the row to the index above.
-5. Reference it from the work that implements it with a `Decision: ADR-NNNN`
+1. **Open a discussion issue first**, with the **Decision proposal** form. VISION
+   §5 gives decision discussion its own row in the artifact table — the issue is
+   where options get argued, the ADR is where the outcome lands, and neither
+   substitutes for the other.
+2. Argue it out on the issue. If it turns out there was no real tension, close the
+   issue and put the choice in a commit message; not every decision earns a file.
+3. Copy `0000-template.md` to `NNNN-short-slug.md` with the next free number.
+4. Fill in every section, and put the discussion issue in the `Issue:` header.
+   `Alternatives considered` is not optional — an alternative dismissed without a
+   stated reason gets relitigated.
+5. **Open the PR with `Closes #N` for the discussion issue** — see
+   [Closing the discussion](#closing-the-discussion) below. Start at
+   `Status: Proposed`, flip it to `Accepted` in the same PR once the discussion has
+   settled, and add the row to the index above.
+6. Reference it from the work that implements it with a `Decision: ADR-NNNN`
    commit trailer. See [`../PROVENANCE.md`](../PROVENANCE.md) for the trailer
    vocabulary; `scripts/check-provenance.mjs` fails CI on a trailer that names
    no file here.
+
+## Closing the discussion
+
+**The ADR's pull request closes its discussion issue, and the merged ADR names
+that issue in its `Issue:` header.** Both directions, deliberately:
+
+- The **PR → issue** direction is the closing keyword, which is what actually
+  ends the conversation at the moment the decision becomes real. An issue left
+  open after its ADR merges says the question is still live when it is not.
+- The **ADR → issue** direction is the `Issue:` header, which is what survives.
+  A closing keyword lives in a PR body on one vendor's servers; the header is in
+  the file, in the repository, and still resolves in a clone. `scripts/check-provenance.mjs`
+  enforces it: an ADR here with no `Issue:` header fails CI.
+
+Together they make `Decision --informed--> Issue` walkable from either end, which
+is the whole point of VISION §5's chain. The trailer `Decision: ADR-NNNN` then
+carries it down to the commits that implement the decision.
+
+A decision that never had a discussion issue — because it was settled in review,
+or inherited from before this convention — still needs the header. Point it at
+the issue the work came from; an `Issue:` naming the nearest real conversation is
+worth more than a blank.
 
 ## Who may write one
 

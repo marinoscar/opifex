@@ -1,0 +1,112 @@
+name: Decision proposal
+description: "Propose an architecture decision. The discussion happens here; the outcome becomes an ADR under docs/adr/, and its pull request closes this issue."
+title: "[Decision] "
+labels:
+  - decision
+body:
+  - type: markdown
+    attributes:
+      value: >
+        VISION.MD §5 gives decision *discussion* its own row in the artifact table,
+        separate from the decision itself: **"Decisions are files, not issues. An ADR is
+        a durable artifact that should be reviewed, versioned, and survive GitHub itself.
+        An issue is a conversation. Conflating them loses both properties."**
+
+
+        So this issue is the conversation. When it settles, the outcome is written as an
+        ADR in `docs/adr/`, and **that ADR's pull request carries `Closes #` this issue**
+        — which is what puts the `Decision --informed--> Issue` edge in the provenance
+        graph. See [`docs/adr/README.md`](https://github.com/marinoscar/opifex/blob/main/docs/adr/README.md).
+
+
+        If there is no real tension here — no two things that cannot both be true — there
+        is probably no ADR to write. Record the choice in a commit message and close this.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: >
+        The forces, not the answer. What makes this a decision rather than an obvious
+        next step: the constraint, the two things that cannot both be true, the VISION
+        section that pins one side of it. This becomes the ADR's Context section, and it
+        is the only place a reader two years from now gets what you know today.
+    validations:
+      required: true
+
+  - type: textarea
+    id: options
+    attributes:
+      label: Options considered
+      description: >
+        Each real option, and what it costs. An option listed without a cost has not been
+        considered, it has been mentioned — and the disqualifying reason is what stops
+        this being reopened every six months, as well as what makes reopening it
+        legitimate when that reason expires.
+      placeholder: |
+        **A: <option>** — <what it buys, what it costs>
+        **B: <option>** — <what it buys, what it costs>
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed direction
+      description: >
+        Which option, and the deciding argument — the one that would have to stop being
+        true for this to be worth revisiting. State it plainly; "it seems cleaner" is not
+        a deciding argument.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      description: Pick the primary component. If more than one is touched, pick the largest and note the rest in Context.
+      options:
+        - api
+        - web
+        - db
+        - infra
+        - auth
+        - ui
+        - core
+        - jobs
+        - docs
+        - tests
+    validations:
+      required: true
+
+  - type: input
+    id: adr-number
+    attributes:
+      label: Intended ADR number
+      description: >
+        The next unused number in `docs/adr/`, if you know it. Leave blank if you do not
+        — numbers are allocated when the ADR is written, and guessing one that another
+        open pull request also claims is how `0006` ended up duplicated.
+      placeholder: "ADR-0010"
+    validations:
+      required: false
+
+  - type: input
+    id: parent-epic
+    attributes:
+      label: Parent epic
+      description: Issue number of the parent epic, if any.
+      placeholder: "#42"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: authorship
+    attributes:
+      label: Authorship
+      description: >
+        VISION.MD §13, recorded as ADR-0009: anyone may propose an ADR, a human merges
+        it. An agent opening this issue is proposing, not deciding.
+      options:
+        - label: I understand the ADR that comes out of this is merged by a human.
+          required: true

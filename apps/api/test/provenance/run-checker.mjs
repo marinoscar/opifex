@@ -23,6 +23,7 @@ import {
   checkCommit,
   parseTrailers,
   loadPatterns,
+  checkAdrDiscussionIssues,
 } from '../../../../scripts/check-provenance.mjs';
 
 function readStdin() {
@@ -46,6 +47,9 @@ async function main() {
     }
     if (task.fn === 'parseTrailers') {
       return parseTrailers(task.message);
+    }
+    if (task.fn === 'checkAdrDiscussionIssues') {
+      return { problems: checkAdrDiscussionIssues(task.dir) };
     }
     throw new Error(`run-checker.mjs: unknown task fn "${task.fn}"`);
   });

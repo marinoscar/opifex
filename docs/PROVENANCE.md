@@ -113,6 +113,13 @@ optional-but-validated-if-present on human-authored ones.
 | **Referent** | A file under `docs/adr/`. `ADR-0005` is `docs/adr/0005-*.md`. `ADR-0000` is the template and is rejected. |
 | **Required** | Optional. Present when the work implements or is constrained by a recorded decision.                      |
 
+The referent points back. Every ADR carries an `- Issue: #N` header naming the
+discussion it came out of, and `scripts/check-provenance.mjs` fails CI on one
+that does not — so `Decision --informed--> Issue` is walkable from either end
+rather than only from the commit inwards. The convention, including the ADR
+pull request's own closing keyword, is in
+[`adr/README.md`](adr/README.md#closing-the-discussion).
+
 Optional because most commits implement no ADR, and a vocabulary that demanded
 one would be satisfied with a fictional value within a week.
 

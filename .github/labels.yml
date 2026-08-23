@@ -84,6 +84,10 @@
   color: "0052CC"
   description: "Documentation only."
 
+- name: "decision"
+  color: "1D76DB"
+  description: "A decision under discussion. Closed by the pull request that merges its ADR."
+
 # -----------------------------------------------------------------------------
 # Phase — VISION.MD §12 roadmap phase this work belongs to
 # -----------------------------------------------------------------------------
