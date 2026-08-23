@@ -45,7 +45,7 @@
     },
 
     "invocationModel": {
-      "description": "How the control plane starts work. Determines what cancellation MEANS: a process can be signalled, an http_api call must be asked to stop, and a hosted_job may only be cancellable by its host. See ADR-0006 for why claude-code-local is `process`.",
+      "description": "How the control plane starts work. Determines what cancellation MEANS: a process can be signalled, an http_api call must be asked to stop, and a hosted_job may only be cancellable by its host. See ADR-0008 for why claude-code-local is `process`.",
       "enum": ["process", "http_api", "hosted_job"]
     },
 

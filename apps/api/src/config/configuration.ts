@@ -167,7 +167,7 @@ export default () => {
   // Runners (epic #18, #61)
   runners: {
     // The v1 runner: Claude Code, invoked as a child process on our own
-    // hardware. See docs/adr/0006-claude-code-local-invocation.md for why a
+    // hardware. See docs/adr/0008-claude-code-local-invocation.md for why a
     // subprocess rather than the Agent SDK.
     claudeCodeLocal: {
       // DEFAULTS OFF, like every other outward-acting subsystem here. This one
