@@ -34,7 +34,15 @@ import { RunEventsService } from './run-events.service';
  * rest of the queue.
  */
 @ApiTags('Run Events')
-@Controller('runs/:runId/events')
+// The path parameter is `:id`, not `:runId`, because the cockpit's
+// `GET /api/runs/{id}/events` is the same URL — and OpenAPI forbids two path
+// items that differ only in what they call the same parameter position
+// (`path-params`, caught by `npm run openapi:lint`). Naming them alike merges
+// the two operations under one path item, which is what a generated client
+// expects. It also matches the rest of the surface, where `{id}` is used 17
+// times and `{runId}` was used once. The handler still calls it `runId`
+// locally, where the ambiguity the name resolves is real.
+@Controller('runs/:id/events')
 export class RunEventsController {
   constructor(private readonly runEvents: RunEventsService) {}
 
@@ -49,7 +57,7 @@ export class RunEventsController {
       'not stored twice and not an error. Only source=runner-reported is accepted here — the ' +
       'other two sources are produced by Opifex, not submitted to it.',
   })
-  @ApiParam({ name: 'runId', type: String, format: 'uuid' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiBody({
     description:
       'A run event, or an array of them. See schemas/run-event.schema.json.',
@@ -75,7 +83,7 @@ export class RunEventsController {
   })
   @ApiResponse({ status: 404, description: 'Run not found' })
   async report(
-    @Param('runId', ParseUUIDPipe) runId: string,
+    @Param('id', ParseUUIDPipe) runId: string,
     @Body() body: unknown,
   ) {
     // Accepts a single event or a batch. A runner streaming events one at a

@@ -148,3 +148,9 @@ vite.config.ts.timestamp-*
 
 # Git worktrees (see CLAUDE.md: feature work happens in worktrees/<short-name>)
 worktrees/
+
+# The OpenAPI document is generated from decorator metadata by
+# `npm run openapi:dump`, and linted from a fresh dump in CI. Committing it
+# would add a large generated file that drifts from the code the moment a
+# controller changes without someone re-running the dump.
+openapi.json
