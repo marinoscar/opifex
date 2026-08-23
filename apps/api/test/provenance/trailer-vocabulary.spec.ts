@@ -139,11 +139,14 @@ describe('the documented trailer vocabulary', () => {
   });
 
   describe('what the document commits to', () => {
-    it('requires Issue: of everyone, with no exception', () => {
-      // The one trailer with no escape hatch. A commit with no Issue: cannot
-      // be connected to a reason by any later effort.
+    it('requires Issue: absolutely of agent-authored commits, and validates it whenever present', () => {
+      // Agent-authored: no escape hatch — a work order has no other way to
+      // name its issue. Human-authored: recommended rather than required,
+      // because the PR's own closing keyword can carry the same edge — but
+      // validated wherever it does appear, so a present-but-malformed
+      // Issue: is still a hole in the graph regardless of who wrote it.
       expect(PROVENANCE).toMatch(
-        /\|\s*`Issue:`\s*\|\s*\*\*required\*\*\s*\|\s*\*\*required\*\*\s*\|/,
+        /\|\s*`Issue:`\s*\|\s*\*\*required\*\*\s*\|\s*recommended, validated if present\s*\|/,
       );
     });
 

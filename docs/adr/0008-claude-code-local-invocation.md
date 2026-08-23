@@ -1,4 +1,4 @@
-# 6. Invoke `claude-code-local` as a subprocess, not through the Agent SDK
+# 8. Invoke `claude-code-local` as a subprocess, not through the Agent SDK
 
 - Status: Accepted
 - Date: 2026-08-22
