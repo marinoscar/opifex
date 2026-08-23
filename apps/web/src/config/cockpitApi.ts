@@ -77,8 +77,10 @@ export const COCKPIT_ENDPOINTS: Record<CockpitResourceKey, CockpitEndpoint> = {
     phase: 'Phase 4 — Execution',
   },
   activity: {
-    path: '/events?limit=20',
-    available: false,
+    // LIVE as of #80 — the last of the four. The normalized event floor
+    // across every run, newest first.
+    path: '/events?pageSize=20',
+    available: true,
     phase: 'Phase 2 — Reconciler, read-only',
   },
 };

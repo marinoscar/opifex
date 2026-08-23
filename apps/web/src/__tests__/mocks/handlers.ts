@@ -243,6 +243,18 @@ export const handlers = [
     });
   }),
 
+  /**
+   * `GET /events` — the activity feed (#80).
+   *
+   * Empty by default, and that is not a placeholder: "the factory is quiet"
+   * and "the reconciler does not exist" are opposite meanings, and the
+   * dashboard renders them differently. A fixture with rows would exercise
+   * neither.
+   */
+  http.get(`${API_BASE}/events`, () => {
+    return HttpResponse.json({ data: { items: [], total: 0, page: 1, pageSize: 20 } });
+  }),
+
   http.get(`${API_BASE}/health/live`, () => {
     return HttpResponse.json({
       data: {

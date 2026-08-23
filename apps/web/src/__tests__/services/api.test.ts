@@ -823,43 +823,52 @@ describe('Cockpit API', () => {
   });
 
   describe('getActivityFeed', () => {
-    it('defaults to the endpoint-documented limit of 20', async () => {
+    it('defaults to the endpoint-documented page size of 20', async () => {
       let query: URLSearchParams | null = null;
 
       server.use(
         http.get('*/api/events', ({ request }) => {
           query = new URL(request.url).searchParams;
-          return HttpResponse.json({ data: [] });
+          return HttpResponse.json({
+            data: { items: [], total: 0, page: 1, pageSize: 20 },
+          });
         }),
       );
 
       await getActivityFeed();
 
-      expect(query!.get('limit')).toBe('20');
+      // `pageSize`, not `limit` — the endpoint's vocabulary, not the panel's.
+      // This is the reconciliation `types/cockpit.ts` asks for by name.
+      expect(query!.get('pageSize')).toBe('20');
+      expect(query!.get('limit')).toBeNull();
     });
 
-    it('honours an explicit limit', async () => {
+    it('honours an explicit limit and unwraps the page', async () => {
       let query: URLSearchParams | null = null;
 
       server.use(
         http.get('*/api/events', ({ request }) => {
           query = new URL(request.url).searchParams;
-          return HttpResponse.json({ data: [{ id: 'event-1' }] });
+          return HttpResponse.json({
+            data: { items: [{ id: 'event-1' }], total: 1, page: 1, pageSize: 10 },
+          });
         }),
       );
 
       const result = await getActivityFeed({ limit: 10 });
 
-      expect(query!.get('limit')).toBe('10');
+      expect(query!.get('pageSize')).toBe('10');
+      // A dashboard panel has no pager and no use for `total`.
       expect(result).toEqual([{ id: 'event-1' }]);
     });
   });
 
   describe('error handling', () => {
-    it('throws a typed ApiError when the endpoint does not exist yet', async () => {
-      // Which is the state of the world today — and precisely why the hooks
-      // never call these: `enabled: false` means the dashboard never has to
-      // turn a 404 into a story about the runs.
+    it('throws a typed ApiError when an endpoint answers 404', async () => {
+      // No longer the state of the world — all four cockpit endpoints exist
+      // as of #80. Still worth asserting: a deployment mismatch, a rolled-back
+      // API, or a typo'd path must surface as an error the panel can report
+      // rather than as an empty feed that reads like a quiet factory.
       server.use(
         http.get('*/api/metrics/summary', () =>
           HttpResponse.json({ message: 'Not Found', code: 'NOT_FOUND' }, { status: 404 }),

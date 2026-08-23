@@ -4,6 +4,8 @@ import { DispatchModule } from '../dispatch/dispatch.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CostController } from './cost.controller';
 import { CostService } from './cost.service';
+import { EventsController } from './events.controller';
+import { EventsService } from './events.service';
 import { MetricsController } from './metrics.controller';
 import { MetricsService } from './metrics.service';
 import { QueueController } from './queue.controller';
@@ -33,8 +35,23 @@ import { WorkOrdersService } from './work-orders.service';
     MetricsController,
     WorkOrdersController,
     CostController,
+    EventsController,
   ],
-  providers: [QueueService, RunsService, MetricsService, WorkOrdersService, CostService],
-  exports: [QueueService, RunsService, MetricsService, WorkOrdersService, CostService],
+  providers: [
+    QueueService,
+    RunsService,
+    MetricsService,
+    WorkOrdersService,
+    CostService,
+    EventsService,
+  ],
+  exports: [
+    QueueService,
+    RunsService,
+    MetricsService,
+    WorkOrdersService,
+    CostService,
+    EventsService,
+  ],
 })
 export class CockpitModule {}
