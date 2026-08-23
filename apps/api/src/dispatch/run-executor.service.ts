@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 
+import { HardSpendCeilingService } from '../budget/hard-spend-ceiling';
+import { decideSpendAdmission } from '../budget/spend-admission';
+import { SpendLedgerService } from '../budget/spend-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClaudeCodeLocalRunner, RunnerAtCapacityError } from '../runners/claude-code-local/claude-code-local.runner';
 import { RunPollerService } from '../runners/run-poller.service';
@@ -59,6 +62,8 @@ export class RunExecutorService {
     private readonly records: WorkOrderRecordsService,
     private readonly poller: RunPollerService,
     private readonly claudeCodeLocal: ClaudeCodeLocalRunner,
+    private readonly ceiling: HardSpendCeilingService,
+    private readonly ledger: SpendLedgerService,
   ) {}
 
   /**
@@ -97,6 +102,26 @@ export class RunExecutorService {
     }
 
     const capabilities = await runner.capabilities();
+
+    // The spend gate (#65), deliberately placed BEFORE the observation-mode
+    // check rather than after it. An install running with dispatch off is
+    // exactly the one that needs to be told its ceiling is unset, while there
+    // is still time to fix it — VISION §12's observation week is for finding
+    // out what would happen, and "it would have refused to spend" is one of
+    // the things that would happen.
+    const spend = decideSpendAdmission(
+      this.ceiling.value,
+      await this.ledger.tally(this.ceiling.value.windowDays),
+      { ceilingUsd: workOrder.budgetCeilingUsd, runnerReportsCost: capabilities.reportsCost },
+    );
+
+    if (!spend.admit) {
+      // Logged at warn rather than debug: this is money not being spent
+      // because a limit said so, which is the system working, and an operator
+      // who cannot see it working will assume it is not.
+      this.logger.warn(`${workOrder.identity} not dispatched — ${spend.reason}`);
+      return { outcome: 'queued', queueReason: spend.refusal, reason: spend.reason };
+    }
 
     if (!this.enabled) {
       // The whole decision, none of the consequences. VISION §12 asks for
