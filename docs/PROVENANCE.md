@@ -84,11 +84,26 @@ issue, base commit and attempt.
 |---|---|
 | **Format** | `#{number}` for the same repository, matching `^#\d+$`. Cross-repository: `{owner}/{repo}#{number}`. |
 | **Referent** | The GitHub issue the work was authorized by. |
-| **Required** | **Always** — agent and human alike. |
+| **Required** | Agent-authored commits, always. Human-authored commits: recommended, and validated when present. |
 
-This is the one trailer with no exceptions. VISION §5: *"a single orphan puts a
-hole in the graph, and holes are not detectable after the fact."* A commit with
-no `Issue:` cannot be connected to a reason by any later effort.
+The `Issue --informed--> ... --> Commit` edge has to exist somewhere; the
+question this trailer answers is *where*. On an agent-authored commit it has to
+exist on the commit itself — a work order is generated from an issue, and
+nothing downstream of the commit is guaranteed to still be attached to the PR
+that carried it, since squash merges (see below) drop everything but the
+squash message. There the trailer is the only place the edge can live, so it
+is required without exception.
+
+A human-authored commit has a second place for the edge to live: the PR's
+closing keyword (`Fixes #N`) connects the same issue to the same commit,
+reachable through the PR the commit is part of. The edge exists either way —
+`Issue:` on the commit is simply the more durable of the two carriers, because
+it is the one that survives a squash. That is why it is recommended and, where
+present, held to the same format and resolution rules as the agent-authored
+case: an `Issue:` trailer that does not resolve is a hole in the graph
+regardless of who wrote the commit. The CI check in #28 enforces exactly this
+split — required and validated on agent-authored commits, and
+optional-but-validated-if-present on human-authored ones.
 
 ### `Decision:` — the Decision node
 
@@ -149,18 +164,22 @@ is authoritative**, because it is the value everything else resolves through.
 
 | Trailer | Agent-authored | Human-authored |
 |---|---|---|
-| `Issue:` | **required** | **required** |
+| `Issue:` | **required** | recommended, validated if present |
 | `Work-Order:` | **required** | must be absent |
 | `Runner:` | **required** | must be absent |
 | `Run-Id:` | **required** | must be absent |
 | `Attempt:` | **required** | must be absent |
 | `Decision:` | optional | optional |
 
-A human PR legitimately carries only `Issue:` — and possibly `Decision:`. That
-is not a lesser standard; a human commit has no work order, no runner and no
-run, so demanding those fields would mean inventing them, and an invented
-`Run-Id` is worse than an absent one. VISION §5's premise is that the chain is
-*honest*, not that it is *full*.
+A human PR legitimately carries no required trailer at all — `Issue:` where
+present, and possibly `Decision:`. That is not a lesser standard; a human
+commit has no work order, no runner and no run, so demanding those fields
+would mean inventing them, and an invented `Run-Id` is worse than an absent
+one. VISION §5's premise is that the chain is *honest*, not that it is *full*.
+`Issue:` is the one field a human commit *could* carry the same edge with as
+an agent commit, which is why it alone is recommended rather than simply
+optional — but the edge does not depend on it, because the PR's closing
+keyword already carries it at the level the commit belongs to.
 
 **The five agent trailers are all-or-nothing.** A commit carrying `Runner:` and
 no `Run-Id:` is malformed, not partially compliant: it claims to be
