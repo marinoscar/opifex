@@ -7,7 +7,7 @@ import {
   fromPrismaEventType,
 } from '../run-events/run-event.types';
 import { PrismaService } from '../prisma/prisma.service';
-import { toNumberOrNull } from './decimal';
+import { toNumberOrNull } from '../common/decimal';
 import {
   RUNS_DEFAULT_PAGE_SIZE,
   EVENTS_DEFAULT_PAGE_SIZE,

@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, UnprocessableEntityException } from '@ne
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { toNumberOrNull } from './decimal';
+import { toNumberOrNull } from '../common/decimal';
 import { toWorkOrderDocument } from '../work-orders/work-order-document';
 import { RehydrationError, rehydrateWorkOrder } from '../work-orders/work-order-rehydrate';
 import {

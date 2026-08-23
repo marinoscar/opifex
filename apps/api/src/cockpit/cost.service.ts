@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { HardSpendCeilingService } from '../budget/hard-spend-ceiling';
 import { SpendLedgerService } from '../budget/spend-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { toNumberOrNull } from './decimal';
+import { toNumberOrNull } from '../common/decimal';
 import { COST_DEFAULT_DAYS, type CostSummary } from './dto/cost.dto';
 
 /**
