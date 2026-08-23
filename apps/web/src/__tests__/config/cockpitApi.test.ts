@@ -17,16 +17,35 @@ describe('COCKPIT_ENDPOINTS', () => {
   });
 
   /**
-   * The honesty contract's precondition. If any of these is `true` while
-   * `apps/api` still has no domain module, the dashboard starts polling a URL
-   * that 404s and the panels report an ERROR where the truth is "not built".
+   * The honesty contract's precondition, kept as an explicit LIST rather than
+   * "all false".
    *
-   * This is a deliberate speed bump: flipping one to `true` fails here, and
-   * the fix is to update this test in the SAME pull request that adds the
-   * endpoint — which is exactly the review conversation that should happen.
+   * If a key is `true` while `apps/api` has no controller for it, the
+   * dashboard polls a URL that 404s and the panel reports an ERROR where the
+   * truth is "not built". If a key is `false` while the endpoint exists, the
+   * panel says "not wired" about something that works.
+   *
+   * Naming both sets is the deliberate speed bump: flipping one fails here,
+   * and the fix is to move it between these lists in the SAME pull request as
+   * the endpoint — which is exactly the review conversation that should
+   * happen. `queue` moved on #80.
    */
-  it('has every endpoint marked unavailable, because none of them exists yet', () => {
-    for (const key of keys) {
+  const WIRED: CockpitResourceKey[] = ['queue'];
+  const NOT_WIRED: CockpitResourceKey[] = ['metrics', 'attention', 'activity'];
+
+  it('accounts for every resource as either wired or not', () => {
+    // So a fifth resource cannot be added without deciding which it is.
+    expect([...WIRED, ...NOT_WIRED].sort()).toEqual(keys.sort());
+  });
+
+  it('marks the endpoints apps/api really serves as available', () => {
+    for (const key of WIRED) {
+      expect(COCKPIT_ENDPOINTS[key].available).toBe(true);
+    }
+  });
+
+  it('marks the endpoints that do not exist yet as unavailable', () => {
+    for (const key of NOT_WIRED) {
       expect(COCKPIT_ENDPOINTS[key].available).toBe(false);
     }
   });

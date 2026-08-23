@@ -31,14 +31,17 @@ function orderAt(element: HTMLElement, minWidthPx: number): string | null {
 }
 
 /**
- * The operator dashboard, rendered exactly as it ships today: four panels, no
- * endpoints, and therefore four honest not-yet-wired states.
+ * The operator dashboard, rendered exactly as it ships today: four panels, one
+ * of them wired.
  *
- * These tests use the REAL hooks rather than mocks. That is deliberate — with
- * every entry in `config/cockpitApi.ts` marked unavailable, the page must issue
- * no requests at all, and a mocked hook could not prove that. If a future
- * change starts fetching on mount while the registry still says otherwise, MSW
- * logs an unhandled request and these assertions change shape.
+ * #80 flipped `queue` to `available: true`, so the page now really does fetch
+ * `GET /api/queue` on mount and the queue panel shows data — an EMPTY state
+ * against the default MSW handler, not a not-wired one. The other three panels
+ * are still honestly unbuilt.
+ *
+ * These tests use the REAL hooks rather than mocks, which is what makes that
+ * distinction checkable: a mocked hook could not prove that an unavailable
+ * endpoint issues zero requests, nor that an available one issues exactly one.
  */
 describe('DashboardPage', () => {
   describe('the page itself', () => {
@@ -100,16 +103,26 @@ describe('DashboardPage', () => {
       expect(container.querySelector('.MuiSkeleton-root')).toBeNull();
     });
 
-    it('names a roadmap phase on every panel', () => {
+    it('names a roadmap phase on every panel that is still unbuilt', () => {
       render(<DashboardPage />);
 
       expect(screen.getByText(/Escalations appear here once the watchdog lands/)).toBeInTheDocument();
-      expect(screen.getByText(/The queue appears here once dispatch exists/)).toBeInTheDocument();
       expect(screen.getByText(/Events appear here once the reconciler runs/)).toBeInTheDocument();
 
       expect(screen.getAllByText(/Arrives in Phase 3 — Liveness and escalation/).length).toBeGreaterThan(0);
-      expect(screen.getByText(/Arrives in Phase 4 — Execution/)).toBeInTheDocument();
       expect(screen.getByText(/Arrives in Phase 2 — Reconciler, read-only/)).toBeInTheDocument();
+    });
+
+    it('stops claiming the queue is unbuilt, now that it is', () => {
+      // #80. Leaving the not-wired copy on a panel backed by a real endpoint
+      // would be the honesty contract failing in the other direction: telling
+      // the operator nothing exists while the data is on screen.
+      render(<DashboardPage />);
+
+      expect(
+        screen.queryByText(/The queue appears here once dispatch exists/),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText(/Arrives in Phase 4 — Execution/)).not.toBeInTheDocument();
     });
 
     it('never claims that nothing needs attention', () => {

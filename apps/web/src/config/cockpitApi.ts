@@ -63,8 +63,11 @@ export const COCKPIT_ENDPOINTS: Record<CockpitResourceKey, CockpitEndpoint> = {
     phase: 'Phase 3 — Liveness and escalation',
   },
   queue: {
+    // LIVE as of #80. `GET /api/queue` returns queued and held work orders in
+    // the order the dispatch pass drains them, with the reason each is not
+    // running yet already resolved server-side.
     path: '/queue',
-    available: false,
+    available: true,
     phase: 'Phase 4 — Execution',
   },
   activity: {

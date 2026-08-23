@@ -50,12 +50,23 @@ function setPrefs(railCollapsed: boolean) {
   });
 }
 
-const ADMIN_PERMISSIONS = ['users:read', 'system_settings:read'];
+const ADMIN_PERMISSIONS = ['users:read', 'system_settings:read', 'workorders:read'];
+
+/**
+ * What a real seeded VIEWER holds.
+ *
+ * The default here used to be `[]`, which stopped representing anybody once
+ * #80 gave the Queue destination a real permission: `prisma/seed.ts` grants
+ * `workorders:read` to all three roles, so a permission-less user is not a
+ * viewer, it is a user the API cannot produce. Testing navigation against one
+ * would assert that a Viewer cannot see the Queue, which is false.
+ */
+const VIEWER_PERMISSIONS = ['workorders:read'];
 
 describe('NavigationRail', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    setPermissions([]);
+    setPermissions(VIEWER_PERMISSIONS);
     setPrefs(false);
   });
 
@@ -82,9 +93,28 @@ describe('NavigationRail', () => {
       render(<NavigationRail />);
 
       expect(screen.getByRole('link', { name: 'Runs' })).toHaveAttribute('href', '/runs');
-      expect(screen.getByRole('link', { name: 'Queue' })).toHaveAttribute('href', '/queue');
       expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute('href', '/projects');
       expect(screen.getByRole('link', { name: 'Cost' })).toHaveAttribute('href', '/cost');
+    });
+
+    it('offers the Queue to a viewer, who really does hold workorders:read', () => {
+      // #80 moved Queue from planned to live and gave it a permission. That is
+      // only safe because `prisma/seed.ts` grants `workorders:read` to viewer,
+      // contributor and admin alike — if it did not, this destination would
+      // have vanished for most of the people the cockpit is for.
+      render(<NavigationRail />);
+
+      expect(screen.getByRole('link', { name: 'Queue' })).toHaveAttribute('href', '/queue');
+    });
+
+    it('hides the Queue from a user without workorders:read', () => {
+      // The permission is real and it is enforced, so the navigation must
+      // reflect it rather than offering a link that 403s.
+      setPermissions([]);
+
+      render(<NavigationRail />);
+
+      expect(screen.queryByRole('link', { name: 'Queue' })).not.toBeInTheDocument();
     });
 
     it('hides the admin destinations from a user without the permissions', () => {

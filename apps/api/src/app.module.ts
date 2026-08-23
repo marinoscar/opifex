@@ -21,6 +21,7 @@ import { ReconcilerModule } from './reconciler/reconciler.module';
 import { RunEventsModule } from './run-events/run-events.module';
 import { EscalationsModule } from './escalations/escalations.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { CockpitModule } from './cockpit/cockpit.module';
 import { DispatchModule } from './dispatch/dispatch.module';
 import { RunnersModule } from './runners/runners.module';
 import { WorkOrdersModule } from './work-orders/work-orders.module';
@@ -84,6 +85,8 @@ import configuration from './config/configuration';
     // Decides WHICH runner, and hands over to nobody — there is no executor
     // until #61. Registered so the decision path is bootable and exercised.
     DispatchModule,
+    // The cockpit read models (#80) — read-only, one family per module.
+    CockpitModule,
     RunnersModule,
 
     // Test modules (non-production only)

@@ -35,7 +35,19 @@ export const mockUser: MockUser = {
   displayName: 'Test User',
   profileImageUrl: null,
   roles: [{ name: 'viewer' }],
-  permissions: ['user_settings:read', 'user_settings:write'],
+  permissions: [
+    'user_settings:read',
+    'user_settings:write',
+    // The Opifex read permissions the seeded `viewer` role really grants
+    // (apps/api/prisma/seed.ts). A viewer fixture missing them would test a
+    // user that cannot exist — and since #80 gated the Queue destination on
+    // `workorders:read`, it would assert that a viewer cannot see the queue,
+    // which is false.
+    'projects:read',
+    'runs:read',
+    'workorders:read',
+    'escalations:read',
+  ],
   isActive: true,
   createdAt: new Date().toISOString(),
 };
@@ -59,6 +71,12 @@ export const mockAdminUser: MockUser = {
     // so an admin fixture missing it would test a user that cannot exist.
     'allowlist:read',
     'allowlist:write',
+    // Likewise the Opifex domain permissions the seeded `admin` role grants.
+    'projects:read',
+    'projects:write',
+    'runs:read',
+    'workorders:read',
+    'escalations:read',
   ],
   isActive: true,
   createdAt: new Date().toISOString(),
