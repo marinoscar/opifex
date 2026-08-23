@@ -216,6 +216,33 @@ export const handlers = [
     return HttpResponse.json({ data: { items: [], total: 0, page: 1, pageSize: 25 } });
   }),
 
+  /**
+   * `GET /metrics/summary` — the six VISION §10 metrics (#80).
+   *
+   * Every value null by default, which is not a placeholder: it is what the
+   * endpoint really returns against an empty database, and four of the six
+   * return null even against a full one. The tile renders null as an em dash
+   * and still shows the metric's name and meaning.
+   */
+  http.get(`${API_BASE}/metrics/summary`, () => {
+    const now = new Date().toISOString();
+    const notMeasured = { value: null, trend: [] };
+    return HttpResponse.json({
+      data: {
+        generatedAt: now,
+        window: { from: now, to: now },
+        metrics: {
+          detectionLatency: notMeasured,
+          deadTimePerDay: notMeasured,
+          firstPassAcceptance: notMeasured,
+          attemptsPerWorkOrder: notMeasured,
+          costPerMergedPr: notMeasured,
+          quotaBurn: notMeasured,
+        },
+      },
+    });
+  }),
+
   http.get(`${API_BASE}/health/live`, () => {
     return HttpResponse.json({
       data: {
