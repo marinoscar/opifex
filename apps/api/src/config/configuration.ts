@@ -152,6 +152,16 @@ export default () => {
     // a safety rule whose bypass defaults on is not a safety rule. Turn it
     // back off once a genuinely GA runner exists.
     allowPreviewRunner: process.env.DISPATCH_ALLOW_PREVIEW_RUNNER === 'true',
+
+    // The switch that lets the factory actually spend money.
+    //
+    // DEFAULTS OFF, and this is the one where the default matters most:
+    // dispatching starts an agent against a real subscription, and VISION §3.5
+    // gates on reversibility rather than importance — this action is not
+    // reversible. With it off the executor still runs the whole decision and
+    // records what it WOULD have dispatched, which is VISION §12's
+    // observation-week posture applied to execution rather than to labels.
+    enabled: process.env.DISPATCH_ENABLED === 'true',
   },
 
   // Runners (epic #18, #61)
