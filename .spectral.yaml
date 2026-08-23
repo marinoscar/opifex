@@ -1,0 +1,12 @@
+# Ruleset for `npm run openapi:lint` (#37).
+#
+# `spectral:oas` recommended, unmodified. Nothing is switched off, because the
+# first exception is the one that makes the second one easy — and the document
+# passes as-is today, so there is nothing to grandfather. If a rule here turns
+# out to be wrong for this API, disable it with the reason written next to it
+# rather than lowering --fail-severity.
+#
+# The document is dumped fresh by `npm run openapi:dump` rather than read from
+# the repository: a committed spec is a generated file that drifts silently the
+# moment a controller changes.
+extends: [[spectral:oas, recommended]]
