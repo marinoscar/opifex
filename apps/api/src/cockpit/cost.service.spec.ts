@@ -1,3 +1,7 @@
+import type { HardCeiling } from '../budget/hard-spend-ceiling';
+import { HardSpendCeilingService } from '../budget/hard-spend-ceiling';
+import type { SpendTally } from '../budget/spend-ledger.service';
+import { SpendLedgerService } from '../budget/spend-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CostService } from './cost.service';
 
@@ -26,10 +30,40 @@ describe('CostService', () => {
 
   let findMany: jest.Mock;
   let service: CostService;
+  let ceiling: HardCeiling;
+  let ceilingTally: SpendTally;
+  let tally: jest.Mock;
+
+  /**
+   * Rebuild with whatever `ceiling` and `ceilingTally` currently hold.
+   *
+   * The ceiling block (#177) is read from its own ledger over its own window,
+   * so it is stubbed independently of `findMany` -- which is exactly the
+   * separation the service is asserting: the screen's window and the ceiling's
+   * window are different questions and must not share a tally.
+   */
+  function build(): CostService {
+    tally = jest.fn().mockResolvedValue(ceilingTally);
+    return new CostService(
+      { run: { findMany } } as unknown as PrismaService,
+      { value: ceiling } as unknown as HardSpendCeilingService,
+      { tally } as unknown as SpendLedgerService,
+    );
+  }
 
   beforeEach(() => {
     findMany = jest.fn().mockResolvedValue([]);
-    service = new CostService({ run: { findMany } } as unknown as PrismaService);
+    ceiling = { limitUsd: 100, windowDays: 30, malformed: null };
+    ceilingTally = {
+      reportedUsd: 0,
+      estimatedUsd: 0,
+      totalUsd: 0,
+      runs: 0,
+      runsWithoutCost: 0,
+      unboundedRuns: 0,
+      window: { from: new Date(0), to: new Date(0), days: 30 },
+    };
+    service = build();
   });
 
   describe('what is unknown is counted, not hidden', () => {
@@ -192,6 +226,100 @@ describe('CostService', () => {
       const span =
         new Date(summary.window.to).getTime() - new Date(summary.window.from).getTime();
       expect(span).toBe(30 * 24 * 60 * 60 * 1000);
+    });
+  });
+  /**
+   * The ceiling block (#177).
+   *
+   * A limit an operator cannot see the state of is one they will assume is
+   * working, and the quiet failure is the dangerous one: with no ceiling set,
+   * dispatch refuses every work order and the queue looks like a capacity
+   * problem. These assertions are about the screen being able to tell the
+   * difference.
+   */
+  describe('the hard spend ceiling', () => {
+    it('reports the limit, the window and the headroom', async () => {
+      ceiling = { limitUsd: 100, windowDays: 30, malformed: null };
+      ceilingTally = { ...ceilingTally, totalUsd: 12.5, reportedUsd: 12.5 };
+
+      const summary = await build().summary();
+
+      expect(summary.ceiling.limitUsd).toBe(100);
+      expect(summary.ceiling.windowDays).toBe(30);
+      expect(summary.ceiling.headroomUsd).toBe(87.5);
+      expect(summary.ceiling.spend.reportedUsd).toBe(12.5);
+    });
+
+    it('reports null headroom when no ceiling is configured, not the full limit', async () => {
+      // The failure this prevents: a full headroom bar drawn over a factory
+      // that cannot spend a cent. No ceiling REFUSES dispatch, so the honest
+      // rendering of that state is an absence, not a maximum.
+      ceiling = { limitUsd: null, windowDays: 30, malformed: null };
+
+      const summary = await build().summary();
+
+      expect(summary.ceiling.limitUsd).toBeNull();
+      expect(summary.ceiling.headroomUsd).toBeNull();
+    });
+
+    it('surfaces a malformed value separately from an absent one', async () => {
+      // Same distinction the gate makes. Telling somebody their ceiling is
+      // unset when it is in fact set-but-mistyped sends them to look for a
+      // variable they already exported.
+      ceiling = { limitUsd: null, windowDays: 30, malformed: '5O' };
+
+      const summary = await build().summary();
+
+      expect(summary.ceiling.malformed).toBe('5O');
+      expect(summary.ceiling.limitUsd).toBeNull();
+    });
+
+    it('keeps the estimated part separate from the reported part', async () => {
+      ceilingTally = {
+        ...ceilingTally,
+        reportedUsd: 3,
+        estimatedUsd: 5,
+        totalUsd: 8,
+        runsWithoutCost: 2,
+        unboundedRuns: 1,
+      };
+
+      const summary = await build().summary();
+
+      expect(summary.ceiling.spend.reportedUsd).toBe(3);
+      expect(summary.ceiling.spend.estimatedUsd).toBe(5);
+      expect(summary.ceiling.spend.totalUsd).toBe(8);
+      // Above zero means `totalUsd` is a floor, and the screen has to be able
+      // to know that rather than drawing a bar implying precision.
+      expect(summary.ceiling.spend.unboundedRuns).toBe(1);
+    });
+
+    it('never reports negative headroom', async () => {
+      // Overshoot is possible: the admission gate bounds the NEXT dispatch,
+      // not a run already under way. A negative bar would render as a
+      // rendering bug rather than as "the ceiling has been passed".
+      ceiling = { limitUsd: 10, windowDays: 30, malformed: null };
+      ceilingTally = { ...ceilingTally, totalUsd: 25, reportedUsd: 25 };
+
+      const summary = await build().summary();
+
+      expect(summary.ceiling.headroomUsd).toBe(0);
+      expect(summary.ceiling.spend.totalUsd).toBe(25);
+    });
+
+    it('tallies over the ceiling window, not the window the caller asked for', async () => {
+      // THE assertion this block exists for. Headroom computed over a
+      // different window than the ceiling it is compared against is wrong in
+      // a way nothing on screen could reveal.
+      ceiling = { limitUsd: 100, windowDays: 7, malformed: null };
+      const built = build();
+
+      await built.summary(90);
+
+      expect(tally).toHaveBeenCalledWith(7, expect.any(Date));
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.anything() }),
+      );
     });
   });
 });

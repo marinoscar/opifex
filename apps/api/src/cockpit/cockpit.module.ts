@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { BudgetModule } from '../budget/budget.module';
 import { DispatchModule } from '../dispatch/dispatch.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CostController } from './cost.controller';
@@ -28,7 +29,7 @@ import { WorkOrdersService } from './work-orders.service';
  * registry flag and its own destination in its own pull request.
  */
 @Module({
-  imports: [PrismaModule, DispatchModule],
+  imports: [PrismaModule, DispatchModule, BudgetModule],
   controllers: [
     QueueController,
     RunsController,
