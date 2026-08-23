@@ -45,7 +45,7 @@ async function rejection(promise: Promise<unknown>): Promise<{
 describe('RunEventsService', () => {
   let prisma: {
     run: { findUnique: jest.Mock; updateMany: jest.Mock };
-    runEvent: { createMany: jest.Mock };
+    runEvent: { createMany: jest.Mock; aggregate: jest.Mock };
   };
   let service: RunEventsService;
 
@@ -58,7 +58,16 @@ describe('RunEventsService', () => {
         }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
-      runEvent: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      runEvent: {
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        // The cost roll-up (#183) reads the STORED rows, not the batch, so
+        // the double has to answer for the table rather than echo the input.
+        // Defaulted to "nothing reported anything", which is what almost
+        // every test in this file is about.
+        aggregate: jest.fn().mockResolvedValue({
+          _sum: { costUsd: null, tokensInput: null, tokensOutput: null },
+        }),
+      },
     };
     // The REAL validator, against the real schema file. Mocking it would make
     // every validation test below assert nothing.
@@ -293,6 +302,134 @@ describe('RunEventsService', () => {
 
     it('rejects an empty batch', async () => {
       await expect(service.ingest(RUN_ID, [])).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+  /**
+   * The cost roll-up (#183).
+   *
+   * `Run.costUsd` was `null` for every run that had ever executed, because
+   * `RunEvent.costUsd` was written from day one and nothing ever carried it
+   * onto the run. Everything downstream reads the RUN -- `GET /api/cost`,
+   * VISION §10's metric 5, the spend ledger's measured arm -- so all three
+   * were structurally empty while honestly reporting that they knew nothing,
+   * which is why nothing looked broken.
+   */
+  describe('rolling reported cost onto the run', () => {
+    /** What the stored-row aggregate should answer. */
+    function stored(sum: {
+      costUsd?: number | null;
+      tokensInput?: number | null;
+      tokensOutput?: number | null;
+    }) {
+      prisma.runEvent.aggregate.mockResolvedValue({
+        _sum: {
+          costUsd: sum.costUsd ?? null,
+          tokensInput: sum.tokensInput ?? null,
+          tokensOutput: sum.tokensOutput ?? null,
+        },
+      });
+    }
+
+    /** Every `run.updateMany` call that wrote a cost or token figure. */
+    function costWrites() {
+      return prisma.run.updateMany.mock.calls
+        .map(([arg]) => arg as { data: Record<string, unknown> })
+        .filter(
+          (call) =>
+            'costUsd' in call.data || 'tokensInput' in call.data || 'tokensOutput' in call.data,
+        );
+    }
+
+    it('writes the summed cost onto the run', async () => {
+      stored({ costUsd: 4.25 });
+
+      await service.ingest(RUN_ID, [event({ cost: { usd: 4.25 } })]);
+
+      expect(costWrites().map((call) => call.data)).toContainEqual({ costUsd: 4.25 });
+    });
+
+    it('sums from the STORED rows, not from the batch', async () => {
+      // The subtlety this whole design turns on. `advanceRun` receives every
+      // VALIDATED event, including the ones `createMany({ skipDuplicates })`
+      // then skips -- `duplicates` is derived from the shortfall precisely
+      // because the insert does not say which were skipped. Summing the batch
+      // would count a redelivered terminal event twice and silently double
+      // the recorded spend.
+      stored({ costUsd: 4.25 });
+
+      await service.ingest(RUN_ID, [
+        event({ eventId: 'e1', cost: { usd: 4.25 } }),
+        event({ eventId: 'e2', cost: { usd: 4.25 } }),
+      ]);
+
+      expect(prisma.runEvent.aggregate).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { runId: RUN_ID } }),
+      );
+      // 4.25, not 8.50: the figure came from the table, which holds each
+      // event once however many times it was delivered.
+      expect(costWrites().map((call) => call.data)).toContainEqual({ costUsd: 4.25 });
+    });
+
+    it('writes nothing when no event reported anything', async () => {
+      // `null` and `0` are different claims. A run whose events all reported
+      // nothing must keep a null cost, or it becomes indistinguishable from
+      // one that genuinely spent nothing -- the distinction `reportsCost`
+      // exists for in the capability manifest.
+      stored({});
+
+      await service.ingest(RUN_ID, [event()]);
+
+      expect(costWrites()).toHaveLength(0);
+    });
+
+    it('writes a genuine zero, which is a report and not an absence', async () => {
+      stored({ costUsd: 0 });
+
+      await service.ingest(RUN_ID, [event({ cost: { usd: 0 } })]);
+
+      expect(costWrites().map((call) => call.data)).toContainEqual({ costUsd: 0 });
+    });
+
+    it('guards the write so an older, smaller figure cannot win', async () => {
+      // Two concurrent ingests can compute their sums and land out of order.
+      // A sum over an append-only table only ever grows, so the `lt` guard is
+      // the whole protection -- and it lives in the WHERE clause rather than
+      // a read-then-compare so the two cannot race.
+      stored({ costUsd: 4.25 });
+
+      await service.ingest(RUN_ID, [event({ cost: { usd: 4.25 } })]);
+
+      const write = costWrites().find((call) => 'costUsd' in call.data) as unknown as {
+        where: { OR: unknown[] };
+      };
+      expect(write.where.OR).toEqual([{ costUsd: null }, { costUsd: { lt: 4.25 } }]);
+    });
+
+    it('carries tokens too, independently of cost', async () => {
+      // A runner may report tokens and not dollars. Bundling the three into
+      // one write would drop the tokens whenever the cost was absent.
+      stored({ tokensInput: 100, tokensOutput: 362 });
+
+      await service.ingest(RUN_ID, [event({ cost: { tokensInput: 100, tokensOutput: 362 } })]);
+
+      const written = costWrites().map((call) => call.data);
+      expect(written).toContainEqual({ tokensInput: 100 });
+      expect(written).toContainEqual({ tokensOutput: 362 });
+      expect(written).not.toContainEqual(expect.objectContaining({ costUsd: expect.anything() }));
+    });
+
+    it('converts a Decimal sum rather than stringifying it', async () => {
+      // Prisma returns `_sum.costUsd` as a Decimal against a real database.
+      // #167 found the same column converted two different ways in two
+      // services, one of which produced NaN against a double.
+      stored({ costUsd: null });
+      prisma.runEvent.aggregate.mockResolvedValue({
+        _sum: { costUsd: { toNumber: () => 7.49 }, tokensInput: null, tokensOutput: null },
+      });
+
+      await service.ingest(RUN_ID, [event({ cost: { usd: 7.49 } })]);
+
+      expect(costWrites().map((call) => call.data)).toContainEqual({ costUsd: 7.49 });
     });
   });
 });
