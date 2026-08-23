@@ -9,9 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **CI**: GitHub Actions pipeline (`.github/workflows/ci.yml`) with `typecheck`, `test-api`, `test-web`, and `build` jobs, running on pull requests and pushes to `main`.
+- **CI**: GitHub Actions pipeline (`.github/workflows/ci.yml`) with `provenance`, `lint`, `typecheck`, `test-api`, `test-web`, and `build` jobs, running on pull requests and pushes to `main`. `provenance` is pull-request-only, since a push to `main` has no PR body to carry a closing keyword.
+- **Provenance enforcement**: `scripts/check-provenance.mjs` fails a pull request whose body carries no closing keyword, whose commits are missing a required trailer, or that names a decision resolving to no file under `docs/adr/`. Its patterns are read out of `docs/PROVENANCE.md` at run time so the check and the specification cannot drift.
+- **Architecture decision records**: `docs/adr/` with a template, an index, and the numbering, lifecycle and supersession conventions (`docs/adr/README.md`); recorded as ADR-0009. Every ADR names its discussion issue, and CI enforces it.
+- **Linting and formatting**: ESLint (flat config) and Prettier across both workspaces, replacing the `echo 'No linter configured'` stubs. `npm run lint` and `npm run format:check` are real and CI blocks on both.
 - **Dependency updates**: Dependabot configuration (`.github/dependabot.yml`) for weekly npm updates across the root, `apps/api`, and `apps/web` workspaces, plus weekly GitHub Actions updates.
-- **Governance**: GitHub issue templates (Epic, Feature request, Bug report), a pull request template with required provenance trailers, a machine-readable label taxonomy (`.github/labels.yml`), and `.github/CODEOWNERS`.
+- **Governance**: GitHub issue templates (Epic, Feature request, Bug report, Decision proposal), a pull request template with required provenance trailers, a machine-readable label taxonomy (`.github/labels.yml`), and `.github/CODEOWNERS`.
 
 ## [1.1.0] - 2026-06-10
 
