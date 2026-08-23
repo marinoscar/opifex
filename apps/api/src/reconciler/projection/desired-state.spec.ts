@@ -8,6 +8,7 @@ import {
   projectDesiredState,
 } from './desired-state';
 import type {
+  ObservedRun,
   ObservedState,
   ObservedWorkOrder,
   RunStatusLike,
@@ -47,6 +48,16 @@ function workOrder(
   };
 }
 
+function run(overrides: Partial<ObservedRun> = {}): ObservedRun {
+  return {
+    id: 'run-uuid',
+    status: 'running',
+    costUsd: null,
+    pullRequestUrl: null,
+    ...overrides,
+  };
+}
+
 function observed(overrides: Partial<ObservedState> = {}): ObservedState {
   return {
     repository: {
@@ -60,6 +71,9 @@ function observed(overrides: Partial<ObservedState> = {}): ObservedState {
     issues: [issue()],
     workOrders: [],
     humanClearedQuarantine: new Set<number>(),
+    // High enough that the ceiling is never the thing under test here; the
+    // cases that exercise it set it explicitly.
+    retryCeiling: 99,
     ...overrides,
   };
 }
@@ -319,6 +333,135 @@ describe('projectDesiredState', () => {
 
     it('ignores spend when no ceiling is set', () => {
       expect(project(withSpend(1000, null)).intent).toBe('dispatch');
+    });
+  });
+
+  describe('the retry ceiling (#66)', () => {
+    // Without one, abandon-and-re-run (VISION §3.4) has no stopping condition:
+    // a work order that cannot succeed re-dispatches forever, burning the
+    // quota that working runs need.
+
+    it('dispatches while attempts remain', () => {
+      const state = observed({
+        issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
+        workOrders: [workOrder({ attempt: 2, run: null })],
+        retryCeiling: 3,
+      });
+
+      expect(projectDesiredState(state).issues[0].intent).toBe('dispatch');
+    });
+
+    it('quarantines instead of starting attempt N+1', () => {
+      const state = observed({
+        issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
+        workOrders: [workOrder({ attempt: 3, run: null })],
+        retryCeiling: 3,
+      });
+
+      const projected = projectDesiredState(state).issues[0];
+      expect(projected.intent).toBe('quarantined');
+      expect(projected.desiredMirrorLabels).toEqual([MIRROR_LABELS.QUARANTINE]);
+    });
+
+    it('says how many attempts were used, so the reason is actionable', () => {
+      const state = observed({
+        issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
+        workOrders: [workOrder({ attempt: 3, run: null })],
+        retryCeiling: 3,
+      });
+
+      const { reason } = projectDesiredState(state).issues[0];
+      expect(reason).toContain('all 3 attempts');
+      expect(reason).toContain('wo_app_312_a3f91c2_a1');
+    });
+
+    it('quarantines rather than abandoning, because abandonment is silent', () => {
+      // The distinction #66 draws: silent abandonment is the failure this
+      // system exists to eliminate. A quarantined work order sits visibly
+      // waiting for a human.
+      const state = observed({
+        issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
+        workOrders: [workOrder({ attempt: 9, run: null })],
+        retryCeiling: 3,
+      });
+
+      const projected = projectDesiredState(state).issues[0];
+      expect(projected.intent).not.toBe('ignore');
+      expect(projected.intent).toBe('quarantined');
+    });
+
+    it('a parked run never spends an attempt, however long it waits', () => {
+      // #66: "a rate-limit park does not increment the attempt counter. A
+      // parked run did not fail." The property is structural — `blocked` is
+      // answered by the live-run branch before the ceiling is ever consulted —
+      // so this pins the ordering rather than a counter.
+      const state = observed({
+        issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
+        workOrders: [
+          workOrder({ attempt: 3, run: run({ status: 'blocked' }) }),
+        ],
+        retryCeiling: 3,
+      });
+
+      const projected = projectDesiredState(state).issues[0];
+      expect(projected.intent).toBe('blocked');
+      expect(projected.reason).toContain('resumes without a human');
+    });
+
+    it('a run still going is not judged against the ceiling', () => {
+      const state = observed({
+        issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
+        workOrders: [
+          workOrder({ attempt: 3, run: run({ status: 'running' }) }),
+        ],
+        retryCeiling: 3,
+      });
+
+      expect(projectDesiredState(state).issues[0].intent).toBe('running');
+    });
+
+    it('a succeeded run with a pull request goes to review, not quarantine', () => {
+      const state = observed({
+        issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
+        workOrders: [
+          workOrder({
+            attempt: 3,
+            run: run({
+              status: 'succeeded',
+              pullRequestUrl: 'https://github.com/acme/app/pull/7',
+            }),
+          }),
+        ],
+        retryCeiling: 3,
+      });
+
+      expect(projectDesiredState(state).issues[0].intent).toBe('review');
+    });
+
+    it('an issue with no work order yet is never over the ceiling', () => {
+      // Attempt zero does not exist. A first dispatch must not be refused by
+      // a ceiling that has nothing to count.
+      const state = observed({
+        issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
+        workOrders: [],
+        retryCeiling: 1,
+      });
+
+      expect(projectDesiredState(state).issues[0].intent).toBe('dispatch');
+    });
+
+    it('still refuses to dispatch when factory:hold is set', () => {
+      // Hold is checked first and unconditionally (VISION §4). The ceiling
+      // must not become a second path that overrides it in either direction.
+      const state = observed({
+        issues: [
+          issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] }),
+        ],
+        workOrders: [workOrder({ attempt: 9, run: null })],
+        retryCeiling: 3,
+      });
+
+      expect(projectDesiredState(state).issues[0].intent).toBe('hold');
     });
   });
 

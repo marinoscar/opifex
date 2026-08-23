@@ -63,6 +63,8 @@ import { WorkOrderProjectionService } from '../work-orders/work-order-projection
 @Injectable()
 export class ReconcilerService {
   private readonly logger = new Logger(ReconcilerService.name);
+  /** Attempts a work order gets before quarantine (#66). */
+  private readonly retryCeiling: number;
 
   private readonly rateLimitFloor: number;
 
@@ -82,6 +84,11 @@ export class ReconcilerService {
   ) {
     this.rateLimitFloor =
       this.config.get<number>('github.rateLimitReserve') ?? 100;
+
+    // Read once at construction, like the rate-limit floor: the projection is
+    // pure and takes this as an input, so a value that changed between ticks
+    // would make two identical observations produce different desired states.
+    this.retryCeiling = this.config.get<number>('dispatch.retryCeiling') ?? 3;
   }
 
   get lastTickRecord(): TickRecord | null {
@@ -207,6 +214,7 @@ export class ReconcilerService {
             result.issues,
             workOrders,
           ),
+          retryCeiling: this.retryCeiling,
         };
 
         const projection = projectDesiredState(state);

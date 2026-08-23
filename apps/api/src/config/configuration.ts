@@ -174,6 +174,23 @@ export default () => {
       // back off once a genuinely GA runner exists.
       allowPreviewRunner: process.env.DISPATCH_ALLOW_PREVIEW_RUNNER === 'true',
 
+      // How many attempts a work order gets before it is quarantined (#66).
+      //
+      // Without a ceiling, abandon-and-re-run (VISION §3.4) has no stopping
+      // condition: a work order that cannot succeed re-dispatches forever,
+      // burning the quota that working runs need. Silent abandonment is the
+      // only other option, and it is worse — nobody is told.
+      //
+      // Counted in WORK ORDER attempts, which is also success metric 4
+      // ("attempts per work order", VISION §10), so the number here is
+      // simultaneously a safety limit and a statement about how small a work
+      // order is expected to be. Three is deliberately low: VISION §10 uses a
+      // rising attempt count as evidence of bad decomposition, and a generous
+      // ceiling hides exactly that signal.
+      retryCeiling: process.env.DISPATCH_RETRY_CEILING
+        ? parseInt(process.env.DISPATCH_RETRY_CEILING, 10)
+        : 3,
+
       // The switch that lets the factory actually spend money.
       //
       // DEFAULTS OFF, and this is the one where the default matters most:
