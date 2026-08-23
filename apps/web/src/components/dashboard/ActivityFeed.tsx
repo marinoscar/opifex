@@ -29,38 +29,8 @@ import { EmptyState } from '../common/EmptyState';
 import { PanelCard } from './PanelCard';
 import { useActivityFeed } from '../../hooks/useActivityFeed';
 import { formatRelativeTime } from '../../utils/time';
-import type {
-  RunEvent,
-  RunEventSource,
-  RunEventType,
-} from '../../types/cockpit';
-
-/**
- * Where the claim came from, in the operator's words rather than the wire's.
- * VISION §9's own vocabulary is reused verbatim.
- */
-const SOURCE_LABELS: Record<RunEventSource, string> = {
-  runner: 'runner-reported',
-  git: 'git-derived',
-  'control-plane': 'control-plane-synthesized',
-};
-
-/**
- * Event type as a short human phrase.
- *
- * The wire form (`run.blocked`) is kept out of the row on purpose: it is a
- * protocol identifier, and six of them stacked in a column read as noise. The
- * type is not a status — see `types/cockpit.ts` on why those two vocabularies
- * are held apart — so it deliberately does NOT render through `StatusChip`.
- */
-const EVENT_TYPE_LABELS: Record<RunEventType, string> = {
-  'run.started': 'Started',
-  'run.heartbeat': 'Heartbeat',
-  'run.progress': 'Progress',
-  'run.blocked': 'Blocked',
-  'run.completed': 'Completed',
-  'run.failed': 'Failed',
-};
+import { EVENT_SOURCE_LABELS, EVENT_TYPE_LABELS } from '../../config/runEvents';
+import type { RunEvent } from '../../types/cockpit';
 
 export function ActivityFeed() {
   const { data, state, error, phase } = useActivityFeed();
@@ -128,7 +98,7 @@ export function ActivityFeed() {
             </Typography>
 
             <Typography variant="caption" color="text.disabled">
-              {SOURCE_LABELS[event.source]}
+              {EVENT_SOURCE_LABELS[event.source]}
             </Typography>
           </Box>
         ))}

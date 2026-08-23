@@ -34,6 +34,7 @@
  */
 
 import { Box, Link, Stack, Tooltip, Typography } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
 import type { DataTableColumn } from '../datatable';
 import { StatusChip } from '../dashboard/StatusChip';
 import { RUN_STATUS_LIST } from '../../config/runStatus';
@@ -111,9 +112,18 @@ export function runColumns(): DataTableColumn<RunSummary>[] {
       value: (run) => run.workOrder.id,
       render: (run) => (
         <Stack spacing={0} sx={{ minWidth: 0 }}>
-          <Typography variant="body2" noWrap sx={NUMERIC}>
+          {/* The way into the run's own page. The identity is the natural
+              handle: it is what a commit trailer, an authorization record and
+              a branch name all carry, so it is what an operator recognises. */}
+          <Link
+            component={RouterLink}
+            to={`/runs/${run.id}`}
+            variant="body2"
+            noWrap
+            sx={NUMERIC}
+          >
             {run.workOrder.id}
-          </Typography>
+          </Link>
           <Typography variant="caption" color="text.secondary" noWrap>
             {run.workOrder.repository} #{run.workOrder.issueNumber} ·{' '}
             {run.workOrder.title}
