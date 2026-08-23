@@ -791,7 +791,7 @@ describe('ObjectsService', () => {
       } as any);
       mockPrisma.auditEvent.create.mockResolvedValue({} as any);
 
-      const result = await service.updateMetadata(
+      await service.updateMetadata(
         mockStorageObject.id,
         { metadata: newMetadata },
         testUserId,

@@ -326,7 +326,7 @@ describe('RequirePermission', () => {
     });
 
     it('should render nothing when permission denied and no fallback provided', () => {
-      const { container } = render(
+      render(
         <div data-testid="wrapper">
           <RequirePermission permission="nonexistent:permission">
             <div>Hidden Content</div>

@@ -63,7 +63,7 @@ function harness(): Harness {
 
   return {
     run: async (fetchImpl) => {
-      // eslint-disable-next-line no-new-func
+       
       const evaluate = new Function('window', 'document', 'fetch', script);
       evaluate(windowStub, documentStub, fetchImpl);
       return windowStub.__eafDocsAuth;

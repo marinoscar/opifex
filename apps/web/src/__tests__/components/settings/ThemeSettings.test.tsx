@@ -403,7 +403,7 @@ describe('ThemeSettings', () => {
 
   describe('Icons', () => {
     it('should render light mode icon', () => {
-      const { container } = render(
+      render(
         <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
       );
 
@@ -414,7 +414,7 @@ describe('ThemeSettings', () => {
     });
 
     it('should render dark mode icon', () => {
-      const { container } = render(
+      render(
         <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
       );
 
@@ -424,7 +424,7 @@ describe('ThemeSettings', () => {
     });
 
     it('should render system preference icon', () => {
-      const { container } = render(
+      render(
         <ThemeSettings currentTheme="system" onThemeChange={mockOnThemeChange} />
       );
 

@@ -1,4 +1,3 @@
-/* eslint-env serviceworker */
 /**
  * The service worker that turns an escalation into something on a lock screen.
  *

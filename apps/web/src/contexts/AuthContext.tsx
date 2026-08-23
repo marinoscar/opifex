@@ -50,6 +50,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
     fetchProviders();
   }, []);
 
+  const fetchUser = useCallback(async () => {
+    try {
+      const userData = await api.get<User>('/auth/me');
+      setUser(userData);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setUser(null);
+        api.setAccessToken(null);
+      }
+      throw error;
+    }
+  }, []);
+
   // Check for existing session on mount (runs only once)
   useEffect(() => {
     // Skip if already initialized or on auth callback page
@@ -74,20 +87,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     };
     initAuth();
-  }, [location.pathname]);
-
-  const fetchUser = useCallback(async () => {
-    try {
-      const userData = await api.get<User>('/auth/me');
-      setUser(userData);
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
-        setUser(null);
-        api.setAccessToken(null);
-      }
-      throw error;
-    }
-  }, []);
+  }, [location.pathname, fetchUser]);
 
   const login = useCallback((provider: string) => {
     // Store return URL for redirect after login (including query params)

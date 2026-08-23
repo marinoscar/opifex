@@ -31,7 +31,9 @@ export function SystemSettingsEditor({
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    setJsonValue(JSON.stringify(editableSettings, null, 2));
+    setJsonValue(
+      JSON.stringify({ ui: settings.ui, features: settings.features }, null, 2),
+    );
   }, [settings]);
 
   const validateJson = (): Record<string, unknown> | null => {

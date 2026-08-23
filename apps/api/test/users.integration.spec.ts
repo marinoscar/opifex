@@ -7,13 +7,12 @@ import {
 import { resetPrismaMock, prismaMock } from './mocks/prisma.mock';
 import { setupBaseMocks, setupMockUserList } from './fixtures/mock-setup.helper';
 import {
-  createMockTestUser,
   createMockAdminUser,
   createMockViewerUser,
   createMockContributorUser,
   authHeader,
 } from './helpers/auth-mock.helper';
-import { createMockUser, mockRoles } from './fixtures/test-data.factory';
+import { mockRoles } from './fixtures/test-data.factory';
 
 describe('Users (Integration)', () => {
   let context: TestContext;

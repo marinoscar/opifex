@@ -38,7 +38,7 @@ export default function AuthCallbackPage() {
 
         // Navigate to return URL
         navigate(returnUrl, { replace: true });
-      } catch (err) {
+      } catch {
         setError('Failed to complete authentication');
         api.setAccessToken(null);
       }

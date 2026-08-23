@@ -411,7 +411,6 @@ describe('ErrorBoundary', () => {
 
     it('should handle non-Error objects being thrown', () => {
       const ThrowString = () => {
-        // eslint-disable-next-line @typescript-eslint/no-throw-literal
         throw 'String error';
       };
 

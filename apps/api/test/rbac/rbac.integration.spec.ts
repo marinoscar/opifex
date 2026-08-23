@@ -12,7 +12,7 @@ import {
   createMockViewerUser,
   authHeader,
 } from '../helpers/auth-mock.helper';
-import { createMockUserSettings, mockRoles } from '../fixtures/test-data.factory';
+import { createMockUserSettings } from '../fixtures/test-data.factory';
 
 describe('RBAC System (Integration)', () => {
   let context: TestContext;

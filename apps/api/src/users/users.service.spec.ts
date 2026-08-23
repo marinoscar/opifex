@@ -5,7 +5,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { createMockPrismaService, MockPrismaService } from '../../test/mocks/prisma.mock';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserRolesDto } from './dto/update-user-roles.dto';
-import { ROLES } from '../common/constants/roles.constants';
 
 describe('UsersService', () => {
   let service: UsersService;

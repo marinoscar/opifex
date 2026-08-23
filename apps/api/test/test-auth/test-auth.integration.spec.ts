@@ -38,7 +38,6 @@ function createMockUserCreate(
 
   // After transaction completes, the second findUnique should return user with roles
   // We set this up by registering the user in the registry after create is called
-  const originalFindUnique = context.prismaMock.user.findUnique;
   let createCalled = false;
 
   context.prismaMock.user.create.mockImplementation(async () => {

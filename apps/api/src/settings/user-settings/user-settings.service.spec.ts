@@ -579,7 +579,7 @@ describe('UserSettingsService', () => {
     const assertDataTableLimit = (dataTables: unknown) =>
       (service as any).assertDataTableLimit(dataTables);
 
-    function buildTables(count: number): Record<string, {}> {
+    function buildTables(count: number): Record<string, object> {
       return Object.fromEntries(
         Array.from({ length: count }, (_, i) => [`table${i}`, {}]),
       );

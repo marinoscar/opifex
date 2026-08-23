@@ -36,7 +36,7 @@ function loadWorker() {
 
   const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
 
-  // eslint-disable-next-line no-new-func
+   
   new Function('self', 'fetch', SOURCE)(self, fetchMock);
 
   return { listeners, registration, clients, self, fetchMock };

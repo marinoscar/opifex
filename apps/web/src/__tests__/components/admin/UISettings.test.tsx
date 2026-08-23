@@ -658,7 +658,7 @@ describe('UISettings', () => {
       });
       await user.click(switchElement);
 
-      let saveButton = screen.getByRole('button', {
+      const saveButton = screen.getByRole('button', {
         name: /save changes/i,
       });
       expect(saveButton).not.toBeDisabled();

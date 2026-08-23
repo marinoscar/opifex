@@ -13,7 +13,6 @@ import { GoogleProfile } from '../../src/auth/strategies/google.strategy';
 
 describe('Auth Service - Allowlist Enforcement', () => {
   let authService: AuthService;
-  let allowlistService: AllowlistService;
   let mockConfigService: Partial<ConfigService>;
 
   const mockGoogleProfile: GoogleProfile = {
@@ -51,7 +50,6 @@ describe('Auth Service - Allowlist Enforcement', () => {
     }).compile();
 
     authService = module.get<AuthService>(AuthService);
-    allowlistService = module.get<AllowlistService>(AllowlistService);
 
     // Setup role mocks with userRoles for admin bootstrap
     prismaMock.role.findUnique.mockImplementation(async ({ where }: any) => {

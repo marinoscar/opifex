@@ -38,7 +38,7 @@ export class ExampleMetadataProcessor implements ObjectProcessor {
   /**
    * This example processor handles all objects
    */
-  canProcess(object: StorageObject): boolean {
+  canProcess(_object: StorageObject): boolean {
     // Process all objects for demonstration
     return true;
   }

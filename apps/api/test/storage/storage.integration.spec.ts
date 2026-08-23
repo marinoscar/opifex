@@ -8,7 +8,6 @@ import { resetPrismaMock } from '../mocks/prisma.mock';
 import { setupBaseMocks } from '../fixtures/mock-setup.helper';
 import {
   createMockTestUser,
-  createMockAdminUser,
   authHeader,
 } from '../helpers/auth-mock.helper';
 import { STORAGE_PROVIDER } from '../../src/storage/providers/storage-provider.interface';

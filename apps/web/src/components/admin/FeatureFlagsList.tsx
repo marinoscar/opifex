@@ -88,7 +88,7 @@ export function FeatureFlagsList({ flags, onSave, disabled }: FeatureFlagsListPr
     () => buildFeatureFlagColumns({ onToggle: handleToggle, disabled }),
     // `handleToggle` only ever calls `setLocalFlags` with an updater, so it
     // needs no dependency of its own.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [disabled],
   );
 
@@ -114,7 +114,7 @@ export function FeatureFlagsList({ flags, onSave, disabled }: FeatureFlagsListPr
           onClick: (row: FeatureFlagRow) => handleDelete(row.key),
         },
       ] satisfies DataTableRowAction<FeatureFlagRow>[],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [disabled],
   );
 

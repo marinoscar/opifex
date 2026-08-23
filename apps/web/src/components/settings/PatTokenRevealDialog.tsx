@@ -46,7 +46,7 @@ export function PatTokenRevealDialog({ open, onClose, token }: PatTokenRevealDia
       <DialogContent>
         <Box sx={{ pt: 1 }}>
           <Alert severity="warning" sx={{ mb: 2 }}>
-            Make sure to copy your personal access token now. You won't be able to see it again!
+            Make sure to copy your personal access token now. You won&apos;t be able to see it again!
           </Alert>
           <TextField
             label="Your Token"

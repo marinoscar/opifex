@@ -172,7 +172,6 @@ describe('HttpExceptionFilter', () => {
   describe('Error response structure', () => {
     it('should include timestamp in error response', () => {
       const exception = new HttpException('Test', HttpStatus.BAD_REQUEST);
-      const beforeTime = new Date().toISOString();
 
       filter.catch(exception, mockHost);
 

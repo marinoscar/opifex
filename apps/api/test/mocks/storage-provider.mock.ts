@@ -3,9 +3,6 @@ import {
   StorageProvider,
   StorageUploadResult,
   MultipartUploadInit,
-  UploadPart,
-  SignedUrlOptions,
-  StorageUploadOptions,
 } from '../../src/storage/providers';
 
 /**

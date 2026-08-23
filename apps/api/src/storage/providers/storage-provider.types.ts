@@ -1,4 +1,3 @@
-import { Readable } from 'node:stream';
 
 /**
  * Options for uploading a file to storage

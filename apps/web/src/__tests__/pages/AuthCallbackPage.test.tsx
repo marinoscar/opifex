@@ -67,7 +67,6 @@ describe('AuthCallbackPage', () => {
       mockSearchParams.set('token', mockToken);
 
       const setAccessTokenSpy = vi.spyOn(api, 'setAccessToken');
-      const mockRefreshUser = vi.fn().mockResolvedValue(undefined);
 
       render(<AuthCallbackPage />, {
         wrapperOptions: {

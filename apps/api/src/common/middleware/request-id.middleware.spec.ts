@@ -1,7 +1,6 @@
 import { RequestIdMiddleware } from './request-id.middleware';
 import { ServerResponse } from 'http';
 import { trace, context, Span, SpanContext } from '@opentelemetry/api';
-import { randomUUID } from 'node:crypto';
 
 // Mock OpenTelemetry
 jest.mock('@opentelemetry/api', () => ({

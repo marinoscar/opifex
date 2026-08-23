@@ -32,7 +32,7 @@ if (process.env.NODE_ENV !== 'production') {
     // Also load from infra/compose/.env (canonical env location)
     const composeEnv = path.resolve(__dirname, '..', '..', '..', 'infra', 'compose', '.env');
     dotenv.config({ path: composeEnv });
-  } catch (err) {
+  } catch {
     // dotenv might not be available in production builds, that's OK
   }
 }

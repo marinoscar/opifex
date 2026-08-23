@@ -1,6 +1,5 @@
 import { prismaMock, mockPrismaTransaction } from '../mocks/prisma.mock';
 import {
-  createMockUser,
   createMockUserWithRelations,
   createMockAllowedEmail,
   createMockAuditEvent,
@@ -96,7 +95,7 @@ export function clearMockUserRegistry(): void {
 export function setupUserMocks(): void {
   // Mock user.findUnique - searches the registry
   (prismaMock.user.findUnique as jest.Mock).mockImplementation(
-    async ({ where, include }: any) => {
+    async ({ where }: any) => {
       // Search by id
       if (where.id && mockUserRegistry.has(where.id)) {
         return mockUserRegistry.get(where.id);
@@ -113,7 +112,7 @@ export function setupUserMocks(): void {
 
   // Mock user.update - updates user in registry
   (prismaMock.user.update as jest.Mock).mockImplementation(
-    async ({ where, data, include }: any) => {
+    async ({ where, data }: any) => {
       const user = mockUserRegistry.get(where.id);
       if (user) {
         // Merge the data updates into the existing user
@@ -199,7 +198,6 @@ export function setupMockUserList(
   (prismaMock.user.findMany as jest.Mock).mockImplementation(
     async (args: any) => {
       const where = args?.where;
-      const include = args?.include;
       const skip = args?.skip || 0;
       const take = args?.take;
       const orderBy = args?.orderBy;

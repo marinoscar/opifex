@@ -1,7 +1,6 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { ExecutionContext, CallHandler, Logger } from '@nestjs/common';
 import { LoggingInterceptor } from './logging.interceptor';
-import { of, throwError } from 'rxjs';
+import { of } from 'rxjs';
 import { FastifyRequest } from 'fastify';
 
 describe('LoggingInterceptor', () => {

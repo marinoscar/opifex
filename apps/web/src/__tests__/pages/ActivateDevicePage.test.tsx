@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { render } from '../utils/test-utils';
 import ActivateDevicePage from '../../pages/ActivateDevicePage';
-import type { DeviceActivationInfo, DeviceAuthorizationResponse } from '../../types';
+import type { DeviceActivationInfo } from '../../types';
 
 // Use wildcard pattern to match API requests
 const API_BASE = '*/api';

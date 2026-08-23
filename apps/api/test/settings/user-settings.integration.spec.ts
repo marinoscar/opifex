@@ -11,7 +11,6 @@ import {
 } from '../fixtures/mock-setup.helper';
 import {
   createMockTestUser,
-  createMockViewerUser,
   authHeader,
 } from '../helpers/auth-mock.helper';
 import {
@@ -742,7 +741,7 @@ describe('User Settings Integration', () => {
       );
 
       // User1 tries to access their own settings
-      const response = await request(context.app.getHttpServer())
+      await request(context.app.getHttpServer())
         .get('/api/user-settings')
         .set(authHeader(user1.accessToken))
         .expect(200);

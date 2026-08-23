@@ -134,6 +134,12 @@ export function toGridColDef<Row>(column: DataTableColumn<Row>): GridColDef {
       const scalar = extractColumnValue(column, row);
       const content: ReactNode = column.render ? column.render(row) : displayText(scalar);
       if (!column.truncate) return content;
+      // TruncatedCellProps declares `children` as required, so the
+      // three-argument createElement form does not typecheck against it
+      // (TS2769). The rule is about JSX, where `children` as a prop is a
+      // readability problem; this is a createElement call in a .ts file,
+      // where props are the only place it can go.
+      // eslint-disable-next-line react/no-children-prop
       return createElement(TruncatedCell, {
         title: scalar === null ? undefined : String(scalar),
         children: content,

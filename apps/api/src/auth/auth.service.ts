@@ -59,7 +59,7 @@ export class AuthService {
     }
 
     // Check if identity already exists
-    let identity = await this.prisma.userIdentity.findUnique({
+    const identity = await this.prisma.userIdentity.findUnique({
       where: {
         provider_providerSubject: {
           provider: 'google',

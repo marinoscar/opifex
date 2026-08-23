@@ -500,7 +500,7 @@ describe('AdminOnly', () => {
     });
 
     it('should return empty React Fragment when no fallback and non-admin', () => {
-      const { container } = render(
+      render(
         <div data-testid="wrapper">
           <AdminOnly>
             <div>Admin Content</div>

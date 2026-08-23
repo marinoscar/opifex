@@ -487,7 +487,7 @@ describe('columnAdapter', () => {
   it('wires `value` into valueGetter', () => {
     const def = toGridColDef(COLUMNS[0]);
     expect(def.valueGetter).toBeDefined();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const got = (def.valueGetter as any)(undefined, job, def, undefined);
     expect(got).toBe('auto_tagging');
   });
@@ -501,7 +501,7 @@ describe('columnAdapter', () => {
   it('wires `render` into renderCell', () => {
     const def = toGridColDef(COLUMNS[1]);
     expect(def.renderCell).toBeDefined();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const node = (def.renderCell as any)({ row: job, value: 'failed' });
     render(<>{node}</>);
     expect(screen.getByTestId('status-chip-job-2')).toHaveTextContent('FAILED');
@@ -509,7 +509,7 @@ describe('columnAdapter', () => {
 
   it('wraps a truncate column in an ellipsis cell carrying the full value', () => {
     const def = toGridColDef(COLUMNS[3]); // lastError, truncate: true
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const node = (def.renderCell as any)({ row: job, value: job.lastError });
     render(<>{node}</>);
 
@@ -522,7 +522,7 @@ describe('columnAdapter', () => {
 
   it('renders an em dash for a null scalar in a truncate column', () => {
     const def = toGridColDef(COLUMNS[3]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const node = (def.renderCell as any)({ row: JOBS[0], value: null });
     render(<>{node}</>);
     expect(screen.getByTestId('datatable-truncated-cell')).toHaveTextContent('—');

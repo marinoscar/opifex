@@ -163,7 +163,7 @@ export class DeviceAuthService {
           error_description: 'The device code has expired',
         });
 
-      case DeviceCodeStatus.approved:
+      case DeviceCodeStatus.approved: {
         if (!record.user) {
           throw new UnauthorizedException({
             error: 'invalid_grant',
@@ -200,6 +200,7 @@ export class DeviceAuthService {
           tokenType: 'Bearer',
           expiresIn: tokens.expiresIn,
         };
+      }
 
       default:
         throw new BadRequestException({

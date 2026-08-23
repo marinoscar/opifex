@@ -7,7 +7,6 @@ import {
 import { resetPrismaMock } from '../mocks/prisma.mock';
 import { setupBaseMocks } from '../fixtures/mock-setup.helper';
 import {
-  createMockTestUser,
   createMockAdminUser,
   createMockViewerUser,
   authHeader,
