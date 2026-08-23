@@ -55,6 +55,20 @@ export const runsQuerySchema = z.object({
    */
   needsAttention: z.stringbool().optional(),
   status: runStatusSchema.optional(),
+  /**
+   * Which column to order by, and which way (#82).
+   *
+   * A closed enum rather than a free column name: an ordering built from an
+   * arbitrary string is one query parameter away from ordering by a column
+   * that is not indexed, and the table it scans is the highest-volume one in
+   * the schema.
+   *
+   * `lastEventAt` is here because #82 calls it "the operationally important
+   * one" — it is the quantity the watchdog judges on, and being able to sort
+   * by it is how an operator sanity-checks that detection works at all.
+   */
+  sort: z.enum(['startedAt', 'lastEventAt', 'costUsd', 'status']).optional(),
+  direction: z.enum(['asc', 'desc']).optional(),
 });
 
 export class RunsQueryDto extends createZodDto(runsQuerySchema) {}

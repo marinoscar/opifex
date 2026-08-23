@@ -210,6 +210,7 @@ import type {
   MetricsSummary,
   QueueEntry,
   RunEvent,
+  RunStatus,
   RunSummary,
 } from '../types/cockpit';
 
@@ -401,6 +402,55 @@ export async function getRunsNeedingAttention(
     { signal },
   );
   return page.items;
+}
+
+/** What `GET /runs` orders by. Mirrors `runsQuerySchema` in the API (#82). */
+export type RunSortField = 'startedAt' | 'lastEventAt' | 'costUsd' | 'status';
+
+export interface RunsPage {
+  items: RunSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * `GET /runs` — a page of runs, ordered and filtered by the SERVER.
+ *
+ * The envelope is kept here, unlike `getRunsNeedingAttention` which unwraps it:
+ * a list screen has a pager and genuinely needs `total`, while a dashboard
+ * panel wants the first N and nothing else.
+ *
+ * Only parameters the endpoint actually honours are sent. A control the API
+ * cannot answer looks live and does nothing, which is the failure
+ * `userListColumns.tsx` calls out by name.
+ */
+export async function getRuns(
+  params: {
+    page?: number;
+    pageSize?: number;
+    status?: RunStatus;
+    needsAttention?: boolean;
+    sort?: RunSortField;
+    direction?: 'asc' | 'desc';
+  } = {},
+  signal?: AbortSignal,
+): Promise<RunsPage> {
+  const searchParams = new URLSearchParams();
+  if (params.page) searchParams.set('page', String(params.page));
+  if (params.pageSize) searchParams.set('pageSize', String(params.pageSize));
+  if (params.status) searchParams.set('status', params.status);
+  if (params.needsAttention) searchParams.set('needsAttention', 'true');
+  if (params.sort) {
+    searchParams.set('sort', params.sort);
+    // Only alongside `sort`: a direction with nothing to order by is a
+    // parameter the endpoint would ignore, and sending it would suggest
+    // otherwise.
+    searchParams.set('direction', params.direction ?? 'desc');
+  }
+
+  const query = searchParams.toString();
+  return api.get<RunsPage>(query ? `/runs?${query}` : '/runs', { signal });
 }
 
 /** `GET /queue` — work orders waiting to dispatch, in dispatch order. */

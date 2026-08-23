@@ -54,6 +54,51 @@ import {
  * the operator would learn to ignore it. A stale attention list is worse than
  * a slightly late one, because only one of them still means anything.
  */
+/**
+ * How to order a page of runs (#82).
+ *
+ * Three cases, and the precedence between them is the design.
+ *
+ * An EXPLICIT sort wins, because the operator asked for it. Nulls are placed
+ * by what the column means rather than by a blanket rule: a `lastEventAt` of
+ * null is a run that has never reported anything — the worst case, not a
+ * missing value to sort past — so it leads ascending. A null `costUsd` means
+ * "not reported" (VISION §6 makes cost reporting a declared capability), which
+ * is genuinely unknown, so it goes last either way rather than pretending to
+ * be the cheapest or the most expensive run on the page.
+ *
+ * With NO explicit sort and `needsAttention`, oldest silence first: that is the
+ * age the panel is about. A run happily working for six hours is not the
+ * problem; one silent for six minutes is.
+ *
+ * Otherwise newest first, which is what a list screen wants.
+ */
+function orderFor(query: {
+  needsAttention?: boolean;
+  sort?: 'startedAt' | 'lastEventAt' | 'costUsd' | 'status';
+  direction?: 'asc' | 'desc';
+}): Prisma.RunOrderByWithRelationInput[] {
+  if (query.sort) {
+    const sort = query.direction ?? 'desc';
+    switch (query.sort) {
+      case 'lastEventAt':
+        return [
+          { lastEventAt: { sort, nulls: sort === 'asc' ? 'first' : 'last' } },
+        ];
+      case 'costUsd':
+        return [{ costUsd: { sort, nulls: 'last' } }];
+      case 'status':
+        return [{ status: sort }, { startedAt: 'desc' }];
+      case 'startedAt':
+        return [{ startedAt: sort }];
+    }
+  }
+
+  return query.needsAttention
+    ? [{ lastEventAt: { sort: 'asc', nulls: 'first' } }]
+    : [{ startedAt: 'desc' }];
+}
+
 @Injectable()
 export class RunsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -63,6 +108,8 @@ export class RunsService {
     pageSize?: number;
     needsAttention?: boolean;
     status?: string;
+    sort?: 'startedAt' | 'lastEventAt' | 'costUsd' | 'status';
+    direction?: 'asc' | 'desc';
   }): Promise<{
     items: RunSummary[];
     total: number;
@@ -93,9 +140,7 @@ export class RunsService {
         // which is the worst case, not a missing value to sort past.
         //
         // Unfiltered, newest first is what a list screen wants instead.
-        orderBy: query.needsAttention
-          ? [{ lastEventAt: { sort: 'asc', nulls: 'first' } }]
-          : [{ startedAt: 'desc' }],
+        orderBy: orderFor(query),
         select: RUN_SELECT,
       }),
       this.prisma.run.count({ where }),

@@ -67,6 +67,60 @@ describe('RunsService', () => {
     } as unknown as PrismaService);
   });
 
+  describe('explicit ordering (#82)', () => {
+    const orderBy = () => findMany.mock.calls[0][0].orderBy;
+
+    it('orders by the column the operator asked for', async () => {
+      await service.list({ sort: 'startedAt', direction: 'asc' });
+      expect(orderBy()).toEqual([{ startedAt: 'asc' }]);
+    });
+
+    it('defaults an explicit sort to descending', async () => {
+      await service.list({ sort: 'startedAt' });
+      expect(orderBy()).toEqual([{ startedAt: 'desc' }]);
+    });
+
+    it('puts a run that never reported first when sorting silence ascending', async () => {
+      // A null `lastEventAt` is a run that has never reported anything — the
+      // worst case, not a missing value to sort past. #82 calls this "the
+      // operationally important one".
+      await service.list({ sort: 'lastEventAt', direction: 'asc' });
+      expect(orderBy()).toEqual([
+        { lastEventAt: { sort: 'asc', nulls: 'first' } },
+      ]);
+    });
+
+    it('puts it last when sorting silence descending', async () => {
+      await service.list({ sort: 'lastEventAt', direction: 'desc' });
+      expect(orderBy()).toEqual([
+        { lastEventAt: { sort: 'desc', nulls: 'last' } },
+      ]);
+    });
+
+    it('keeps unreported cost last in both directions', async () => {
+      // Null cost means NOT REPORTED (VISION §6 makes cost reporting a declared
+      // capability), so it must not sort as the cheapest run or the priciest.
+      for (const direction of ['asc', 'desc'] as const) {
+        findMany.mockClear();
+        await service.list({ sort: 'costUsd', direction });
+        expect(orderBy()).toEqual([
+          { costUsd: { sort: direction, nulls: 'last' } },
+        ]);
+      }
+    });
+
+    it('breaks a status tie by recency, so the order is stable', async () => {
+      await service.list({ sort: 'status', direction: 'asc' });
+      expect(orderBy()).toEqual([{ status: 'asc' }, { startedAt: 'desc' }]);
+    });
+
+    it('an explicit sort wins over the attention default', async () => {
+      // The operator asked. The attention ordering is a DEFAULT, not a rule.
+      await service.list({ needsAttention: true, sort: 'costUsd' });
+      expect(orderBy()).toEqual([{ costUsd: { sort: 'desc', nulls: 'last' } }]);
+    });
+  });
+
   describe('needsAttention', () => {
     it('means an escalation nobody has acknowledged or resolved', async () => {
       // NOT a status list. `status IN (stalled, failed, quarantined)` never
