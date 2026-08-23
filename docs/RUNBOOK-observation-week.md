@@ -112,7 +112,32 @@ rather than going quiet.
 
 ---
 
-## 3. Register a repository
+## 3. Create the label taxonomy
+
+`.github/labels.yml` is the declaration; nothing applies it on its own. Until it
+is applied, **the seven `factory:*` / `factory/*` labels do not exist on the
+repository** — and a label that does not exist cannot be put on an issue, so
+nothing can ever carry `factory:ready`, and the reconciler correctly computes
+zero actions on every tick, forever. That is how the first attempt at this week
+produced 302 empty ticks (#195).
+
+```bash
+node scripts/sync-labels.mjs                  # what is missing or drifted
+node scripts/sync-labels.mjs --apply          # create and update
+node scripts/sync-labels.mjs --repo owner/name --apply
+```
+
+Checking is the default; writing needs `--apply`. It **never deletes** a label
+it does not recognise — removing one strips it from every issue that carries it,
+and the file cannot restore that.
+
+This is operator setup, not factory behaviour, so it is deliberately outside
+`GITHUB_WRITES_ENABLED`. Gating it on that switch would mean the observation
+week could not be set up without turning on the writes it exists to withhold.
+
+---
+
+## 4. Register a repository
 
 Registration **verifies the repository is reachable** with your token before
 accepting it — an entry Opifex cannot read would turn every subsequent tick into
@@ -132,7 +157,7 @@ make the first write and the first run happen on one flip.
 
 ---
 
-## 4. Subscribe your phone
+## 5. Subscribe your phone
 
 1. Open the cockpit **over HTTPS** on the phone. On iOS, add it to the home
    screen first — Safari only allows push from an installed web app.
@@ -150,7 +175,7 @@ curl http://localhost:3535/api/notifications/subscriptions \
 
 ---
 
-## 5. What to read, and when
+## 6. What to read, and when
 
 ### Every day: what did it decide?
 
@@ -210,7 +235,7 @@ depend on the OTEL stack running.
 
 ---
 
-## 6. Ending the week
+## 7. Ending the week
 
 Do it in stages, and let each one sit before the next:
 
