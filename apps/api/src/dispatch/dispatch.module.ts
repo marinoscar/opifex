@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RunnersModule } from '../runners/runners.module';
 import { WorkOrdersModule } from '../work-orders/work-orders.module';
+import { DispatchQueueService } from './dispatch-queue.service';
 import { DispatchService } from './dispatch.service';
 import { RunExecutorService } from './run-executor.service';
 
@@ -16,7 +17,7 @@ import { RunExecutorService } from './run-executor.service';
  */
 @Module({
   imports: [PrismaModule, RunnersModule, WorkOrdersModule],
-  providers: [DispatchService, RunExecutorService],
-  exports: [DispatchService, RunExecutorService],
+  providers: [DispatchService, RunExecutorService, DispatchQueueService],
+  exports: [DispatchService, RunExecutorService, DispatchQueueService],
 })
 export class DispatchModule {}
