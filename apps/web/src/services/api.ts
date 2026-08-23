@@ -216,6 +216,42 @@ import type {
 
 // Allowlist API
 /**
+ * The two facts the queue write endpoints keep apart (#116).
+ *
+ * `reconciled` is always false: the label is the request, and the reconciler
+ * acts on it next tick. A UI that collapsed these into one boolean would be
+ * back to the optimistic lie #85 asks it to avoid.
+ */
+export interface QueueSteerResult {
+  workOrderId: string;
+  identity: string;
+  label: string;
+  labelWritten: boolean;
+  reconciled: boolean;
+  effect: string;
+}
+
+/** `POST /queue/:id/hold` — write `factory:hold` to the work order's issue. */
+export async function holdWorkOrder(
+  workOrderId: string,
+): Promise<QueueSteerResult> {
+  return api.post<QueueSteerResult>(
+    `/queue/${encodeURIComponent(workOrderId)}/hold`,
+    {},
+  );
+}
+
+/** `POST /queue/:id/release` — write `factory:ready`. */
+export async function releaseWorkOrder(
+  workOrderId: string,
+): Promise<QueueSteerResult> {
+  return api.post<QueueSteerResult>(
+    `/queue/${encodeURIComponent(workOrderId)}/release`,
+    {},
+  );
+}
+
+/**
  * Sort keys `GET /api/allowlist` accepts, mirroring
  * `allowlistQuerySchema.sortBy` (`apps/api/src/allowlist/dto/allowlist-query.dto.ts`).
  */
