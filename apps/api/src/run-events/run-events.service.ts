@@ -254,6 +254,85 @@ export class RunEventsService {
     });
 
     await this.rollUpCost(runId);
+    await this.concludeRun(runId, events);
+  }
+
+  /**
+   * Move a run out of `running` when its terminal event arrives (#202).
+   *
+   * ## Why this was missing
+   *
+   * The poller stops polling on a terminal status and deliberately leaves the
+   * status itself to ingestion — "a second writer deciding the same fact from a
+   * different input is how two sources of truth appear" — and ingestion never
+   * picked it up. So every run that ever executed stayed `running`, the
+   * projection's review path (which reads `status === 'succeeded'`) could never
+   * fire, and #107's green-CI gate sat behind a condition nothing reached.
+   *
+   * ## Monotonic, like `lastEventAt` and the cost roll-up
+   *
+   * The guard is `status: 'running'` in the WHERE clause. A redelivered
+   * terminal event cannot drag a run back out of a terminal state, and a late
+   * `run.failed` cannot overwrite a `succeeded` that already landed — whichever
+   * conclusion arrives first wins, and the events remain the record of why.
+   *
+   * ## `result` is carried onto the run
+   *
+   * `run-event.schema.json` puts `branch`, `headCommit` and `pullRequestUrl` on
+   * `run.completed` for exactly this. #107 gates surfacing on the checks of
+   * `headCommit`, so without this the gate has nothing to ask GitHub about.
+   */
+  private async concludeRun(
+    runId: string,
+    events: RunEventPayload[],
+  ): Promise<void> {
+    // The last terminal event in the batch, by when it happened. A batch
+    // carrying both is malformed, but picking deterministically beats picking
+    // by array order.
+    const terminal = events
+      .filter(
+        (event) =>
+          event.type === 'run.completed' || event.type === 'run.failed',
+      )
+      .sort(
+        (a, b) =>
+          new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime(),
+      )
+      .pop();
+
+    if (!terminal) return;
+
+    const succeeded = terminal.type === 'run.completed';
+    const result = terminal.result;
+
+    const updated = await this.prisma.run.updateMany({
+      // Only a live run concludes. This is what makes redelivery a no-op.
+      where: { id: runId, status: 'running' },
+      data: {
+        status: succeeded ? 'succeeded' : 'failed',
+        endedAt: new Date(terminal.occurredAt),
+        // Why it stopped, in the field the cockpit already reads. #67's run
+        // summary needs the same fact and reads it from here.
+        ...(succeeded
+          ? {}
+          : { attentionReason: terminal.failure?.reason ?? 'run failed' }),
+        ...(result?.branch ? { branch: result.branch } : {}),
+        ...(result?.headCommit ? { headCommit: result.headCommit } : {}),
+        ...(result?.pullRequestUrl
+          ? {
+              pullRequestUrl: result.pullRequestUrl,
+              pullRequestNumber: pullNumberFrom(result.pullRequestUrl),
+            }
+          : {}),
+      },
+    });
+
+    if (updated.count > 0) {
+      this.logger.log(
+        `Run ${runId} concluded ${succeeded ? 'succeeded' : 'failed'}` +
+          (result?.pullRequestUrl ? ` with ${result.pullRequestUrl}` : ''),
+      );
+    }
   }
 
   /**
@@ -343,6 +422,19 @@ export class RunEventsService {
       });
     }
   }
+}
+
+/**
+ * The number out of a pull-request URL, or null.
+ *
+ * `Run.pullRequestNumber` is what later reads join on, and deriving it here
+ * keeps the two columns from disagreeing about which pull request a run
+ * produced. A URL shaped differently than expected yields null rather than a
+ * wrong number — a wrong join key is worse than a missing one.
+ */
+function pullNumberFrom(url: string): number | null {
+  const match = /\/pull\/(\d+)(?:$|[/?#])/.exec(url);
+  return match ? Number(match[1]) : null;
 }
 
 /** Best-effort id for an error body, from a candidate that failed validation. */

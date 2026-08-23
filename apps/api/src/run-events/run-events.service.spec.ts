@@ -326,6 +326,130 @@ describe('RunEventsService', () => {
     });
   });
 
+  describe('concluding the run (#202)', () => {
+    // A terminal event used to be stored and change nothing: the poller
+    // deliberately leaves the status to ingestion, and ingestion never picked
+    // it up, so every run that ever executed stayed `running` forever — and
+    // the projection's review path, which reads `status === 'succeeded'`,
+    // could never fire.
+
+    /** The conclude call is the last run.updateMany of an ingest. */
+    const conclusion = () => {
+      const calls = prisma.run.updateMany.mock.calls;
+      return calls[calls.length - 1][0] as {
+        where: Record<string, unknown>;
+        data: Record<string, unknown>;
+      };
+    };
+
+    it('marks the run succeeded on run.completed', async () => {
+      await service.ingest(RUN_ID, [
+        event({
+          type: 'run.completed',
+          occurredAt: '2026-08-21T11:00:00.000Z',
+        }),
+      ]);
+
+      const { data } = conclusion();
+      expect(data.status).toBe('succeeded');
+      expect(data.endedAt).toEqual(new Date('2026-08-21T11:00:00.000Z'));
+    });
+
+    it('marks the run failed on run.failed, carrying why it stopped', async () => {
+      await service.ingest(RUN_ID, [
+        event({
+          type: 'run.failed',
+          failure: { reason: 'killed for looping' },
+        }),
+      ]);
+
+      const { data } = conclusion();
+      expect(data.status).toBe('failed');
+      // The field the cockpit already reads, and the one #67's summary needs.
+      expect(data.attentionReason).toBe('killed for looping');
+    });
+
+    it('cannot be reached without a reason, because the schema requires one', async () => {
+      // `run.failed` carries `failure.reason` as a conditional requirement, so
+      // a failure with no reason never gets past validation to be concluded.
+      // The service's `?? 'run failed'` is belt-and-braces against a future
+      // schema change, not a path a runner can take today — and asserting the
+      // rejection is more honest than testing a fallback that cannot fire.
+      await expect(
+        service.ingest(RUN_ID, [event({ type: 'run.failed' })]),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('only concludes a run that is still running', async () => {
+      // The monotonic guard, in the WHERE clause for the same reason
+      // `lastEventAt` guards there: a redelivered terminal event must not drag
+      // a run back out of a terminal state, and a late run.failed must not
+      // overwrite a succeeded that already landed.
+      await service.ingest(RUN_ID, [event({ type: 'run.completed' })]);
+      expect(conclusion().where).toEqual({ id: RUN_ID, status: 'running' });
+    });
+
+    it('carries the pull request onto the run, with its number', async () => {
+      // #107 gates surfacing on the checks of `headCommit`, so without these
+      // the gate has nothing to ask GitHub about.
+      await service.ingest(RUN_ID, [
+        event({
+          type: 'run.completed',
+          result: {
+            branch: 'factory/312-a3f91c2-a1',
+            headCommit: 'a3f91c2b4d5e6f708192a3b4c5d6e7f809a1b2c3',
+            pullRequestUrl: 'https://github.com/acme/app/pull/42',
+          },
+        }),
+      ]);
+
+      const { data } = conclusion();
+      expect(data.pullRequestUrl).toBe('https://github.com/acme/app/pull/42');
+      expect(data.pullRequestNumber).toBe(42);
+      expect(data.headCommit).toBe('a3f91c2b4d5e6f708192a3b4c5d6e7f809a1b2c3');
+      expect(data.branch).toBe('factory/312-a3f91c2-a1');
+    });
+
+    it('leaves the pull request columns alone when the runner reported none', async () => {
+      // Writing null would erase a URL an earlier event had already recorded.
+      await service.ingest(RUN_ID, [event({ type: 'run.completed' })]);
+
+      const { data } = conclusion();
+      expect(data).not.toHaveProperty('pullRequestUrl');
+      expect(data).not.toHaveProperty('headCommit');
+    });
+
+    it('does not conclude on a non-terminal event', async () => {
+      await service.ingest(RUN_ID, [event({ type: 'run.progress' })]);
+
+      for (const [call] of prisma.run.updateMany.mock.calls) {
+        expect(
+          (call as { data: Record<string, unknown> }).data.status,
+        ).toBeUndefined();
+      }
+    });
+
+    it('takes the LAST terminal event when a batch carries more than one', async () => {
+      // Malformed, but picking deterministically by when it happened beats
+      // picking by array order.
+      await service.ingest(RUN_ID, [
+        event({
+          eventId: 'late',
+          type: 'run.failed',
+          occurredAt: '2026-08-21T12:00:00.000Z',
+          failure: { reason: 'killed for silence' },
+        }),
+        event({
+          eventId: 'early',
+          type: 'run.completed',
+          occurredAt: '2026-08-21T11:00:00.000Z',
+        }),
+      ]);
+
+      expect(conclusion().data.status).toBe('failed');
+    });
+  });
+
   describe('the run must exist', () => {
     it('404s for an unknown run', async () => {
       prisma.run.findUnique.mockResolvedValue(null);
