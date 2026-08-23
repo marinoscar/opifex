@@ -1,3 +1,4 @@
+import { EscalationsService } from '../escalations/escalations.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { RunEventsService, type IngestResult } from '../run-events/run-events.service';
@@ -48,6 +49,8 @@ describe('RunPollerService', () => {
   });
 
   let config: ConfigService;
+  let raiseFrom: jest.Mock;
+  let findUnique: jest.Mock;
   let defaultTimeoutMinutes: number | null = null;
   let graceMinutes = 2;
 
@@ -63,7 +66,18 @@ describe('RunPollerService', () => {
     findMany = jest.fn().mockResolvedValue([]);
     updateMany = jest.fn().mockResolvedValue({ count: 1 });
 
-    const prisma = { run: { findMany, updateMany } } as unknown as PrismaService;
+    // The budget check (#182) reads the run and its order's ceiling.
+    // Defaulted to "no ceiling named", so it is a no-op for every test in
+    // this file that is about something else -- and visibly so, rather than
+    // every unrelated test quietly exercising an overrun.
+    findUnique = jest.fn().mockResolvedValue({
+      costUsd: null,
+      workOrder: { identity: 'wo_acme-widgets_42_abc1234_a1', budgetCeilingUsd: null },
+    });
+
+    const prisma = {
+      run: { findMany, updateMany, findUnique },
+    } as unknown as PrismaService;
     const runEvents = { ingest } as unknown as RunEventsService;
 
     // Deadline config the deadline pass (#180) reads. Defaulted generously so
@@ -79,7 +93,10 @@ describe('RunPollerService', () => {
             : undefined,
     } as unknown as ConfigService;
 
-    poller = new RunPollerService(prisma, runEvents, config);
+    raiseFrom = jest.fn().mockResolvedValue({ raised: 1, deduplicated: 0 });
+    poller = new RunPollerService(prisma, runEvents, config, {
+      raiseFrom,
+    } as unknown as EscalationsService);
   });
 
   /** A runner whose poll result the test dictates outright. */
@@ -523,6 +540,156 @@ describe('RunPollerService', () => {
       const result = await poller.tick();
 
       expect(result.timedOut).toBe(0);
+    });
+  });
+
+  /**
+   * Acting on a budget ceiling that has been passed (#182).
+   *
+   * The policy's boundary is covered in `budget/budget-overrun.spec.ts`. What
+   * is asserted here is the pair of arms, and the thing that separates them:
+   * a run that can still be stopped IS stopped, a run that cannot is recorded
+   * and escalated, and neither is ever described as the other.
+   */
+  describe('the budget ceiling', () => {
+    /** What the budget check's own `findUnique` should return. */
+    function costed(costUsd: number | null, budgetCeilingUsd: number | null) {
+      findUnique.mockResolvedValue({
+        costUsd,
+        workOrder: { identity: 'wo_acme-widgets_42_abc1234_a1', budgetCeilingUsd },
+      });
+    }
+
+    /** Every `attentionReason` written, in order. */
+    function written(): string[] {
+      return updateMany.mock.calls
+        .map(([arg]) => (arg as { data: { attentionReason?: string } }).data.attentionReason)
+        .filter((reason): reason is string => typeof reason === 'string');
+    }
+
+    it('cancels a LIVE run that has passed its ceiling', async () => {
+      // The arm that cannot fire for claude-code-local, which reports cost
+      // only on its final line -- and must still exist, because the seam's
+      // contract promises it for any runner that reports incrementally.
+      costed(40, 5);
+      const runner = stubRunner({ status: 'running', events: [event()] });
+      poller.track(RUN_ID, runner, handle());
+
+      const result = await poller.tick();
+
+      expect(result.overBudget).toBe(1);
+      expect(runner.cancel).toHaveBeenCalledWith(handle());
+      expect(written().at(-1)).toContain('The control plane cancelled it.');
+    });
+
+    it('records and escalates a FINISHED run rather than claiming to have stopped it', async () => {
+      // The arm that fires today. Reporting a cancellation here would be the
+      // synthesized-event-as-report VISION §9 forbids -- there was nothing
+      // left to cancel.
+      costed(40, 5);
+      const runner = stubRunner({ status: 'succeeded', events: [event()] });
+      poller.track(RUN_ID, runner, handle());
+
+      const result = await poller.tick();
+
+      expect(result.overBudget).toBe(1);
+      expect(runner.cancel).not.toHaveBeenCalled();
+      expect(written().at(-1)).toContain('already finished, so nothing could be stopped');
+      expect(written().at(-1)).not.toContain('cancelled it');
+    });
+
+    it('names both figures and the gap', async () => {
+      // #65's first acceptance criterion, at the layer that persists it.
+      costed(40, 5);
+      poller.track(RUN_ID, stubRunner({ status: 'succeeded', events: [event()] }), handle());
+
+      await poller.tick();
+
+      expect(written().at(-1)).toContain('$40.00');
+      expect(written().at(-1)).toContain('$5.00');
+      expect(written().at(-1)).toContain('$35.00 over');
+    });
+
+    it('raises a budget_exceeded escalation', async () => {
+      // The kind has been in the schema since it was written and nothing had
+      // ever raised it. An operator who learns a $5 ceiling was passed by $35
+      // can stop it being a habit.
+      costed(40, 5);
+      poller.track(RUN_ID, stubRunner({ status: 'succeeded', events: [event()] }), handle());
+
+      await poller.tick();
+
+      expect(raiseFrom).toHaveBeenCalledWith([
+        expect.objectContaining({ type: 'escalate', runId: RUN_ID, escalationKind: 'budget_exceeded' }),
+      ]);
+    });
+
+    it('leaves a run inside its ceiling alone', async () => {
+      costed(2, 5);
+      const runner = stubRunner({ status: 'succeeded', events: [event()] });
+      poller.track(RUN_ID, runner, handle());
+
+      const result = await poller.tick();
+
+      expect(result.overBudget).toBe(0);
+      expect(raiseFrom).not.toHaveBeenCalled();
+      expect(runner.cancel).not.toHaveBeenCalled();
+    });
+
+    it('leaves a run whose order names no ceiling alone', async () => {
+      costed(400, null);
+      poller.track(RUN_ID, stubRunner({ status: 'succeeded', events: [event()] }), handle());
+
+      expect((await poller.tick()).overBudget).toBe(0);
+    });
+
+    it('leaves a run that reported no cost alone', async () => {
+      // Null is unknown, not zero. Judging an unknown against a ceiling would
+      // either flag every silent run or clear it, and both are guesses.
+      costed(null, 5);
+      poller.track(RUN_ID, stubRunner({ status: 'succeeded', events: [event()] }), handle());
+
+      expect((await poller.tick()).overBudget).toBe(0);
+    });
+
+    it('acts once, not on every tick', async () => {
+      costed(40, 5);
+      const runner = stubRunner(
+        { status: 'running', events: [event()] },
+        { status: 'running', events: [event()] },
+      );
+      poller.track(RUN_ID, runner, handle());
+
+      await poller.tick();
+      const second = await poller.tick();
+
+      expect(raiseFrom).toHaveBeenCalledTimes(1);
+      expect(second.overBudget).toBe(0);
+    });
+
+    it('says it may still be spending when the runner refuses to cancel', async () => {
+      costed(40, 5);
+      const runner = stubRunner({ status: 'running', events: [event()] });
+      (runner.cancel as jest.Mock).mockRejectedValue(new Error('runner is wedged'));
+      poller.track(RUN_ID, runner, handle());
+
+      await poller.tick();
+
+      expect(written().at(-1)).toContain('STILL BE RUNNING and still spending');
+      expect(written().at(-1)).not.toContain('The control plane cancelled it.');
+    });
+
+    it('does not lose ingested events when the budget check throws', async () => {
+      // Guarded separately for exactly this: a budget check that fails must
+      // not discard the events already carried, nor stop the poller reaching
+      // the rest of the fleet.
+      findUnique.mockRejectedValue(new Error('database is down'));
+      poller.track(RUN_ID, stubRunner({ status: 'running', events: [event()] }), handle());
+
+      const result = await poller.tick();
+
+      expect(result.eventsIngested).toBe(1);
+      expect(result.failed).toBe(1);
     });
   });
 });
