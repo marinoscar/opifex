@@ -19,3 +19,7 @@ package-lock.json
 
 # Generated API surface, dumped by `npm run openapi:dump`.
 openapi.json
+
+# A stale vitest JSON report committed by accident (its first lines are npm
+# banner text, so it is not even valid JSON). Generated output, not source.
+apps/web/test-results.json
