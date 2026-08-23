@@ -61,7 +61,16 @@ export type QueueReason =
   | 'no-runner-has-the-capabilities'
   | 'capable-runners-are-at-capacity'
   | 'global-concurrency-reached'
-  | 'only-preview-runners-and-no-ga-fallback';
+  | 'only-preview-runners-and-no-ga-fallback'
+  // The three spend refusals (#65). They queue rather than fail for the same
+  // reason capacity does: the work order is fine, the money is not, and both
+  // are conditions that can change without the order being rewritten. They
+  // stay three values rather than one because they need three different
+  // responses — set a ceiling, wait for the window to roll, and fix an order
+  // or its routing, respectively.
+  | 'no-hard-spend-ceiling-configured'
+  | 'hard-spend-ceiling-reached'
+  | 'work-order-cannot-be-budgeted';
 
 /** What routing concluded about one runner. */
 export interface CandidateVerdict {

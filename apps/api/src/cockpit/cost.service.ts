@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
+import { HardSpendCeilingService } from '../budget/hard-spend-ceiling';
+import { SpendLedgerService } from '../budget/spend-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { toNumberOrNull } from './decimal';
 import { COST_DEFAULT_DAYS, type CostSummary } from './dto/cost.dto';
@@ -26,11 +28,22 @@ import { COST_DEFAULT_DAYS, type CostSummary } from './dto/cost.dto';
  */
 @Injectable()
 export class CostService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ceiling: HardSpendCeilingService,
+    private readonly ledger: SpendLedgerService,
+  ) {}
 
   async summary(days: number = COST_DEFAULT_DAYS): Promise<CostSummary> {
     const to = new Date();
     const from = new Date(to.getTime() - days * DAY_MS);
+
+    // Tallied over the CEILING's window, not `days`. The caller picks the
+    // window for the screen; the ceiling brought its own, and a headroom
+    // figure computed over the wrong one would be wrong in a way nothing on
+    // screen could reveal.
+    const ceiling = this.ceiling.value;
+    const ceilingSpend = await this.ledger.tally(ceiling.windowDays, to);
 
     const runs = await this.prisma.run.findMany({
       where: { startedAt: { gte: from, lte: to } },
@@ -93,6 +106,26 @@ export class CostService {
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([date, total]) => ({ date, totalUsd: round(total) })),
       quota: null,
+      ceiling: {
+        limitUsd: ceiling.limitUsd,
+        windowDays: ceiling.windowDays,
+        malformed: ceiling.malformed,
+        spend: {
+          reportedUsd: ceilingSpend.reportedUsd,
+          estimatedUsd: ceilingSpend.estimatedUsd,
+          totalUsd: ceilingSpend.totalUsd,
+          runsWithoutCost: ceilingSpend.runsWithoutCost,
+          unboundedRuns: ceilingSpend.unboundedRuns,
+        },
+        // Null rather than the full limit when none is configured. There is no
+        // headroom under a ceiling that does not exist -- dispatch refuses in
+        // that state -- and reporting the limit as headroom would draw a full
+        // bar over a factory that cannot spend a cent.
+        headroomUsd:
+          ceiling.limitUsd === null
+            ? null
+            : round(Math.max(0, ceiling.limitUsd - ceilingSpend.totalUsd)),
+      },
     };
   }
 }

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { BudgetModule } from '../budget/budget.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RunnersModule } from '../runners/runners.module';
 import { WorkOrdersModule } from '../work-orders/work-orders.module';
@@ -16,7 +17,7 @@ import { RunExecutorService } from './run-executor.service';
  * decides and acts in one place with nothing recording the decision.
  */
 @Module({
-  imports: [PrismaModule, RunnersModule, WorkOrdersModule],
+  imports: [BudgetModule, PrismaModule, RunnersModule, WorkOrdersModule],
   providers: [DispatchService, RunExecutorService, DispatchQueueService],
   exports: [DispatchService, RunExecutorService, DispatchQueueService],
 })

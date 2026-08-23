@@ -45,6 +45,67 @@ export const dailySpendSchema = z.object({
   totalUsd: z.number(),
 });
 
+/**
+ * The hard spend ceiling, as the cockpit sees it (#177).
+ *
+ * A limit an operator cannot see the state of is one they will assume is
+ * working. The ceiling is enforced whether or not this field is read, but an
+ * install that has not set one gets NO other signal at all short of reading
+ * the boot log — and the failure mode there is the quiet one: dispatch refuses
+ * every work order and the queue looks like a capacity problem.
+ *
+ * Read-only in every direction. This reports the ceiling; nothing writes it
+ * through the API, because VISION §8 puts it on the never-trustable list and
+ * an endpoint that could set it would be exactly the trust grant §8 forbids.
+ */
+export const spendCeilingSchema = z.object({
+  /**
+   * Dollars. Null means none is configured, which REFUSES dispatch rather
+   * than permitting it — so a null here is a blocked factory, not a free one.
+   */
+  limitUsd: z.number().nullable(),
+  /** The rolling window the ceiling applies over. */
+  windowDays: z.number().int(),
+  /**
+   * The offending text when the ceiling is set but unreadable.
+   *
+   * Carried separately from `limitUsd` so a typo never renders as "no ceiling
+   * configured" — that is the case where somebody believed they had set one,
+   * and telling them it is unset sends them to fix a variable that is set.
+   */
+  malformed: z.string().nullable(),
+  /**
+   * Spend against the ceiling, over the CEILING's window.
+   *
+   * Deliberately not the totals above, which cover whatever window the caller
+   * asked for. A headroom figure computed over a different window than the
+   * ceiling it is compared against would be wrong in a way nothing on screen
+   * could reveal.
+   */
+  spend: z.object({
+    /** Measured. */
+    reportedUsd: z.number(),
+    /**
+     * ESTIMATED, from the authorized ceilings of runs that reported nothing.
+     * Never folded into `reportedUsd`; the two are different kinds of claim.
+     */
+    estimatedUsd: z.number(),
+    /** `reportedUsd + estimatedUsd`. A FLOOR when `unboundedRuns` is above 0. */
+    totalUsd: z.number(),
+    runsWithoutCost: z.number().int(),
+    /**
+     * Runs with neither a reported cost nor a ceiling to bound them.
+     *
+     * Above zero means `totalUsd` is a floor rather than a total, and the
+     * screen must say so rather than drawing a headroom bar that implies
+     * precision it does not have.
+     */
+    unboundedRuns: z.number().int(),
+  }),
+  /** `limitUsd - spend.totalUsd`. Null when no ceiling is configured. */
+  headroomUsd: z.number().nullable(),
+});
+
 export const costSummarySchema = z.object({
   generatedAt: z.iso.datetime(),
   window: z.object({ from: z.iso.datetime(), to: z.iso.datetime() }),
@@ -74,6 +135,15 @@ export const costSummarySchema = z.object({
    * and it is named here so the screen can say so.
    */
   quota: z.null(),
+  /**
+   * The hard spend ceiling (#177), and how much of it is left.
+   *
+   * Unlike `quota`, this IS measured — which is why it is an object rather
+   * than the null beside it. The two sit together deliberately: one is a
+   * limit the factory enforces and can report, the other is a limit it is
+   * subject to and cannot.
+   */
+  ceiling: spendCeilingSchema,
 });
 
 export class CostSummaryDto extends createZodDto(costSummarySchema) {}
