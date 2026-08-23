@@ -14,6 +14,10 @@
     "web:dev": "npm -w apps/web run dev",
     "api:test": "npm -w apps/api test",
     "web:test": "npm -w apps/web test",
+    "lint": "npm -w apps/api run lint && npm -w apps/web run lint",
+    "lint:fix": "npm -w apps/api run lint:fix && npm -w apps/web run lint:fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "openapi:dump": "npm run openapi:dump --workspace=api -- ../../openapi.json",
     "openapi:lint": "spectral lint openapi.json --ruleset .spectral.yaml --fail-severity=error"
   },
@@ -25,6 +29,15 @@
     "magic-string": "^1.2.0"
   },
   "devDependencies": {
-    "@stoplight/spectral-cli": "^6.16.3"
+    "@eslint/js": "^9.39.5",
+    "@stoplight/spectral-cli": "^6.16.3",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.4",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
+    "typescript-eslint": "^8.67.0"
   }
 }
