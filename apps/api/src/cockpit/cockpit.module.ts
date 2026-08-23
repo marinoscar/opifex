@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 
 import { DispatchModule } from '../dispatch/dispatch.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { CostController } from './cost.controller';
+import { CostService } from './cost.service';
 import { MetricsController } from './metrics.controller';
 import { MetricsService } from './metrics.service';
 import { QueueController } from './queue.controller';
@@ -25,8 +27,14 @@ import { WorkOrdersService } from './work-orders.service';
  */
 @Module({
   imports: [PrismaModule, DispatchModule],
-  controllers: [QueueController, RunsController, MetricsController, WorkOrdersController],
-  providers: [QueueService, RunsService, MetricsService, WorkOrdersService],
-  exports: [QueueService, RunsService, MetricsService, WorkOrdersService],
+  controllers: [
+    QueueController,
+    RunsController,
+    MetricsController,
+    WorkOrdersController,
+    CostController,
+  ],
+  providers: [QueueService, RunsService, MetricsService, WorkOrdersService, CostService],
+  exports: [QueueService, RunsService, MetricsService, WorkOrdersService, CostService],
 })
 export class CockpitModule {}

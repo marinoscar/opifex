@@ -219,7 +219,13 @@ export const DESTINATIONS: readonly Destination[] = [
     Icon: AccountTreeIcon,
     path: '/projects',
     section: 'operate',
-    status: 'planned',
+    // LIVE as of #80 — and NOT because a new endpoint was written for it.
+    // `RepositoriesController` (#43) has served `GET /api/repositories` gated
+    // on `projects:read` since Phase 1; what was missing was this flip, not an
+    // endpoint. Building a cockpit read model beside it would have been a
+    // second way to read the same rows.
+    status: 'live',
+    permission: 'projects:read',
   },
   {
     key: 'cost',
@@ -228,7 +234,11 @@ export const DESTINATIONS: readonly Destination[] = [
     Icon: PaidIcon,
     path: '/cost',
     section: 'operate',
-    status: 'planned',
+    // LIVE as of #80. `runs:read` rather than `projects:read`: cost lives on
+    // the run, and gating an aggregate more loosely than its rows would let
+    // somebody total up runs they cannot open.
+    status: 'live',
+    permission: 'runs:read',
   },
   {
     key: 'settings',
