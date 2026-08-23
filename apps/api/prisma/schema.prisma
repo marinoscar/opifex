@@ -484,6 +484,17 @@ model WorkOrder {
   /// The GitHub issue this work order projects. A pointer into the record,
   /// not a copy of it.
   issueNumber Int    @map("issue_number")
+  /// The issue's URL and title, copied at projection time.
+  ///
+  /// Copies rather than pointers, and deliberately: `work-order.schema.json`
+  /// REQUIRES `issue.url`, so a row that cannot supply it cannot re-serialize
+  /// into the document that was authorised. #63 already caught this shape of
+  /// bug once - "validating a field and then dropping it" - and dropping it
+  /// here would mean a work order survives a restart as a row nothing can
+  /// dispatch. The title moves; that is fine, because what was authorised is
+  /// what the authorisation record says, not what the issue says today.
+  issueUrl    String  @map("issue_url") @default("")
+  issueTitle  String? @map("issue_title")
   /// The pinned base commit, full 40-character SHA. The identity and branch
   /// carry the 7-character prefix; this is the real thing a runner checks out.
   baseCommit  String @map("base_commit")
@@ -504,6 +515,18 @@ model WorkOrder {
   /// Glob constraints on what the runner may touch. Empty means the
   /// repository default applies.
   pathConstraints    String[] @map("path_constraints")
+
+  /// What this work order needs from a runner (VISION §6).
+  ///
+  /// The ROUTING INPUT, and the reason it has to be stored: `decide(needs, …)`
+  /// is how #64 matches a work order to a runner without the work order ever
+  /// naming one. A row without it cannot be routed at all, so a queued work
+  /// order would be undispatchable after a restart.
+  ///
+  /// Free strings at the column, a closed union at the boundary
+  /// (`RunnerNeed`). Postgres cannot express the union, and widening it later
+  /// must not require a migration on a table that holds authorisation records.
+  needs              String[] @default([])
 
   /// Resolved ceilings - the repository defaults are copied in at projection
   /// time rather than read through, so changing a repository's budget cannot
