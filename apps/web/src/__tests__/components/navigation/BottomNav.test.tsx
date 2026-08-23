@@ -42,7 +42,12 @@ function setPermissions(granted: string[], isAdmin = false) {
   });
 }
 
-const ADMIN_PERMISSIONS = ['users:read', 'system_settings:read', 'workorders:read'];
+const ADMIN_PERMISSIONS = [
+  'users:read',
+  'system_settings:read',
+  'workorders:read',
+  'runs:read',
+];
 
 /**
  * What a real seeded VIEWER holds.
@@ -51,7 +56,7 @@ const ADMIN_PERMISSIONS = ['users:read', 'system_settings:read', 'workorders:rea
  * permission: `prisma/seed.ts` grants `workorders:read` to all three roles, so
  * a permission-less user is not a viewer, it is a user the API cannot produce.
  */
-const VIEWER_PERMISSIONS = ['workorders:read'];
+const VIEWER_PERMISSIONS = ['workorders:read', 'runs:read'];
 const PHONE = 375;
 
 /** Renders at a phone width, which is the only width this bar exists at. */
@@ -152,8 +157,11 @@ describe('BottomNav', () => {
     it('closes the bar up when a user lacks a primary permission', () => {
       // The one case that DOES reflow, and it must not leave a hole: a user
       // without `workorders:read` loses Queue and the bar renders three
-      // actions rather than four with a gap.
-      setPermissions([]);
+      // actions rather than four with a gap. Granting `runs:read` and NOT
+      // `workorders:read` drops exactly one primary — `[]` would drop both
+      // once #80 gave Runs a permission too, and stop testing the one-gap
+      // case this is named for.
+      setPermissions(['runs:read']);
       renderPhone();
 
       expect(screen.queryByRole('button', { name: 'Queue' })).not.toBeInTheDocument();

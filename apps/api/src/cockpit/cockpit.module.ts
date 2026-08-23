@@ -4,6 +4,8 @@ import { DispatchModule } from '../dispatch/dispatch.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { QueueController } from './queue.controller';
 import { QueueService } from './queue.service';
+import { RunsController } from './runs.controller';
+import { RunsService } from './runs.service';
 
 /**
  * The cockpit read models (#80).
@@ -19,8 +21,8 @@ import { QueueService } from './queue.service';
  */
 @Module({
   imports: [PrismaModule, DispatchModule],
-  controllers: [QueueController],
-  providers: [QueueService],
-  exports: [QueueService],
+  controllers: [QueueController, RunsController],
+  providers: [QueueService, RunsService],
+  exports: [QueueService, RunsService],
 })
 export class CockpitModule {}

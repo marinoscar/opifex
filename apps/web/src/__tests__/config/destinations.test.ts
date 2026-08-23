@@ -203,9 +203,15 @@ describe('destinations — the table itself', () => {
    *   users.controller.ts           → PERMISSIONS.USERS_READ
    *   system-settings.controller.ts → PERMISSIONS.SYSTEM_SETTINGS_READ
    *   cockpit/queue.controller.ts   → PERMISSIONS.WORKORDERS_READ   (#80)
+   *   cockpit/runs.controller.ts    → PERMISSIONS.RUNS_READ         (#80)
    * Nothing else in `apps/api` guards a page this app routes to.
    */
-  const ENFORCED_PERMISSIONS = ['users:read', 'system_settings:read', 'workorders:read'];
+  const ENFORCED_PERMISSIONS = [
+    'users:read',
+    'system_settings:read',
+    'workorders:read',
+    'runs:read',
+  ];
 
   it('gates the admin destinations on the permission the API enforces', () => {
     expect(byKey.users.permission).toBe('users:read');
@@ -238,10 +244,14 @@ describe('destinations — the table itself', () => {
     expect(byKey.queue.permission).toBe('workorders:read');
   });
 
+  it('gates runs on the permission its controller enforces', () => {
+    expect(byKey.runs.permission).toBe('runs:read');
+  });
+
   it('gives every PLANNED destination no permission at all', () => {
-    // `apps/api` has no runs, projects or cost module, so there is no
-    // `runs:read` to require. This is the assertion that stops one being
-    // invented ahead of the endpoint.
+    // `apps/api` has no projects or cost module, so there is no
+    // `projects:read` gate to require here yet. This is the assertion that
+    // stops one being invented ahead of the endpoint.
     for (const destination of DESTINATIONS) {
       if (destination.status !== 'planned') continue;
       expect(
@@ -256,12 +266,12 @@ describe('destinations — the table itself', () => {
     // simultaneity is the rule this file's header sets, and this list is what
     // makes breaking it fail rather than merely be noticed in review.
     const live = DESTINATIONS.filter((d) => d.status === 'live').map((d) => d.key);
-    expect(live.sort()).toEqual(['dashboard', 'queue', 'settings', 'system', 'users']);
+    expect(live.sort()).toEqual(['dashboard', 'queue', 'runs', 'settings', 'system', 'users']);
   });
 
   it('leaves the still-unbuilt cockpit destinations planned', () => {
     const planned = DESTINATIONS.filter((d) => d.status === 'planned').map((d) => d.key);
-    expect(planned.sort()).toEqual(['cost', 'projects', 'runs']);
+    expect(planned.sort()).toEqual(['cost', 'projects']);
   });
 
   it('puts every destination in a declared section', () => {

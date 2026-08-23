@@ -31,13 +31,14 @@ function orderAt(element: HTMLElement, minWidthPx: number): string | null {
 }
 
 /**
- * The operator dashboard, rendered exactly as it ships today: four panels, one
+ * The operator dashboard, rendered exactly as it ships today: four panels, two
  * of them wired.
  *
- * #80 flipped `queue` to `available: true`, so the page now really does fetch
- * `GET /api/queue` on mount and the queue panel shows data — an EMPTY state
- * against the default MSW handler, not a not-wired one. The other three panels
- * are still honestly unbuilt.
+ * #80 flipped `queue` and then `attention` to `available: true`, so the page
+ * really does fetch `GET /api/queue` and `GET /api/runs?needsAttention=true`
+ * on mount and both panels show data — EMPTY states against the default MSW
+ * handlers, not not-wired ones. Metrics and activity are still honestly
+ * unbuilt.
  *
  * These tests use the REAL hooks rather than mocks, which is what makes that
  * distinction checkable: a mocked hook could not prove that an unavailable
@@ -106,14 +107,15 @@ describe('DashboardPage', () => {
     it('names a roadmap phase on every panel that is still unbuilt', () => {
       render(<DashboardPage />);
 
-      expect(screen.getByText(/Escalations appear here once the watchdog lands/)).toBeInTheDocument();
       expect(screen.getByText(/Events appear here once the reconciler runs/)).toBeInTheDocument();
-
-      expect(screen.getAllByText(/Arrives in Phase 3 — Liveness and escalation/).length).toBeGreaterThan(0);
       expect(screen.getByText(/Arrives in Phase 2 — Reconciler, read-only/)).toBeInTheDocument();
+      // Metrics is still unbuilt and still names its phase.
+      expect(
+        screen.getAllByText(/Arrives in Phase 3 — Liveness and escalation/).length,
+      ).toBeGreaterThan(0);
     });
 
-    it('stops claiming the queue is unbuilt, now that it is', () => {
+    it('stops claiming the queue and attention panels are unbuilt, now that they are not', () => {
       // #80. Leaving the not-wired copy on a panel backed by a real endpoint
       // would be the honesty contract failing in the other direction: telling
       // the operator nothing exists while the data is on screen.
@@ -121,6 +123,9 @@ describe('DashboardPage', () => {
 
       expect(
         screen.queryByText(/The queue appears here once dispatch exists/),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/Escalations appear here once the watchdog lands/),
       ).not.toBeInTheDocument();
       expect(screen.queryByText(/Arrives in Phase 4 — Execution/)).not.toBeInTheDocument();
     });

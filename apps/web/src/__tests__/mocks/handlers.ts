@@ -203,6 +203,19 @@ export const handlers = [
     return HttpResponse.json({ data: [] });
   }),
 
+  /**
+   * `GET /runs` — the runs list, and the attention panel's source (#80).
+   *
+   * Paginated like every other list in this API, so the envelope carries
+   * `items` and `total`; `services/api.ts` unwraps it for the panel. Empty by
+   * default, which is the honest default: "nothing needs attention" and "the
+   * watchdog does not exist" are opposite meanings and the dashboard renders
+   * them differently.
+   */
+  http.get(`${API_BASE}/runs`, () => {
+    return HttpResponse.json({ data: { items: [], total: 0, page: 1, pageSize: 25 } });
+  }),
+
   http.get(`${API_BASE}/health/live`, () => {
     return HttpResponse.json({
       data: {

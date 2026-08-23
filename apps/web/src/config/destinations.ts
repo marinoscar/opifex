@@ -191,7 +191,11 @@ export const DESTINATIONS: readonly Destination[] = [
     Icon: RocketLaunchIcon,
     path: '/runs',
     section: 'operate',
-    status: 'planned',
+    // LIVE as of #80, gaining its real permission in the same pull request as
+    // the endpoint. `runs:read` is what `RunsController` enforces, and the
+    // seeded viewer role holds it.
+    status: 'live',
+    permission: 'runs:read',
   },
   {
     key: 'queue',

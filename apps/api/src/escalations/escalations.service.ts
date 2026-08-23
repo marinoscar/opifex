@@ -18,8 +18,14 @@ export interface RaiseResult {
  * The dedupe set. An escalation that was delivered but not acknowledged still
  * counts as outstanding — the operator has been told and has not acted, so
  * telling them again about the same thing is the noise #57 forbids.
+ *
+ * EXPORTED since #80: the cockpit's `needsAttention` filter asks exactly this
+ * question, and it must not be a second opinion about it. A read model with
+ * its own list would drift from the dedupe rule the moment either changed, and
+ * the two disagreeing means the panel shows a run nobody will be told about —
+ * or hides one somebody already was.
  */
-const UNRESOLVED: readonly string[] = ['raised', 'dispatched', 'delivered', 'failed'];
+export const UNRESOLVED: readonly string[] = ['raised', 'dispatched', 'delivered', 'failed'];
 
 /**
  * Escalations, as first-class records.
