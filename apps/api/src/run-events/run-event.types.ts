@@ -1,157 +1,84 @@
 /**
- * TypeScript for `schemas/run-event.schema.json`.
+ * The wire types for `schemas/run-event.schema.json`, DERIVED from the
+ * generated contract rather than restated here.
  *
- * ## Hand-written, and pinned to the schema by a test
+ * This file used to hold the whole shape by hand, with a note that it was an
+ * interim and #35 would "delete rather than reconcile" it. #35 landed: the
+ * definitions are gone, and everything below is either an alias of a generated
+ * type or a projection of one. A schema change now reaches this file through
+ * `npm run contracts:generate`, and CI fails if the generated output is stale.
  *
- * #35 (in epic #14) asks for types GENERATED from the schemas rather than
- * hand-written alongside them, and the reason is sound: two definitions drift.
- * That issue is not done, and generating properly means a codegen step, a
- * build-time dependency and a generated file in the tree — worth doing once,
- * for all three schemas, rather than improvised here for one.
+ * The names are kept because fifty call sites use them, and renaming types is
+ * not what #35 is about.
  *
- * So this file is the interim, and it is safe only because
- * `run-event.types.spec.ts` pins every enum against the schema JSON itself. A
- * value added to the schema and not here fails that test. When #35 lands, this
- * file is deleted rather than reconciled.
+ * What remains genuinely hand-written is the Prisma enum mapping at the bottom,
+ * which is not part of the contract — it translates the wire spelling into the
+ * generated client's, and belongs to this repository's database rather than to
+ * any runner.
  */
 
-export const RUN_EVENT_SCHEMA_VERSION = '1.0.0';
+import type { RunEvent } from '../contracts/generated';
+import {
+  RUN_EVENT_REASON,
+  RUN_EVENT_SCHEMA_VERSION as GENERATED_SCHEMA_VERSION,
+  RUN_EVENT_SOURCE,
+  RUN_EVENT_TYPE,
+} from '../contracts/generated';
 
-/** The six normalized types. Closed — a seventh is a schema version bump. */
-export type RunEventTypeName =
-  | 'run.started'
-  | 'run.heartbeat'
-  | 'run.progress'
-  | 'run.blocked'
-  | 'run.completed'
-  | 'run.failed';
+export const RUN_EVENT_SCHEMA_VERSION = GENERATED_SCHEMA_VERSION;
 
-export const RUN_EVENT_TYPES: readonly RunEventTypeName[] = [
-  'run.started',
-  'run.heartbeat',
-  'run.progress',
-  'run.blocked',
-  'run.completed',
-  'run.failed',
-];
+/** The six normalized types. Closed — a seventh is a major bump (ADR-0010). */
+export type RunEventTypeName = (typeof RUN_EVENT_TYPE)[number];
+export const RUN_EVENT_TYPES: readonly RunEventTypeName[] = RUN_EVENT_TYPE;
 
 /**
- * Where an event came from.
- *
- * VISION §9: *a synthesized event must never masquerade as a report.* Required
- * on every event, with no default, because a watchdog that cannot tell "the
- * runner told me it was blocked" from "I decided it looked blocked" will
- * eventually make an unrecoverable decision on its own guess.
+ * Where the event came from. VISION §9: a synthesized event must never
+ * masquerade as a report, which is why this is required and has no default.
  */
-export type RunEventSourceName =
-  'runner-reported' | 'git-derived' | 'control-plane-synthesized';
-
-export const RUN_EVENT_SOURCES: readonly RunEventSourceName[] = [
-  'runner-reported',
-  'git-derived',
-  'control-plane-synthesized',
-];
+export type RunEventSourceName = (typeof RUN_EVENT_SOURCE)[number];
+export const RUN_EVENT_SOURCES: readonly RunEventSourceName[] =
+  RUN_EVENT_SOURCE;
 
 /**
- * Why a run is blocked.
- *
- * `unknown` is not a synonym for the others: a run blocked for a reason the
- * runner cannot name still parks, but #56 escalates it rather than parking
- * forever, because nothing can compute when it would resume.
+ * Why a run is blocked. `unknown` exists so a runner that cannot tell still has
+ * something honest to say; the watchdog treats it as blocked-with-no-known-
+ * reset rather than leaving the run looking healthy forever.
  */
-export type BlockedReason =
-  | 'rate-limit'
-  | 'quota-exhausted'
-  | 'awaiting-approval'
-  | 'upstream-unavailable'
-  | 'unknown';
+export type BlockedReason = (typeof RUN_EVENT_REASON)[number];
+export const BLOCKED_REASONS: readonly BlockedReason[] = RUN_EVENT_REASON;
 
-export const BLOCKED_REASONS: readonly BlockedReason[] = [
-  'rate-limit',
-  'quota-exhausted',
-  'awaiting-approval',
-  'upstream-unavailable',
-  'unknown',
-];
-
-export interface RunEventTrace {
-  traceId: string;
-  spanId?: string;
-}
+// Projections of the generated event. `NonNullable` strips the optionality the
+// property carries, leaving the object's own shape — so these track the schema
+// without restating a single field.
+export type RunEventTrace = NonNullable<RunEvent['trace']>;
 
 /**
- * Incremental cost for one event.
- *
- * Absent means NOT REPORTED, which is different from zero — VISION §6 makes
- * cost reporting a declared capability, so a runner that cannot report cost
- * must not look like one that spent nothing.
+ * Incremental cost for one event. Absent means NOT REPORTED, which differs from
+ * zero: VISION §6 makes cost reporting a declared capability, so a runner that
+ * cannot report cost must not look like one that spent nothing.
  */
-export interface RunEventCost {
-  usd?: number;
-  tokensInput?: number;
-  tokensOutput?: number;
-}
+export type RunEventCost = NonNullable<RunEvent['cost']>;
 
 /**
- * Tool name plus a normalized argument signature.
- *
- * The signature is a DIGEST computed by the sender, not the raw arguments:
- * arguments can be enormous and can contain secrets, and loop detection (#55)
- * only ever compares them for equality.
+ * Tool name plus a normalized argument DIGEST — not the raw arguments, which
+ * can be enormous and can contain secrets. Loop detection (#55) only ever
+ * compares them for equality.
  */
-export interface RunEventTool {
-  name: string;
-  signature: string;
-  phase?: string;
-}
+export type RunEventTool = NonNullable<RunEvent['tool']>;
+export type RunEventBlocked = NonNullable<RunEvent['blocked']>;
+export type RunEventResult = NonNullable<RunEvent['result']>;
+export type RunEventFailure = NonNullable<RunEvent['failure']>;
 
-export interface RunEventBlocked {
-  reason: BlockedReason;
-  /** Absent when the runner cannot say — see `reason: 'unknown'`. */
-  resetAt?: string;
-  detail?: string;
-}
-
-export interface RunEventResult {
-  branch?: string;
-  headCommit?: string;
-  pullRequestUrl?: string;
-}
-
-export interface RunEventFailure {
-  reason: string;
-  /**
-   * The runner's own view of whether a retry could succeed. Advisory: policy
-   * decides, per VISION §3.6 — no model output takes effect without passing
-   * through deterministic policy.
-   */
-  retryable?: boolean;
-}
-
-/** One event on the wire, as `run-event.schema.json` defines it. */
-export interface RunEventPayload {
-  schemaVersion: string;
-  /**
-   * Chosen by the SENDER. This is what makes ingestion idempotent: a runner
-   * retrying a delivery reuses the id, and the second delivery is recognised
-   * rather than stored twice (#53).
-   */
-  eventId: string;
-  runId: string;
-  workOrderId: string;
-  type: RunEventTypeName;
-  source: RunEventSourceName;
-  /** When it HAPPENED, per its source — not when Opifex stored it. */
-  occurredAt: string;
-  summary?: string;
-  runner?: string;
-  trace?: RunEventTrace;
-  cost?: RunEventCost;
-  tool?: RunEventTool;
-  blocked?: RunEventBlocked;
-  result?: RunEventResult;
-  failure?: RunEventFailure;
-}
+/**
+ * One event on the wire.
+ *
+ * The generated type is the SUPERSET: every conditionally-required property is
+ * present and optional, because JSON Schema's `if`/`then` has no static
+ * TypeScript equivalent. The conditions themselves are enforced by
+ * `RunEventValidator` at ingestion, so a `run.blocked` event carrying no
+ * `blocked` object is rejected there even though this type would accept it.
+ */
+export type RunEventPayload = RunEvent;
 
 // ---------------------------------------------------------------------------
 // Mapping onto the Prisma enums

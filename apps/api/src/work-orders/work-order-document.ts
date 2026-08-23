@@ -1,7 +1,14 @@
+import { WORK_ORDER_SCHEMA_VERSION } from '../contracts/generated';
 import type { GeneratedWorkOrder } from './work-order-generator';
 
-/** The version this serializer emits. Matches `work-order.schema.json`. */
-export const WORK_ORDER_SCHEMA_VERSION = '1.0.0';
+/**
+ * The version this serializer emits, from the schema rather than beside it.
+ *
+ * Re-exported instead of restated: since #35 the constant is generated from
+ * `work-order.schema.json`'s `default`, so bumping the schema moves this
+ * without anyone remembering to. The name is kept because call sites use it.
+ */
+export { WORK_ORDER_SCHEMA_VERSION } from '../contracts/generated';
 
 /**
  * The work order as the document that goes into both records.
