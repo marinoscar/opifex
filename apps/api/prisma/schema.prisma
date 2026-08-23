@@ -730,6 +730,15 @@ model Run {
   /// watcher to compare against.
   headCommit        String? @map("head_commit")
 
+  /// When the VISION §5 run summary was posted to GitHub (#67).
+  ///
+  /// A column rather than a re-read of the pull request's comments, because
+  /// the sweep that posts these runs on a schedule: asking GitHub "did I
+  /// already say this" once per concluded run per sweep spends rate limit on a
+  /// question the control plane can answer itself. Null means the summary is
+  /// still owed, which is exactly the sweep's query.
+  summaryPostedAt DateTime? @map("summary_posted_at") @db.Timestamptz
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -748,6 +757,8 @@ model Run {
   @@index([resumesAt])
   // The runs list, newest first.
   @@index([startedAt])
+  // The run-summary sweep: concluded runs that still owe one (#67).
+  @@index([summaryPostedAt, status])
   // The dispatcher's concurrency gate: how many live runs this runner has.
   @@index([runnerKey, status])
   @@map("runs")
