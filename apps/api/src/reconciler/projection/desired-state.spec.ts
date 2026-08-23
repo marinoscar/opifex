@@ -54,6 +54,8 @@ function run(overrides: Partial<ObservedRun> = {}): ObservedRun {
     status: 'running',
     costUsd: null,
     pullRequestUrl: null,
+
+    checks: null,
     ...overrides,
   };
 }
@@ -111,6 +113,8 @@ describe('projectDesiredState', () => {
                 status: 'running',
                 costUsd: null,
                 pullRequestUrl: null,
+
+                checks: null,
               },
             }),
           ],
@@ -215,6 +219,8 @@ describe('projectDesiredState', () => {
               status,
               costUsd: null,
               pullRequestUrl: null,
+
+              checks: null,
               ...extra,
             },
           }),
@@ -243,9 +249,14 @@ describe('projectDesiredState', () => {
       expect(result.desiredMirrorLabels).toEqual([MIRROR_LABELS.BLOCKED]);
     });
 
-    it('marks a succeeded run with a PR as awaiting review', () => {
+    it('marks a succeeded run with a green PR as awaiting review', () => {
+      // Since #107 a pull request reaches review only once CI is green; the
+      // gate cases live in their own describe below.
       const result = project(
-        withRun('succeeded', { pullRequestUrl: 'https://x/pull/9' }),
+        withRun('succeeded', {
+          pullRequestUrl: 'https://x/pull/9',
+          checks: 'passing',
+        }),
       );
 
       expect(result.intent).toBe('review');
@@ -302,7 +313,13 @@ describe('projectDesiredState', () => {
         issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
         workOrders: [
           workOrder({
-            run: { id: 'r', status: 'failed', costUsd, pullRequestUrl: null },
+            run: {
+              id: 'r',
+              status: 'failed',
+              costUsd,
+              pullRequestUrl: null,
+              checks: null,
+            },
           }),
         ],
       });
@@ -333,6 +350,109 @@ describe('projectDesiredState', () => {
 
     it('ignores spend when no ceiling is set', () => {
       expect(project(withSpend(1000, null)).intent).toBe('dispatch');
+    });
+  });
+
+  describe('green CI gates surfacing (#107)', () => {
+    // VISION §10: "a factory producing pull requests faster than they can be
+    // reviewed is negative value. Green CI is a hard gate before any PR is
+    // surfaced for human review." Review attention is the scarcest resource
+    // in the system.
+
+    const withPr = (checks: 'passing' | 'failing' | 'pending' | null) =>
+      observed({
+        issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
+        workOrders: [
+          workOrder({
+            attempt: 1,
+            run: run({
+              status: 'succeeded',
+              pullRequestUrl: 'https://x/pull/9',
+              checks,
+            }),
+          }),
+        ],
+        retryCeiling: 3,
+      });
+
+    it('surfaces for review once CI is green', () => {
+      const projected = projectDesiredState(withPr('passing')).issues[0];
+
+      expect(projected.intent).toBe('review');
+      expect(projected.desiredMirrorLabels).toEqual([MIRROR_LABELS.REVIEW]);
+      expect(projected.reason).toContain('CI is green');
+    });
+
+    it.each(['pending', null] as const)(
+      'holds it back while CI has said nothing (%s), with no review label',
+      (checks) => {
+        const projected = projectDesiredState(withPr(checks)).issues[0];
+
+        expect(projected.intent).toBe('awaiting-checks');
+        // The acceptance criterion is about what does NOT happen: no review
+        // label, so no mirror write, no notification, no review queue.
+        expect(projected.desiredMirrorLabels).toEqual([]);
+      },
+    );
+
+    it('never labels a red pull request for review', () => {
+      const projected = projectDesiredState(withPr('failing')).issues[0];
+
+      expect(projected.intent).not.toBe('review');
+      expect(projected.desiredMirrorLabels).not.toContain(MIRROR_LABELS.REVIEW);
+    });
+
+    it('feeds a red pull request back into the attempt counter', () => {
+      // #107: "a PR whose checks fail counts as a failed attempt feeding the
+      // retry counter (#66) — the runner re-runs from base with the failure
+      // context." With attempts left, that means dispatch.
+      const projected = projectDesiredState(withPr('failing')).issues[0];
+
+      expect(projected.intent).toBe('dispatch');
+    });
+
+    it('quarantines a red pull request once attempts are exhausted, naming it', () => {
+      // The other half of #107's policy: "or escalates with the failing check
+      // named when attempts are exhausted."
+      const state = observed({
+        issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
+        workOrders: [
+          workOrder({
+            attempt: 3,
+            run: run({
+              status: 'succeeded',
+              pullRequestUrl: 'https://x/pull/9',
+              checks: 'failing',
+            }),
+          }),
+        ],
+        retryCeiling: 3,
+      });
+
+      const projected = projectDesiredState(state).issues[0];
+      expect(projected.intent).toBe('quarantined');
+      expect(projected.reason).toContain('failing checks');
+      expect(projected.reason).toContain('https://x/pull/9');
+    });
+
+    it('still obeys factory:hold on a green pull request', () => {
+      const state = observed({
+        issues: [
+          issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] }),
+        ],
+        workOrders: [
+          workOrder({
+            run: run({
+              status: 'succeeded',
+              pullRequestUrl: 'https://x/pull/9',
+              checks: 'passing',
+            }),
+          }),
+        ],
+        retryCeiling: 3,
+      });
+
+      expect(projectDesiredState(state).issues[0].intent).toBe('hold');
     });
   });
 
@@ -429,6 +549,8 @@ describe('projectDesiredState', () => {
             run: run({
               status: 'succeeded',
               pullRequestUrl: 'https://github.com/acme/app/pull/7',
+
+              checks: 'passing',
             }),
           }),
         ],
@@ -479,6 +601,8 @@ describe('projectDesiredState', () => {
                 status: 'running',
                 costUsd: null,
                 pullRequestUrl: null,
+
+                checks: null,
               },
             }),
           ],
@@ -503,6 +627,8 @@ describe('projectDesiredState', () => {
                 status: 'running',
                 costUsd: null,
                 pullRequestUrl: null,
+
+                checks: null,
               },
             }),
           ],

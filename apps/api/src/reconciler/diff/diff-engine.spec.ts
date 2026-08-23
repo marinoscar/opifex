@@ -102,6 +102,8 @@ describe('computeActions', () => {
                 status: 'failed',
                 costUsd: 10,
                 pullRequestUrl: null,
+
+                checks: null,
               },
             }),
           ],
@@ -194,6 +196,8 @@ describe('computeActions', () => {
                 status: 'succeeded',
                 costUsd: null,
                 pullRequestUrl: 'https://x/pull/9',
+
+                checks: 'passing',
               },
             }),
           ],
@@ -268,6 +272,8 @@ describe('computeActions', () => {
                 status: 'running',
                 costUsd: null,
                 pullRequestUrl: null,
+
+                checks: null,
               },
             }),
           ],
@@ -325,6 +331,8 @@ describe('computeActions', () => {
                 status: 'blocked',
                 costUsd: null,
                 pullRequestUrl: null,
+
+                checks: null,
               },
             }),
           ],

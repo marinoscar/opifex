@@ -122,12 +122,38 @@ function projectIssue(
       };
     }
     if (run.status === 'succeeded' && run.pullRequestUrl) {
-      return {
-        ...base,
-        intent: 'review',
-        reason: `review: ${workOrder!.identity} opened ${run.pullRequestUrl}`,
-        desiredMirrorLabels: [MIRROR_LABELS.REVIEW],
-      };
+      // Green CI is a hard gate on SURFACING, not just on merging (#107).
+      // VISION §10: "a factory producing pull requests faster than they can be
+      // reviewed is negative value." Review attention is the scarcest resource
+      // here, and a pull request whose checks have not passed is not ready for
+      // it — so no review label, no notification, no review queue.
+      if (run.checks === 'passing') {
+        return {
+          ...base,
+          intent: 'review',
+          reason: `review: ${workOrder!.identity} opened ${run.pullRequestUrl} and CI is green`,
+          desiredMirrorLabels: [MIRROR_LABELS.REVIEW],
+        };
+      }
+
+      if (run.checks === 'pending' || run.checks === null) {
+        return {
+          ...base,
+          intent: 'awaiting-checks',
+          reason:
+            `awaiting-checks: ${workOrder!.identity} opened ${run.pullRequestUrl} ` +
+            'and CI has not reported a verdict yet',
+          desiredMirrorLabels: [],
+        };
+      }
+
+      // Failing deliberately does NOT return here. #107: "a PR whose checks
+      // fail counts as a failed attempt feeding the retry counter (#66) — the
+      // runner re-runs from base with the failure context — or escalates with
+      // the failing check named when attempts are exhausted." Falling through
+      // reaches the READY branch, where the ceiling added in #66 decides which
+      // of those two happens. The two issues compose rather than each owning
+      // half a policy.
     }
   }
 
@@ -169,12 +195,18 @@ function projectIssue(
     // waiting out a rate limit cannot consume an attempt. That property is
     // structural rather than a check here, which is why it has its own test.
     if (workOrder && workOrder.attempt >= observed.retryCeiling) {
+      // Naming red CI specifically when that is what brought us here: #107
+      // requires the failing check be named rather than the work order simply
+      // running out of attempts for no stated reason.
+      const redCi = workOrder.run?.checks === 'failing';
       return {
         ...base,
         intent: 'quarantined',
         reason:
           `quarantined: ${workOrder.identity} has used all ${observed.retryCeiling} ` +
-          'attempts without producing a reviewable pull request',
+          (redCi
+            ? `attempts; its last pull request ${workOrder.run!.pullRequestUrl} has failing checks`
+            : 'attempts without producing a reviewable pull request'),
         desiredMirrorLabels: [MIRROR_LABELS.QUARANTINE],
       };
     }

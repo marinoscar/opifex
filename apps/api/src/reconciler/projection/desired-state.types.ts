@@ -64,7 +64,28 @@ export interface ObservedRun {
   costUsd: number | null;
   /** Set once the run has opened a pull request. */
   pullRequestUrl: string | null;
+  /**
+   * CI's verdict on the pull request's head commit (#107).
+   *
+   * Resolved during observation, because answering it needs a GitHub read and
+   * the projection performs no I/O. Null when the run has no pull request to
+   * ask about.
+   */
+  checks: CheckVerdict | null;
 }
+
+/**
+ * What CI says, reduced to the only question the gate asks.
+ *
+ * `pending` covers both "a check is still running" and "no check has reported
+ * yet", and those are deliberately the same answer. They are indistinguishable
+ * from the checks list alone — a repository with no CI configured and one whose
+ * Actions have not started yet both report nothing — and of the two ways to be
+ * wrong, surfacing a pull request whose CI had not started is the one #107
+ * exists to prevent. The cost of the other is a tick or two of delay, and a
+ * reason string in the log saying exactly what is being waited for.
+ */
+export type CheckVerdict = 'passing' | 'failing' | 'pending';
 
 /**
  * The Prisma enums, restated as string unions.
@@ -146,7 +167,17 @@ export type IssueIntent =
   /** Needs a human; cannot clear itself (VISION §8). */
   | 'quarantined'
   /** Work finished; a pull request is awaiting review. */
-  | 'review';
+  | 'review'
+  /**
+   * A pull request exists but CI has not gone green on it yet (#107).
+   *
+   * Deliberately NOT `review`. VISION §10: "a factory producing pull requests
+   * faster than they can be reviewed is negative value. Green CI is a hard gate
+   * before any PR is surfaced for human review." Review attention is the
+   * scarcest thing in the system, and spending it on work whose checks have not
+   * passed is spending it on work that is not ready.
+   */
+  | 'awaiting-checks';
 
 export interface DesiredState {
   repository: string;

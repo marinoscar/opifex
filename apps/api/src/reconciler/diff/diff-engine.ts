@@ -109,6 +109,7 @@ function actionsForIssue(
     case 'running':
     case 'blocked':
     case 'review':
+    case 'awaiting-checks':
     case 'ignore':
       // Steady states. The mirror-label reconciliation below is the only
       // thing these produce, and an issue in a correct steady state with

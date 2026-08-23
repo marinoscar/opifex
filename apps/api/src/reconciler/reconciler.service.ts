@@ -6,6 +6,7 @@ import { INPUT_LABELS } from '../github/labels/factory-labels';
 import { GitHubHttpService } from '../github/github-http.service';
 import { RateLimitService } from '../github/rate-limit.service';
 import { GitHubReadService } from '../github/read/github-read.service';
+import type { RepositoryRef } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoriesService } from '../repositories/repositories.service';
 import type { ReconcileAction } from './diff/actions.types';
@@ -16,6 +17,7 @@ import {
   projectDesiredState,
 } from './projection/desired-state';
 import type {
+  CheckVerdict,
   DesiredState,
   ObservedState,
   ObservedWorkOrder,
@@ -26,6 +28,7 @@ import type {
   TickOutcome,
   TickRejection,
 } from './reconciler.types';
+import { summarizeChecks } from './projection/check-verdict';
 import { TickLeaseService } from './tick-lease.service';
 import { WorkOrderProjectionService } from '../work-orders/work-order-projection.service';
 
@@ -194,7 +197,10 @@ export class ReconcilerService {
         // rather than a quiet feedback loop where Opifex reads its own output.
         assertNoMirrorLabelsObserved(result.issues);
 
-        const workOrders = await this.loadWorkOrders(repository.id);
+        const workOrders = await this.loadWorkOrders(repository.id, {
+          owner: repository.owner,
+          name: repository.name,
+        });
 
         const state: ObservedState = {
           repository: {
@@ -465,6 +471,7 @@ export class ReconcilerService {
    */
   private async loadWorkOrders(
     repositoryId: string,
+    repo: RepositoryRef,
   ): Promise<ObservedWorkOrder[]> {
     const workOrders = await this.prisma.workOrder.findMany({
       where: { repositoryId },
@@ -484,28 +491,75 @@ export class ReconcilerService {
             status: true,
             costUsd: true,
             pullRequestUrl: true,
+            // The commit CI reported on. Without it there is nothing to ask
+            // GitHub about, so a run missing it stays `pending` (#107).
+            headCommit: true,
           },
         },
       },
     });
 
-    return workOrders.map((workOrder) => ({
-      id: workOrder.id,
-      identity: workOrder.identity,
-      issueNumber: workOrder.issueNumber,
-      attempt: workOrder.attempt,
-      status: workOrder.status,
-      run: workOrder.runs[0]
-        ? {
-            id: workOrder.runs[0].id,
-            status: workOrder.runs[0].status,
-            costUsd: workOrder.runs[0].costUsd
-              ? Number(workOrder.runs[0].costUsd)
-              : null,
-            pullRequestUrl: workOrder.runs[0].pullRequestUrl,
-          }
-        : null,
-    }));
+    return Promise.all(
+      workOrders.map(async (workOrder) => {
+        const run = workOrder.runs[0];
+        return {
+          id: workOrder.id,
+          identity: workOrder.identity,
+          issueNumber: workOrder.issueNumber,
+          attempt: workOrder.attempt,
+          status: workOrder.status,
+          run: run
+            ? {
+                id: run.id,
+                status: run.status,
+                costUsd: run.costUsd ? Number(run.costUsd) : null,
+                pullRequestUrl: run.pullRequestUrl,
+                checks: await this.resolveChecks(repo, run),
+              }
+            : null,
+        };
+      }),
+    );
+  }
+
+  /**
+   * CI's verdict on a run's pull request (#107).
+   *
+   * Asked here rather than in the projection because it is a GitHub read, and
+   * the projection performs no I/O — the same reason `humanClearedQuarantine`
+   * is resolved during observation.
+   *
+   * Only for runs that actually produced a pull request. Everything else has
+   * nothing to gate: `null` means "not applicable", and the projection treats
+   * it the same as `pending` at the one place it matters.
+   */
+  private async resolveChecks(
+    repo: RepositoryRef,
+    run: {
+      status: string;
+      pullRequestUrl: string | null;
+      headCommit: string | null;
+    },
+  ): Promise<CheckVerdict | null> {
+    if (run.status !== 'succeeded' || !run.pullRequestUrl) return null;
+
+    // No head commit means nothing to ask about. Pending rather than passing:
+    // the gate's failure mode has to be "hold", never "surface anyway".
+    if (!run.headCommit) return 'pending';
+
+    try {
+      return summarizeChecks(
+        await this.github.listChecks(repo, run.headCommit),
+      );
+    } catch (error) {
+      // A failed read is not a green light. #107 makes green CI a HARD gate,
+      // and a gate that opens when it cannot see is not one.
+      this.logger.warn(
+        `Could not read checks for ${run.pullRequestUrl}; holding it back from ` +
+          `review until the next tick can: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 'pending';
+    }
   }
 
   private finish(
