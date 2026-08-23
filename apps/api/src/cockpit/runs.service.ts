@@ -7,6 +7,7 @@ import {
   fromPrismaEventType,
 } from '../run-events/run-event.types';
 import { PrismaService } from '../prisma/prisma.service';
+import { toNumberOrNull } from './decimal';
 import {
   RUNS_DEFAULT_PAGE_SIZE,
   EVENTS_DEFAULT_PAGE_SIZE,
@@ -251,8 +252,9 @@ function toRunSummary(row: RunRow): RunSummary {
     resumesAt: row.resumesAt?.toISOString() ?? null,
     runner: row.runnerKey,
     // Prisma hands back a Decimal; the document wants a number or null. Left
-    // unconverted it serializes as an object.
-    costUsd: row.costUsd ? row.costUsd.toNumber() : null,
+    // unconverted it serializes as an object. Shared with the other read
+    // models so the three cannot convert the same column three ways.
+    costUsd: toNumberOrNull(row.costUsd),
     pullRequestUrl: row.pullRequestUrl,
   };
 }

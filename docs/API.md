@@ -1528,6 +1528,95 @@ A single "message" field would destroy exactly that distinction.
 `costUsd` is `null` when the runner reports no cost — which is not the same
 claim as a run that was free.
 
+#### `GET /api/work-orders`
+
+Every work order, newest first. Requires `workorders:read`.
+
+| Query | Type | Default | Notes |
+|---|---|---|---|
+| `page` / `pageSize` | number | `1` / `25` | `pageSize` max 100. |
+| `status` | enum | — | `pending`, `queued`, `held`, `dispatched`, `succeeded`, `failed`, `quarantined`, `superseded`, `cancelled`. |
+| `repository` | string | — | `owner/name`. |
+
+Unlike `/queue` — which lists only what is waiting, in dispatch order — this is
+**history**: every state a work order can reach. `runCount` is how many runs have
+been made against it, which is what #66 judges decomposition quality on.
+
+`baseCommit` is shortened to 7 here, because it is a label in a table.
+
+#### `GET /api/work-orders/{idOrIdentity}`
+
+One work order and **the document it authorized**. Requires `workorders:read`.
+
+Accepts either the row id or the identity (`wo_opifex_312_a3f91c2_a1`). The
+identity is the string an operator actually has — it is what the authorization
+record shows and what the branch name encodes — so requiring a uuid they have
+never seen would be a lookup key chosen for the database's convenience.
+
+**`document` is rebuilt from the row and passed through the same serializer**
+that produced the bytes committed to the factory branch and posted to the issue
+(#63, #154). It is not a second rendering of the same columns. That distinction
+is the whole point: #63's premise is that *"the agent did something I did not ask
+for"* is a checkable claim, and it stops being checkable the moment the cockpit
+shows a lookalike. Comparing this against the authorization record on the issue
+is a real check.
+
+**A row whose stored identity its own coordinates do not derive returns `422`**,
+not a best-effort document. Serving the raw columns anyway would put a document
+in front of an operator that nothing ever authorized. The row still appears in
+the list, so the work order does not vanish — only the claim "this is what was
+authorized" is withheld.
+
+`baseCommit` is returned **in full** here, unlike on the list: this one is meant
+to be checked out, and a 7-character prefix is not a git ref you can rely on
+resolving in a repository with enough history.
+
+`authorizationCommentUrl` is the traversable edge VISION §5 rests on — the link
+from the work order to the human-readable proof it was authorized. Null until
+dispatch posts it; never reconstructed from the issue URL, which would be a guess
+about where dispatch commented.
+
+```json
+{
+  "data": {
+    "id": "3f2a…",
+    "status": "dispatched",
+    "holdReason": null,
+    "queuedAt": "2026-08-23T01:00:00.000Z",
+    "createdAt": "2026-08-23T00:30:00.000Z",
+    "authorizationCommentUrl": "https://github.com/marinoscar/opifex/issues/312#issuecomment-9",
+    "baseCommit": "a3f91c2000000000000000000000000000000000",
+    "document": {
+      "schemaVersion": "1.0.0",
+      "identity": "wo_opifex_312_a3f91c2_a1",
+      "branch": "factory/312-a3f91c2-a1",
+      "repository": { "owner": "marinoscar", "name": "opifex" },
+      "baseCommit": "a3f91c2000000000000000000000000000000000",
+      "attempt": 1,
+      "issue": { "number": 312, "url": "https://github.com/marinoscar/opifex/issues/312" },
+      "decisionRefs": ["ADR-0042"],
+      "taskSpec": "…",
+      "acceptanceCriteria": ["…"],
+      "pathConstraints": ["apps/api/**"],
+      "budgetCeilingUsd": 5,
+      "wallClockTimeoutMinutes": 30,
+      "needs": ["full-streaming"]
+    },
+    "runs": [
+      {
+        "id": "…",
+        "status": "succeeded",
+        "runner": "claude-code-local",
+        "startedAt": "2026-08-23T02:00:00.000Z",
+        "endedAt": "2026-08-23T02:30:00.000Z",
+        "costUsd": 2.5,
+        "pullRequestUrl": "https://github.com/marinoscar/opifex/pull/9"
+      }
+    ]
+  }
+}
+```
+
 #### `GET /api/metrics/summary`
 
 The six VISION §10 success metrics, in one request. Requires `runs:read`.
