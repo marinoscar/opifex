@@ -25,6 +25,16 @@ export interface ObservedState {
    * not "the label is present".
    */
   humanClearedQuarantine: ReadonlySet<number>;
+  /**
+   * How many attempts a work order gets before quarantine (#66).
+   *
+   * Handed in rather than read from config here, because the projection
+   * performs no I/O and reads no globals — #46 calls that "the requirement,
+   * not a style preference". A ceiling read inside would make the function's
+   * output depend on ambient state and take the observation week's ability to
+   * validate the logic with it.
+   */
+  retryCeiling: number;
 }
 
 export interface ObservedRepository {

@@ -57,6 +57,9 @@ function observed(overrides: Partial<ObservedState> = {}): ObservedState {
     issues: [issue()],
     workOrders: [],
     humanClearedQuarantine: new Set<number>(),
+    // High enough that the ceiling is never the thing under test here; the
+    // cases that exercise it set it explicitly.
+    retryCeiling: 99,
     ...overrides,
   };
 }

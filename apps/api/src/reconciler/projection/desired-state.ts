@@ -156,6 +156,29 @@ function projectIssue(
       };
     }
 
+    // Retry ceiling (#66). Reaching here means the newest work order has no
+    // live run and did not end in a reviewable pull request — so dispatching
+    // would create attempt N+1. Abandon-and-re-run (VISION §3.4) needs a
+    // stopping condition or a work order that cannot succeed retries forever.
+    //
+    // Quarantine rather than abandon, because abandonment is silent and this
+    // is the failure Opifex exists to eliminate. A quarantined work order sits
+    // visibly waiting for a human, and by VISION §8 only a human clears it.
+    //
+    // A parked run never reaches this branch: `blocked` is answered above, so
+    // waiting out a rate limit cannot consume an attempt. That property is
+    // structural rather than a check here, which is why it has its own test.
+    if (workOrder && workOrder.attempt >= observed.retryCeiling) {
+      return {
+        ...base,
+        intent: 'quarantined',
+        reason:
+          `quarantined: ${workOrder.identity} has used all ${observed.retryCeiling} ` +
+          'attempts without producing a reviewable pull request',
+        desiredMirrorLabels: [MIRROR_LABELS.QUARANTINE],
+      };
+    }
+
     return {
       ...base,
       intent: 'dispatch',
