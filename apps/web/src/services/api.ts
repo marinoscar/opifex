@@ -418,9 +418,17 @@ export async function getActivityFeed(
   params?: { limit?: number },
   signal?: AbortSignal,
 ): Promise<RunEvent[]> {
-  const searchParams = new URLSearchParams({ limit: String(params?.limit ?? 20) });
+  // `pageSize`, not `limit`: the endpoint paginates like every other list in
+  // this API. The panel wants the newest N and nothing else, so the page size
+  // IS the limit here and the envelope is unwrapped for the caller — a
+  // dashboard panel has no pager and no use for `total`.
+  const searchParams = new URLSearchParams({ pageSize: String(params?.limit ?? 20) });
 
-  return api.get<RunEvent[]>(`/events?${searchParams}`, { signal });
+  const page = await api.get<{ items: RunEvent[]; total: number }>(
+    `/events?${searchParams}`,
+    { signal },
+  );
+  return page.items;
 }
 
 // ---------------------------------------------------------------------------

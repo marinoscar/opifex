@@ -28,10 +28,12 @@ describe('COCKPIT_ENDPOINTS', () => {
    * Naming both sets is the deliberate speed bump: flipping one fails here,
    * and the fix is to move it between these lists in the SAME pull request as
    * the endpoint — which is exactly the review conversation that should
-   * happen. `queue`, `attention` and `metrics` all moved on #80.
+   * happen. All four moved across #80; NOT_WIRED being empty is the end
+   * of that work, asserted rather than deleted — a fifth resource added
+   * tomorrow must be classified, not defaulted.
    */
-  const WIRED: CockpitResourceKey[] = ['queue', 'attention', 'metrics'];
-  const NOT_WIRED: CockpitResourceKey[] = ['activity'];
+  const WIRED: CockpitResourceKey[] = ['queue', 'attention', 'metrics', 'activity'];
+  const NOT_WIRED: CockpitResourceKey[] = [];
 
   it('accounts for every resource as either wired or not', () => {
     // So a fifth resource cannot be added without deciding which it is.

@@ -31,14 +31,14 @@ function orderAt(element: HTMLElement, minWidthPx: number): string | null {
 }
 
 /**
- * The operator dashboard, rendered exactly as it ships today: four panels, two
+ * The operator dashboard, rendered exactly as it ships today: four panels, ALL
  * of them wired.
  *
- * #80 flipped `queue` and then `attention` to `available: true`, so the page
- * really does fetch `GET /api/queue` and `GET /api/runs?needsAttention=true`
- * on mount and both panels show data — EMPTY states against the default MSW
- * handlers, not not-wired ones. Metrics and activity are still honestly
- * unbuilt.
+ * #80 flipped all four to `available: true`, so the page really does fetch
+ * `/queue`, `/runs?needsAttention=true`, `/metrics/summary` and `/events` on
+ * mount, and every panel shows data — EMPTY states against the default MSW
+ * handlers, never not-wired ones. Nothing on this page claims to be unbuilt
+ * any more, and the assertions below are what stop that claim reappearing.
  *
  * These tests use the REAL hooks rather than mocks, which is what makes that
  * distinction checkable: a mocked hook could not prove that an unavailable
@@ -106,21 +106,23 @@ describe('DashboardPage', () => {
       expect(container.querySelector('.MuiSkeleton-root')).toBeNull();
     });
 
-    it('names a roadmap phase on every panel that is still unbuilt', () => {
+    it('names no roadmap phase at all, because nothing is unbuilt', () => {
+      // #80 wired the last panel. Any "Arrives in Phase N" copy left on this
+      // page now tells an operator to wait for something that already
+      // arrived — the honesty contract failing in the direction nobody checks
+      // for. Asserted as a blanket rule rather than phase by phase, so a
+      // regression in ANY panel fails here.
       render(<DashboardPage />);
 
-      // Activity is the last unwired panel, and it still names its phase.
-      expect(screen.getByText(/Events appear here once the reconciler runs/)).toBeInTheDocument();
-      expect(screen.getByText(/Arrives in Phase 2 — Reconciler, read-only/)).toBeInTheDocument();
+      expect(screen.queryByText(/Arrives in Phase/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/^Not yet wired/)).not.toBeInTheDocument();
     });
 
-    it('has no Phase 3 copy left, because both Phase 3 panels are wired', () => {
-      // Attention and metrics were the two. Leaving the copy would tell an
-      // operator to wait for something that already arrived.
+    it('stops claiming the activity feed is unbuilt', () => {
       render(<DashboardPage />);
 
       expect(
-        screen.queryByText(/Arrives in Phase 3 — Liveness and escalation/),
+        screen.queryByText(/Events appear here once the reconciler runs/),
       ).not.toBeInTheDocument();
     });
 

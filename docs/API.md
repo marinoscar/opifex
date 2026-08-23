@@ -1617,6 +1617,62 @@ about where dispatch commented.
 }
 ```
 
+#### `GET /api/events`
+
+The normalized event floor across every run, newest first. Requires `runs:read`.
+
+| Query | Type | Default | Notes |
+|---|---|---|---|
+| `page` / `pageSize` | number | `1` / `20` | `pageSize` max 200. |
+| `type` | enum | — | `run.started`, `run.heartbeat`, `run.progress`, `run.blocked`, `run.completed`, `run.failed`. |
+| `source` | enum | — | `runner`, `git`, `control-plane`. |
+
+**Not the same as `/runs/{id}/events`**, which is one run's timeline. This spans
+runs, so every row names its `runId` and the work order `identity` it belongs
+to — a feed of *"edited a file"* with no subject is a list of sentences nobody
+can act on.
+
+The default page is **20**, matching what the dashboard panel asks for.
+`RunEvent` is high-volume (#39): a single run emits a progress event per tool
+call plus heartbeats, so a handful of live runs produces a feed that scrolls
+faster than anyone reads.
+
+Ordered `occurredAt` then `recordedAt`. The tiebreak is load-bearing — two
+events can share a reported millisecond, and an unstable sort would shuffle them
+between pages so a reader could see one twice and another never.
+
+`source` says whether a runner **reported** the event, the git watcher
+**derived** it, or the control plane **synthesized** it. VISION §9 requires that
+a synthesized event never masquerade as a report, which is why it is a field
+rather than a note in the summary text.
+
+**Filters take the wire spelling, never the database's.** `?type=run.started`,
+not `run_started`; `?source=control-plane`, not `control_plane`. Postgres cannot
+hold a dot in an enum label, so the stored labels differ from the names that
+appear in `schemas/run-event.schema.json`, in a runner's output, and in this
+API's own responses — and a caller should never have to know that.
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "id": "…",
+        "type": "run.blocked",
+        "source": "control-plane",
+        "occurredAt": "2026-08-23T01:04:00.000Z",
+        "runId": "…",
+        "workOrderId": "wo_opifex_312_a3f91c2_a1",
+        "summary": "rate limited until 06:00"
+      }
+    ],
+    "total": 5,
+    "page": 1,
+    "pageSize": 20
+  }
+}
+```
+
 #### `GET /api/cost/summary`
 
 Spend over a window, with the unmeasured part counted. Requires `runs:read`.
