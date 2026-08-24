@@ -28,6 +28,8 @@ function run(overrides: Partial<WatchedRunState> = {}): WatchedRunState {
     lastEventSource: 'runner' as const,
     runnerKey: 'claude-code-local',
     fidelity: 'full',
+    rateLimitSignal: 'structured',
+    branch: 'factory/312-a3f91c2-a1',
     ...overrides,
   };
 }

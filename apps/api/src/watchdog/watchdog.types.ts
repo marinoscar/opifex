@@ -51,6 +51,20 @@ export interface WatchedRunState {
    * no capability manifest at all.
    */
   fidelity: StreamingFidelity | null;
+  /**
+   * The runner's declared rate-limit signal, or null with no manifest.
+   *
+   * Not used to judge silence — it is carried so the sweep can report which
+   * checks COVER each run (#104) without a second query per run. A watchdog
+   * that reports what it found but not what it could not look for is the
+   * false-confidence failure that issue exists to prevent.
+   */
+  rateLimitSignal: RateLimitSignal | null;
+  /**
+   * The branch git-derived liveness would watch, or null when the run has
+   * none. The second, independent liveness source exists only where this does.
+   */
+  branch: string | null;
 }
 
 /**
