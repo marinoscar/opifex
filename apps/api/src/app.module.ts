@@ -11,6 +11,7 @@ import { MergeStateModule } from './merge-state/merge-state.module';
 import { SupervisorModule } from './supervisor/supervisor.module';
 import { AutonomyModule } from './autonomy/autonomy.module';
 import { TrustModule } from './trust/trust.module';
+import { ApprovalsModule } from './approvals/approvals.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { AuthModule } from './auth/auth.module';
@@ -107,6 +108,12 @@ import configuration from './config/configuration';
     // a grant names an action class and a repository, and authorizes nothing
     // by itself. It imports only PrismaModule on purpose; see TrustModule.
     TrustModule,
+    // The approval gate (VISION §8, #97, ADR-0014). After TrustModule, which
+    // it consults, and after AutonomyModule, whose never-trustable guard it
+    // runs first. Its cron sweep is the only thing that resolves a timeout, so
+    // registering it here is what makes ADR-0014's policy actually fire — a
+    // gate whose clock is not wired up parks everything forever.
+    ApprovalsModule,
 
     // Test modules (non-production only)
     // TestAuthModule bypasses both OAuth and the email allowlist, so NODE_ENV
