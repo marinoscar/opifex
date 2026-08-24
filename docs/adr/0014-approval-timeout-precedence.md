@@ -87,6 +87,45 @@ eligible for auto-approval, per VISION §8's "Scope — action class × reposito
 `irreversible` classes are never in that set to begin with. So the total order is not
 weakened by the existence of grants; it is the thing a grant operates inside of.
 
+### Rule 1 is currently unreachable from the registry
+
+Issue #97's registry (`apps/api/src/supervisor/action-classes.ts`) has seven action
+classes, and none of them is `irreversible`: three are `reversible` (`run-diagnosis`,
+`spec-quality-feedback`, `daily-brief`) and four are `reversible-with-effort`
+(`re-dispatch`, `decomposition`, `issue-shaping`, `quarantine-decision`).
+`quarantine-decision` sits in that `reversible-with-effort` band and is ineligible for
+autonomy for an unrelated reason — VISION §7 ranks it "probably never" and VISION §8
+puts clearing quarantine on the never-trustable list outright, which is ADR-0013's rule
+0, not this ADR's rule 1. So rule 1 — `irreversible` → park and escalate — has no
+registered class that can trigger it today. The only way to reach it in production is an
+unknown class id arriving at the gate, since the total order resolves an id the registry
+does not recognize to `park_and_escalate` as the conservative default.
+
+That makes an observed `park_and_escalate` mean something narrower than it looks like it
+means. An operator seeing a parked approval right now is not looking at an irreversible
+action awaiting judgment — no such action can currently be proposed — they are looking
+at a class id the gate did not recognize: a drift between the registry and whatever
+tagged the proposal, or a typo. Read as VISION §8 intends rule 1 to be read, the same
+parked state looks like the high-consequence case the rule exists for. Those two
+readings point an operator toward completely different remediations, so the distinction
+is worth stating plainly rather than leaving it to be inferred from an empty rule.
+
+This does not weaken the safety property rule 1 encodes. Rule 1 exists so that the day an
+irreversible class is registered — and ADR-0011 leaves the taxonomy open for one to be
+added — the correct behavior is already in place, tested, and ranked above spend, rather
+than being reconstructed from memory under pressure. What it does mean is that the rule
+is currently carrying an argument rather than doing work in the running system, and a
+reader comparing this ADR against a live deployment, watching rule 1 never fire, could
+reasonably conclude it was dead code and propose deleting it. It is not dead code; it is
+a rule with no current occupant. That is the same category of misreading the "grant, not
+the timeout" subsection above exists to head off, just aimed at rule 1 instead of the
+timeout mechanism as a whole.
+
+This is consistent with ADR-0011, whose taxonomy lives in this same file: the
+`ActionReversibility` type's `irreversible` variant is annotated "Cannot be undone.
+Nothing in this taxonomy is autonomy-eligible here." The registry above confirms that
+holds as a fact about the data, not only as a design intention.
+
 ## Alternatives considered
 
 **Spend above irreversibility.** Loses on the escalation argument above: an irreversible
