@@ -213,6 +213,7 @@ import type {
   RunStatus,
   RunSummary,
   CostSummary,
+  RepositorySummary,
   WorkOrderDetail,
 } from '../types/cockpit';
 
@@ -231,6 +232,40 @@ export interface QueueSteerResult {
   labelWritten: boolean;
   reconciled: boolean;
   effect: string;
+}
+
+export interface RepositoriesPage {
+  items: RepositorySummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** `GET /repositories` — every repository Opifex is registered against. */
+export async function getRepositories(
+  params: {
+    page?: number;
+    pageSize?: number;
+    observeEnabled?: boolean;
+    dispatchEnabled?: boolean;
+  } = {},
+  signal?: AbortSignal,
+): Promise<RepositoriesPage> {
+  const searchParams = new URLSearchParams();
+  if (params.page) searchParams.set('page', String(params.page));
+  if (params.pageSize) searchParams.set('pageSize', String(params.pageSize));
+  if (params.observeEnabled !== undefined) {
+    searchParams.set('observeEnabled', String(params.observeEnabled));
+  }
+  if (params.dispatchEnabled !== undefined) {
+    searchParams.set('dispatchEnabled', String(params.dispatchEnabled));
+  }
+
+  const query = searchParams.toString();
+  return api.get<RepositoriesPage>(
+    query ? `/repositories?${query}` : '/repositories',
+    { signal },
+  );
 }
 
 /** `GET /cost/summary` — spend over a window, with the ceiling beside it. */
