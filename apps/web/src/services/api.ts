@@ -212,6 +212,7 @@ import type {
   RunEvent,
   RunStatus,
   RunSummary,
+  CostSummary,
   WorkOrderDetail,
 } from '../types/cockpit';
 
@@ -230,6 +231,14 @@ export interface QueueSteerResult {
   labelWritten: boolean;
   reconciled: boolean;
   effect: string;
+}
+
+/** `GET /cost/summary` — spend over a window, with the ceiling beside it. */
+export async function getCostSummary(
+  days: number,
+  signal?: AbortSignal,
+): Promise<CostSummary> {
+  return api.get<CostSummary>(`/cost/summary?days=${days}`, { signal });
 }
 
 /** `GET /work-orders/:idOrIdentity` — one work order, its document and attempts. */
