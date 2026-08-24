@@ -101,6 +101,38 @@ npm run test:e2e
 
 In CI environments, E2E tests should be run with a dedicated test database service.
 
+## The governing test
+
+`test/governing/supervisor-offline.spec.ts` is not an ordinary suite, and it should not be
+treated as one. It asserts VISION §7's governing property:
+
+> **If the AI supervisor is offline, the factory keeps running.** Dumber about diagnosis.
+> Still correct about execution.
+
+That property is what keeps the supervisor from becoming the recursion trap VISION §7
+warns about — a non-deterministic component that can itself stall and exhaust quota,
+supervising components that stall and exhaust quota. Stated as an aspiration it erodes one
+convenient dependency at a time, each individually reasonable; stated as a test that runs
+on every change, it cannot.
+
+The suite has two halves. The **structural** half asserts that no file implementing a row
+of VISION §7's left-hand column — dispatch, stall detection, rate-limit parking, budget
+enforcement, retry and quarantine, state transitions, escalation — imports anything from
+`src/supervisor/`. Each row is asserted separately so a failure names the specific
+behaviour that became supervisor-dependent. The **behavioural** half exercises those
+decisions while a real `SupervisorService` is present and broken three ways — disabled,
+erroring, and hanging — and asserts the verdicts are unchanged.
+
+**When it fails, do not adjust it to accommodate the change.** The question to answer is
+whether the factory still runs with the supervisor offline. If it does not, the change is
+the bug. The one legitimate reason to edit this file is a promotion under VISION §7 rung 3
+— granted per action class, on evidence — and that arrives as an ADR.
+
+`src/run-summary/` is allowed to read the decision log, and the suite asserts that it does.
+The run summary is a sweep over concluded runs, deliberately off the path a runner posts
+into, and its diagnosis lookup swallows a failure so the summary goes out without a
+hypothesis rather than not at all.
+
 ## Test Structure
 
 ### Unit Test Example
