@@ -184,16 +184,46 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
       {
         name: 'Trust',
         description:
-          'Trust grants (VISION §8): what may run unattended, and for how long. A grant is ' +
-          'always an action class in ONE repository — never "trust the agent" — and carries ' +
-          'four attributes attached automatically: scope, expiry, a budget ceiling, and ' +
-          'auto-revoke thresholds. Expiry is the mechanism, not a reminder: an expired grant ' +
-          'stops authorizing on the timestamp with no grace period, so doing nothing revokes. ' +
-          'Renewal is the other half of that bargain — one tap that ends a grant and issues a ' +
-          'successor whose terms are taken fresh from the defaults and narrowed by the old ' +
-          "grant's own, never widened, because a chain of renewals that copied its terms " +
-          'forward would launder a one-time generous decision into a permanent one. A lapsed ' +
-          'grant cannot be renewed at all: that is a new decision, with a name on it.',
+          'Standing permission for one action class in one repository (VISION §8). What makes ' +
+          'a grant safe is not that it CAN be scoped and capped but that it always is: every ' +
+          'grant carries a scope, an expiry, a budget ceiling and auto-revoke thresholds, ' +
+          'attached automatically, and NONE OF THE FOUR IS ACCEPTED FROM THE CALLER. Creating ' +
+          'one takes an action class, a repository and an optional note; sending an expiry or ' +
+          'a ceiling is a 400 naming the field, not a silently ignored key. That refusal is ' +
+          'the mechanism rather than an inconvenience — a caller able to set the expiry could ' +
+          'set it to ten years, and the guardrail would still appear on every screen while ' +
+          'revoking nothing, which is worse than having no expiry at all. Expiry is the ' +
+          'mechanism and not a reminder: an expired grant stops authorizing on the timestamp ' +
+          'with no grace period, so doing nothing revokes. Renewal is the other half of that ' +
+          'bargain — one tap that ends a grant and issues a successor whose terms are taken ' +
+          "fresh from the defaults and narrowed by the old grant's own, never widened, " +
+          'because a chain of renewals copying its terms forward would launder a one-time ' +
+          'generous decision into a permanent one. A lapsed grant cannot be renewed at all: ' +
+          'that is a new decision, with a name on it. There is no PATCH for the same reason ' +
+          'renewal is a new row pointing back at the old one — the original keeps saying what ' +
+          'it originally said. Revocation is immediate, permanent and separately ' +
+          'permissioned, because taking authority back must never be gated on the permission ' +
+          'that hands it out. Revoked, expired and suspended grants stay readable forever: ' +
+          'what was trusted, what it cost and why it stopped being trusted is the evidence ' +
+          'the promotion ladder and the daily digest are made of.',
+      },
+      {
+        name: 'Promotion',
+        description:
+          'The earned-autonomy ladder (VISION §7): observe, measure, promote, demote. THERE IS ' +
+          'NO PROMOTE ENDPOINT, and that is the design rather than an omission — VISION §7 ' +
+          'promotes classes with a "demonstrated record" and demotes them "automatically on ' +
+          'regression, not a judgment call", so a hand-promotion would be exactly the ' +
+          'judgement call the ladder exists to remove, taken at the moment somebody is most ' +
+          'impatient with the approval queue and applied to precisely the classes the evidence ' +
+          'was not ready for. It would also corrupt the measurement: the frozen evidence ' +
+          'behind such a rung would describe a decision that was never made on evidence. ' +
+          'Demotion by hand IS offered, because narrowing authority is always safe and an ' +
+          'operator sees regressions an approval count cannot. Every response carries whether ' +
+          'the ladder is switched on at all (it defaults off), since rungs shown without that ' +
+          'flag read as live conclusions when nothing has moved or will. Each class reports ' +
+          "what would be needed to promote it as the policy layer's own sentence, never a " +
+          'number recomputed from a second copy of the thresholds.',
       },
       {
         name: 'Repositories',

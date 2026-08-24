@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
   Prisma,
@@ -12,7 +17,11 @@ import type { NotificationPayload } from '../notifications/notification-payload'
 import { PushSubscriptionsService } from '../notifications/push-subscriptions.service';
 import { WebPushTransport } from '../notifications/web-push.transport';
 import { PrismaService } from '../prisma/prisma.service';
-import { isAutonomyEligible } from '../supervisor/action-classes';
+import {
+  getActionClass,
+  isActionClass,
+  isAutonomyEligible,
+} from '../supervisor/action-classes';
 import { DecisionLogService } from '../supervisor/decision-log/decision-log.service';
 import { TrustGrantService } from '../trust/trust-grant.service';
 import {
@@ -75,6 +84,89 @@ export interface PromotionStateView {
   promotedAt: string | null;
   demotedAt: string | null;
   demotionCount: number;
+}
+
+/**
+ * The thresholds a `requirement` sentence refers to, published as numbers.
+ *
+ * The sentence is authoritative and a client should render it verbatim; these
+ * exist so a progress bar can be drawn without PARSING it. They are re-exported
+ * from `promotion-policy.ts` rather than restated, so a bar and the sentence
+ * beside it cannot describe different thresholds.
+ */
+export const LADDER_THRESHOLDS = Object.freeze({
+  /** Fewest human decisions a class may be promoted on. */
+  minSample: MIN_SAMPLE,
+  /** Approval rate required to promote, over `minSample` or more. */
+  promotionRate: PROMOTION_RATE,
+  /** Rate a promoted class must stay above. Below `promotionRate` — the band
+   * between them is the hysteresis that stops one decision oscillating a
+   * class. */
+  demotionRate: DEMOTION_RATE,
+  /** Fewest RECENT decisions a demotion may rest on. */
+  demotionMinSample: DEMOTION_MIN_SAMPLE,
+  /** The window `recent*` counts are measured over. */
+  regressionWindowDays: REGRESSION_WINDOW_DAYS,
+});
+
+/** A ladder state with the live evidence and the policy layer's sentence. */
+export interface PromotionLadderStateView extends PromotionStateView {
+  /** ADR-0011 registry title, or NULL — never the raw id. */
+  actionClassTitle: string | null;
+  /**
+   * The evidence AS IT STANDS NOW, distinct from the frozen `evidence` the
+   * last rung change was made from. `rate` is the approval rate and `sample`
+   * the sample size the promotion rule reads.
+   */
+  currentEvidence: ClassEvidence;
+  /**
+   * What would be needed to promote — or, for a promoted class, what is
+   * keeping it there. The policy layer's own sentence, verbatim.
+   */
+  requirement: string;
+  /**
+   * What the next evaluation would do over this evidence, or null for a hold.
+   *
+   * A FORECAST, not a plan: when `PromotionLadderView.enabled` is false
+   * nothing will act on it. Render it as such.
+   */
+  wouldChange: 'promote' | 'demote' | null;
+}
+
+/** The whole ladder, plus the one fact that makes the rungs mean anything. */
+export interface PromotionLadderView {
+  /**
+   * Whether `PROMOTION_LADDER_ENABLED` is on. DEFAULTS OFF.
+   *
+   * Reported at the top level and not per class because it is one switch. A
+   * cockpit that showed rungs without saying the ladder is off would be
+   * actively misleading: every rung would look like a live conclusion when in
+   * fact nothing has moved or will move.
+   */
+  enabled: boolean;
+  readAt: string;
+  thresholds: typeof LADDER_THRESHOLDS;
+  states: PromotionLadderStateView[];
+}
+
+/** What a hand-demotion did. */
+export interface ManualDemotionResult {
+  state: PromotionLadderStateView;
+  /** Active grants for the class that were suspended. The durable effect. */
+  grantsSuspended: number;
+  /** Whether any transport accepted the notification. False is a real outcome. */
+  notified: boolean;
+  /**
+   * Whether the next evaluation would put the class straight back on the
+   * promoted rung, because its lifetime record still clears the bar.
+   *
+   * TRUE is the common case for a class demoted while its numbers are good.
+   * The suspended grants stay suspended either way, so nothing resumes running
+   * — but the rung will read `promoted` again, and an operator not told that
+   * would reasonably conclude the demotion had been undone or had never
+   * worked.
+   */
+  rungMayBeRestoredByLadder: boolean;
 }
 
 /**
@@ -454,6 +546,290 @@ export class PromotionService {
     );
 
     return [...views, ...extras];
+  }
+
+  /**
+   * The whole ladder as the cockpit reads it: every class, where it stands,
+   * and what it is waiting on (#101).
+   *
+   * ## The requirement sentence comes from the policy layer, never from here
+   *
+   * `requirement` is `evaluateLadder`'s own verdict text — the same
+   * `holdDetail` the hourly evaluation would produce over the same evidence.
+   * It is not re-derived, and that is the point rather than a convenience:
+   * `promotion-policy.ts` argues that a cockpit computing "2 more needed" from
+   * its own copy of `MIN_SAMPLE` would be a second copy, and the day someone
+   * tuned the threshold the screen would confidently state a requirement that
+   * no longer applies. One implementation decides and explains; this read just
+   * carries the sentence.
+   *
+   * ## Why it is evaluated as if the ladder were RUNNING
+   *
+   * `evaluateLadder` is called with `paused: false` even when the ladder is
+   * globally off, and `enabled` reports the switch separately. Rule 2 short-
+   * circuits a paused ladder to "the ladder is paused" for EVERY class, which
+   * would be true and useless: `PROMOTION_LADDER_ENABLED` defaults off, so on
+   * a typical deployment every class would answer the operator's question
+   * ("what would it take to promote this?") with the same sentence about a
+   * flag, and the shortfall — the one number they can act on — would be
+   * invisible precisely when they most need it. Reporting the pause once,
+   * globally, and the evidence per class keeps both facts and confuses
+   * neither. `wouldChange` is what the next evaluation WOULD do if the ladder
+   * were on; while `enabled` is false it is a forecast, not a plan, and a
+   * client must render it as one.
+   *
+   * Evidence is gathered ONCE for the whole list rather than per class: it is
+   * four queries, and doing them per class would make a cockpit poll scale
+   * with the taxonomy.
+   */
+  async ladder(now: Date = new Date()): Promise<PromotionLadderView> {
+    const [states, evidence] = await Promise.all([
+      this.allStates(),
+      this.gatherEvidence(now),
+    ]);
+
+    const byClass = new Map(evidence.map((item) => [item.actionClass, item]));
+
+    return {
+      enabled: this.enabled,
+      readAt: now.toISOString(),
+      thresholds: LADDER_THRESHOLDS,
+      states: states.map((state) =>
+        this.withRequirement(state, byClass.get(state.actionClass)),
+      ),
+    };
+  }
+
+  /**
+   * One class, the same way.
+   *
+   * A registered class with no row is reported at `observe` rather than as a
+   * 404 — the ladder not having run yet is not the same as the class not
+   * existing, and a read that 404'd until a cron had fired would look broken
+   * on a fresh install. An UNREGISTERED id with no row is a 404, though: it is
+   * a typo, and answering "this is on rung 1, no evidence" for `re-dispach`
+   * would be a confident answer about nothing.
+   */
+  async ladderStateFor(
+    actionClass: string,
+    now: Date = new Date(),
+  ): Promise<PromotionLadderStateView> {
+    if (!isActionClass(actionClass)) {
+      // Only for an unrecognised id, so the common path stays one round trip.
+      // A row can outlive its registry entry — that class is still reportable,
+      // because it may be standing on the promoted rung right now.
+      const row = await this.prisma.promotionState.findUnique({
+        where: { actionClass },
+        select: { actionClass: true },
+      });
+      if (!row) {
+        throw new NotFoundException(
+          `Unknown action class "${actionClass}". The taxonomy is ` +
+            'apps/api/src/supervisor/action-classes.ts (ADR-0011), and no ' +
+            'ladder row exists under that id either.',
+        );
+      }
+    }
+
+    const [state, evidence] = await Promise.all([
+      this.stateFor(actionClass),
+      this.gatherEvidence(now),
+    ]);
+
+    return this.withRequirement(
+      state,
+      evidence.find((item) => item.actionClass === actionClass),
+    );
+  }
+
+  /**
+   * Join one persisted state to live evidence and the policy layer's verdict.
+   *
+   * `currentEvidence` and `evidence` are deliberately BOTH present and are
+   * different things. `evidence` is frozen: the counts the last rung change
+   * was actually made from, never refreshed, because #99 requires a decision
+   * to state its evidence and evidence that moves afterwards cannot be checked
+   * against the decision. `currentEvidence` is the factory as it stands now.
+   * A screen that showed only the first would explain a decision nobody can
+   * act on; one that showed only the second would let an old promotion appear
+   * to rest on numbers that were never in front of it.
+   */
+  private withRequirement(
+    state: PromotionStateView,
+    live: ClassEvidence | undefined,
+  ): PromotionLadderStateView {
+    // A class with no evidence entry at all — possible only for a row whose
+    // class has left the registry between the two reads. Zeros, not a throw:
+    // that row may still be promoted, and a cockpit that failed to render the
+    // ladder because one class was retired would hide the promotions that
+    // matter most.
+    const currentEvidence = live ?? emptyEvidence(state.actionClass);
+
+    const verdict = evaluateLadder(
+      state.rung,
+      currentEvidence,
+      state.eligible,
+      // Never the real pause. See `ladder`.
+      false,
+    );
+
+    return {
+      ...state,
+      // The registry title, joined server-side, and NULL rather than the raw
+      // id when the registry does not know the class — the same rule the
+      // approvals queue and the grant list follow. A title that silently
+      // equalled its id would make registry drift invisible, and a class that
+      // has left the registry while still holding a rung is exactly the drift
+      // worth seeing here.
+      actionClassTitle: getActionClass(state.actionClass)?.title ?? null,
+      currentEvidence,
+      requirement:
+        verdict.action === 'promote' ? verdict.reason : verdict.detail,
+      wouldChange: verdict.action === 'hold' ? null : verdict.action,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Manual demotion (#101)
+  // -------------------------------------------------------------------------
+
+  /**
+   * A human takes autonomy back from a class, now.
+   *
+   * ## Why demotion may be manual when promotion may not
+   *
+   * VISION §7 rung 4 says demotion is "automatic on regression, not a judgment
+   * call", and rung 3 says promotion happens on "a demonstrated record". Both
+   * sentences point the same way: NARROWING authority is always safe and
+   * WIDENING it must be earned. A hand-promotion would be exactly the
+   * judgement call the ladder exists to eliminate — it would grant autonomy on
+   * somebody's confidence instead of on evidence, and there is no endpoint for
+   * it anywhere in this module. A hand-demotion cannot make anything run that
+   * was not already running; the worst case is that work queues for a human
+   * who did not need to be asked, which is delay rather than damage.
+   *
+   * The operator has evidence the ladder structurally cannot: a class whose
+   * output is bad in ways no approval count captures, or a repository incident
+   * that has not yet reached the regression window. Waiting a fortnight for
+   * `REGRESSION_WINDOW_DAYS` to notice is not a safety property.
+   *
+   * ## The durable effect is the grant suspension, not the rung
+   *
+   * Every active grant for the class is suspended, exactly as an automatic
+   * demotion suspends them, and NOTHING re-creates a suspended grant: only a
+   * human tapping "always approve this class" can. That is the part that stops
+   * unattended execution and it does not expire.
+   *
+   * The RUNG is weaker, and callers must be told so rather than left to
+   * discover it. `evaluateLadder` rule 4 promotes any non-promoted class whose
+   * lifetime record still clears the bar, so a class demoted by hand while its
+   * numbers are good is re-promoted by the next hourly evaluation — back to
+   * `promoted`, with `changeReason: promoted_on_evidence`, as though the
+   * operator had never acted. There is no column recording a human hold-down,
+   * so this cannot be suppressed here without inventing state; the honest
+   * response is to REPORT it, which is what `rungMayBeRestoredByLadder` is
+   * for. Re-promotion restores ELIGIBILITY only — the suspended grants stay
+   * suspended, so nothing resumes running.
+   */
+  async demoteManually(
+    actionClass: string,
+    actorUserId: string,
+    note: string | null = null,
+    now: Date = new Date(),
+  ): Promise<ManualDemotionResult> {
+    const existing = await this.prisma.promotionState.findUnique({
+      where: { actionClass },
+    });
+
+    // Refused rather than treated as a no-op. "Demote" is a claim about a
+    // transition, and answering 200 for a class that was already on `measure`
+    // would tell an operator they had just taken autonomy away from something
+    // that never had it — and, worse, imply its grants were dealt with. To
+    // stop a grant on a non-promoted class, revoke the grant.
+    if (!existing || existing.rung !== 'promoted') {
+      throw new ConflictException({
+        code: 'PROMOTION_CLASS_NOT_PROMOTED',
+        message:
+          `Action class "${actionClass}" is not on the promoted rung ` +
+          `(it is on "${existing?.rung ?? 'observe'}"), so there is no ` +
+          'autonomy to take back and nothing was changed. Note that a class ' +
+          'can hold trust grants without being promoted — grants come from a ' +
+          'human tapping "always approve this class", not from the ladder — ' +
+          'so if something of this class is running unattended, revoke its ' +
+          'grant directly at DELETE /api/trust/grants/{id}.',
+        details: {
+          reason: 'not-promoted',
+          actionClass,
+          rung: existing?.rung ?? 'observe',
+        },
+      });
+    }
+
+    const evidence =
+      (await this.gatherEvidence(now)).find(
+        (item) => item.actionClass === actionClass,
+      ) ?? emptyEvidence(actionClass);
+
+    // The actor's id travels in the sentence because `promotion_states` has no
+    // actor column. That is a real gap in VISION §5's provenance graph and is
+    // named here rather than papered over: prose is not an edge, and the day
+    // someone wants "which demotions were human" as a query this will have to
+    // become a column.
+    const detail =
+      `Demoted by hand at ${now.toISOString()} by user ${actorUserId}, ` +
+      'not by the ladder. The record was ' +
+      `${evidence.approved}/${evidence.sample} approved lifetime ` +
+      `(${pct(evidence.rate)}), ${evidence.recentApproved}/${evidence.recentSample} ` +
+      `in the last ${REGRESSION_WINDOW_DAYS} days (${pct(evidence.recentRate)}) — ` +
+      'which is to say the ladder itself had not concluded anything was ' +
+      'wrong.' +
+      (note ? ` Reason given: ${note}` : ' No reason was given.');
+
+    await this.persist(
+      evidence,
+      rungFor(false, evidence),
+      'demoted_manually',
+      detail,
+      now,
+      existing,
+    );
+
+    const grantsSuspended = await this.suspendGrantsFor(
+      actionClass,
+      detail,
+      now,
+    );
+
+    const notified = await this.notifyDemotion(
+      evidence,
+      'demoted_manually',
+      detail,
+      grantsSuspended,
+      now,
+    );
+
+    this.logger.warn(
+      `Action class "${actionClass}" demoted manually by user ${actorUserId}; ` +
+        `${grantsSuspended} active grant(s) suspended. ${detail}`,
+    );
+
+    // Asked of the POST-demotion rung, so it answers the question the operator
+    // actually has: given where this class now stands, will the next
+    // evaluation put it back? Computed by the policy layer, not by a copy of
+    // rule 4 living here.
+    const next = evaluateLadder(
+      rungFor(false, evidence),
+      evidence,
+      isAutonomyEligible(actionClass),
+      false,
+    );
+
+    return {
+      state: await this.ladderStateFor(actionClass, now),
+      grantsSuspended,
+      notified,
+      rungMayBeRestoredByLadder: next.action === 'promote',
+    };
   }
 
   // -------------------------------------------------------------------------

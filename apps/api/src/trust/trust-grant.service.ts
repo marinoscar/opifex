@@ -26,6 +26,7 @@ import type {
   ListTrustGrantsQuery,
   RecordUsageResult,
   RenewTrustGrantResult,
+  TrustGrantRenewalLink,
   TrustGrantView,
   UsageRecord,
 } from './trust-grant.types';
@@ -979,6 +980,39 @@ export class TrustGrantService {
       throw new NotFoundException(`No trust grant with id ${id}`);
     }
     return toTrustGrantView(row, now);
+  }
+
+  /**
+   * The FORWARD half of the renewal chain: grants issued to replace this one.
+   *
+   * `renewedFromId` records the edge backwards, which is enough to walk from a
+   * live grant to its history and useless for the question an operator
+   * actually asks of a dead one — "was this kept alive, or did it just lapse?"
+   * An expired grant with a renewal is a decision somebody made; an expired
+   * grant without one is VISION §8's "silence revokes" having actually
+   * happened. Those two are indistinguishable from the backward edge alone,
+   * because the backward edge lives on a row you do not have.
+   *
+   * Newest first, with an id tie-break, so two renewals minted in the same
+   * millisecond cannot swap places between reads.
+   *
+   * Deliberately not recursive. One hop answers the question; a full chain
+   * walk would be an unbounded number of queries in a read the cockpit runs on
+   * every grant it opens, and the client can follow `id` if it wants more.
+   */
+  async renewalsOf(id: string): Promise<TrustGrantRenewalLink[]> {
+    const rows = await this.prisma.trustGrant.findMany({
+      where: { renewedFromId: id },
+      select: { id: true, status: true, expiresAt: true, createdAt: true },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      status: row.status,
+      expiresAt: row.expiresAt.toISOString(),
+      createdAt: row.createdAt.toISOString(),
+    }));
   }
 
   /**
