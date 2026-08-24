@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { GitHubWriteService } from '../github/write/github-write.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { DecisionLogService } from '../supervisor/decision-log/decision-log.service';
 import { RunSummaryService } from './run-summary.service';
 
 /**
@@ -15,6 +16,7 @@ describe('RunSummaryService', () => {
   let findMany: jest.Mock;
   let update: jest.Mock;
   let postRunSummary: jest.Mock;
+  let latestProposalFor: jest.Mock;
   let service: RunSummaryService;
 
   function run(overrides: Record<string, unknown> = {}) {
@@ -46,11 +48,15 @@ describe('RunSummaryService', () => {
     postRunSummary = jest
       .fn()
       .mockResolvedValue({ performed: true, noop: false });
+    // No diagnosis by default. The summary must be complete without one —
+    // #92's last criterion, and the case every other test here exercises.
+    latestProposalFor = jest.fn().mockResolvedValue(null);
 
     service = new RunSummaryService(
       { run: { findMany, update } } as unknown as PrismaService,
       { postRunSummary } as unknown as GitHubWriteService,
       { get: () => 3 } as unknown as ConfigService,
+      { latestProposalFor } as unknown as DecisionLogService,
     );
     jest.spyOn(service['logger'], 'log').mockImplementation(() => undefined);
     jest.spyOn(service['logger'], 'warn').mockImplementation(() => undefined);
@@ -152,5 +158,103 @@ describe('RunSummaryService', () => {
       expect(result).toEqual({ posted: 1, failed: 1 });
       expect(update).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('RunSummaryService — the supervisor diagnosis (#92)', () => {
+  const OWED_RUN = {
+    id: 'run-1',
+    status: 'failed' as const,
+    startedAt: new Date('2026-08-24T10:00:00.000Z'),
+    endedAt: new Date('2026-08-24T10:30:00.000Z'),
+    costUsd: null,
+    tokensInput: null,
+    tokensOutput: null,
+    attentionReason: 'Killed after 40m of silence.',
+    pullRequestNumber: 7,
+    runnerKey: 'claude-code-local',
+    runner: { version: '2.1.223' },
+    workOrder: {
+      identity: 'wo_opifex_312_a3f91c2_a1',
+      attempt: 1,
+      issueNumber: 312,
+      repository: { owner: 'marinoscar', name: 'opifex' },
+    },
+  };
+
+  function build(latestProposalFor: jest.Mock) {
+    const findMany = jest.fn().mockResolvedValue([OWED_RUN]);
+    const update = jest.fn().mockResolvedValue({});
+    const postRunSummary = jest
+      .fn()
+      .mockResolvedValue({ performed: true, noop: false });
+
+    const service = new RunSummaryService(
+      { run: { findMany, update } } as unknown as PrismaService,
+      { postRunSummary } as unknown as GitHubWriteService,
+      { get: () => 3 } as unknown as ConfigService,
+      { latestProposalFor } as unknown as DecisionLogService,
+    );
+    jest.spyOn(service['logger'], 'log').mockImplementation(() => undefined);
+    jest.spyOn(service['logger'], 'warn').mockImplementation(() => undefined);
+
+    return { service, postRunSummary, update };
+  }
+
+  it('asks the log for a diagnosis of that specific run', async () => {
+    const latestProposalFor = jest.fn().mockResolvedValue(null);
+    const { service } = build(latestProposalFor);
+
+    await service.postOwed();
+
+    expect(latestProposalFor).toHaveBeenCalledWith(
+      'run',
+      'run-1',
+      'run-diagnosis',
+    );
+  });
+
+  it('includes the diagnosis, attributed as a hypothesis', async () => {
+    const latestProposalFor = jest.fn().mockResolvedValue({
+      id: 'prop-9',
+      reasoning:
+        'Supervisor hypothesis (not a determined cause):\n\nDisk full.',
+    });
+    const { service, postRunSummary } = build(latestProposalFor);
+
+    await service.postOwed();
+
+    const body = postRunSummary.mock.calls[0][2] as string;
+    expect(body).toContain('Supervisor hypothesis — not a determined cause');
+    expect(body).toContain('Disk full.');
+    expect(body).toContain('proposal=prop-9');
+  });
+
+  it('posts the summary anyway when the decision log is unreachable', async () => {
+    // #92: "absent or failed diagnosis leaves the run summary otherwise
+    // intact." Losing the hypothesis must not lose the record.
+    const latestProposalFor = jest
+      .fn()
+      .mockRejectedValue(new Error('database is down'));
+    const { service, postRunSummary, update } = build(latestProposalFor);
+
+    await expect(service.postOwed()).resolves.toEqual({ posted: 1, failed: 0 });
+
+    const body = postRunSummary.mock.calls[0][2] as string;
+    expect(body).toContain('Killed after 40m of silence.');
+    expect(body).not.toContain('Supervisor hypothesis');
+    expect(update).toHaveBeenCalled();
+  });
+
+  it('posts an unchanged summary when no diagnosis exists', async () => {
+    const { service, postRunSummary } = build(
+      jest.fn().mockResolvedValue(null),
+    );
+
+    await service.postOwed();
+
+    const body = postRunSummary.mock.calls[0][2] as string;
+    expect(body).not.toContain('Supervisor hypothesis');
+    expect(body).toContain('**Why it stopped** | Killed after 40m of silence.');
   });
 });

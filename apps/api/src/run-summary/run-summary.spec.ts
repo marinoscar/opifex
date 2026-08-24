@@ -165,3 +165,88 @@ describe('composeRunSummary', () => {
     expect(rows[0]).toContain('killed for silence');
   });
 });
+
+describe('the supervisor diagnosis section (#92)', () => {
+  const facts = {
+    runId: 'run-1',
+    workOrderIdentity: 'wo_opifex_312_a3f91c2_a1',
+    attempt: 1,
+    retryCeiling: 3,
+    runnerKey: 'claude-code-local',
+    runnerVersion: '2.1.223',
+    status: 'failed' as const,
+    startedAt: new Date('2026-08-24T10:00:00.000Z'),
+    endedAt: new Date('2026-08-24T10:30:00.000Z'),
+    costUsd: 1.5,
+    tokensInput: 100,
+    tokensOutput: 20,
+    attentionReason: 'Killed after 40m of silence.',
+  };
+
+  it('leaves the summary intact when there is no diagnosis', () => {
+    // #92's last criterion. The deterministic record is the record.
+    const without = composeRunSummary(facts);
+    const withNull = composeRunSummary({ ...facts, diagnosis: null });
+
+    expect(withNull).toBe(without);
+    expect(without).toContain('Killed after 40m of silence.');
+  });
+
+  it('leaves it intact when the diagnosis text is empty', () => {
+    const rendered = composeRunSummary({
+      ...facts,
+      diagnosis: { text: '   ', proposalId: 'prop-1' },
+    });
+
+    expect(rendered).toBe(composeRunSummary(facts));
+  });
+
+  it('marks the diagnosis as a hypothesis, not as a cause', () => {
+    const rendered = composeRunSummary({
+      ...facts,
+      diagnosis: {
+        text: 'The install step ran out of disk.',
+        proposalId: 'p1',
+      },
+    });
+
+    expect(rendered).toContain(
+      'Supervisor hypothesis — not a determined cause',
+    );
+    expect(rendered).toContain('unreviewed, and possibly wrong');
+    expect(rendered).toContain('The install step ran out of disk.');
+  });
+
+  it('keeps the deterministic facts above the guess', () => {
+    const rendered = composeRunSummary({
+      ...facts,
+      diagnosis: { text: 'A guess.', proposalId: 'p1' },
+    });
+
+    // A reader who stops at the table has the record; one who continues gets
+    // a guess, labelled as one.
+    expect(rendered.indexOf('Why it stopped')).toBeLessThan(
+      rendered.indexOf('Supervisor hypothesis'),
+    );
+  });
+
+  it('carries the proposal id, so the decision log entry is findable', () => {
+    const rendered = composeRunSummary({
+      ...facts,
+      diagnosis: { text: 'A guess.', proposalId: 'prop-42' },
+    });
+
+    expect(rendered).toContain(
+      '<!-- opifex:run-diagnosis proposal=prop-42 -->',
+    );
+  });
+
+  it('does not disturb the run-summary marker anything already indexed', () => {
+    const rendered = composeRunSummary({
+      ...facts,
+      diagnosis: { text: 'A guess.', proposalId: 'p1' },
+    });
+
+    expect(rendered.startsWith(RUN_SUMMARY_MARKER)).toBe(true);
+  });
+});
