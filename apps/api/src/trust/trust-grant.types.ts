@@ -138,6 +138,22 @@ export interface TrustGrantView {
 }
 
 /**
+ * One forward edge of the renewal chain (#115, #101).
+ *
+ * Four fields, not a whole `TrustGrantView`. A renewal list answers "was this
+ * kept alive, and is the replacement still good?", and embedding full views
+ * would make one grant's detail response carry the derived budget and expiry
+ * maths of every grant that ever replaced it — numbers a client would then be
+ * tempted to render as if they described the grant it asked for.
+ */
+export interface TrustGrantRenewalLink {
+  id: string;
+  status: TrustGrantStatus;
+  expiresAt: string;
+  createdAt: string;
+}
+
+/**
  * Why an authorization was refused.
  *
  * Six values, not one boolean, because #96's third acceptance criterion turns

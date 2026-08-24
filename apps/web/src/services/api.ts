@@ -215,6 +215,14 @@ import type {
   OpenApprovalStatus,
 } from '../types/approvals';
 import type {
+  ManualDemotionResult,
+  PromotionLadder,
+  PromotionStateDetail,
+  TrustGrantDetail,
+  TrustGrantFilters,
+  TrustGrantListItem,
+} from '../types/trust';
+import type {
   MetricsSummary,
   QueueEntry,
   RunEvent,
@@ -784,4 +792,176 @@ export function approvalErrorDetails(error: unknown): ApprovalErrorDetails {
   const details = error.details;
   if (typeof details !== 'object' || details === null) return {};
   return details as ApprovalErrorDetails;
+}
+
+// ---------------------------------------------------------------------------
+// Trust grants and the promotion ladder (epic #22, issue #101, VISION §7, §8)
+// ---------------------------------------------------------------------------
+
+/**
+ * `GET /trust/grants` — what may currently run unattended, and on what terms.
+ *
+ * Newest first, and the order is the server's. Every row carries all four
+ * VISION §8 attributes plus the derived headroom fields the cockpit renders:
+ * `remainingBudgetUsd`, `budgetHeadroomFraction`, `msUntilExpiry`,
+ * `failureRate`, `nearExpiry` and `nearBudget`. Those are computed server-side
+ * on purpose and must NOT be recomputed here — two independent versions of
+ * `remaining / ceiling` is how a renewal banner and a budget bar end up
+ * disagreeing on one screen.
+ *
+ * `includeEnded` defaults to false server-side, so it is sent only when the
+ * caller asked for it. An explicit `status` WINS over it: `status=revoked`
+ * returns revoked grants whether or not the flag is set.
+ */
+export async function getTrustGrants(
+  params: TrustGrantFilters = {},
+  signal?: AbortSignal,
+): Promise<TrustGrantListItem[]> {
+  const searchParams = new URLSearchParams();
+  if (params.repositoryId)
+    searchParams.set('repositoryId', params.repositoryId);
+  if (params.actionClass) searchParams.set('actionClass', params.actionClass);
+  if (params.status) searchParams.set('status', params.status);
+  // Sent as the literal word rather than via `z.coerce.boolean()`'s trap: the
+  // API parses `includeEnded` with `z.stringbool()`, for which "false" really
+  // is false.
+  if (params.includeEnded) searchParams.set('includeEnded', 'true');
+
+  const query = searchParams.toString();
+  return api.get<TrustGrantListItem[]>(
+    query ? `/trust/grants?${query}` : '/trust/grants',
+    { signal },
+  );
+}
+
+/**
+ * `GET /trust/grants/:id` — one grant, with two joins.
+ *
+ * `actionClassEntry` is the ADR-0011 registry entry, so an operator deciding
+ * whether to revoke can see WHAT they would be switching off rather than a
+ * class id. It is null when the registry does not know the class, which is a
+ * real case rather than a defensive one: a grant outlives edits to the
+ * taxonomy. `renewedBy` is the forward half of the renewal chain.
+ */
+export async function getTrustGrant(
+  id: string,
+  signal?: AbortSignal,
+): Promise<TrustGrantDetail> {
+  return api.get<TrustGrantDetail>(`/trust/grants/${encodeURIComponent(id)}`, {
+    signal,
+  });
+}
+
+/**
+ * `DELETE /trust/grants/:id` — revoke, immediately and permanently.
+ *
+ * Returns the ENDED grant rather than 204, so the caller can render the
+ * terminal state without a follow-up read that would race the next sweep.
+ * Throws `ApiError` with `details.reason === 'already-ended'` on 409, where
+ * NOTHING was changed and the original end reason stands.
+ *
+ * The note travels as a request body on a DELETE, which `ApiService.request`
+ * supports because `RequestOptions extends RequestInit` — and the body is
+ * omitted entirely when there is no note, because the API's schema defaults to
+ * `{}` precisely so that revoking without explaining yourself is not a 400.
+ * Revocation is the safe direction and must never be harder than granting.
+ */
+export async function revokeTrustGrant(
+  id: string,
+  note?: string,
+): Promise<TrustGrantDetail> {
+  const trimmed = note?.trim();
+  return api.delete<TrustGrantDetail>(
+    `/trust/grants/${encodeURIComponent(id)}`,
+    trimmed ? { body: JSON.stringify({ note: trimmed }) } : {},
+  );
+}
+
+/**
+ * `POST /trust/grants` — grant trust for one class in one repository.
+ *
+ * THREE FIELDS, and the omissions are the design. The schema is `.strict()`,
+ * so sending `expiresAt`, `budgetCeilingUsd`, `maxFailureRate`,
+ * `maxCostPerActionUsd` or `minActionsBeforeAutoRevoke` is a 400 naming the
+ * field — the four VISION §8 attributes are attached by the server and are not
+ * caller input. This signature is narrow for the same reason: a widened one
+ * here would make the refusal look like a bug in the client rather than the
+ * contract it is.
+ */
+export async function createTrustGrant(input: {
+  actionClass: string;
+  repositoryId: string;
+  note?: string;
+}): Promise<TrustGrantDetail> {
+  return api.post<TrustGrantDetail>('/trust/grants', input);
+}
+
+/**
+ * `GET /promotion/states` — the whole ladder, plus the switch above it.
+ *
+ * `enabled` is the flag that decides whether any rung on the screen is a live
+ * conclusion. It DEFAULTS OFF, so false is the common case and every surface
+ * that draws a rung has to say so.
+ */
+export async function getPromotionLadder(
+  signal?: AbortSignal,
+): Promise<PromotionLadder> {
+  return api.get<PromotionLadder>('/promotion/states', { signal });
+}
+
+/** `GET /promotion/states/:actionClass` — one class, in the same envelope. */
+export async function getPromotionState(
+  actionClass: string,
+  signal?: AbortSignal,
+): Promise<PromotionStateDetail> {
+  return api.get<PromotionStateDetail>(
+    `/promotion/states/${encodeURIComponent(actionClass)}`,
+    { signal },
+  );
+}
+
+/**
+ * `POST /promotion/states/:actionClass/demote` — take a class off the rung by
+ * hand, and suspend the grants it authorized.
+ *
+ * The result's `grantsSuspended` is the DURABLE effect; `rungMayBeRestoredByLadder`
+ * is the caveat that must be surfaced rather than swallowed. Throws `ApiError`
+ * with `details.reason === 'not-promoted'` on 409.
+ */
+export async function demoteActionClass(
+  actionClass: string,
+  note?: string,
+): Promise<ManualDemotionResult> {
+  const trimmed = note?.trim();
+  return api.post<ManualDemotionResult>(
+    `/promotion/states/${encodeURIComponent(actionClass)}/demote`,
+    trimmed ? { note: trimmed } : undefined,
+  );
+}
+
+/**
+ * The `details` block the trust and promotion endpoints attach to a refusal.
+ *
+ * `HttpExceptionFilter` derives the envelope's `code` from the status, so the
+ * discriminator a client branches on travels in `details.reason` — the same
+ * place the approvals conflict puts its own, and the reason this reads
+ * `details` rather than `ApiError.code`.
+ */
+export interface TrustErrorDetails {
+  /** `already-ended` on a grant, `not-promoted` on a class. */
+  reason?: string;
+  grantId?: string;
+  status?: string;
+  endReason?: string | null;
+  endedAt?: string | null;
+  actionClass?: string;
+  rung?: string;
+}
+
+/** Reads the trust `details` block off an `ApiError`, if it has one. */
+export function trustErrorDetails(error: unknown): TrustErrorDetails {
+  if (!(error instanceof ApiError)) return {};
+  const details = error.details;
+  if (typeof details !== 'object' || details === null) return {};
+  return details as TrustErrorDetails;
 }

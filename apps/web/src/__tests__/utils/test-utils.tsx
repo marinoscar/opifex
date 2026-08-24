@@ -51,6 +51,11 @@ export const mockUser: MockUser = {
     // `approvals:decide` is withheld from the role for the same reason
     // `escalations:acknowledge` is (#98).
     'approvals:read',
+    // See what runs unattended and why it stopped; stop nothing. A viewer
+    // holds `trust:read` and NOT `trust:revoke` (#101) — revoking is an act on
+    // the factory, and a viewer acts on nothing even when the act would
+    // narrow rather than widen.
+    'trust:read',
   ],
   isActive: true,
   createdAt: new Date().toISOString(),
@@ -86,7 +91,12 @@ export const mockAdminUser: MockUser = {
     // to them and to nobody else.
     'approvals:read',
     'approvals:decide',
+    // All three trust permissions, as the seeded `admin` role grants them
+    // (#101). `trust:grant` is admin-only; `trust:read` and `trust:revoke` are
+    // held by contributors too.
+    'trust:read',
     'trust:grant',
+    'trust:revoke',
   ],
   isActive: true,
   createdAt: new Date().toISOString(),

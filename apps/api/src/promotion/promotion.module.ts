@@ -5,6 +5,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { SupervisorModule } from '../supervisor/supervisor.module';
 import { TrustModule } from '../trust/trust.module';
+import { PromotionController } from './promotion.controller';
 import { PromotionService } from './promotion.service';
 import { PromotionTask } from './promotion.task';
 
@@ -40,8 +41,13 @@ import { PromotionTask } from './promotion.task';
  * load-bearing, and a future PR adding a write module to it is the failure
  * this shape exists to make visible in review.
  *
- * No controller — #101 owns the HTTP surface, including the operator pause and
- * the "what would be needed to promote" view that `holdDetail` feeds.
+ * `PromotionController` (#101) is the HTTP surface: the "what would be needed
+ * to promote" view that `holdDetail` feeds, and a manual DEMOTION. It adds no
+ * capability — it reads this service and, in one direction only, narrows. In
+ * particular there is no promote endpoint, so nothing reachable over HTTP can
+ * put a class on the promoted rung; only accumulated evidence can. That keeps
+ * the absent-capability argument above intact at the edge as well as in the
+ * import list.
  */
 @Module({
   imports: [
@@ -51,6 +57,7 @@ import { PromotionTask } from './promotion.task';
     TrustModule,
     NotificationsModule,
   ],
+  controllers: [PromotionController],
   providers: [PromotionService, PromotionTask],
   exports: [PromotionService],
 })
