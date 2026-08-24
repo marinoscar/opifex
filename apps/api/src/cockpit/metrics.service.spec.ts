@@ -19,16 +19,89 @@ describe('MetricsService', () => {
 
   let escalationFindMany: jest.Mock;
   let workOrderFindMany: jest.Mock;
+  let runFindMany: jest.Mock;
   let service: MetricsService;
+
+  /** A merged pull request, as metrics 3 and 5 count it (#215). */
+  function merged(
+    mergedAt: string,
+    attempt: number,
+    costUsd: number | null = null,
+  ) {
+    return {
+      pullRequestMergedAt: new Date(mergedAt),
+      costUsd,
+      workOrder: { attempt },
+    };
+  }
 
   beforeEach(() => {
     escalationFindMany = jest.fn().mockResolvedValue([]);
     workOrderFindMany = jest.fn().mockResolvedValue([]);
+    runFindMany = jest.fn().mockResolvedValue([]);
 
     service = new MetricsService({
       escalation: { findMany: escalationFindMany },
       workOrder: { findMany: workOrderFindMany },
+      run: { findMany: runFindMany },
     } as unknown as PrismaService);
+  });
+
+  describe('first-pass acceptance and cost per merged PR (#215)', () => {
+    // VISION §10 says metric 3 decides the roadmap: "if first-pass acceptance
+    // is low, adding throughput actively makes life worse."
+
+    it('is null when nothing merged, never zero', async () => {
+      // Zero would say "everything needed rework", which is a different and
+      // false claim than "nothing has merged yet".
+      const summary = await service.summary(30);
+
+      expect(summary.metrics.firstPassAcceptance.value).toBeNull();
+      expect(summary.metrics.costPerMergedPr.value).toBeNull();
+    });
+
+    it('counts merges that needed no second attempt', async () => {
+      runFindMany.mockResolvedValue([
+        merged('2026-08-20T10:00:00Z', 1),
+        merged('2026-08-20T11:00:00Z', 1),
+        merged('2026-08-20T12:00:00Z', 3),
+      ]);
+
+      const summary = await service.summary(30);
+      expect(summary.metrics.firstPassAcceptance.value).toBeCloseTo(66.67, 1);
+    });
+
+    it('asks only for merged pull requests, so a closed one is in neither half', async () => {
+      // A withdrawn pull request is not a first-pass acceptance and not a
+      // failure of one; counting it as a miss would punish the operator for
+      // closing something they no longer wanted.
+      await service.summary(30);
+
+      const [{ where }] = runFindMany.mock.calls[0];
+      expect(where.pullRequestState).toBe('merged');
+    });
+
+    it('divides reported spend by merged pull requests', async () => {
+      runFindMany.mockResolvedValue([
+        merged('2026-08-20T10:00:00Z', 1, 4),
+        merged('2026-08-20T11:00:00Z', 1, 6),
+      ]);
+
+      const summary = await service.summary(30);
+      expect(summary.metrics.costPerMergedPr.value).toBe(5);
+    });
+
+    it('treats an unreported cost as nothing added, not as a missing PR', async () => {
+      // The denominator is merged PRs. A merge whose runner reported no cost
+      // still merged, so dropping it would inflate the per-PR figure.
+      runFindMany.mockResolvedValue([
+        merged('2026-08-20T10:00:00Z', 1, 10),
+        merged('2026-08-20T11:00:00Z', 1, null),
+      ]);
+
+      const summary = await service.summary(30);
+      expect(summary.metrics.costPerMergedPr.value).toBe(5);
+    });
   });
 
   describe('the shape', () => {

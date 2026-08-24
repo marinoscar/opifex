@@ -730,6 +730,19 @@ model Run {
   /// watcher to compare against.
   headCommit        String? @map("head_commit")
 
+  /// What became of the pull request this run opened (#215).
+  ///
+  /// Distinguishes MERGED from CLOSED-UNMERGED from still open, because those
+  /// are three different facts about the same work: a PR closed without merging
+  /// is not awaiting review, and folding the two together would make
+  /// first-pass acceptance (success metric 3) look better than it is.
+  ///
+  /// Null while the pull request is still open, or before the sweep has read
+  /// it — which is also the sweep's own query.
+  pullRequestState  PullRequestOutcome? @map("pull_request_state")
+  /// When it merged. Null unless `pullRequestState` is `merged`.
+  pullRequestMergedAt DateTime? @map("pull_request_merged_at") @db.Timestamptz
+
   /// When the VISION §5 run summary was posted to GitHub (#67).
   ///
   /// A column rather than a re-read of the pull request's comments, because
@@ -759,9 +772,22 @@ model Run {
   @@index([startedAt])
   // The run-summary sweep: concluded runs that still owe one (#67).
   @@index([summaryPostedAt, status])
+  // The merge-state sweep, and metric 3's denominator (#215).
+  @@index([pullRequestState])
   // The dispatcher's concurrency gate: how many live runs this runner has.
   @@index([runnerKey, status])
   @@map("runs")
+}
+
+/// What became of a run's pull request (#215).
+///
+/// `closed` means closed WITHOUT merging, which is a different outcome from
+/// merged and from open. Success metric 3 counts merges; counting a closed PR
+/// as anything but a non-merge would flatter the number VISION §10 says
+/// decides the roadmap.
+enum PullRequestOutcome {
+  merged
+  closed
 }
 
 /// How one invocation of the runner ended.
