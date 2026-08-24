@@ -40,6 +40,8 @@ model User {
   escalationsAcknowledged     Escalation[]          @relation("EscalationAcknowledgedBy")
   pushSubscriptions           PushSubscription[]
   supervisorProposalsReviewed SupervisorProposal[]  @relation("SupervisorProposalReviewedBy")
+  trustGrantsGranted          TrustGrant[]          @relation("TrustGrantsGranted")
+  trustGrantsRevoked          TrustGrant[]          @relation("TrustGrantsRevoked")
 
   @@map("users")
 }
@@ -421,6 +423,7 @@ model Repository {
   project        Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
   workOrders     WorkOrder[]
   specRejections IssueSpecRejection[]
+  trustGrants    TrustGrant[]
 
   @@unique([owner, name])
   @@index([projectId])
@@ -1550,8 +1553,9 @@ model SupervisorProposal {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  invocation SupervisorInvocation @relation(fields: [invocationId], references: [id], onDelete: Cascade)
-  reviewedBy User?                @relation("SupervisorProposalReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  invocation         SupervisorInvocation @relation(fields: [invocationId], references: [id], onDelete: Cascade)
+  reviewedBy         User?                @relation("SupervisorProposalReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  trustGrants        TrustGrant[]         @relation("TrustGrantsFromProposal")
 
   @@index([invocationId])
   // The measurement query: per class, what fraction was approved.
@@ -1562,4 +1566,239 @@ model SupervisorProposal {
   // screen and for the diagnosis that lands on a run summary.
   @@index([targetKind, targetRef])
   @@map("supervisor_proposals")
+}
+
+// =============================================================================
+// Opifex Domain - Trust Grants
+// =============================================================================
+
+/// Where a trust grant stands in its lifecycle.
+///
+/// `suspended` and `revoked` are deliberately different terminal-ish states.
+/// VISION §8: auto-revoke "suspends the grant and explains why" - that is the
+/// SYSTEM's judgement, on evidence, and is reversible by a human who disagrees
+/// with the evidence. `revoked` is the HUMAN's judgement and nothing here
+/// reverses it. Collapsing the two into one status would make an automatic
+/// suspension read as final, and a human's revocation read as negotiable -
+/// backwards for both.
+enum TrustGrantStatus {
+  /// Currently authorizing autonomous execution.
+  active
+  /// `expiresAt` passed with no renewal. #115's "silence revokes".
+  expired
+  /// A human ended it directly. Terminal - nothing reactivates a revoked
+  /// grant; a human who wants trust restored issues a new one.
+  revoked
+  /// The SYSTEM ended it, on evidence: failure rate, cost-per-action, or a
+  /// class demotion. Reversible - a human who disagrees with the evidence a
+  /// suspension was raised on can re-grant. `endReason` and `endDetail` carry
+  /// what tripped it, because a suspension a human cannot evaluate is
+  /// indistinguishable from an arbitrary one.
+  suspended
+}
+
+/// Why a grant stopped authorizing anything. Written together with `endedAt`
+/// on `TrustGrant` - a row with one set and not the other is a bug, not a
+/// valid state.
+enum TrustGrantEndReason {
+  /// A human revoked it directly, through the UI or API.
+  manual_revocation
+  /// `expiresAt` passed with no renewal before it. VISION §8: "Renewal is one
+  /// tap; silence revokes" - this is the default outcome of a grant that
+  /// nobody acted on, not an edge case.
+  expired
+  /// Cumulative `spentUsd` reached `budgetCeilingUsd`.
+  budget_exhausted
+  /// Observed failure rate crossed `maxFailureRate`, measured only after
+  /// `minActionsBeforeAutoRevoke` actions were authorized under the grant.
+  failure_rate_exceeded
+  /// A single authorized action's cost crossed `maxCostPerActionUsd`.
+  cost_per_action_exceeded
+  /// The action class this grant authorized was demoted off the promotion
+  /// ladder (#99) - the evidence the grant rested on no longer holds.
+  class_demoted
+  /// Replaced by a renewal issued before this grant lapsed. See
+  /// `renewedFromId` on the successor row for the chain.
+  superseded_by_renewal
+}
+
+/// A scoped, expiring, budget-capped, self-revoking authorization to skip an
+/// approval. VISION §8 / glossary: "Never 'trust the agent.'"
+///
+/// ## The four required attributes are required here, not just at the boundary
+///
+/// VISION §8 says every grant carries four attributes, "attached
+/// automatically": scope, expiry, a budget ceiling, and auto-revoke
+/// thresholds. #96's first acceptance criterion is that this holds at the
+/// DATABASE level, not only in application code a caller could bypass. So
+/// every column in each of the four groups below is NOT NULL with no default
+/// that would let a caller skip supplying it:
+///
+///  - **Scope** - `actionClass`, `repositoryId`
+///  - **Expiry** - `expiresAt`
+///  - **Budget ceiling** - `budgetCeilingUsd`
+///  - **Auto-revoke** - `maxFailureRate`, `maxCostPerActionUsd`,
+///    `minActionsBeforeAutoRevoke`
+///
+/// ## Why there is no unique constraint on (actionClass, repositoryId, active)
+///
+/// Deliberately absent, not an oversight. Two overlapping active grants for
+/// the same scope are legitimate: a renewal issued before the old grant lapses
+/// is exactly this shape, chained through `renewedFromId`. A unique index here
+/// would force renewal to be implemented as delete-then-create, which loses
+/// the chain #115 needs to detect a grant widening across a sequence of
+/// renewals - so it is left out on purpose.
+model TrustGrant {
+  id String @id @default(uuid()) @db.Uuid
+
+  // --- Scope ----------------------------------------------------------------
+  //
+  // action class x repository. Never "trust the agent" - VISION §8.
+
+  /// An `ActionClassId` from `apps/api/src/supervisor/action-classes.ts`,
+  /// validated at the boundary rather than by a database enum. TEXT for the
+  /// reason ADR-0010 and ADR-0011 both give: an enum addition is a MAJOR
+  /// schema bump, and the class taxonomy a grant can name is expected to grow
+  /// as the promotion ladder does - an ordinary event, not a breaking one.
+  actionClass String @map("action_class")
+
+  /// NOT NULL with no "all repositories" representation anywhere in this
+  /// model - not a sentinel value, not a nullable column that would mean
+  /// "every repository" if left unset. VISION §8: "Never 'trust the agent.'"
+  /// A nullable `repositoryId` is exactly the global-grant shape that sentence
+  /// forbids; making it unrepresentable here means no validator anywhere has
+  /// to remember to reject one, because no code path can construct one in the
+  /// first place. `onDelete: Cascade` - a grant scoped to a repository that no
+  /// longer exists authorizes nothing and should not survive it.
+  repositoryId String @map("repository_id") @db.Uuid
+
+  // --- Expiry -----------------------------------------------------------------
+  //
+  // Days or session. Renewal is one tap; silence revokes - VISION §8.
+
+  /// No default. Expiry is not a reminder attached to an otherwise-durable
+  /// grant - it IS the default outcome. Renewal is an action a human takes
+  /// (#115 builds the prompt); doing nothing lets the grant lapse. That is
+  /// what makes "silence revokes" a mechanism rather than a sentence nobody
+  /// enforces.
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+
+  // --- Budget ceiling -----------------------------------------------------
+  //
+  // The grant dies at a cumulative spend - VISION §8.
+
+  /// The cumulative spend at which this grant dies. NOT NULL, no default: a
+  /// grant with no ceiling is not a narrower grant, it is a blank check.
+  /// Same `Decimal(10, 4)` precision as `Run.costUsd` and
+  /// `SupervisorInvocation.costUsd`.
+  budgetCeilingUsd  Decimal @map("budget_ceiling_usd") @db.Decimal(10, 4)
+  /// Running total spent under this grant. Starts at zero; compared against
+  /// `budgetCeilingUsd` on every authorization check.
+  spentUsd          Decimal @default(0) @map("spent_usd") @db.Decimal(10, 4)
+  /// Count of actions authorized under this grant, whether or not they
+  /// succeeded. The denominator for the failure rate `maxFailureRate` checks.
+  actionsAuthorized Int     @default(0) @map("actions_authorized")
+
+  // --- Auto-revoke ------------------------------------------------------------
+  //
+  // Failure rate or cost-per-PR crossing a threshold suspends the grant and
+  // explains why - VISION §8.
+
+  /// Threshold in [0.000, 1.000]. Crossing it (after the minimum sample size
+  /// below) suspends the grant with `endReason = failure_rate_exceeded`.
+  maxFailureRate             Decimal @map("max_failure_rate") @db.Decimal(4, 3)
+  /// Threshold in USD. A single action costing more than this suspends the
+  /// grant with `endReason = cost_per_action_exceeded`, independent of the
+  /// failure-rate check.
+  maxCostPerActionUsd        Decimal @map("max_cost_per_action_usd") @db.Decimal(10, 4)
+  /// The minimum number of authorized actions before the failure-rate
+  /// auto-revoke may fire at all. NOT NULL with a default, not NOT NULL with
+  /// none, because 3 is a reasonable floor a caller should be able to accept
+  /// rather than be forced to type out.
+  ///
+  /// Exists because a grant's first action failing is a 100% observed failure
+  /// rate on a sample of one. Auto-revoking on one observation would make
+  /// every grant die on its first unlucky action, which is the same
+  /// sample-size argument #99 makes about PROMOTING a class on too little
+  /// evidence, applied here to DEMOTING one.
+  minActionsBeforeAutoRevoke Int     @default(3) @map("min_actions_before_auto_revoke")
+
+  /// Count of authorized actions that failed. The numerator for the
+  /// failure-rate check paired with `actionsAuthorized`.
+  actionsFailed Int @default(0) @map("actions_failed")
+
+  // --- Lifecycle ------------------------------------------------------------
+
+  status TrustGrantStatus @default(active)
+
+  endedAt   DateTime?            @map("ended_at") @db.Timestamptz
+  endReason TrustGrantEndReason? @map("end_reason")
+  /// Free-text explanation, required IN PRACTICE for anything automatic even
+  /// though the column allows null. A grant that vanishes silently teaches
+  /// the operator the system is unpredictable, which is precisely how
+  /// blanket trust gets granted the next time around - the friction VISION
+  /// §8 opens this section warning about. `endReason` alone is a category;
+  /// this is the sentence a human reads on the daily digest.
+  endDetail String?              @map("end_detail")
+
+  /// Who revoked it, when a human did.
+  ///
+  /// Null for a grant that ended any other way, and that null is meaningful:
+  /// an automatic suspension, an expiry, and a supersession all end a grant
+  /// with nobody deciding, and a column that named an actor for those would
+  /// be inventing one. `endReason` says WHICH of those happened; this says
+  /// WHO, only when there is a who.
+  ///
+  /// SetNull rather than Restrict, unlike `grantedById`: a revocation is a
+  /// safe act and the grant is already over, so the record surviving the
+  /// account is enough. A grant that is still LIVE must keep naming its
+  /// granter, which is why that edge restricts and this one does not.
+  revokedById String? @map("revoked_by_id") @db.Uuid
+
+  /// Free text from the granting human - why this scope, why this ceiling.
+  note String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // --- Provenance -------------------------------------------------------------
+
+  /// The human who gave this grant. `onDelete: Restrict` - a grant must
+  /// always name the human who authorized it; deleting that user while a
+  /// grant of theirs still exists would silently orphan the grant's
+  /// authority into a name nobody owns, which is exactly the accountability
+  /// gap VISION §5's provenance model exists to close.
+  grantedById String @map("granted_by_id") @db.Uuid
+
+  /// The proposal whose approval created this grant, if any - the "Always
+  /// approve this class" tap VISION §8 describes attaching all four
+  /// attributes at once. Null for a grant a human created directly with no
+  /// proposal behind it. `onDelete: SetNull`: the grant outlives the proposal
+  /// row losing its provenance pointer rather than being deleted with it.
+  grantedFromProposalId String? @map("granted_from_proposal_id") @db.Uuid
+
+  /// The grant this one renewed, if any. Self-relation, `onDelete: SetNull`,
+  /// so #115's renewal chain stays walkable and a scope or ceiling that
+  /// widened across a sequence of renewals is detectable after the fact
+  /// rather than lost the moment the old grant expired.
+  renewedFromId String? @map("renewed_from_id") @db.Uuid
+
+  // Relations
+  repository          Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  grantedBy           User                @relation("TrustGrantsGranted", fields: [grantedById], references: [id], onDelete: Restrict)
+  revokedBy           User?               @relation("TrustGrantsRevoked", fields: [revokedById], references: [id], onDelete: SetNull)
+  grantedFromProposal SupervisorProposal? @relation("TrustGrantsFromProposal", fields: [grantedFromProposalId], references: [id], onDelete: SetNull)
+  renewedFrom         TrustGrant?         @relation("TrustGrantRenewal", fields: [renewedFromId], references: [id], onDelete: SetNull)
+  renewals            TrustGrant[]        @relation("TrustGrantRenewal")
+
+  // THE authorization query: is there an active grant for this class in this
+  // repository.
+  @@index([actionClass, repositoryId, status])
+  // The expiry sweep, and #115's "expiring soon" query.
+  @@index([status, expiresAt])
+  @@index([repositoryId])
+  @@index([grantedById])
+  // "What did this user revoke" — the query the column exists for.
+  @@index([revokedById])
+  @@map("trust_grants")
 }
