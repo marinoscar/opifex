@@ -154,3 +154,9 @@ worktrees/
 # would add a large generated file that drifts from the code the moment a
 # controller changes without someone re-running the dump.
 openapi.json
+
+# JUnit test report, written by `npm run test:ci` in apps/web (and by any other
+# workspace that grows a CI reporter). A build artifact of running the suite,
+# like `coverage/` above — bare rather than path-anchored to match the rest of
+# this file, and so a second workspace's report is ignored too.
+junit.xml

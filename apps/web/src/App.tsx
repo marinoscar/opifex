@@ -23,6 +23,8 @@ const RunsPage = lazy(() => import('./pages/RunsPage'));
 const RunDetailPage = lazy(() => import('./pages/RunDetailPage'));
 const WorkOrderDetailPage = lazy(() => import('./pages/WorkOrderDetailPage'));
 const QueuePage = lazy(() => import('./pages/QueuePage'));
+const ApprovalsPage = lazy(() => import('./pages/ApprovalsPage'));
+const ApprovalDetailPage = lazy(() => import('./pages/ApprovalDetailPage'));
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
 const CostPage = lazy(() => import('./pages/CostPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
@@ -75,6 +77,43 @@ function AppRoutes() {
                   element={<WorkOrderDetailPage />}
                 />
                 <Route path="/queue" element={<QueuePage />} />
+                {/* Approvals (#98, epic #22). Unlike the cockpit routes above,
+                    these DO carry a `RequirePermission`, because there is a
+                    controller behind them enforcing exactly this string:
+                    `ApprovalsController` requires `approvals:read` on both the
+                    queue and the detail. The same string is what
+                    `config/destinations.ts` declares, so the rail row and the
+                    route cannot disagree about who may go where.
+
+                    `approvals:decide` is deliberately NOT a route gate. A
+                    viewer holds `approvals:read` and not `approvals:decide`,
+                    and the queue is worth reaching to READ — what they must
+                    not get is buttons, which the pages gate themselves. A
+                    reachability gate and a content gate are different
+                    questions, the same split `/admin/users` makes for its
+                    Allowlist tab. */}
+                <Route
+                  path="/approvals"
+                  element={
+                    <RequirePermission
+                      permission="approvals:read"
+                      fallback={<Navigate to="/" replace />}
+                    >
+                      <ApprovalsPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/approvals/:id"
+                  element={
+                    <RequirePermission
+                      permission="approvals:read"
+                      fallback={<Navigate to="/" replace />}
+                    >
+                      <ApprovalDetailPage />
+                    </RequirePermission>
+                  }
+                />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/cost" element={<CostPage />} />
                 <Route path="/settings" element={<UserSettingsPage />} />

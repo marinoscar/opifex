@@ -236,6 +236,7 @@ describe('destinations — the table itself', () => {
    *   cockpit/runs.controller.ts    → PERMISSIONS.RUNS_READ         (#80)
    *   cockpit/cost.controller.ts    → PERMISSIONS.RUNS_READ         (#80)
    *   repositories.controller.ts    → PERMISSIONS.PROJECTS_READ     (#43)
+   *   approvals.controller.ts       → PERMISSIONS.APPROVALS_READ    (#98)
    * Nothing else in `apps/api` guards a page this app routes to.
    */
   const ENFORCED_PERMISSIONS = [
@@ -244,6 +245,7 @@ describe('destinations — the table itself', () => {
     'workorders:read',
     'runs:read',
     'projects:read',
+    'approvals:read',
   ];
 
   it('gates the admin destinations on the permission the API enforces', () => {
@@ -268,6 +270,16 @@ describe('destinations — the table itself', () => {
         `${destination.key} requires ${destination.permission}, which no controller enforces`,
       ).toContain(destination.permission);
     }
+  });
+
+  it('gates approvals on the READ permission, not the decide one', () => {
+    // #98. `ApprovalsController` enforces `approvals:read` on both the queue
+    // and the detail screen, and all three seeded roles hold it. Gating the
+    // DESTINATION on `approvals:decide` instead would hide the queue from a
+    // viewer who is entitled to read it — a destination gate is about
+    // REACHABILITY, and the buttons inside the page gate themselves.
+    expect(byKey.approvals.permission).toBe('approvals:read');
+    expect(byKey.approvals.status).toBe('live');
   });
 
   it('gates the queue on the permission its controller enforces', () => {
@@ -317,6 +329,8 @@ describe('destinations — the table itself', () => {
       (d) => d.key,
     );
     expect(live.sort()).toEqual([
+      // #98, in the same pull request as `ApprovalsController`.
+      'approvals',
       'cost',
       'dashboard',
       'projects',
@@ -462,6 +476,10 @@ describe('destinations — the bottom-bar split', () => {
   it('keeps the overflow in table order, not in permission order', () => {
     const { overflow } = bottomNavSplit(seeEverything);
     expect(overflow.map((d) => d.key)).toEqual([
+      // Approvals is NOT one of the three bottom-bar tabs: the notification
+      // deep-links to the approval itself, so the bar is not how a phone
+      // reaches it. It sits in the sheet, in table order.
+      'approvals',
       'projects',
       'cost',
       'settings',

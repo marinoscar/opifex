@@ -48,6 +48,9 @@ const ADMIN_PERMISSIONS = [
   'workorders:read',
   'runs:read',
   'projects:read',
+  // #98 gave the Approvals destination a real permission, and `prisma/seed.ts`
+  // grants `approvals:read` to all three roles.
+  'approvals:read',
 ];
 
 /**
@@ -57,7 +60,15 @@ const ADMIN_PERMISSIONS = [
  * permission: `prisma/seed.ts` grants `workorders:read` to all three roles, so
  * a permission-less user is not a viewer, it is a user the API cannot produce.
  */
-const VIEWER_PERMISSIONS = ['workorders:read', 'runs:read', 'projects:read'];
+const VIEWER_PERMISSIONS = [
+  'workorders:read',
+  'runs:read',
+  'projects:read',
+  // A seeded viewer really does hold this: they may see what is waiting and
+  // answer nothing (`approvals:decide` is withheld). A fixture without it
+  // would assert that a viewer cannot reach the approval queue, which is false.
+  'approvals:read',
+];
 const PHONE = 375;
 
 /** Renders at a phone width, which is the only width this bar exists at. */

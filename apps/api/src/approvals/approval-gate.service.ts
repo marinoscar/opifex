@@ -10,8 +10,11 @@ import type { AutonomyEffect } from '../autonomy/never-trustable';
 import { NeverTrustableService } from '../autonomy/never-trustable.service';
 import { toNumberOrNull, type DecimalLike } from '../common/decimal';
 import { EscalationsService } from '../escalations/escalations.service';
+import { ApprovalNotifier } from '../notifications/approval-notifier.service';
+import type { ApprovalForNotification } from '../notifications/approval-payload';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  getActionClass,
   isActionClass,
   isAutonomyEligible,
   spendsMoney,
@@ -93,6 +96,7 @@ export class ApprovalGateService {
     private readonly neverTrustable: NeverTrustableService,
     private readonly grants: TrustGrantService,
     private readonly escalations: EscalationsService,
+    private readonly notifier: ApprovalNotifier,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -223,18 +227,39 @@ export class ApprovalGateService {
         // filters on either one gets the right answer.
         status: parked ? 'parked' : 'pending',
       },
-      select: { id: true },
+      // `createdAt` because the notification stamps when the question was
+      // raised, so one that arrives late says so rather than looking fresh.
+      select: { id: true, createdAt: true },
     });
 
-    if (parked) {
-      await this.escalateParked(created.id, input, authorization.detail);
-    }
+    const escalationId = parked
+      ? await this.escalateParked(created.id, input, authorization.detail)
+      : null;
 
     this.logger.log(
       `Approval ${created.id} raised for ${input.actionClass}: ` +
         `${timeoutPolicy}${timeoutAt ? ` at ${timeoutAt.toISOString()}` : ''} ` +
         `(no grant: ${authorization.detail})`,
     );
+
+    await this.notify({
+      id: created.id,
+      actionClass: input.actionClass,
+      // Resolved HERE and not in the payload builder. `src/notifications/` is
+      // on VISION §7's hot path — "escalation to a human" — and #94's
+      // governing test forbids anything under it importing
+      // `src/supervisor/`, so the registry lookup happens on this side of the
+      // seam. This service already consumes the same registry three lines up.
+      actionClassTitle: getActionClass(input.actionClass)?.title ?? null,
+      summary: input.summary,
+      reasoning: input.reasoning,
+      blastRadius: input.blastRadius,
+      timeoutPolicy,
+      timeoutAt,
+      status: parked ? 'parked' : 'pending',
+      escalationId,
+      createdAt: created.createdAt ?? now,
+    });
 
     return {
       outcome: 'pending',
@@ -329,7 +354,7 @@ export class ApprovalGateService {
     approvalId: string,
     input: RaiseApprovalInput,
     noGrantDetail: string,
-  ): Promise<void> {
+  ): Promise<string | null> {
     try {
       const escalation = await this.escalations.raiseSystem({
         summary: `Approval parked, waiting on a human: ${input.summary}`,
@@ -346,10 +371,61 @@ export class ApprovalGateService {
         where: { id: approvalId },
         data: { escalationId: escalation.id },
       });
+
+      return escalation.id;
     } catch (error) {
       this.logger.error(
         `Approval ${approvalId} is parked but nobody was told — escalation ` +
           `failed: ${describeError(error)}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Put the question on a phone. VISION §8's "one tap from a phone."
+   *
+   * ## A failed send must never turn a raised approval into a failure
+   *
+   * Everything in here is wrapped and swallowed, and the asymmetry is the
+   * whole reason: AN APPROVAL THAT EXISTS AND WAS NOT DELIVERED IS
+   * RECOVERABLE — the row is written, `GET /api/approvals` lists it, the
+   * cockpit shows it, and its recorded timeout policy still resolves it — WHILE
+   * AN APPROVAL THAT WAS NEVER WRITTEN IS NOT. Letting a push-service outage
+   * propagate out of `gate` would make the caller's action fail for a reason
+   * that has nothing to do with whether it may proceed, and the caller's most
+   * likely recovery is to retry, producing a second question about the same
+   * action or, worse, an action taken without a gate at all.
+   *
+   * `NeverTrustableService.record` and `escalateParked` swallow for the same
+   * reason. The cost is real and named there too: a raise nobody was told
+   * about is the failure VISION §9 exists to eliminate. It is at least VISIBLE
+   * — the row is queryable and `ApprovalNotifier` logs a warning naming the
+   * approval — but nothing re-attempts it today.
+   *
+   * ## The parked case may notify twice, deliberately
+   *
+   * A parked approval already raised an `Escalation`, and the dispatcher will
+   * send that separately. The two are not redundant: the escalation payload
+   * deep-links to the escalation list and exists to prove somebody was TOLD
+   * (it carries a receipt), while this one deep-links to the approval itself
+   * and exists to let them ACT — which VISION §8 requires be one tap.
+   * `buildApprovalPayload` passes the escalation id through on exactly this
+   * case so a device can group the pair rather than showing two unrelated
+   * alerts.
+   */
+  private async notify(approval: ApprovalForNotification): Promise<void> {
+    try {
+      await this.notifier.send(approval);
+    } catch (error) {
+      // `ApprovalNotifier.send` contracts never to throw. Caught anyway: the
+      // durability of a raised approval must not depend on another class
+      // keeping a promise, because the failure would be silent here and total
+      // — the row is already committed and the exception would discard the
+      // outcome the caller needs.
+      this.logger.error(
+        `Approval ${approval.id} was raised but could not be notified: ` +
+          `${describeError(error)}`,
       );
     }
   }
@@ -730,7 +806,11 @@ export class ApprovalGateService {
   ): Promise<ApprovalRequestView[]> {
     const rows = await this.prisma.approvalRequest.findMany({
       where: {
-        status: { in: OPEN_STATUSES as ApprovalStatus[] },
+        // The narrowing filter replaces the two-status set rather than being
+        // ANDed onto it, and the type of `query.status` is what keeps that
+        // safe: it can only ever hold one of the two members already in
+        // `OPEN_STATUSES`, so this can narrow the queue and cannot widen it.
+        status: query.status ?? { in: OPEN_STATUSES as ApprovalStatus[] },
         ...(query.repositoryId ? { repositoryId: query.repositoryId } : {}),
         ...(query.actionClass ? { actionClass: query.actionClass } : {}),
       },

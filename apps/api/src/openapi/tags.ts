@@ -165,6 +165,23 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
           'rows too — a class nothing proposes must not look like a class that proposes well.',
       },
       {
+        name: 'Approvals',
+        description:
+          'The one-tap approval surface (VISION §8). Approvals must be CHEAP or trust becomes ' +
+          'meaningless: operators grant blanket trust out of friction rather than conviction, ' +
+          'and a decision that arrives as a 2am email read at 9am gets blanket-approved within ' +
+          'a week — chosen while annoyed rather than while thinking. So each request carries ' +
+          'the four things needed to decide from a phone: what, why, blast radius, and what ' +
+          'happens if ignored. The last is derived from the RECORDED timeout policy, never ' +
+          'recomputed, so the sweeper keeps exactly the promise the notification made. ' +
+          'Deciding is authenticated with an ordinary session; the notification deep-links here ' +
+          'and carries no authority of its own, because a notification is delivered to a device ' +
+          'and not to a person. Never-trustable actions (ADR-0013) never reach this queue, and ' +
+          'not because anything filters them out: they are refused before an approval row is ' +
+          'ever written, so a rule enforced by the absence of a row survives a refactor where ' +
+          'one enforced by a `where` clause would not.',
+      },
+      {
         name: 'Repositories',
         description:
           'Which repositories Opifex watches, and the policy for each: whether the reconciler ' +

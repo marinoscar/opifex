@@ -7,6 +7,7 @@ import type {
 } from '../autonomy/never-trustable';
 import type { NeverTrustableService } from '../autonomy/never-trustable.service';
 import type { EscalationsService } from '../escalations/escalations.service';
+import type { ApprovalNotifier } from '../notifications/approval-notifier.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import {
   DEFAULT_GRANT_BUDGET_CEILING_USD,
@@ -260,6 +261,23 @@ function escalationsDouble(id = 'escalation-1') {
   } as unknown as EscalationsService & { raiseSystem: jest.Mock };
 }
 
+/**
+ * A notifier double that can be made to fail.
+ *
+ * The failure mode is the interesting one: #98 requires that a send which
+ * cannot happen never converts a raised approval into a failure, because an
+ * approval that exists and was not delivered is recoverable while one that was
+ * never written is not.
+ */
+function notifierDouble(failure?: Error) {
+  return {
+    send: jest.fn(async () => {
+      if (failure) throw failure;
+      return true;
+    }),
+  } as unknown as ApprovalNotifier & { send: jest.Mock };
+}
+
 function build(
   options: {
     rows?: ApprovalRequestRow[];
@@ -267,6 +285,7 @@ function build(
     authorized?: boolean;
     grant?: TrustGrantView;
     createResult?: TrustGrantView | Error;
+    notifyFailure?: Error;
   } = {},
 ) {
   const db = prismaDouble(options.rows ?? []);
@@ -277,13 +296,15 @@ function build(
     options.createResult,
   );
   const escalations = escalationsDouble();
+  const notifier = notifierDouble(options.notifyFailure);
   const service = new ApprovalGateService(
     db.prisma,
     neverTrustable,
     grants,
     escalations,
+    notifier,
   );
-  return { service, db, neverTrustable, grants, escalations };
+  return { service, db, neverTrustable, grants, escalations, notifier };
 }
 
 // =============================================================================
@@ -1005,6 +1026,31 @@ describe('ApprovalGateService', () => {
 
       expect(filtered.map((p) => p.id)).toEqual(['one']);
     });
+
+    it('narrows to one open status without widening to a decided row', async () => {
+      const { service } = build({
+        rows: [
+          row({ id: 'q-pending', status: 'pending' }),
+          row({
+            id: 'q-parked',
+            status: 'parked',
+            timeoutAt: null,
+            timeoutPolicy: 'park_and_escalate',
+          }),
+          row({ id: 'q-approved', status: 'approved', decidedVia: 'human' }),
+        ],
+      });
+
+      expect(
+        (await service.listPending({ status: 'parked' })).map((p) => p.id),
+      ).toEqual(['q-parked']);
+      // The narrowing REPLACES the open-status set rather than being ANDed
+      // onto it, so this asserts the replacement cannot reach a decided row.
+      // It cannot: the parameter's type holds only the two open statuses.
+      expect(
+        (await service.listPending({ status: 'pending' })).map((p) => p.id),
+      ).toEqual(['q-pending']);
+    });
   });
 
   describe('get', () => {
@@ -1153,6 +1199,93 @@ describe('ApprovalGateService', () => {
       expect(rates.find((r) => r.actionClass === 're-dispatch')!.approved).toBe(
         1,
       );
+    });
+  });
+
+  describe('gate — telling a human (#98)', () => {
+    it('notifies when a request is raised for a person', async () => {
+      const { service, notifier } = build();
+
+      const outcome = await service.gate(raiseInput(), NOW);
+
+      expect(outcome.outcome).toBe('pending');
+      expect(notifier.send).toHaveBeenCalledTimes(1);
+      expect(notifier.send.mock.calls[0][0]).toMatchObject({
+        actionClass: 're-dispatch',
+        status: 'pending',
+        // The RECORDED policy travels with the notification, because the
+        // sentence built from it is the promise the sweeper must later keep.
+        timeoutPolicy: 'deny',
+        // Resolved from the ADR-0011 registry HERE rather than in the payload
+        // builder: `src/notifications/` is on VISION §7's hot path and #94's
+        // governing test forbids it importing `src/supervisor/`. Pinned so
+        // the title cannot quietly degrade to the raw class id, which is what
+        // an operator would see on a lock screen.
+        actionClassTitle: 'Re-dispatch after transient failure',
+      });
+    });
+
+    it('passes the escalation id along for a parked request', async () => {
+      // A parked approval already has an escalation, so the payload can carry
+      // its id and a device can group the two rather than showing two
+      // unrelated alerts.
+      const { service, notifier } = build();
+
+      await service.gate(
+        raiseInput({ actionClass: 'invented-class' as never }),
+        NOW,
+      );
+
+      expect(notifier.send.mock.calls[0][0]).toMatchObject({
+        status: 'parked',
+        timeoutPolicy: 'park_and_escalate',
+        timeoutAt: null,
+        escalationId: 'escalation-1',
+        // Null, not a placeholder sentence: the registry does not know this
+        // class, and the payload falls back to the raw id, which is what
+        // ADR-0014 says a parked approval most likely means today.
+        actionClassTitle: null,
+      });
+    });
+
+    it('does not notify when a standing grant authorized it', async () => {
+      // Nobody was asked, so there is nothing to ask. The row still exists as
+      // the record of what WOULD have been asked (VISION §8), and #100's
+      // digest is what surfaces it — as a rollup, not as an interruption.
+      const { service, notifier } = build({
+        authorized: true,
+        grant: grantView(),
+      });
+
+      await service.gate(raiseInput(), NOW);
+
+      expect(notifier.send).not.toHaveBeenCalled();
+    });
+
+    it('does not notify for a refused action — no row exists to notify about', async () => {
+      const { service, notifier } = build({ refusals: [FORCE_PUSH_REFUSAL] });
+
+      await service.gate(raiseInput(), NOW);
+
+      expect(notifier.send).not.toHaveBeenCalled();
+    });
+
+    it('NEVER turns a raised approval into a failure when the send throws', async () => {
+      // The whole point. An approval that exists and was not delivered is
+      // recoverable — the row is queryable and its timeout policy still
+      // resolves it. One that was never written is not, and a caller whose
+      // gate() threw would most likely retry, producing a second question
+      // about the same action.
+      const { service, db, notifier } = build({
+        notifyFailure: new Error('push service unreachable'),
+      });
+
+      const outcome = await service.gate(raiseInput(), NOW);
+
+      expect(notifier.send).toHaveBeenCalledTimes(1);
+      expect(outcome.outcome).toBe('pending');
+      expect(db.rows).toHaveLength(1);
+      expect(db.rows[0]!.status).toBe('pending');
     });
   });
 });

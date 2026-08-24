@@ -56,6 +56,9 @@ const ADMIN_PERMISSIONS = [
   'workorders:read',
   'runs:read',
   'projects:read',
+  // #98 gave the Approvals destination a real permission, and `prisma/seed.ts`
+  // grants `approvals:read` to all three roles.
+  'approvals:read',
 ];
 
 /**
@@ -67,7 +70,15 @@ const ADMIN_PERMISSIONS = [
  * viewer, it is a user the API cannot produce. Testing navigation against one
  * would assert that a Viewer cannot see the Queue, which is false.
  */
-const VIEWER_PERMISSIONS = ['workorders:read', 'runs:read', 'projects:read'];
+const VIEWER_PERMISSIONS = [
+  'workorders:read',
+  'runs:read',
+  'projects:read',
+  // A seeded viewer really does hold this: they may see what is waiting and
+  // answer nothing (`approvals:decide` is withheld). A fixture without it
+  // would assert that a viewer cannot reach the approval queue, which is false.
+  'approvals:read',
+];
 
 describe('NavigationRail', () => {
   beforeEach(() => {
@@ -381,6 +392,7 @@ describe('NavigationRail', () => {
       ).toEqual([
         '/',
         '/runs',
+        '/approvals',
         '/queue',
         '/projects',
         '/cost',

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { EscalationsModule } from '../escalations/escalations.module';
+import { ApprovalNotifier } from './approval-notifier.service';
 import { EscalationDispatcher } from './escalation-dispatcher.service';
 import { FallbackWebhookTransport } from './fallback-webhook.transport';
 import { NotificationsController } from './notifications.controller';
@@ -27,16 +28,24 @@ import { WebPushTransport } from './web-push.transport';
     FallbackWebhookTransport,
     PushSubscriptionsService,
     EscalationDispatcher,
+    ApprovalNotifier,
   ],
   // The two transports are exported so the daily brief (#93) can reuse them
   // without minting an escalation to ride. VISION §8 defines the brief as the
   // things that did NOT warrant waking someone, and an escalation row for it
   // would inflate the lifecycle and the latency percentiles computed over it.
+  //
+  // `ApprovalNotifier` (#98) is exported on the same argument, one step
+  // further: an approval is a QUESTION, not a report of something that
+  // happened, and giving it an escalation row so it could ride the dispatcher
+  // would put every unanswered question into the stop-to-notified percentiles
+  // that measure how long a broken run went unnoticed.
   exports: [
     EscalationDispatcher,
     PushSubscriptionsService,
     WebPushTransport,
     FallbackWebhookTransport,
+    ApprovalNotifier,
   ],
 })
 export class NotificationsModule {}
