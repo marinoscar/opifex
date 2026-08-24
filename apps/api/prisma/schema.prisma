@@ -26,19 +26,20 @@ model User {
   updatedAt               DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  identities              UserIdentity[]
-  userRoles               UserRole[]
-  userSettings            UserSettings?
-  auditEvents             AuditEvent[]          @relation("ActorEvents")
-  settingsUpdates         SystemSettings[]      @relation("SettingsUpdater")
-  refreshTokens           RefreshToken[]        @relation("UserRefreshTokens")
-  allowlistEntriesAdded   AllowedEmail[]        @relation("AllowlistAddedBy")
-  allowlistEntry          AllowedEmail?         @relation("AllowlistClaimedBy")
-  deviceCodes             DeviceCode[]          @relation("UserDeviceCodes")
-  storageObjects          StorageObject[]       @relation("UserStorageObjects")
-  personalAccessTokens    PersonalAccessToken[] @relation("UserPersonalAccessTokens")
-  escalationsAcknowledged Escalation[]          @relation("EscalationAcknowledgedBy")
-  pushSubscriptions       PushSubscription[]
+  identities                  UserIdentity[]
+  userRoles                   UserRole[]
+  userSettings                UserSettings?
+  auditEvents                 AuditEvent[]          @relation("ActorEvents")
+  settingsUpdates             SystemSettings[]      @relation("SettingsUpdater")
+  refreshTokens               RefreshToken[]        @relation("UserRefreshTokens")
+  allowlistEntriesAdded       AllowedEmail[]        @relation("AllowlistAddedBy")
+  allowlistEntry              AllowedEmail?         @relation("AllowlistClaimedBy")
+  deviceCodes                 DeviceCode[]          @relation("UserDeviceCodes")
+  storageObjects              StorageObject[]       @relation("UserStorageObjects")
+  personalAccessTokens        PersonalAccessToken[] @relation("UserPersonalAccessTokens")
+  escalationsAcknowledged     Escalation[]          @relation("EscalationAcknowledgedBy")
+  pushSubscriptions           PushSubscription[]
+  supervisorProposalsReviewed SupervisorProposal[]  @relation("SupervisorProposalReviewedBy")
 
   @@map("users")
 }
@@ -739,9 +740,9 @@ model Run {
   ///
   /// Null while the pull request is still open, or before the sweep has read
   /// it — which is also the sweep's own query.
-  pullRequestState  PullRequestOutcome? @map("pull_request_state")
+  pullRequestState    PullRequestOutcome? @map("pull_request_state")
   /// When it merged. Null unless `pullRequestState` is `merged`.
-  pullRequestMergedAt DateTime? @map("pull_request_merged_at") @db.Timestamptz
+  pullRequestMergedAt DateTime?           @map("pull_request_merged_at") @db.Timestamptz
 
   /// When the VISION §5 run summary was posted to GitHub (#67).
   ///
@@ -1367,4 +1368,198 @@ model ReconcileTick {
   // actually read.
   @@index([outcome, startedAt])
   @@map("reconcile_ticks")
+}
+
+// =============================================================================
+// Opifex Domain - The AI Supervisor (VISION §7), observe-only
+// =============================================================================
+
+/// Why an invocation ended the way it did.
+enum SupervisorInvocationOutcome {
+  /// The supervisor ran and its proposers all reported.
+  completed
+  /// It ran, but at least one proposer errored. The rest still recorded.
+  partial
+  /// It errored before any proposer reported.
+  failed
+  /// Skipped because the supervisor is turned off (#89).
+  skipped_disabled
+  /// Skipped because worker quota was scarce (#89). Diagnosis is worth less
+  /// than execution, so when the two compete, execution wins.
+  skipped_quota
+}
+
+/// Whether a proposer proposed anything.
+///
+/// #90: "The log also needs to record proposals the supervisor DECLINED to
+/// make, or the approval-rate measurement the promotion ladder computes (#99)
+/// is biased: an action class that is never proposed looks the same as one
+/// that is always proposed correctly."
+enum SupervisorProposalOutcome {
+  /// The supervisor is proposing an action a human could approve.
+  proposed
+  /// The supervisor looked and had nothing to propose. Still a row.
+  declined
+}
+
+/// A human's verdict on a proposal, which is the Phase 6 measurement.
+enum SupervisorProposalReview {
+  /// Nobody has judged it yet. The default, and the review queue's query.
+  pending
+  /// A human would have approved this had the class been promoted.
+  would_approve
+  /// A human would have rejected it.
+  would_reject
+}
+
+/// One scheduled run of the supervisor (#89), and the snapshot it saw (#88).
+///
+/// ## Why the snapshot lives here and not on each proposal
+///
+/// #88 requires the snapshot be "persisted with the proposal that came from
+/// it", because "what did it actually know?" is the first question when
+/// reviewing a proposal. One invocation renders ONE snapshot and may produce
+/// several proposals from it, so storing the text per proposal would copy the
+/// same 6-8 KB N times to express a fact the foreign key already carries. A
+/// proposal reaches its snapshot through `invocation`, and the link is exact
+/// either way.
+///
+/// ## Why the text is stored at all
+///
+/// It is the only replayable record of the model's input. `SnapshotService`
+/// could re-query Postgres, but it would re-query TODAY's Postgres, and a
+/// proposal reviewed a week later would then be judged against a factory that
+/// has moved. `renderSnapshot` being pure is what makes the stored text
+/// authoritative rather than indicative.
+model SupervisorInvocation {
+  id String @id @default(uuid()) @db.Uuid
+
+  startedAt  DateTime @map("started_at") @db.Timestamptz
+  finishedAt DateTime @map("finished_at") @db.Timestamptz
+  durationMs Int      @map("duration_ms")
+
+  outcome SupervisorInvocationOutcome
+
+  /// The model that was asked. Recorded per invocation because #89 requires
+  /// cost accounting per model, and because "a small model" is a claim that
+  /// should be checkable against the log rather than against the config file
+  /// as it reads today.
+  model String
+
+  /// The exact text handed to the model. Empty for a skipped invocation,
+  /// which renders no snapshot at all.
+  snapshotText        String    @map("snapshot_text")
+  /// SHA-256 of `snapshotText`. Lets two invocations be compared for "did
+  /// anything change" without loading both bodies.
+  snapshotHash        String    @map("snapshot_hash")
+  /// The instant the snapshot describes - `SnapshotInput.generatedAt`, the
+  /// value every age in the text was rendered relative to.
+  snapshotGeneratedAt DateTime? @map("snapshot_generated_at") @db.Timestamptz
+  /// Whether the snapshot dropped rows. Stored because a proposal made from a
+  /// partial view of the factory carries a bias a reviewer must be able to
+  /// see, and #88 makes truncation explicit precisely so it can be recorded.
+  snapshotTruncated   Boolean   @default(false) @map("snapshot_truncated")
+  snapshotCharacters  Int       @default(0) @map("snapshot_characters")
+
+  /// What the invocation cost.
+  ///
+  /// SEPARATE from `Run.costUsd` by construction - a different table entirely
+  /// - because #89 requires supervisor cost never distort success metric 5.
+  /// Cost per merged pull request is about the work, and the supervisor merges
+  /// nothing. Null when the adapter reports no cost (VISION §6 again: unknown
+  /// and zero are different).
+  costUsd      Decimal? @map("cost_usd") @db.Decimal(10, 4)
+  tokensInput  Int?     @map("tokens_input")
+  tokensOutput Int?     @map("tokens_output")
+
+  /// Why it failed or was skipped. Null for a clean invocation.
+  failureReason String? @map("failure_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  proposals SupervisorProposal[]
+
+  // The log, newest first - the review screen's query.
+  @@index([startedAt])
+  // "Which invocations actually produced something", and the retention sweep.
+  @@index([outcome, startedAt])
+  @@map("supervisor_invocations")
+}
+
+/// One thing the supervisor would have done, and executed nothing about.
+///
+/// ## Proposals only, structurally
+///
+/// There is no `executedAt`, no `appliedBy`, no status that means "done".
+/// #90: execution "must be structurally impossible, not merely unimplemented"
+/// - so the row cannot even RECORD an execution, and a future PR trying to
+/// execute one has to add a column and change a migration to say so. VISION
+/// §3.6: "a system whose safety depends on a model being right has no safety
+/// property at all", and the same holds for one whose safety depends on nobody
+/// wiring up an executor later.
+///
+/// ## Why the action class is a string
+///
+/// ADR-0011. The taxonomy is `apps/api/src/supervisor/action-classes.ts` and
+/// the column is validated against it at the boundary. A Prisma enum would
+/// make adding an action class a MAJOR schema bump (ADR-0010) on a table that
+/// exists to accumulate evidence, and adding a class as the supervisor grows
+/// is an ordinary event.
+model SupervisorProposal {
+  id           String @id @default(uuid()) @db.Uuid
+  invocationId String @map("invocation_id") @db.Uuid
+
+  /// An `ActionClassId`. The partition key for every approval rate #99 will
+  /// compute, which is why ADR-0011 spent a decision on its granularity.
+  actionClass String                    @map("action_class")
+  outcome     SupervisorProposalOutcome
+
+  /// One line: what is proposed, or why nothing was.
+  summary   String
+  /// The supervisor's reasoning, in its own words. This is what a reviewer
+  /// judges - an approval rate over proposals nobody could read would measure
+  /// agreement with a conclusion rather than with an argument.
+  reasoning String
+
+  /// What the proposal is about: `run`, `work-order`, `issue`, or `factory`
+  /// for something with no single subject. Free strings at the column and a
+  /// closed union at the boundary, like `needs` on WorkOrder.
+  targetKind String? @map("target_kind")
+  /// The subject's stable identifier - a run uuid, a work order identity, an
+  /// `owner/name#number`. Not a foreign key: a proposal about an issue that
+  /// has no work order yet has nothing to point at, and a proposal must
+  /// outlive the row it discusses or the evidence disappears with it.
+  targetRef  String? @map("target_ref")
+
+  /// Class-specific structure: the child issues a decomposition proposes, the
+  /// acceptance criteria a shaping proposal drafts. Shape belongs to the
+  /// proposer; this column deliberately does not constrain it.
+  details Json?
+
+  /// Whether a human would have approved. THE Phase 6 measurement.
+  review       SupervisorProposalReview @default(pending)
+  reviewedAt   DateTime?                @map("reviewed_at") @db.Timestamptz
+  /// Who judged it. Null while pending, and on SetNull if that user is
+  /// deleted - the verdict outlives the account that recorded it.
+  reviewedById String?                  @map("reviewed_by_id") @db.Uuid
+  /// Why, when the reviewer says. Optional: a rejection with no reason is
+  /// still evidence, and demanding prose would suppress the fast verdicts
+  /// that make a review queue survivable.
+  reviewNote   String?                  @map("review_note")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  invocation SupervisorInvocation @relation(fields: [invocationId], references: [id], onDelete: Cascade)
+  reviewedBy User?                @relation("SupervisorProposalReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([invocationId])
+  // The measurement query: per class, what fraction was approved.
+  @@index([actionClass, review])
+  // The review queue: what nobody has judged yet, oldest first.
+  @@index([review, createdAt])
+  // "What has been proposed about this run/work order", for the run detail
+  // screen and for the diagnosis that lands on a run summary.
+  @@index([targetKind, targetRef])
+  @@map("supervisor_proposals")
 }

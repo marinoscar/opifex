@@ -101,6 +101,14 @@ const PERMISSIONS = [
   },
   { name: 'escalations:read', description: 'View escalations' },
   { name: 'escalations:acknowledge', description: 'Acknowledge an escalation' },
+  {
+    name: 'supervisor:read',
+    description: 'View the supervisor decision log and its proposals',
+  },
+  {
+    name: 'supervisor:review',
+    description: 'Record whether a supervisor proposal would have been approved',
+  },
 ] as const;
 
 // Role to permissions mapping
@@ -130,6 +138,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'runners:manage',
     'escalations:read',
     'escalations:acknowledge',
+    'supervisor:read',
+    'supervisor:review',
   ],
   contributor: [
     'user_settings:read',
@@ -148,6 +158,12 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'workorders:write',
     'escalations:read',
     'escalations:acknowledge',
+    // The review verdict is the Phase 6 measurement and decides which action
+    // classes become eligible for promotion. A contributor runs the factory,
+    // so judging what the supervisor would have been allowed to do is within
+    // that role.
+    'supervisor:read',
+    'supervisor:review',
   ],
   viewer: [
     'user_settings:read',
@@ -160,6 +176,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'runs:read',
     'workorders:read',
     'escalations:read',
+    // Read the log, never judge it: a would-have-approved verdict is evidence
+    // that grants autonomy later, which is not a read.
+    'supervisor:read',
   ],
 };
 
