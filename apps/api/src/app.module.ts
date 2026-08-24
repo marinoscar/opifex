@@ -12,6 +12,7 @@ import { SupervisorModule } from './supervisor/supervisor.module';
 import { AutonomyModule } from './autonomy/autonomy.module';
 import { TrustModule } from './trust/trust.module';
 import { ApprovalsModule } from './approvals/approvals.module';
+import { PromotionModule } from './promotion/promotion.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { AuthModule } from './auth/auth.module';
@@ -114,6 +115,15 @@ import configuration from './config/configuration';
     // registering it here is what makes ADR-0014's policy actually fire — a
     // gate whose clock is not wired up parks everything forever.
     ApprovalsModule,
+    // The promotion ladder (VISION §7, #99). LAST of the autonomy modules,
+    // because it reads all three: the decision log's review verdicts, the
+    // approval gate's human decisions, and the grants it suspends on demotion.
+    // Its hourly cron is the only thing that demotes on regression, so
+    // registering it here is what makes VISION §7 rung 4 ("automatic on
+    // regression, not a judgment call") actually automatic. It defaults OFF
+    // via PROMOTION_LADDER_ENABLED; registering a disabled module still costs
+    // nothing, and the task returns before it queries.
+    PromotionModule,
 
     // Test modules (non-production only)
     // TestAuthModule bypasses both OAuth and the email allowlist, so NODE_ENV

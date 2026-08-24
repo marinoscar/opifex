@@ -186,6 +186,24 @@ export default () => {
         : null,
     },
 
+    // The promotion ladder (epic #22, #99), VISION §7 "Earned autonomy".
+    //
+    // DEFAULTS OFF, compared against 'true' so unset, misspelled and empty all
+    // mean off — the same rule every other outward-acting switch here follows.
+    // It belongs in that set for the reason DISPATCH_ENABLED does: the ladder
+    // is what eventually decides that a class of action may run without being
+    // asked, and a default that said yes would make the first unattended action
+    // an accident rather than a decision an operator took.
+    //
+    // Off is also PAUSED, not broken. #99's last criterion is that the ladder
+    // "can be paused globally without dismantling the grants", so a false here
+    // stops the ladder promoting or demoting anything and leaves every existing
+    // trust grant exactly as it was — a pause must never be a mass revocation,
+    // or nobody would ever pause a second time.
+    promotion: {
+      enabled: process.env.PROMOTION_LADDER_ENABLED === 'true',
+    },
+
     // Dispatch (epic #18, #64)
     dispatch: {
       // A ceiling across the whole fleet, on top of each runner's own
