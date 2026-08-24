@@ -81,7 +81,11 @@ export function owns(prefix: string, path: string): boolean {
  */
 export const DESTINATION_ROUTES: Record<DestinationKey, readonly string[]> = {
   dashboard: ['/'],
-  runs: ['/runs'],
+  // `/work-orders/:idOrIdentity` (#84) is claimed by Runs rather than Queue.
+  // A work order is queued before it executes, but the detail page is mostly
+  // its ATTEMPTS — and the next place a reader goes from it is a run. Leaving
+  // the rail on Runs matches where they came from and where they are going.
+  runs: ['/runs', '/work-orders'],
   queue: ['/queue'],
   projects: ['/projects'],
   cost: ['/cost'],

@@ -212,6 +212,7 @@ import type {
   RunEvent,
   RunStatus,
   RunSummary,
+  WorkOrderDetail,
 } from '../types/cockpit';
 
 // Allowlist API
@@ -229,6 +230,17 @@ export interface QueueSteerResult {
   labelWritten: boolean;
   reconciled: boolean;
   effect: string;
+}
+
+/** `GET /work-orders/:idOrIdentity` — one work order, its document and attempts. */
+export async function getWorkOrder(
+  idOrIdentity: string,
+  signal?: AbortSignal,
+): Promise<WorkOrderDetail> {
+  return api.get<WorkOrderDetail>(
+    `/work-orders/${encodeURIComponent(idOrIdentity)}`,
+    { signal },
+  );
 }
 
 /** `POST /queue/:id/hold` — write `factory:hold` to the work order's issue. */
