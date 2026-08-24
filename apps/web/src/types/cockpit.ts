@@ -344,6 +344,40 @@ export interface CostSummary {
   ceiling: SpendCeiling;
 }
 
+/**
+ * A registered repository, as `GET /api/repositories` returns it (#81).
+ *
+ * VISION §2 describes the cockpit as giving *"a single view of every project,
+ * run, cost, and queue, across repositories, that GitHub alone cannot
+ * provide"* — the cross-repository view is the part GitHub does not offer, and
+ * this is the row it is built from.
+ *
+ * `budgetCeilingUsd` is a STRING, and deliberately so: the API's own comment
+ * says a float would round a spend ceiling, "which is the one field where that
+ * is least acceptable."
+ */
+export interface RepositorySummary {
+  id: string;
+  projectId: string | null;
+  owner: string;
+  name: string;
+  /** `owner/name`, so a consumer never has to reassemble it. */
+  fullName: string;
+  defaultBranch: string;
+  /** The reconciler reads it. */
+  observeEnabled: boolean;
+  /** The factory may run work in it — how the observation week ends, one repo at a time. */
+  dispatchEnabled: boolean;
+  mirrorLabelsEnabled: boolean;
+  specFeedbackEnabled: boolean;
+  budgetCeilingUsd: string | null;
+  wallClockTimeoutMinutes: number | null;
+  pathConstraints: string[];
+  lastObservedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ---------------------------------------------------------------------------
 // The six success metrics (VISION §10)
 // ---------------------------------------------------------------------------
