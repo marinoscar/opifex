@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import { CHECK_STATUSES, WATCHDOG_CHECKS } from '../../watchdog/check-coverage';
 import { workOrderRefSchema } from './queue.dto';
 
 /**
@@ -124,6 +125,75 @@ export const runSummarySchema = z.object({
 export class RunSummaryDto extends createZodDto(runSummarySchema) {}
 
 /**
+ * One watchdog check, and what it is worth on this run (#104).
+ *
+ * The enums are restated from `watchdog/check-coverage.ts` rather than copied:
+ * a status the API could emit but the schema does not name would be stripped
+ * by the response pipe, and the value most likely to be added later is a
+ * WORSE one than `unavailable` — silently dropping that is the failure this
+ * whole family of shapes exists to prevent.
+ */
+export const checkCoverageSchema = z.object({
+  check: z.enum(WATCHDOG_CHECKS),
+  /**
+   * `unavailable` is not a failed check. It means the check could not run at
+   * all, so the failure mode it guards is UNGUARDED on this run — which is a
+   * different thing from a check that ran and found nothing, and the cockpit
+   * must never render them the same way.
+   */
+  status: z.enum(CHECK_STATUSES),
+  /** WHAT is being watched. Degrades independently of `status`. */
+  signal: z.string(),
+  /** Why, naming the declared capability responsible. Never empty. */
+  reason: z.string(),
+  /** The silence threshold in force; null on checks that have none. */
+  thresholdMs: z.number().nullable(),
+});
+
+export class CheckCoverageDto extends createZodDto(checkCoverageSchema) {}
+
+/**
+ * Which checks are protecting one run, derived from what its runner declared.
+ *
+ * VISION §6: *"equal observability across vendors is not achievable. A common
+ * floor that some runners exceed is."* This is the floor made visible per run
+ * — an operator seeing "loop detection: unavailable on this runner"
+ * understands the risk they are carrying, and one seeing nothing assumes there
+ * is none.
+ */
+export const runCheckCoverageSchema = z.object({
+  runnerKey: z.string(),
+  /** Null when the runner has filed no capability manifest at all. */
+  streamingFidelity: z.enum(['full', 'partial', 'none']).nullable(),
+  rateLimitSignal: z.enum(['structured', 'heuristic', 'none']).nullable(),
+  /**
+   * The worst status among the checks, for a badge that does not want to
+   * re-derive one. `unavailable` dominates: three healthy checks do not
+   * average away a fourth that cannot run.
+   */
+  weakest: z.enum(CHECK_STATUSES),
+  /** Always all four, always in the same order. */
+  checks: z.array(checkCoverageSchema),
+});
+
+export class RunCheckCoverageDto extends createZodDto(runCheckCoverageSchema) {}
+
+/**
+ * One run, as `GET /runs/:id` returns it.
+ *
+ * A superset of the list row rather than a widening of it. `checkCoverage`
+ * costs a join through the runner's capability manifest and is per-run detail
+ * an operator reads one run at a time — putting it on every row of an already
+ * wide list would pay for it on the screen that cannot use it. The list stays
+ * `RunSummary`; only the detail carries this.
+ */
+export const runDetailSchema = runSummarySchema.extend({
+  checkCoverage: runCheckCoverageSchema,
+});
+
+export class RunDetailDto extends createZodDto(runDetailSchema) {}
+
+/**
  * The six normalized event types. Every runner maps into these.
  */
 export const runEventTypeSchema = z.enum([
@@ -160,4 +230,5 @@ export const runEventSchema = z.object({
 export class RunEventDto extends createZodDto(runEventSchema) {}
 
 export type RunSummary = z.infer<typeof runSummarySchema>;
+export type RunDetail = z.infer<typeof runDetailSchema>;
 export type RunEventView = z.infer<typeof runEventSchema>;

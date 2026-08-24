@@ -8,9 +8,15 @@ import {
 } from '../run-events/run-event.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { toNumberOrNull } from '../common/decimal';
+import { describeCheckCoverage } from '../watchdog/check-coverage';
+import type {
+  RateLimitSignal,
+  StreamingFidelity,
+} from '../watchdog/watchdog.types';
 import {
   RUNS_DEFAULT_PAGE_SIZE,
   EVENTS_DEFAULT_PAGE_SIZE,
+  type RunDetail,
   type RunEventView,
   type RunSummary,
 } from './dto/runs.dto';
@@ -149,13 +155,40 @@ export class RunsService {
     return { items: rows.map(toRunSummary), total, page, pageSize };
   }
 
-  async findById(id: string): Promise<RunSummary> {
+  /**
+   * One run, with the watchdog coverage the list deliberately omits (#104).
+   *
+   * The capability join is here and not in `list` on purpose: coverage is
+   * per-run detail an operator reads one run at a time, and paying for the
+   * join on every row of a page of a hundred would buy nothing the list
+   * renders.
+   *
+   * The runner relation is optional in the schema, and a null one is NOT
+   * treated as a runner that declared the defaults — it produces null
+   * declarations, which the derivation reports as unavailable checks. A
+   * missing manifest is a real gap in what is protecting the run, and quietly
+   * assuming `full` would manufacture exactly the false confidence #104 is
+   * about.
+   */
+  async findById(id: string): Promise<RunDetail> {
     const row = await this.prisma.run.findUnique({
       where: { id },
-      select: RUN_SELECT,
+      select: RUN_DETAIL_SELECT,
     });
     if (!row) throw new NotFoundException(`Run ${id} not found`);
-    return toRunSummary(row);
+
+    return {
+      ...toRunSummary(row),
+      checkCoverage: describeCheckCoverage({
+        runnerKey: row.runnerKey,
+        fidelity:
+          (row.runner?.capability?.streamingFidelity as StreamingFidelity) ??
+          null,
+        rateLimitSignal:
+          (row.runner?.capability?.rateLimitSignal as RateLimitSignal) ?? null,
+        branch: row.workOrder.branch || null,
+      }),
+    };
   }
 
   /**
@@ -262,6 +295,22 @@ const RUN_SELECT = {
       attempt: true,
       branch: true,
       repository: { select: { owner: true, name: true } },
+    },
+  },
+} as const;
+
+/**
+ * The detail select: everything the list reads, plus the runner's declared
+ * capabilities. Derived from `RUN_SELECT` rather than restated, so a column
+ * added to the list row cannot go missing from the detail.
+ */
+const RUN_DETAIL_SELECT = {
+  ...RUN_SELECT,
+  runner: {
+    select: {
+      capability: {
+        select: { streamingFidelity: true, rateLimitSignal: true },
+      },
     },
   },
 } as const;
