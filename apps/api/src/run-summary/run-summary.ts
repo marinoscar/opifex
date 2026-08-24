@@ -37,6 +37,23 @@ export interface RunSummaryFacts {
   tokensOutput: number | null;
   /** The run's `attentionReason` — the closest thing to "why it stopped". */
   attentionReason: string | null;
+  /**
+   * The supervisor's root-cause narration, if it produced one (#92).
+   *
+   * OPTIONAL, and the summary is complete without it. #92's last criterion:
+   * "absent or failed diagnosis leaves the run summary otherwise intact." The
+   * deterministic record is the record; this is an addition to it, never a
+   * substitute for `whyItStopped`.
+   */
+  diagnosis?: RunDiagnosis | null;
+}
+
+/** One supervisor diagnosis, as the summary renders it. */
+export interface RunDiagnosis {
+  /** The narration, verbatim. Attribution is added by the composer. */
+  text: string;
+  /** The proposal it came from, so the decision log entry is findable. */
+  proposalId: string;
 }
 
 /** The HTML comment that makes a summary findable and re-findable. */
@@ -124,5 +141,45 @@ export function composeRunSummary(facts: RunSummaryFacts): string {
     '',
     `Run \`${facts.runId}\` — its full event stream, one span per turn and per`,
     'tool call, is in the telemetry store.',
+    ...diagnosisSection(facts.diagnosis),
   ].join('\n');
+}
+
+/**
+ * The supervisor's diagnosis, clearly marked as a hypothesis.
+ *
+ * ## Why the attribution is structural rather than requested
+ *
+ * #92: "it must be clearly attributed as a supervisor hypothesis, never
+ * presented as determined fact. A confident wrong diagnosis written into the
+ * permanent record is worse than no diagnosis, because VISION §1's second
+ * motivation is that provenance is unrecoverable once wrong."
+ *
+ * So the caveat is written HERE, around whatever the model said, rather than
+ * asked for in the prompt. A model asked to caveat itself will sometimes
+ * decline to, and this comment cannot be edited once it is posted.
+ *
+ * ## Why it is last
+ *
+ * The deterministic facts come first and read identically whether or not a
+ * diagnosis exists. A reader who stops at the table has the record; a reader
+ * who continues gets a guess, labelled as one.
+ */
+export function diagnosisSection(
+  diagnosis: RunDiagnosis | null | undefined,
+): string[] {
+  if (!diagnosis || !diagnosis.text.trim()) return [];
+
+  return [
+    '',
+    '---',
+    '',
+    '**Supervisor hypothesis — not a determined cause.** Written by the advisory',
+    'supervisor from the state above, unreviewed, and possibly wrong. The facts in',
+    'the table are the record; this is a guess about them.',
+    '',
+    diagnosis.text.trim(),
+    '',
+    `<!-- opifex:run-diagnosis proposal=${diagnosis.proposalId} -->`,
+  ];
 }

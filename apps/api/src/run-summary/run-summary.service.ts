@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { GitHubWriteService } from '../github/write/github-write.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { DecisionLogService } from '../supervisor/decision-log/decision-log.service';
 import { composeRunSummary, type RunSummaryFacts } from './run-summary';
 
 /**
@@ -35,6 +36,17 @@ export class RunSummaryService {
     private readonly prisma: PrismaService,
     private readonly writes: GitHubWriteService,
     private readonly config: ConfigService,
+    /**
+     * Read-only access to the decision log, for the supervisor's diagnosis
+     * (#92).
+     *
+     * The dependency runs THIS WAY on purpose. The run summary reads what the
+     * supervisor proposed; the supervisor cannot reach the run summary, and
+     * `SupervisorModule` imports nothing that could post a comment. Reversing
+     * it would give a proposal a path to GitHub, which is the whole thing #90
+     * makes structurally impossible.
+     */
+    private readonly decisions: DecisionLogService,
   ) {}
 
   /**
@@ -122,6 +134,7 @@ export class RunSummaryService {
       tokensInput: run.tokensInput,
       tokensOutput: run.tokensOutput,
       attentionReason: run.attentionReason,
+      diagnosis: await this.diagnosisFor(run.id),
     };
 
     const body = composeRunSummary(facts);
@@ -146,6 +159,37 @@ export class RunSummaryService {
         result.performed ? 'posted to' : 'composed for'
       } ${repo.owner}/${repo.name}#${target}`,
     );
+  }
+
+  /**
+   * The supervisor's latest diagnosis of this run, or null.
+   *
+   * NEVER throws into the caller. #92: "absent or failed diagnosis leaves the
+   * run summary otherwise intact" — a decision log that is unreachable must
+   * cost the summary its hypothesis and nothing else, because the deterministic
+   * record is the part that matters and it is already complete.
+   */
+  private async diagnosisFor(
+    runId: string,
+  ): Promise<RunSummaryFacts['diagnosis']> {
+    try {
+      const match = await this.decisions.latestProposalFor(
+        'run',
+        runId,
+        'run-diagnosis',
+      );
+      if (!match) return null;
+
+      return { text: match.reasoning, proposalId: match.id };
+    } catch (error) {
+      this.logger.warn(
+        `Could not read a supervisor diagnosis for ${runId}; the summary goes ` +
+          `out without one: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+      );
+      return null;
+    }
   }
 }
 
