@@ -10,6 +10,7 @@ import { RunSummaryModule } from './run-summary/run-summary.module';
 import { MergeStateModule } from './merge-state/merge-state.module';
 import { SupervisorModule } from './supervisor/supervisor.module';
 import { AutonomyModule } from './autonomy/autonomy.module';
+import { TrustModule } from './trust/trust.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { AuthModule } from './auth/auth.module';
@@ -102,6 +103,10 @@ import configuration from './config/configuration';
     // The cockpit read models (#80) — read-only, one family per module.
     CockpitModule,
     RunnersModule,
+    // Trust grants (VISION §8, #96). Registered after the modules it scopes —
+    // a grant names an action class and a repository, and authorizes nothing
+    // by itself. It imports only PrismaModule on purpose; see TrustModule.
+    TrustModule,
 
     // Test modules (non-production only)
     // TestAuthModule bypasses both OAuth and the email allowlist, so NODE_ENV

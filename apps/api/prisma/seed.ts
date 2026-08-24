@@ -110,6 +110,15 @@ const PERMISSIONS = [
     description:
       'Record whether a supervisor proposal would have been approved',
   },
+  { name: 'trust:read', description: 'View trust grants and their history' },
+  {
+    name: 'trust:grant',
+    description: 'Issue a trust grant authorizing unattended execution',
+  },
+  {
+    name: 'trust:revoke',
+    description: 'Revoke or suspend a trust grant',
+  },
 ] as const;
 
 // Role to permissions mapping
@@ -141,6 +150,13 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'escalations:acknowledge',
     'supervisor:read',
     'supervisor:review',
+    // All three. 'trust:grant' is admin-only: granting autonomy reconfigures
+    // what the factory may do unattended, which is the same class of decision
+    // as 'runners:manage' and 'projects:write' — it decides what the control
+    // plane is allowed to do without asking, not merely what it does today.
+    'trust:read',
+    'trust:grant',
+    'trust:revoke',
   ],
   contributor: [
     'user_settings:read',
@@ -165,6 +181,14 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // that role.
     'supervisor:read',
     'supervisor:review',
+    // Read and revoke, never grant. Narrowing trust is always safe, and an
+    // operator who suspects a grant is misbehaving should not need to find an
+    // admin before stopping it — the same reasoning as
+    // 'escalations:acknowledge' above. Granting is the opposite act: it widens
+    // what runs unattended, so it stays with 'projects:write' and
+    // 'runners:manage' as an admin decision.
+    'trust:read',
+    'trust:revoke',
   ],
   viewer: [
     'user_settings:read',
@@ -180,6 +204,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // Read the log, never judge it: a would-have-approved verdict is evidence
     // that grants autonomy later, which is not a read.
     'supervisor:read',
+    // See what runs unattended and why it stopped. Revoking is withheld
+    // because it is an act on the factory, and a viewer acts on nothing -
+    // even when the act would narrow rather than widen.
+    'trust:read',
   ],
 };
 

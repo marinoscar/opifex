@@ -107,6 +107,29 @@ export const PERMISSIONS = {
    */
   SUPERVISOR_READ: 'supervisor:read',
   SUPERVISOR_REVIEW: 'supervisor:review',
+
+  /**
+   * Trust grants (VISION §8, epic #22, #96).
+   *
+   * Three permissions, not two, because GRANTING and REVOKING autonomy are
+   * asymmetric acts and collapsing them would force the safe one to carry the
+   * dangerous one's authority.
+   *
+   * `trust:grant` reconfigures what the factory may do unattended — the same
+   * class of decision as `runners:manage` and `projects:write`, and admin-only
+   * for the same reason. VISION §8 is blunt about the stakes: "An agent that
+   * can edit the check enforcing its own trailers, or grant itself trust, has
+   * the appearance of guardrails and none of the substance."
+   *
+   * `trust:revoke` NARROWS what may run unattended, which is always safe. An
+   * operator who suspects a grant is misbehaving should not have to find an
+   * admin first — the same reasoning already written for
+   * `escalations:acknowledge`, where the act of taking responsibility is
+   * separated from the act of reconfiguring the system.
+   */
+  TRUST_READ: 'trust:read',
+  TRUST_GRANT: 'trust:grant',
+  TRUST_REVOKE: 'trust:revoke',
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
