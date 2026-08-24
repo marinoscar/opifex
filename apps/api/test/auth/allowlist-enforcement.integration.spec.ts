@@ -13,6 +13,7 @@ import {
   mockRoles,
 } from '../fixtures/test-data.factory';
 import { GoogleProfile } from '../../src/auth/strategies/google.strategy';
+import { SystemSettingsService } from '../../src/settings/system-settings/system-settings.service';
 
 describe('Auth Service - Allowlist Enforcement', () => {
   let authService: AuthService;
@@ -45,6 +46,10 @@ describe('Auth Service - Allowlist Enforcement', () => {
       providers: [
         AuthService,
         AllowlistService,
+        {
+          provide: SystemSettingsService,
+          useValue: { getSettingValue: jest.fn().mockResolvedValue(true) },
+        },
         AdminBootstrapService,
         { provide: PrismaService, useValue: prismaMock },
         {

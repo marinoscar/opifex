@@ -9,6 +9,15 @@ export interface User {
   profileImageUrl: string | null;
   roles: Role[];
   permissions: string[];
+  /**
+   * Whether this deployment lets a user choose their own theme (#79).
+   *
+   * Carried here rather than read from `GET /api/system-settings`, which
+   * requires `system_settings:read` and 403s for exactly the users this
+   * constrains. Optional so an older API response still parses; absent means
+   * allowed — see `useThemePolicy`.
+   */
+  allowUserThemeOverride?: boolean;
   isActive: boolean;
   createdAt: string;
 }

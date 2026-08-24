@@ -14,6 +14,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import { useThemeContext } from '../../contexts/ThemeContext';
 import { OpifexWordmark } from '../brand/OpifexWordmark';
 import { UserMenu } from './UserMenu';
+import { useThemePolicy } from '../../hooks/useThemePolicy';
 
 /**
  * The top bar.
@@ -28,6 +29,7 @@ import { UserMenu } from './UserMenu';
 export function AppBar() {
   const theme = useTheme();
   const { isDarkMode, toggleMode } = useThemeContext();
+  const { canOverrideTheme } = useThemePolicy();
 
   return (
     <MuiAppBar
@@ -84,15 +86,20 @@ export function AppBar() {
             toolbar can never push the app shell sideways. */}
         <Box aria-hidden sx={{ flexGrow: 1, minWidth: 0 }} />
 
-        {/* Theme Toggle */}
-        <IconButton
-          onClick={toggleMode}
-          color="inherit"
-          aria-label="toggle theme"
-          sx={{ mr: 1, flexShrink: 0 }}
-        >
-          {isDarkMode ? <LightModeIcon /> : <DarkModeIcon />}
-        </IconButton>
+        {/* Theme toggle — HIDDEN, not disabled, when an administrator has
+            pinned the theme (#79). A permanently disabled control is noise: it
+            occupies the same space, invites the same click, and explains
+            nothing. Absent, the chrome simply has one fewer affordance. */}
+        {canOverrideTheme && (
+          <IconButton
+            onClick={toggleMode}
+            color="inherit"
+            aria-label="toggle theme"
+            sx={{ mr: 1, flexShrink: 0 }}
+          >
+            {isDarkMode ? <LightModeIcon /> : <DarkModeIcon />}
+          </IconButton>
+        )}
 
         {/* User Menu */}
         <Box sx={{ flexShrink: 0 }}>

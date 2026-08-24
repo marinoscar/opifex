@@ -10,9 +10,11 @@ import { AuthService } from './auth.service';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { TokenCleanupTask } from './tasks/token-cleanup.task';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
   imports: [
+    SettingsModule,
     // Passport configuration
     PassportModule.register({ defaultStrategy: 'jwt' }),
 
