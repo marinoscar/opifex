@@ -86,16 +86,38 @@ describe('supervisor isolation (#90)', () => {
     },
   );
 
-  it('declares no execution-capable module in its own imports', () => {
+  /**
+   * Modules the supervisor may import, each with the reason it is safe.
+   *
+   * An ALLOWLIST rather than a blocklist, because the failure this guards
+   * against is an import nobody thought to forbid. Adding a module here is a
+   * deliberate act that shows up in review with this comment attached.
+   *
+   * - `PrismaModule` — the decision log is two tables, and writing them is the
+   *   whole capability the supervisor needs.
+   * - `NotificationsModule` — the daily brief (#93, ADR-0012) is delivered
+   *   through the same transports escalations use. Sending a summary is not
+   *   executing a proposal: nothing in that module can re-dispatch a work
+   *   order, create or edit an issue, or clear a quarantine.
+   */
+  const ALLOWED_MODULE_IMPORTS = ['PrismaModule', 'NotificationsModule'];
+
+  it('imports only modules on the allowlist', () => {
     const source = readFileSync(
       join(SUPERVISOR_DIR, 'supervisor.module.ts'),
       'utf8',
     );
     const imports = /imports:\s*\[([^\]]*)\]/.exec(source)?.[1] ?? '';
 
-    // PrismaModule and nothing else. The log is two tables; writing them is
-    // the whole capability the supervisor needs.
-    expect(imports.replace(/\s/g, '')).toBe('PrismaModule');
+    const declared = imports
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry !== '');
+
+    expect(declared.length).toBeGreaterThan(0);
+    for (const module of declared) {
+      expect(ALLOWED_MODULE_IMPORTS).toContain(module);
+    }
   });
 
   it('registers no provider whose name suggests it acts', () => {
