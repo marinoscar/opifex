@@ -28,6 +28,7 @@ one.
 | [0011](0011-supervisor-action-class-granularity.md) | Grant autonomy per (capability, effect) pair, from one frozen registry                    | Proposed | [#218](https://github.com/marinoscar/opifex/issues/218) |
 | [0012](0012-one-daily-artifact.md)                  | The trust digest extends the daily brief rather than competing with it                    | Proposed | [#226](https://github.com/marinoscar/opifex/issues/226) |
 | [0013](0013-never-trustable-effects.md)             | Never-trustable is a list of effects, checked at the execution boundary                   | Proposed | [#233](https://github.com/marinoscar/opifex/issues/233) |
+| [0014](0014-approval-timeout-precedence.md)         | Approval timeouts resolve by a total order, and the grant is what delivers autonomy       | Proposed | [#234](https://github.com/marinoscar/opifex/issues/234) |
 
 `0000-template.md` is the template. It is not a decision and never becomes one;
 see [Numbering](#numbering) for what that means for `Decision: ADR-0000`.

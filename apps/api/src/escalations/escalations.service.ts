@@ -140,6 +140,62 @@ export class EscalationsService {
     return { raised, deduplicated };
   }
 
+  /**
+   * Raise one control-plane escalation, with no run behind it and no dedupe.
+   *
+   * Added for #97's `park_and_escalate` approvals, and kept general because
+   * nothing about it is approval-specific. `kind` is `system` — "the control
+   * plane itself is in a state it cannot resolve" — which is exactly what a
+   * parked approval is: VISION §8 says an irreversible action is never
+   * auto-approved, so the request has no timer and nothing but a person moves
+   * it.
+   *
+   * ## Why this is not `raiseFrom`
+   *
+   * Two reasons, both disqualifying. `raiseFrom` takes `ReconcileAction`s,
+   * which carry a repository, an issue number and a projection `evidence`
+   * block that a parked approval simply does not have; synthesising them would
+   * put invented facts in the escalation record. And `raiseFrom` DEDUPES per
+   * `(runId, kind)`, which is right for a watchdog re-deriving the same
+   * verdict every tick and wrong here — every parked approval is a distinct
+   * question, and with `runId: null, kind: 'system'` the second one and every
+   * one after it would be silently suppressed. Nobody would be told about the
+   * cases VISION §8 says are most worth telling them about.
+   *
+   * It returns the id because the caller must link it: `ApprovalRequest.
+   * escalationId` is the edge that lets an operator get from the page on their
+   * phone to the thing that is waiting.
+   */
+  async raiseSystem(input: {
+    summary: string;
+    detail: string;
+    raisedAt?: Date;
+  }): Promise<{ id: string }> {
+    const created = await this.prisma.escalation.create({
+      data: {
+        runId: null,
+        kind: 'system',
+        status: 'raised',
+        summary: input.summary,
+        detail: input.detail,
+        raisedAt: input.raisedAt ?? new Date(),
+        // No `progressStoppedAt`, and therefore no detection-latency sample.
+        // Success metric 1 measures "a run ceasing to make progress" (VISION
+        // §10); an approval that nobody has answered yet is not a run that
+        // stopped, and folding it into the same histogram would make the
+        // headline metric describe two different things at once.
+        progressStoppedAt: null,
+        detectionSource: null,
+        detectLatencyMs: null,
+      },
+      select: { id: true },
+    });
+
+    this.logger.warn(`Escalation raised (system): ${input.summary}`);
+
+    return created;
+  }
+
   async list(query: {
     page: number;
     pageSize: number;

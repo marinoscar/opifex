@@ -303,6 +303,58 @@ describe('EscalationsService', () => {
     );
   });
 
+  describe('raiseSystem', () => {
+    it('records one control-plane escalation with no run behind it', async () => {
+      const { id } = await service.raiseSystem({
+        summary: 'Approval parked, waiting on a human',
+        detail: 'There is no timer on this request.',
+        raisedAt: new Date('2026-08-24T12:00:00Z'),
+      });
+
+      expect(prisma.rows).toHaveLength(1);
+      expect(prisma.rows[0]).toMatchObject({
+        id,
+        runId: null,
+        kind: 'system',
+        status: 'raised',
+        summary: 'Approval parked, waiting on a human',
+      });
+    });
+
+    /**
+     * The reason this is not `raiseFrom`.
+     *
+     * `raiseFrom` dedupes per `(runId, kind)`, which is right for a watchdog
+     * re-deriving the same verdict every tick and wrong for #97's parked
+     * approvals: with `runId: null, kind: 'system'` the second one and every
+     * one after it would be silently suppressed, and nobody would be told
+     * about the cases VISION §8 says are most worth telling them about.
+     */
+    it('does NOT dedupe — every raise is its own question', async () => {
+      await service.raiseSystem({ summary: 'first', detail: 'a' });
+      await service.raiseSystem({ summary: 'second', detail: 'b' });
+
+      expect(prisma.rows).toHaveLength(2);
+      expect(prisma.rows.map((row) => row.summary)).toEqual([
+        'first',
+        'second',
+      ]);
+    });
+
+    it('records no detection-latency sample', async () => {
+      await service.raiseSystem({ summary: 'parked', detail: 'why' });
+
+      // Success metric 1 measures a RUN ceasing to make progress (VISION §10).
+      // An unanswered approval is not that, and folding it into the same
+      // histogram would make the headline metric describe two things at once.
+      expect(prisma.rows[0]).toMatchObject({
+        progressStoppedAt: null,
+        detectLatencyMs: null,
+      });
+      expect(metrics.recordDetected).not.toHaveBeenCalled();
+    });
+  });
+
   describe('the summary', () => {
     it('fits on a phone and names the work order and the issue', async () => {
       // #57 requires the payload be "sufficient to act on without opening a
