@@ -6,6 +6,7 @@ import {
   unmetNeeds,
   type DispatchLimits,
   type RunnerPoolEntry,
+  type RunnerQuotaPosition,
 } from './dispatch-policy';
 
 function capabilities(
@@ -730,6 +731,300 @@ describe('dispatch policy', () => {
       expect(
         decideDispatch({ needs: [] }, [entry()], NO_LIMIT).reason,
       ).toContain('no specific capabilities');
+    });
+  });
+  describe('quota-aware routing (#105)', () => {
+    // Already resolved against a clock by the caller. `resumesAt` is a
+    // pre-formatted string precisely so nothing in the policy can compare it.
+    const EXHAUSTED: RunnerQuotaPosition = {
+      exhausted: true,
+      resumesAt: '2026-08-23T18:00:00.000Z',
+      basis:
+        "1 run(s) on this runner are blocked on 'rate-limit' with a reset time",
+    };
+
+    function withQuota(
+      base: RunnerPoolEntry,
+      quota?: RunnerQuotaPosition,
+    ): RunnerPoolEntry {
+      return { ...base, quota };
+    }
+
+    describe('a two-runner fleet, which is the whole point of the feature', () => {
+      // There is exactly ONE registered runner today (`claude-code-local`);
+      // #102/#103's cloud runner is blocked because the vendor CLI refuses
+      // `--cloud` with `--print`. So this behaviour cannot fire against the
+      // real fleet yet, and the fixture is what carries it: the policy takes a
+      // plain array, so proving it costs nothing but two entries.
+      const pool = [
+        withQuota(entry({ key: 'spent' }), EXHAUSTED),
+        withQuota(entry({ key: 'fresh' })),
+      ];
+
+      it('moves the work to the runner with quota rather than parking it', () => {
+        const decision = decideDispatch({ needs: [] }, pool, NO_LIMIT);
+
+        expect(decision).toMatchObject({
+          outcome: 'dispatch',
+          runnerKey: 'fresh',
+        });
+      });
+
+      it('records that a park was avoided, which is the countable event', () => {
+        // VISION §10's metric 2 is dead time per day, and its arithmetic waits
+        // on #232. This is the event that arithmetic will count.
+        expect(
+          decideDispatch({ needs: [] }, pool, NO_LIMIT).avoidedQuotaPark,
+        ).toBe(true);
+      });
+
+      it('says so in the reason, not only in a boolean', () => {
+        const decision = decideDispatch({ needs: [] }, pool, NO_LIMIT);
+
+        expect(decision.reason).toContain('avoided a park');
+        expect(decision.reason).toContain('spent');
+      });
+
+      it('prefers the runner with quota even when the spent one has more headroom', () => {
+        // Headroom is the tiebreaker among USABLE runners. A runner that
+        // cannot spend a token has no usable headroom at all.
+        const decision = decideDispatch(
+          { needs: [] },
+          [
+            withQuota(entry({ key: 'spent', maxConcurrency: 8 }), EXHAUSTED),
+            withQuota(entry({ key: 'fresh', maxConcurrency: 1 })),
+          ],
+          NO_LIMIT,
+        );
+
+        expect(decision.runnerKey).toBe('fresh');
+      });
+    });
+
+    describe('quota is a tiebreaker among capable runners, never an override', () => {
+      it('will not send work to an incapable runner because it has quota', () => {
+        // The acceptance criterion stated as a test: an incapable runner with
+        // quota against a capable one without it must QUEUE. Structurally
+        // guaranteed — the quota check runs after `unmetNeeds`, so a runner
+        // missing a capability is already rejected when quota is looked at.
+        const decision = decideDispatch(
+          { needs: ['cost-reporting'] },
+          [
+            withQuota(entry({ key: 'incapable', reportsCost: false })),
+            withQuota(entry({ key: 'capable' }), EXHAUSTED),
+          ],
+          NO_LIMIT,
+        );
+
+        expect(decision.outcome).toBe('queued');
+        expect(decision.runnerKey).toBeNull();
+      });
+
+      it('will not relax a model tier for quota either', () => {
+        const decision = decideDispatch(
+          { needs: [], modelTier: 'large' },
+          [
+            withQuota(entry({ key: 'small-only', modelTiers: ['small'] })),
+            withQuota(entry({ key: 'big', modelTiers: ['large'] }), EXHAUSTED),
+          ],
+          NO_LIMIT,
+        );
+
+        expect(decision.outcome).toBe('queued');
+      });
+
+      it('does not count an incapable runner as a park this feature avoided', () => {
+        // It was never an alternative, so nothing moved off it. Counting it
+        // would inflate the one number #105 is judged by.
+        const decision = decideDispatch(
+          { needs: ['cost-reporting'] },
+          [
+            withQuota(
+              entry({ key: 'incapable', reportsCost: false }),
+              EXHAUSTED,
+            ),
+            withQuota(entry({ key: 'capable' })),
+          ],
+          NO_LIMIT,
+        );
+
+        expect(decision.outcome).toBe('dispatch');
+        expect(decision.avoidedQuotaPark).toBe(false);
+      });
+
+      it('never returns an exhausted acknowledged preview runner as eligible', () => {
+        // The preview branch can return ELIGIBLE, which is why the quota check
+        // sits in front of it rather than after.
+        const decision = decideDispatch(
+          { needs: [] },
+          [
+            withQuota(
+              entry({ key: 'preview', stabilityTier: 'beta' }),
+              EXHAUSTED,
+            ),
+          ],
+          { ...NO_LIMIT, allowPreviewWithoutGaFallback: true },
+        );
+
+        expect(decision.outcome).toBe('queued');
+        expect(decision.queueReason).toBe('capable-runners-quota-exhausted');
+      });
+    });
+
+    describe('unknown is not zero', () => {
+      it('routes freely to a runner that has never blocked', () => {
+        // VISION §6. A runner with no observed quota position is usable; the
+        // absent field is what says so.
+        const decision = decideDispatch({ needs: [] }, [entry()], NO_LIMIT);
+
+        expect(decision.outcome).toBe('dispatch');
+        expect(decision.candidates[0].quota).toBeUndefined();
+      });
+
+      it('routes to a runner whose position says it is NOT exhausted', () => {
+        // The shape #231 will populate once a real meter exists.
+        const decision = decideDispatch(
+          { needs: [] },
+          [
+            withQuota(entry(), {
+              exhausted: false,
+              resumesAt: null,
+              basis: 'no dated quota block observed',
+            }),
+          ],
+          NO_LIMIT,
+        );
+
+        expect(decision.outcome).toBe('dispatch');
+      });
+    });
+
+    describe('falling back to parking, cleanly', () => {
+      const soleRunner = [withQuota(entry({ key: 'only' }), EXHAUSTED)];
+
+      it('queues rather than failing when the only capable runner is spent', () => {
+        // Today's real fleet. One runner out of quota still parks, exactly as
+        // #56 already handles — this feature adds a better REASON, not a
+        // failure and not a dispatch into a spent quota.
+        const decision = decideDispatch({ needs: [] }, soleRunner, NO_LIMIT);
+
+        expect(decision).toMatchObject({
+          outcome: 'queued',
+          runnerKey: null,
+          queueReason: 'capable-runners-quota-exhausted',
+          avoidedQuotaPark: false,
+        });
+      });
+
+      it('names the reset time, so the wait is dated rather than open-ended', () => {
+        const decision = decideDispatch({ needs: [] }, soleRunner, NO_LIMIT);
+
+        expect(decision.candidates[0].reason).toContain(
+          '2026-08-23T18:00:00.000Z',
+        );
+        expect(decision.reason).toContain('2026-08-23T18:00:00.000Z');
+      });
+
+      it('distinguishes out-of-quota from no-capable-runner', () => {
+        // Different operator responses: one is patience with a known end, the
+        // other is a runner nobody has registered.
+        const spent = decideDispatch({ needs: [] }, soleRunner, NO_LIMIT);
+        const missing = decideDispatch(
+          { needs: ['cost-reporting'] },
+          [entry({ reportsCost: false })],
+          NO_LIMIT,
+        );
+
+        expect(spent.queueReason).toBe('capable-runners-quota-exhausted');
+        expect(missing.queueReason).toBe('no-runner-has-the-capabilities');
+      });
+
+      it('reports quota rather than capacity when both are in play', () => {
+        // A full runner frees a slot on its own; an exhausted one waits on a
+        // vendor window. `diagnose` reports the one that needs the most
+        // action, and that is the second.
+        const decision = decideDispatch(
+          { needs: [] },
+          [
+            withQuota(entry({ key: 'busy', maxConcurrency: 1 }, 1)),
+            withQuota(entry({ key: 'spent' }), EXHAUSTED),
+          ],
+          NO_LIMIT,
+        );
+
+        expect(decision.queueReason).toBe('capable-runners-quota-exhausted');
+      });
+
+      it('still reports plain capacity when no quota is spent', () => {
+        const decision = decideDispatch(
+          { needs: [] },
+          [withQuota(entry({ key: 'busy', maxConcurrency: 1 }, 1))],
+          NO_LIMIT,
+        );
+
+        expect(decision.queueReason).toBe('capable-runners-are-at-capacity');
+      });
+    });
+
+    describe('still a pure function', () => {
+      it('reads no clock, even though the fact it acts on is about time', () => {
+        // The comparison happened in `DispatchService.loadPool`. Winding the
+        // clock past the reset changes nothing here — if this test started
+        // dispatching, a `new Date()` had crept into the policy.
+        jest.useFakeTimers().setSystemTime(new Date('2099-01-01T00:00:00Z'));
+        const decision = decideDispatch(
+          { needs: [] },
+          [withQuota(entry(), EXHAUSTED)],
+          NO_LIMIT,
+        );
+        jest.useRealTimers();
+
+        expect(decision.queueReason).toBe('capable-runners-quota-exhausted');
+      });
+
+      it('decides identically from identical inputs', () => {
+        const pool = [
+          withQuota(entry({ key: 'spent' }), EXHAUSTED),
+          withQuota(entry({ key: 'fresh' })),
+        ];
+
+        expect(decideDispatch({ needs: [] }, pool, NO_LIMIT)).toEqual(
+          decideDispatch({ needs: [] }, [...pool].reverse(), NO_LIMIT),
+        );
+      });
+
+      it('takes no runner name, quota or not', () => {
+        // #105 keeps VISION §6 intact: the input is still needs plus a pool.
+        const decision = decideDispatch(
+          { needs: [], identity: 'wo_opifex_105_a3f91c2_a1' },
+          [withQuota(entry({ key: 'spent' }), EXHAUSTED), entry({ key: 'ok' })],
+          NO_LIMIT,
+        );
+
+        expect(decision.runnerKey).toBe('ok');
+      });
+    });
+
+    describe('the position is part of the record', () => {
+      it('carries the observed position onto the verdict it decided', () => {
+        const decision = decideDispatch(
+          { needs: [] },
+          [withQuota(entry(), EXHAUSTED)],
+          NO_LIMIT,
+        );
+
+        expect(decision.candidates[0].quota).toEqual(EXHAUSTED);
+      });
+
+      it('names the basis, so the reason does not assert a bare fact', () => {
+        const decision = decideDispatch(
+          { needs: [] },
+          [withQuota(entry(), EXHAUSTED)],
+          NO_LIMIT,
+        );
+
+        expect(decision.candidates[0].reason).toContain('blocked on');
+      });
     });
   });
 });
