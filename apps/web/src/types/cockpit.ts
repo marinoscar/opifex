@@ -282,6 +282,68 @@ export interface RunEvent {
   summary: string;
 }
 
+/**
+ * Spend, as `GET /api/cost/summary` reports it (#213).
+ *
+ * Mirrors `apps/api/src/cockpit/dto/cost.dto.ts`. Two distinctions in here are
+ * load-bearing rather than presentational:
+ *
+ * - `totalUsd` is **null when nothing reported**, never 0 — VISION §6 makes cost
+ *   reporting a declared capability, so unknown and zero are different claims.
+ * - `reportedUsd` and `estimatedUsd` are **never summed into one figure** by the
+ *   API, and must not be by the screen. An estimate presented as a measurement
+ *   is what would make success metric 5 untrustworthy.
+ */
+export interface RepositorySpend {
+  repository: string;
+  totalUsd: number | null;
+  runs: number;
+  runsWithoutCost: number;
+}
+
+export interface DailySpend {
+  /** `YYYY-MM-DD`, UTC. */
+  date: string;
+  totalUsd: number;
+}
+
+export interface SpendCeiling {
+  /** Null means none configured, which REFUSES dispatch rather than allowing it. */
+  limitUsd: number | null;
+  windowDays: number;
+  /** The offending text when a ceiling is set but unreadable. */
+  malformed: string | null;
+  spend: {
+    /** Measured. */
+    reportedUsd: number;
+    /** Inferred from authorized ceilings. A different kind of claim. */
+    estimatedUsd: number;
+    /** Their sum — a FLOOR whenever `unboundedRuns` is above zero. */
+    totalUsd: number;
+    runsWithoutCost: number;
+    unboundedRuns: number;
+  };
+  headroomUsd: number | null;
+}
+
+export interface CostSummary {
+  generatedAt: string;
+  window: { from: string; to: string };
+  totalUsd: number | null;
+  runs: number;
+  runsWithoutCost: number;
+  byRepository: RepositorySpend[];
+  byDay: DailySpend[];
+  /**
+   * Always null. Carried rather than omitted so the screen can say quota is
+   * UNAVAILABLE rather than looking like it was forgotten — VISION §11's shared
+   * quota is the agent subscription, and nothing records consumption against a
+   * window capacity.
+   */
+  quota: null;
+  ceiling: SpendCeiling;
+}
+
 // ---------------------------------------------------------------------------
 // The six success metrics (VISION §10)
 // ---------------------------------------------------------------------------
