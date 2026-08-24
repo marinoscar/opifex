@@ -177,6 +177,28 @@ export type AuthorizationResult =
   | { authorized: true; grant: TrustGrantView }
   | { authorized: false; reason: AuthorizationDenial; detail: string };
 
+/**
+ * The two rows a renewal produces (#115).
+ *
+ * BOTH are returned, not just the new one, because a renewal is a CHAIN and
+ * the operator who tapped the button needs to see that the old grant actually
+ * stopped. A response carrying only the successor would be indistinguishable
+ * from "a second grant was created alongside the first", which is a completely
+ * different and much worse state to be in — two live grants for the same scope
+ * with two independent budget ceilings.
+ */
+export interface RenewTrustGrantResult {
+  /** The new grant. Fresh attributes, narrowed by the old grant's own. */
+  renewed: TrustGrantView;
+  /**
+   * The old grant, as it now stands: ended, `superseded_by_renewal`.
+   *
+   * Its `endDetail` names the successor, so the chain reads forwards from the
+   * grant that ended as well as backwards from `renewedFromId`.
+   */
+  ended: TrustGrantView;
+}
+
 /** What one authorized action cost, and whether it worked. */
 export interface UsageRecord {
   /** Actual spend attributable to the action. Must be finite and >= 0. */

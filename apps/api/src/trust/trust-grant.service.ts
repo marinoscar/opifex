@@ -14,14 +14,18 @@ import {
 } from '../supervisor/action-classes';
 import { evaluateAutoRevoke } from './auto-revoke';
 import {
+  defaultGrantAttributes,
   NEAR_BUDGET_HEADROOM_FRACTION,
   NEAR_EXPIRY_WINDOW_MS,
 } from './defaults';
+import { narrowerOf } from './renewal';
+import { TrustGrantNotRenewableException } from './trust-grant-not-renewable.exception';
 import type {
   AuthorizationResult,
   CreateTrustGrantInput,
   ListTrustGrantsQuery,
   RecordUsageResult,
+  RenewTrustGrantResult,
   TrustGrantView,
   UsageRecord,
 } from './trust-grant.types';
@@ -528,6 +532,277 @@ export class TrustGrantService {
   }
 
   // -------------------------------------------------------------------------
+  // Renewal
+  // -------------------------------------------------------------------------
+
+  /**
+   * One tap: end this grant and issue its successor (#115, VISION §8).
+   *
+   * > Expiry — days or session. Renewal is one tap; silence revokes.
+   *
+   * #96 delivered the second clause structurally. Without this method the
+   * first never arrives, and expiry becomes pure friction: every grant dies on
+   * schedule, the operator re-approves from scratch each time, and the
+   * pressure VISION §8 opens by warning about — "operators grant blanket trust
+   * out of friction, not conviction" — comes back through the only door left
+   * open, which is somebody quietly editing `DEFAULT_GRANT_EXPIRY_DAYS`
+   * upwards.
+   *
+   * ## Renewal creates NO GRACE PERIOD
+   *
+   * A grant whose `expiresAt` has passed is refused, at one millisecond past.
+   * This is the single most important line in the method and the easiest one
+   * to argue away — the operator is right there, they clearly want the grant,
+   * the prompt only went out yesterday. Allowing it would make expiry
+   * negotiable: "silence revokes" would become "silence revokes unless
+   * somebody notices in time", and every lapsed grant could be resurrected
+   * with a tap by whoever is annoyed that the factory stopped. At that point
+   * expiry has stopped being a mechanism.
+   *
+   * A lapsed grant is not un-renewable in the sense of un-restorable. It is a
+   * NEW DECISION, made through `create` with the attributes recorded as
+   * somebody's choice, which is exactly the accountability the expiry existed
+   * to force.
+   *
+   * ## The successor's terms
+   *
+   * Same scope, always: `actionClass` and `repositoryId` are read off the OLD
+   * ROW and there is no code path here that takes either from a caller. #115:
+   * "No renewal path can extend scope." A `renew` that accepted attributes
+   * would be `create` with a nicer name and a worse audit trail.
+   *
+   * Attributes come fresh from `defaultGrantAttributes(now)`, narrowed by the
+   * old grant's own — see `narrowerOf` for why copying forward would launder a
+   * one-time generous decision into a permanent one.
+   *
+   * The budget counters start at ZERO, deliberately. Carrying `spentUsd`
+   * forward would mean a grant that had done its job could never be renewed
+   * usefully, which just moves the friction; and a renewal IS a fresh
+   * decision, taken by a named human who has just been shown what the previous
+   * period cost. The record is not lost — it is on the old row, and the chain
+   * walks to it through `renewedFromId`.
+   *
+   * `grantedById` is the RENEWING actor, not the original granter. The person
+   * tapping renew is the one taking responsibility for the next fourteen days,
+   * and attributing it to whoever granted it first would make the chain read
+   * as one person's ongoing decision when it is several people's successive
+   * ones.
+   *
+   * `grantedFromProposalId` is NOT carried forward. This grant was created by
+   * a renewal, not by that proposal's approval; the proposal is still reachable
+   * by walking `renewedFromId` back to the grant it did create, and copying it
+   * would make every link in the chain claim to be the thing the proposal
+   * produced.
+   *
+   * ## One transaction
+   *
+   * The successor is written first and the old grant is then ended with
+   * `updateMany ... where status: 'active'`. If that update matches nothing —
+   * a human revoked it, or a second renewal won — the whole transaction rolls
+   * back and NOTHING was created. The alternative ordering (end first, then
+   * create) has a window in which the old grant is dead and the new one does
+   * not exist, and a crash in that window leaves the scope silently
+   * unauthorized with no row saying why.
+   */
+  async renew(
+    grantId: string,
+    actorUserId: string,
+    note: string | null = null,
+    now: Date = new Date(),
+  ): Promise<RenewTrustGrantResult> {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const old = await tx.trustGrant.findUnique({ where: { id: grantId } });
+      if (!old) {
+        throw new NotFoundException(`No trust grant with id ${grantId}`);
+      }
+
+      // Checked FIRST, before the lifecycle checks, because it is the one
+      // refusal that is not about this grant at all. The registry may have
+      // changed since the grant was written — #99 demotes classes, and VISION
+      // §8's never-trustable list can grow — and a class that may no longer
+      // receive a grant must not receive one through a path named "renew".
+      // `TrustGrantService.create` enforces the same rule at the same strength
+      // one method up; two gates, because a safety property that exists in
+      // exactly one place is one refactor from existing in none.
+      if (!isAutonomyEligible(old.actionClass)) {
+        throw new TrustGrantNotRenewableException(
+          'class-ineligible',
+          `Trust grant ${old.id} cannot be renewed: action class ` +
+            `"${old.actionClass}" is no longer autonomy-eligible (VISION §7, ` +
+            '§8), so no grant may authorize it. This grant will stop ' +
+            `authorizing at ${old.expiresAt.toISOString()} and nothing will ` +
+            'replace it. Proposals of this class now require a human decision ' +
+            'every time.',
+          summarise(old),
+        );
+      }
+
+      // The timestamp before the column, exactly as `authorize` does it. A
+      // still-`active` row whose expiry has passed is EXPIRED — the sweep has
+      // simply not reached it — and renewing it because a bookkeeping job is
+      // late would be a grace period obtained by accident, which is still a
+      // grace period.
+      if (old.status === 'active' && old.expiresAt.getTime() <= now.getTime()) {
+        throw new TrustGrantNotRenewableException(
+          'expired',
+          `Trust grant ${old.id} expired at ${old.expiresAt.toISOString()}, ` +
+            `${describeDuration(now.getTime() - old.expiresAt.getTime())} ` +
+            'ago, and cannot be renewed. VISION §8: renewal is one tap; ' +
+            'silence revokes — and the silence already took effect. Renewal ' +
+            'creates no grace period, deliberately: a lapsed grant that could ' +
+            'be revived by whoever noticed first would make expiry advisory. ' +
+            'Create a new grant instead, which records what you chose now ' +
+            'rather than re-applying what somebody chose a fortnight ago.',
+          summarise(old),
+        );
+      }
+
+      if (old.status !== 'active') {
+        throw notRenewableForStatus(old, now);
+      }
+
+      const attributes = narrowerOf(
+        {
+          createdAt: old.createdAt,
+          expiresAt: old.expiresAt,
+          budgetCeilingUsd: decimalToNumber(old.budgetCeilingUsd),
+          maxFailureRate: decimalToNumber(old.maxFailureRate),
+          maxCostPerActionUsd: decimalToNumber(old.maxCostPerActionUsd),
+          minActionsBeforeAutoRevoke: old.minActionsBeforeAutoRevoke,
+        },
+        defaultGrantAttributes(now),
+        now,
+      );
+
+      const created = await tx.trustGrant.create({
+        data: {
+          // Scope, off the old row. There is no input to take it from, and
+          // that absence is the enforcement of "no renewal path can extend
+          // scope" — a `where` clause could be relaxed, a missing parameter
+          // cannot be.
+          actionClass: old.actionClass,
+          repositoryId: old.repositoryId,
+          grantedById: actorUserId,
+          expiresAt: attributes.expiresAt,
+          budgetCeilingUsd: attributes.budgetCeilingUsd,
+          maxFailureRate: attributes.maxFailureRate,
+          maxCostPerActionUsd: attributes.maxCostPerActionUsd,
+          minActionsBeforeAutoRevoke: attributes.minActionsBeforeAutoRevoke,
+          renewedFromId: old.id,
+          note,
+        },
+      });
+
+      const endDetail =
+        `Superseded by renewal grant ${created.id}, issued at ` +
+        `${now.toISOString()} and expiring ` +
+        `${created.expiresAt.toISOString()}. This grant authorized ` +
+        `${old.actionsAuthorized} action(s) and spent ` +
+        `$${decimalToNumber(old.spentUsd).toFixed(2)} of its ` +
+        `$${decimalToNumber(old.budgetCeilingUsd).toFixed(2)} ceiling. The ` +
+        "successor's attributes were taken fresh from the defaults and " +
+        "narrowed by this grant's own, never widened (#115).";
+
+      const ended = await tx.trustGrant.updateMany({
+        // `status: 'active'` again, not just the id. Between the read above
+        // and this write a human may have revoked the grant, or a second
+        // renewal may have won the race. Either way this transaction must not
+        // proceed — and because the successor is created BEFORE this line, a
+        // zero count rolls the whole thing back and leaves no orphan.
+        where: { id: old.id, status: 'active' },
+        data: {
+          // `revoked`, because a human ended it and the end is terminal —
+          // the two things `TrustGrantStatus.revoked` means. There is no
+          // `superseded` status and adding one would be a schema change for a
+          // distinction `endReason` already carries exactly.
+          status: 'revoked',
+          endedAt: now,
+          endReason: 'superseded_by_renewal',
+          endDetail,
+          // The renewing human. #96's column comment anticipated an AUTOMATIC
+          // supersession with nobody deciding; #115's renewal is a person
+          // tapping a button under `trust:grant`, so there is a who, and a
+          // `revoked` row with no actor would be the inconsistency instead.
+          // `endReason` keeps it distinguishable from `manual_revocation`.
+          revokedById: actorUserId,
+        },
+      });
+
+      if (ended.count === 0) {
+        throw new TrustGrantNotRenewableException(
+          'revoked',
+          `Trust grant ${old.id} stopped being active while it was being ` +
+            'renewed — a revocation or another renewal landed first. Nothing ' +
+            'was created: the successor was rolled back with this ' +
+            'transaction. Re-read the grant to see what happened to it.',
+          summarise(old),
+        );
+      }
+
+      return {
+        renewed: toTrustGrantView(created, now),
+        ended: toTrustGrantView(
+          {
+            ...old,
+            status: 'revoked' as TrustGrantStatus,
+            endedAt: now,
+            endReason: 'superseded_by_renewal' as TrustGrantEndReason,
+            endDetail,
+            revokedById: actorUserId,
+          },
+          now,
+        ),
+      };
+    });
+
+    this.logger.log(
+      `Trust grant ${grantId} renewed by user ${actorUserId} as ` +
+        `${result.renewed.id}: ${result.renewed.actionClass} in repository ` +
+        `${result.renewed.repositoryId}, expires ` +
+        `${result.renewed.expiresAt}, ceiling ` +
+        `$${result.renewed.budgetCeilingUsd}.`,
+    );
+
+    return result;
+  }
+
+  /**
+   * Claim the right to send this grant's renewal prompt. Once, ever.
+   *
+   * Returns whether THIS call won. A conditional `updateMany` rather than a
+   * read-then-write, so two workers — or the same hourly cron overlapping
+   * itself after a slow run — produce one notification rather than two. The
+   * read-then-write version passes every test and duplicates in production,
+   * which is the shape of bug this whole codebase writes `updateMany` guards
+   * to avoid.
+   *
+   * The claim is taken BEFORE the send, not after. That trade is deliberate
+   * and it is the less obvious direction: claiming first means a send that
+   * fails outright burns the grant's one prompt. Claiming after would mean an
+   * hourly cron re-notifying about the same grant for the whole 48-hour
+   * window, which is up to 48 identical interruptions — precisely what VISION
+   * §8 is trying to remove, and the fastest way to teach an operator to swipe
+   * trust notifications away without reading them. A missed prompt still has a
+   * backstop: the grant appears in the daily digest's `expiring-with-budget-
+   * left` anomaly, and the default outcome of never being prompted is that the
+   * grant lapses, which is the safe direction by construction.
+   *
+   * `status: 'active'` is in the WHERE because a grant that ended between the
+   * `expiringSoon` read and this write should not be prompted about.
+   */
+  async claimRenewalPrompt(
+    grantId: string,
+    now: Date = new Date(),
+  ): Promise<boolean> {
+    const result = await this.prisma.trustGrant.updateMany({
+      where: { id: grantId, status: 'active', renewalPromptedAt: null },
+      data: { renewalPromptedAt: now },
+    });
+
+    return result.count > 0;
+  }
+
+  // -------------------------------------------------------------------------
   // Ending a grant
   // -------------------------------------------------------------------------
 
@@ -860,6 +1135,91 @@ function endedFields(
     endReason: verdict.reason,
     endDetail: verdict.detail,
   };
+}
+
+/** The fields `TrustGrantNotRenewableException` reports back. */
+function summarise(row: {
+  id: string;
+  actionClass: string;
+  status: TrustGrantStatus;
+  expiresAt: Date;
+  endedAt: Date | null;
+  endReason: TrustGrantEndReason | null;
+  endDetail: string | null;
+}) {
+  return {
+    grantId: row.id,
+    actionClass: row.actionClass,
+    status: row.status,
+    expiresAt: row.expiresAt,
+    endedAt: row.endedAt,
+    endReason: row.endReason,
+    endDetail: row.endDetail,
+  };
+}
+
+/**
+ * The refusal for a grant that has already ended, by HOW it ended.
+ *
+ * `revoked` and `suspended` are kept apart for the reason `AuthorizationDenial`
+ * keeps them apart: a revocation is somebody's decision and renewing over it
+ * would silently undo a human's call, while a suspension is the system's
+ * reading of evidence that the operator may legitimately disagree with. The
+ * next move differs, so the sentence differs.
+ *
+ * A row already swept to `expired` lands on the same reason as a lapsed
+ * `active` row — one fact, one reason, whatever the bookkeeping says.
+ */
+function notRenewableForStatus(
+  row: {
+    id: string;
+    actionClass: string;
+    status: TrustGrantStatus;
+    expiresAt: Date;
+    endedAt: Date | null;
+    endReason: TrustGrantEndReason | null;
+    endDetail: string | null;
+  },
+  now: Date,
+): TrustGrantNotRenewableException {
+  const when = row.endedAt?.toISOString() ?? 'an unrecorded time';
+
+  if (row.status === 'expired') {
+    return new TrustGrantNotRenewableException(
+      'expired',
+      `Trust grant ${row.id} expired at ${row.expiresAt.toISOString()}, ` +
+        `${describeDuration(now.getTime() - row.expiresAt.getTime())} ago, ` +
+        'and cannot be renewed. VISION §8: renewal is one tap; silence ' +
+        'revokes — and the silence already took effect. Renewal creates no ' +
+        'grace period. Create a new grant instead, which records what you ' +
+        'chose now rather than re-applying what somebody chose a fortnight ago.',
+      summarise(row),
+    );
+  }
+
+  if (row.status === 'revoked') {
+    return new TrustGrantNotRenewableException(
+      'revoked',
+      `Trust grant ${row.id} was revoked at ${when} and cannot be renewed. ` +
+        `${row.endDetail ?? 'No detail was recorded.'} A revocation is a ` +
+        'decision, and nothing reactivates a revoked grant — renewing over ' +
+        "one would silently undo somebody's call. Create a new grant if you " +
+        'disagree with it, so that the new decision is recorded as yours.',
+      summarise(row),
+    );
+  }
+
+  return new TrustGrantNotRenewableException(
+    'suspended',
+    `Trust grant ${row.id} was suspended at ${when} ` +
+      `(${row.endReason ?? 'reason not recorded'}) and cannot be renewed. ` +
+      `${row.endDetail ?? 'No detail was recorded.'} A suspension is the ` +
+      'system reading the evidence, not a human decision, so you may well ' +
+      'disagree with it — but say so by creating a new grant, which records ' +
+      'that you looked at those numbers and granted trust anyway. Renewing ' +
+      'would erase that the evidence was ever raised.',
+    summarise(row),
+  );
 }
 
 /**
