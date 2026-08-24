@@ -25,6 +25,7 @@ one.
 | [0008](0008-claude-code-local-invocation.md)        | Invoke `claude-code-local` as a subprocess, not through the Agent SDK                     | Accepted | [#61](https://github.com/marinoscar/opifex/issues/61)   |
 | [0009](0009-record-architecture-decisions.md)       | Record architecture decisions in this directory, proposed by anyone and merged by a human | Accepted | [#25](https://github.com/marinoscar/opifex/issues/25)   |
 | [0010](0010-schema-versioning-and-compatibility.md) | Schemas are versioned per major, strict, and the producer emits what the consumer speaks  | Accepted | [#34](https://github.com/marinoscar/opifex/issues/34)   |
+| [0011](0011-supervisor-action-class-granularity.md) | Grant autonomy per (capability, effect) pair, from one frozen registry                    | Proposed | [#218](https://github.com/marinoscar/opifex/issues/218) |
 
 `0000-template.md` is the template. It is not a decision and never becomes one;
 see [Numbering](#numbering) for what that means for `Decision: ADR-0000`.
