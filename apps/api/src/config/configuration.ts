@@ -150,6 +150,42 @@ export default () => {
       ),
     },
 
+    // The AI supervisor (epic #21, #89), observe-only.
+    //
+    // DEFAULTS OFF, and compared against 'true' so unset, misspelled and empty
+    // all mean off — the same rule every other switch here follows. This one
+    // matters for a specific reason: the supervisor consumes the same
+    // subscription the workers do (VISION §7), so a deployment that has not
+    // decided to run one must not start spending on it because a default said
+    // yes.
+    supervisor: {
+      enabled: process.env.SUPERVISOR_ENABLED === 'true',
+
+      // Whether a disabled supervisor still writes a `skipped_disabled` row
+      // each hour. Off by default: the decision log must have no gaps while
+      // the supervisor is meant to be running, but a deployment that never
+      // configured one should not accumulate a skip row an hour forever.
+      logSkippedInvocations:
+        process.env.SUPERVISOR_LOG_SKIPPED_INVOCATIONS === 'true',
+
+      // Stand down while any run is parked on a rate limit.
+      //
+      // DEFAULTS ON, and it is the one supervisor switch that does. VISION §7:
+      // "a supervisor competing for the quota it is managing is a bad loop."
+      // A parked worker is the clearest evidence available that the shared
+      // budget is already exhausted, and respecting it costs nothing. Note the
+      // comparison is !== 'false', because this default is ON.
+      standDownWhenBlocked:
+        process.env.SUPERVISOR_STAND_DOWN_WHEN_BLOCKED !== 'false',
+
+      // Stand down when at least this many runs are live. Unset means no
+      // ceiling: pressure is not exhaustion, and a gate that fires constantly
+      // is a supervisor that never runs.
+      liveRunCeiling: process.env.SUPERVISOR_LIVE_RUN_CEILING
+        ? parseInt(process.env.SUPERVISOR_LIVE_RUN_CEILING, 10)
+        : null,
+    },
+
     // Dispatch (epic #18, #64)
     dispatch: {
       // A ceiling across the whole fleet, on top of each runner's own
