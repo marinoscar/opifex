@@ -119,6 +119,14 @@ const PERMISSIONS = [
     name: 'trust:revoke',
     description: 'Revoke or suspend a trust grant',
   },
+  {
+    name: 'approvals:read',
+    description: 'View approval requests and what happens if they are ignored',
+  },
+  {
+    name: 'approvals:decide',
+    description: 'Approve or deny a single pending action',
+  },
 ] as const;
 
 // Role to permissions mapping
@@ -157,6 +165,11 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'trust:read',
     'trust:grant',
     'trust:revoke',
+    // Both. An admin holding 'trust:grant' as well is what makes VISION §8's
+    // third option — "Always approve this class" — available to them, and to
+    // nobody else.
+    'approvals:read',
+    'approvals:decide',
   ],
   contributor: [
     'user_settings:read',
@@ -189,6 +202,23 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // 'runners:manage' as an admin decision.
     'trust:read',
     'trust:revoke',
+    // Deciding an approval is acting on the factory, not reconfiguring it —
+    // the same line 'escalations:acknowledge' is on, and drawn for the same
+    // reason: an operator who is watching a run should not have to find an
+    // admin before answering the question the run is blocked on. VISION §8's
+    // entire premise is that approvals must be cheap, and an approval that
+    // requires escalating to a different human is the friction that produces
+    // blanket trust.
+    //
+    // Note what this does NOT include: 'trust:grant'. A contributor may
+    // approve a single action and may NOT mint a grant from it, so VISION §8's
+    // third option ("Always approve this class") is unavailable to them. That
+    // composition is deliberate — the safe act is cheap and the widening act
+    // stays with the admin decisions, alongside 'projects:write' and
+    // 'runners:manage'. #98's controller must check both permissions, because
+    // 'approvals:decide' alone is not authority to create standing autonomy.
+    'approvals:read',
+    'approvals:decide',
   ],
   viewer: [
     'user_settings:read',
@@ -208,6 +238,11 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // because it is an act on the factory, and a viewer acts on nothing -
     // even when the act would narrow rather than widen.
     'trust:read',
+    // See what is waiting and what happens if it is ignored; answer nothing.
+    // An approval IS an act on the factory — it is the moment an action takes
+    // effect — so 'approvals:decide' is withheld for the same reason
+    // 'escalations:acknowledge' is.
+    'approvals:read',
   ],
 };
 

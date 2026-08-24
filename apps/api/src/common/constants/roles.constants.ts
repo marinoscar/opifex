@@ -130,6 +130,25 @@ export const PERMISSIONS = {
   TRUST_READ: 'trust:read',
   TRUST_GRANT: 'trust:grant',
   TRUST_REVOKE: 'trust:revoke',
+
+  /**
+   * Approval requests (VISION §8, epic #22, #97).
+   *
+   * `approvals:decide` is deciding a single action — the "Approve / Deny" of
+   * VISION §8's one tap. That is ACTING ON the factory rather than
+   * reconfiguring it, so it sits with `escalations:acknowledge` and
+   * `workorders:write` and a contributor holds it.
+   *
+   * The third option in VISION §8's tap — "Always approve this class" — is
+   * deliberately NOT covered by this permission. Minting a grant widens what
+   * runs unattended, so it additionally requires `trust:grant`, which is
+   * admin-only. The composition is the point: a contributor may approve THIS
+   * action and may not turn that approval into standing autonomy. Two
+   * permissions, checked together, rather than one permission that would have
+   * to be granted at the width of its most dangerous use.
+   */
+  APPROVALS_READ: 'approvals:read',
+  APPROVALS_DECIDE: 'approvals:decide',
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
