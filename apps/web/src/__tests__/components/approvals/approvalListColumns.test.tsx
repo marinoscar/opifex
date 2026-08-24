@@ -6,7 +6,7 @@ import {
   TABLE_ID,
 } from '../../../components/approvals/approvalListColumns';
 import { OPEN_APPROVAL_STATUSES } from '../../../types/approvals';
-import type { Approval } from '../../../types/approvals';
+import type { ApprovalListItem } from '../../../types/approvals';
 
 /**
  * The column contract for `/approvals` (#98).
@@ -16,10 +16,13 @@ import type { Approval } from '../../../types/approvals';
  * CSV export and these tests.
  */
 
-function approvalFixture(overrides: Partial<Approval> = {}): Approval {
+function approvalFixture(
+  overrides: Partial<ApprovalListItem> = {},
+): ApprovalListItem {
   return {
     id: 'a1',
     actionClass: 're-dispatch',
+    actionClassTitle: 'Re-dispatch after transient failure',
     repositoryId: 'acme/api',
     proposalId: null,
     targetKind: null,
@@ -78,9 +81,45 @@ describe('approvalColumns', () => {
     expect(byId().actionClass.filterable).toBeUndefined();
   });
 
+  it('names the class in words, using the title the SERVER joined on', () => {
+    // The registry join lives in the API (`GET /approvals` carries
+    // `actionClassTitle`) precisely so this app never keeps a second copy of
+    // the ADR-0011 taxonomy to prettify a list.
+    render(<>{byId().actionClass.render!(approvalFixture())}</>);
+
+    expect(
+      screen.getByRole('link', { name: 'Re-dispatch after transient failure' }),
+    ).toHaveAttribute('href', '/approvals/a1');
+    expect(screen.queryByText('re-dispatch')).not.toBeInTheDocument();
+  });
+
+  it('falls back to the id when the server had no title for the class', () => {
+    // The API returns null rather than the id, so drift between a proposer and
+    // the registry stays visible to anything reading it. This cell is where
+    // that null has to become something an operator can read — an unknown
+    // class PARKS (ADR-0014), so its row must render rather than blank.
+    const unknown = approvalFixture({
+      actionClass: 'invented-class',
+      actionClassTitle: null,
+    });
+
+    render(<>{byId().actionClass.render!(unknown)}</>);
+
+    expect(
+      screen.getByRole('link', { name: 'invented-class' }),
+    ).toBeInTheDocument();
+  });
+
   it('exports the scalar behind each cell, not the rendered node', () => {
     const approval = approvalFixture();
 
+    // The CSV names the class the same way the screen did.
+    expect(byId().actionClass.value!(approval)).toBe(
+      'Re-dispatch after transient failure',
+    );
+    expect(
+      byId().actionClass.value!(approvalFixture({ actionClassTitle: null })),
+    ).toBe('re-dispatch');
     expect(byId().summary.value!(approval)).toBe('Re-dispatch WO-1.');
     expect(byId().createdAt.value!(approval)).toBe('2026-08-24T09:00:00.000Z');
     // The CSV carries "Unknown" rather than an empty cell for a cost nobody

@@ -18,8 +18,8 @@ import { useCallback } from 'react';
 import { COCKPIT_POLL_INTERVAL_MS } from '../config/cockpitApi';
 import { getApprovals, getApproval } from '../services/api';
 import type {
-  Approval,
   ApprovalDetail,
+  ApprovalListItem,
   OpenApprovalStatus,
 } from '../types/approvals';
 import { usePolledResource } from './usePolledResource';
@@ -40,7 +40,7 @@ export interface ApprovalQueueFilters {
  */
 export function useApprovalQueue(
   filters: ApprovalQueueFilters = {},
-): UsePolledResourceResult<Approval[]> {
+): UsePolledResourceResult<ApprovalListItem[]> {
   const { status, repositoryId } = filters;
 
   // Primitive dependencies rather than the object: a caller passing an inline
@@ -57,7 +57,7 @@ export function useApprovalQueue(
     [status, repositoryId],
   );
 
-  return usePolledResource<Approval[]>({
+  return usePolledResource<ApprovalListItem[]>({
     fetcher,
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     enabled: true,

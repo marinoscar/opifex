@@ -30,15 +30,20 @@
  * taxonomy in one file to prevent. A typo would also answer 400 rather than
  * "nothing matches".
  *
- * ## The class column shows the class ID, not its title
+ * ## The class column shows the title the SERVER joined on, with the id behind it
  *
- * `GET /approvals` returns the raw `actionClass`; only `GET /approvals/:id`
- * joins the registry entry that carries the human `title`. Rather than keep a
- * second copy of the taxonomy here to prettify a list, the queue shows the id
- * and the detail screen — the one that has to be answerable on its own — shows
- * the title. Widening the list response to carry `actionClassTitle` (the same
- * one-line join the detail endpoint already does) would remove the compromise;
- * that is an API change, deliberately not faked here.
+ * `GET /approvals` carries `actionClassTitle` — the ADR-0011 registry title
+ * for the row's `actionClass`, joined by the API exactly as the detail
+ * endpoint joins the whole entry. It is joined there and not here because a
+ * second copy of the taxonomy in this app is precisely the drift ADR-0011 put
+ * the classes in one file to prevent.
+ *
+ * The cell renders `actionClassTitle ?? actionClass`, and the fallback is not
+ * decoration: the server returns null rather than the id for a class the
+ * registry does not recognise, so that drift stays visible to anything reading
+ * the API, and this is the one place that null has to be turned back into
+ * something an operator can read. An unknown class is a real case — it PARKS
+ * (ADR-0014) — so the row it produces has to render, not blank.
  */
 
 import { Box, Link, Stack, Tooltip, Typography } from '@mui/material';
@@ -51,7 +56,7 @@ import { formatEstimatedCost } from './approvalFormat';
 import { OPEN_APPROVAL_STATUSES } from '../../types/approvals';
 import { APPROVAL_STATUS_DESCRIPTORS } from '../../config/approvalStatus';
 import { formatRelativeTime } from '../../utils/time';
-import type { Approval } from '../../types/approvals';
+import type { ApprovalListItem } from '../../types/approvals';
 
 /**
  * Persistence key for `user_settings.dataTables`. A constant, never derived
@@ -62,14 +67,18 @@ export const TABLE_ID = 'approvals-queue';
 
 const NUMERIC = { fontVariantNumeric: 'tabular-nums' } as const;
 
-export function approvalColumns(): DataTableColumn<Approval>[] {
+export function approvalColumns(): DataTableColumn<ApprovalListItem>[] {
   return [
     {
       id: 'actionClass',
       label: 'Action class',
       priority: 'primary',
       minWidth: 200,
-      value: (approval) => approval.actionClass,
+      // The words a human reads, falling back to the id when the server had no
+      // title to give — never the other way round, and never blank. The CSV
+      // and the cell agree, so an exported queue names classes the same way
+      // the screen did.
+      value: (approval) => approval.actionClassTitle ?? approval.actionClass,
       render: (approval) => (
         <Stack spacing={0} sx={{ minWidth: 0 }}>
           {/* The way into the one-tap screen. The whole row exists to get the
@@ -80,7 +89,7 @@ export function approvalColumns(): DataTableColumn<Approval>[] {
             variant="body2"
             noWrap
           >
-            {approval.actionClass}
+            {approval.actionClassTitle ?? approval.actionClass}
           </Link>
           <Typography variant="caption" color="text.secondary" noWrap>
             {approval.repositoryId}

@@ -130,6 +130,40 @@ export const approvalSchema = z.object({
 export class ApprovalDto extends createZodDto(approvalSchema) {}
 
 /**
+ * One row of the QUEUE: an approval plus the one class fact triage needs.
+ *
+ * `GET /approvals` used to return the bare `actionClass` id, which left the
+ * queue naming classes `re-dispatch` and `spec-quality-feedback` while the
+ * detail screen — which joins the whole registry entry — named the same class
+ * "Re-dispatch after transient failure". The join belongs HERE and not in the
+ * client: a second copy of the taxonomy in a browser is exactly the drift
+ * ADR-0011 put it in one file to prevent.
+ *
+ * The title, and DELIBERATELY NOTHING ELSE from the registry. `definition`,
+ * `reversibility` and `autonomyEligible` are decision context — they answer
+ * "should this happen?", which is the detail screen's question — and a triage
+ * row exists only to answer "which of these do I open first?". Widening this
+ * to the whole entry would make the list the decision surface by accident.
+ */
+export const approvalListItemSchema = approvalSchema.extend({
+  /**
+   * The registry `title` for `actionClass`, or NULL when the registry does not
+   * know the id.
+   *
+   * Null rather than a fallback to the raw id, and that is the point: a client
+   * that receives the id dressed up as a title cannot tell registry drift from
+   * a class that genuinely happens to be titled that way, so a silent fallback
+   * here would make an unknown class — which is a REAL case, since ADR-0014
+   * parks one — indistinguishable from a healthy one. The cockpit renders
+   * `actionClassTitle ?? actionClass`, so the id still shows; the difference
+   * is that the null travels, and anything reading the API can see it.
+   */
+  actionClassTitle: z.string().nullable(),
+});
+
+export class ApprovalListItemDto extends createZodDto(approvalListItemSchema) {}
+
+/**
  * The ADR-0011 registry entry for the class under question.
  *
  * Joined onto the detail response rather than stored on the row, exactly as

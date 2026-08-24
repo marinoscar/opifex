@@ -9,7 +9,7 @@ import {
 } from '../components/approvals/approvalListColumns';
 import { useApprovalQueue } from '../hooks/useApprovals';
 import { usePermissions } from '../hooks/usePermissions';
-import type { Approval, OpenApprovalStatus } from '../types/approvals';
+import type { ApprovalListItem, OpenApprovalStatus } from '../types/approvals';
 
 /** The permission `ApprovalsController` really enforces on a decision. */
 const DECIDE_PERMISSION = 'approvals:decide';
@@ -66,7 +66,7 @@ export default function ApprovalsPage() {
           </Alert>
         )}
 
-        <DataTable<Approval>
+        <DataTable<ApprovalListItem>
           tableId={TABLE_ID}
           ariaLabel="Open approvals"
           columns={columns}

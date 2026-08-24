@@ -172,7 +172,69 @@ describe('ApprovalsController', () => {
     it('returns the rows unwrapped — the envelope is the interceptor’s job', async () => {
       const { controller } = build();
 
-      expect(await controller.list({} as never)).toEqual([view()]);
+      expect(await controller.list({} as never)).toEqual([
+        { ...view(), actionClassTitle: 'Re-dispatch after transient failure' },
+      ]);
+    });
+
+    it('joins the registry TITLE onto every row, so no client needs the taxonomy', async () => {
+      // The queue used to name classes by their raw id while the detail screen
+      // named the same class "Re-dispatch after transient failure". The join
+      // belongs on the server: a second copy of the ADR-0011 taxonomy in a
+      // browser is the drift that file exists to prevent.
+      const { controller } = build();
+
+      const [row] = (await controller.list({} as never)) as {
+        actionClass: string;
+        actionClassTitle: string | null;
+      }[];
+
+      expect(row.actionClass).toBe('re-dispatch');
+      expect(row.actionClassTitle).toBe('Re-dispatch after transient failure');
+    });
+
+    it('carries the title ALONE — the rest of the entry is decision context', async () => {
+      // A triage row answers "which do I open first?", not "should this
+      // happen?". `definition`, `reversibility` and `autonomyEligible` belong
+      // on the detail screen; putting them here would make the list the
+      // decision surface by accident.
+      const { controller } = build();
+
+      const [row] = (await controller.list({} as never)) as Record<
+        string,
+        unknown
+      >[];
+
+      expect(row).not.toHaveProperty('actionClassEntry');
+      expect(row).not.toHaveProperty('definition');
+      expect(row).not.toHaveProperty('autonomyEligible');
+    });
+
+    it('yields NULL, never the raw id, for a class the registry does not know', async () => {
+      // A server-side fallback to the id would make drift invisible: a title
+      // that silently equals its id is indistinguishable from a class that
+      // happens to be named that way. The null travels, and the cockpit
+      // renders `actionClassTitle ?? actionClass` itself. Not a defensive
+      // case — an unknown class PARKS (ADR-0014), so this is the row where
+      // drift between a proposer and the registry should be most visible.
+      const { controller, gate } = build();
+      gate.listPending.mockResolvedValueOnce([
+        view({
+          actionClass: 'invented-class',
+          status: 'parked',
+          timeoutPolicy: 'park_and_escalate',
+          timeoutAt: null,
+        }),
+      ]);
+
+      const [row] = (await controller.list({} as never)) as {
+        actionClass: string;
+        actionClassTitle: string | null;
+      }[];
+
+      expect(row.actionClass).toBe('invented-class');
+      expect(row.actionClassTitle).toBeNull();
+      expect(row.actionClassTitle).not.toBe('invented-class');
     });
   });
 

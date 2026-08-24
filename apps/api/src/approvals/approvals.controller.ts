@@ -25,7 +25,7 @@ import { getActionClass } from '../supervisor/action-classes';
 import { ApprovalGateService } from './approval-gate.service';
 import {
   ApprovalDetailDto,
-  ApprovalDto,
+  ApprovalListItemDto,
   ApprovalRatesQueryDto,
   ClassApprovalRatesDto,
   DecideApprovalDto,
@@ -129,7 +129,10 @@ export class ApprovalsController {
       'ordering the queue exists to surface. Read `timeoutPolicy` and `timeoutAt` together: a ' +
       'null `timeoutAt` means there is no timer at all, so do not render a countdown for it. ' +
       'Never-trustable actions (ADR-0013) never appear here, and not because this endpoint ' +
-      'filters them — they are refused before an approval row is ever written.',
+      'filters them — they are refused before an approval row is ever written. Each row ' +
+      'carries `actionClassTitle`, the ADR-0011 registry title for its `actionClass`, so a ' +
+      'client never needs its own copy of the taxonomy to name a class; it is null — never the ' +
+      'raw id — when the registry does not know the class.',
   })
   @ApiQuery({ name: 'repositoryId', required: false, type: String })
   @ApiQuery({ name: 'actionClass', required: false, type: String })
@@ -140,16 +143,35 @@ export class ApprovalsController {
     description:
       'Narrows to one of the two open statuses. It cannot widen the queue to a decided row.',
   })
-  @ApiDataResponse(ApprovalDto, {
+  @ApiDataResponse(ApprovalListItemDto, {
     isArray: true,
     description: 'Open approval requests, oldest first',
   })
   async list(@Query() query: ListApprovalsQueryDto) {
-    return this.gate.listPending({
+    const rows = await this.gate.listPending({
       ...(query.repositoryId ? { repositoryId: query.repositoryId } : {}),
       ...(query.actionClass ? { actionClass: query.actionClass } : {}),
       ...(query.status ? { status: query.status } : {}),
     });
+
+    // The same registry join `get` does, narrowed to the ONE field a triage
+    // row needs. It happens here rather than in the client because a second
+    // copy of the ADR-0011 taxonomy in a browser is the drift that file exists
+    // to prevent — and it stops at the title because the definition,
+    // reversibility and eligibility flags are decision context, which belongs
+    // on the screen where the decision is made.
+    //
+    // NO FALLBACK TO THE RAW ID. An unrecognised class yields null, and the
+    // client renders `actionClassTitle ?? actionClass` itself. Substituting
+    // the id server-side would make registry drift invisible: a title that
+    // silently equals its id looks exactly like a class that happens to be
+    // named that way, and an unknown class is a real case rather than a
+    // defensive one — ADR-0014 parks it, so this is precisely where drift
+    // between a proposer and the registry should be visible.
+    return rows.map((row) => ({
+      ...row,
+      actionClassTitle: getActionClass(row.actionClass)?.title ?? null,
+    }));
   }
 
   /**

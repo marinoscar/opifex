@@ -100,6 +100,31 @@ export interface Approval {
 }
 
 /**
+ * One row of the QUEUE — an approval plus the one class fact triage needs.
+ *
+ * `GET /api/approvals` joins the ADR-0011 registry title onto every row, so
+ * this app never keeps its own copy of the taxonomy to prettify a list. That
+ * copy is exactly the drift ADR-0011 put the classes in one file to prevent,
+ * which is why the fix went into the API rather than into a lookup table here.
+ *
+ * The title and NOTHING ELSE from the entry: `definition`, `reversibility` and
+ * `autonomyEligible` answer "should this happen?", which is the detail
+ * screen's question. A triage row only has to answer "which do I open first?".
+ */
+export interface ApprovalListItem extends Approval {
+  /**
+   * The registry title for `actionClass`, or NULL when the registry does not
+   * know the id.
+   *
+   * The server never falls back to the raw id, deliberately: a title that
+   * silently equalled its id would hide registry drift. Rendering is
+   * `actionClassTitle ?? actionClass`, so the id still shows — the difference
+   * is that the null is visible to anything reading the API.
+   */
+  actionClassTitle: string | null;
+}
+
+/**
  * The ADR-0011 registry entry for the class under question, joined onto the
  * detail response by the API.
  *

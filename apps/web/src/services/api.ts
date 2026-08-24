@@ -207,8 +207,8 @@ import type {
   PushSubscriptionRecord,
 } from '../types';
 import type {
-  Approval,
   ApprovalDetail,
+  ApprovalListItem,
   ClassApprovalRates,
   DecideApprovalInput,
   DecideApprovalResult,
@@ -680,6 +680,11 @@ export async function deletePushSubscription(id: string): Promise<void> {
  * registry to a browser, and a second copy of the taxonomy in this app is
  * exactly the drift the registry exists to prevent. `status` is safe because
  * its two members are the closed set the API's own enum pins.
+ *
+ * Every row carries `actionClassTitle`, the registry title joined on by the
+ * API, so the queue can name a class in words without this app knowing the
+ * taxonomy. It is null — never the raw id — for a class the registry does not
+ * know, and the table renders `actionClassTitle ?? actionClass`.
  */
 export async function getApprovals(
   params: {
@@ -688,7 +693,7 @@ export async function getApprovals(
     status?: OpenApprovalStatus;
   } = {},
   signal?: AbortSignal,
-): Promise<Approval[]> {
+): Promise<ApprovalListItem[]> {
   const searchParams = new URLSearchParams();
   if (params.repositoryId)
     searchParams.set('repositoryId', params.repositoryId);
@@ -696,9 +701,10 @@ export async function getApprovals(
   if (params.status) searchParams.set('status', params.status);
 
   const query = searchParams.toString();
-  return api.get<Approval[]>(query ? `/approvals?${query}` : '/approvals', {
-    signal,
-  });
+  return api.get<ApprovalListItem[]>(
+    query ? `/approvals?${query}` : '/approvals',
+    { signal },
+  );
 }
 
 /**

@@ -9,7 +9,7 @@ import {
   setInitialContainerWidth,
 } from '../../components/datatable/__tests__/testUtils/layoutStubs';
 import ApprovalsPage from '../../pages/ApprovalsPage';
-import type { Approval } from '../../types/approvals';
+import type { ApprovalListItem } from '../../types/approvals';
 
 /**
  * `/approvals` — the triage view (#98, epic #22).
@@ -24,10 +24,13 @@ import type { Approval } from '../../types/approvals';
 const API = '*/api';
 const CARD_WIDTH = 400;
 
-function approvalFixture(overrides: Partial<Approval> = {}): Approval {
+function approvalFixture(
+  overrides: Partial<ApprovalListItem> = {},
+): ApprovalListItem {
   return {
     id: 'a1',
     actionClass: 're-dispatch',
+    actionClassTitle: 'Re-dispatch after transient failure',
     repositoryId: 'acme/api',
     proposalId: null,
     targetKind: 'work-order',
@@ -60,7 +63,7 @@ function approvalFixture(overrides: Partial<Approval> = {}): Approval {
  * `createdAt` descending — the reflex for a list of things that arrived —
  * would visibly reverse it.
  */
-const QUEUE: Approval[] = [
+const QUEUE: ApprovalListItem[] = [
   approvalFixture({
     id: 'oldest',
     summary: 'Oldest: re-dispatch WO-1.',
@@ -70,12 +73,14 @@ const QUEUE: Approval[] = [
     id: 'middle',
     summary: 'Middle: shape issue #17.',
     actionClass: 'issue-shaping',
+    actionClassTitle: 'Issue shaping',
     createdAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
   }),
   approvalFixture({
     id: 'newest',
     summary: 'Newest: clear the quarantine on WO-9.',
     actionClass: 'quarantine-decision',
+    actionClassTitle: 'Quarantine decision',
     status: 'parked',
     timeoutPolicy: 'park_and_escalate',
     timeoutAt: null,
@@ -83,7 +88,7 @@ const QUEUE: Approval[] = [
   }),
 ];
 
-function serveQueue(queue: Approval[]) {
+function serveQueue(queue: ApprovalListItem[]) {
   server.use(
     http.get(`${API}/approvals`, () =>
       HttpResponse.json({
@@ -156,12 +161,39 @@ describe('ApprovalsPage', () => {
     expect(within(parked).getByText('No timer')).toBeInTheDocument();
   });
 
-  it('links each row to its own one-tap screen', async () => {
+  it('links each row to its own one-tap screen, named by the class TITLE', async () => {
+    // The title is joined by the API (`actionClassTitle`), not by a taxonomy
+    // this app keeps: a second copy here is the drift ADR-0011 exists to
+    // prevent, which is why the queue used to show bare ids.
     render(<ApprovalsPage />, { wrapperOptions: { user: mockAdminUser } });
 
     expect(
-      await screen.findByRole('link', { name: 'issue-shaping' }),
+      await screen.findByRole('link', { name: 'Issue shaping' }),
     ).toHaveAttribute('href', '/approvals/middle');
+  });
+
+  it('falls back to the class id when the server sent no title', async () => {
+    // A null title means the REGISTRY did not recognise the class, and the API
+    // sends null rather than dressing the id up as a title so that drift stays
+    // visible. Not a defensive case: an unknown class parks (ADR-0014). The
+    // row still has to render, and it renders the id rather than an empty link.
+    serveQueue([
+      approvalFixture({
+        id: 'drifted',
+        actionClass: 'invented-class',
+        actionClassTitle: null,
+        summary: 'Something the registry has never heard of.',
+        status: 'parked',
+        timeoutPolicy: 'park_and_escalate',
+        timeoutAt: null,
+      }),
+    ]);
+
+    render(<ApprovalsPage />, { wrapperOptions: { user: mockAdminUser } });
+
+    expect(
+      await screen.findByRole('link', { name: 'invented-class' }),
+    ).toHaveAttribute('href', '/approvals/drifted');
   });
 
   it('tells a viewer they may read the queue but not answer it', async () => {
