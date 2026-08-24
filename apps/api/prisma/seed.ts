@@ -107,7 +107,8 @@ const PERMISSIONS = [
   },
   {
     name: 'supervisor:review',
-    description: 'Record whether a supervisor proposal would have been approved',
+    description:
+      'Record whether a supervisor proposal would have been approved',
   },
 ] as const;
 

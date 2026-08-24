@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../prisma/prisma.module';
+import { DecisionLogController } from './decision-log/decision-log.controller';
+import { DecisionLogService } from './decision-log/decision-log.service';
 import { SnapshotService } from './snapshot/snapshot.service';
 
 /**
@@ -21,7 +23,8 @@ import { SnapshotService } from './snapshot/snapshot.service';
  */
 @Module({
   imports: [PrismaModule],
-  providers: [SnapshotService],
-  exports: [SnapshotService],
+  controllers: [DecisionLogController],
+  providers: [SnapshotService, DecisionLogService],
+  exports: [SnapshotService, DecisionLogService],
 })
 export class SupervisorModule {}
