@@ -16,6 +16,7 @@ import {
 
 import { StatusChip } from '../components/dashboard/StatusChip';
 import { EventTimeline } from '../components/runs/EventTimeline';
+import { WatchdogCoveragePanel } from '../components/runs/WatchdogCoveragePanel';
 import { formatCost } from '../components/runs/runColumns';
 import {
   RUN_EVENTS_PAGE_SIZE,
@@ -23,7 +24,7 @@ import {
   useRunEvents,
 } from '../hooks/useRunDetail';
 import { formatRelativeTime } from '../utils/time';
-import type { RunSummary } from '../types/cockpit';
+import type { RunDetail } from '../types/cockpit';
 
 /**
  * `/runs/:id` — a run's whole story on one page (#83, epic #20).
@@ -67,6 +68,21 @@ export default function RunDetailPage() {
 
         {run.data && <RunHeader run={run.data} />}
 
+        {/*
+          Between the header and the timeline, and not below it, on purpose
+          (#104). The timeline is what the run REPORTED; coverage is what the
+          control plane could have seen at all, and it changes how every entry
+          below it should be read — an empty stretch of timeline means one
+          thing on a full-streaming runner and something quite different on a
+          runner that streams nothing. An operator who reaches it after
+          scrolling a hundred events has already drawn their conclusion.
+        */}
+        {run.data && (
+          <Box sx={{ mt: 3 }}>
+            <WatchdogCoveragePanel coverage={run.data.checkCoverage} />
+          </Box>
+        )}
+
         <Card sx={{ mt: 3 }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
@@ -95,7 +111,7 @@ export default function RunDetailPage() {
   );
 }
 
-function RunHeader({ run }: { run: RunSummary }) {
+function RunHeader({ run }: { run: RunDetail }) {
   return (
     <>
       <Stack
