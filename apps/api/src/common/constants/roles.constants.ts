@@ -93,6 +93,20 @@ export const PERMISSIONS = {
   // escalation lifecycle exists to record.
   ESCALATIONS_READ: 'escalations:read',
   ESCALATIONS_ACKNOWLEDGE: 'escalations:acknowledge',
+
+  /**
+   * The supervisor decision log (VISION §7, #90).
+   *
+   * `supervisor:review` records whether a proposal WOULD have been approved.
+   * That verdict is the entire Phase 6 measurement, and it decides which
+   * action classes are eligible for promotion later — so it is a separate
+   * authority from reading the log, for the same reason acknowledging an
+   * escalation is separate from seeing one. There is deliberately no
+   * `supervisor:execute`: the supervisor executes nothing, and a permission
+   * naming an authority that does not exist is an invitation to implement it.
+   */
+  SUPERVISOR_READ: 'supervisor:read',
+  SUPERVISOR_REVIEW: 'supervisor:review',
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
