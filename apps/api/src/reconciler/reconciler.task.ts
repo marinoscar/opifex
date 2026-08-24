@@ -11,6 +11,7 @@ import { DispatchQueueService } from '../dispatch/dispatch-queue.service';
 import { EscalationsService } from '../escalations/escalations.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
 import { EscalationDispatcher } from '../notifications/escalation-dispatcher.service';
+import { tallyCoverage } from '../watchdog/check-coverage';
 import {
   WatchdogService,
   type WatchdogSweepResult,
@@ -168,6 +169,9 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
         silentRuns: 0,
         loopingRuns: 0,
         loopCheckUnavailable: 0,
+        // Empty tallies rather than an omitted field: a sweep that threw has
+        // established nothing about anything, including what was covering it.
+        checkCoverage: tallyCoverage([]),
         parkedRuns: 0,
         resumableRuns: 0,
       };

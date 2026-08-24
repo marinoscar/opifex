@@ -153,6 +153,144 @@ export interface RunSummary {
 }
 
 // ---------------------------------------------------------------------------
+// Watchdog check coverage (#104)
+// ---------------------------------------------------------------------------
+
+/**
+ * What one watchdog check is worth on one run.
+ *
+ * Mirrors `CheckStatus` in `apps/api/src/watchdog/check-coverage.ts`, and the
+ * three values are not a severity scale the UI is free to compress:
+ *
+ *  - `active`      — the check protects the run as designed.
+ *  - `degraded`    — it runs, but on a weaker signal or a coarser threshold.
+ *  - `unavailable` — it cannot run at all. The failure mode it guards is
+ *                    UNGUARDED on this run.
+ *
+ * The last one is the whole reason #104 exists, and it is why this union has
+ * three members rather than a boolean: *"a check that is unavailable must
+ * report itself as unavailable, not silently pass. A tool-loop detector that
+ * quietly does nothing on a non-streaming runner looks identical, in the
+ * cockpit, to one that ran and found no loop — and that is worse than not
+ * having the check, because it manufactures false confidence."*
+ *
+ * `unavailable` is NOT a failure. Nothing went wrong; a capability is absent.
+ * `config/watchdogCoverage.ts` is where that distinction becomes pixels.
+ */
+export type CheckStatus = 'active' | 'degraded' | 'unavailable';
+
+/**
+ * Every `CheckStatus`, weakest last — the same severity order the API's
+ * `weakest` rollup uses, where `unavailable` dominates.
+ *
+ * A value, not just a type, so tests can be exhaustive over the union: a
+ * `Record<CheckStatus, …>` catches a MISSING key at compile time, but only
+ * iterating a runtime list catches a key that exists and is wrong.
+ */
+export const CHECK_STATUSES: readonly CheckStatus[] = [
+  'active',
+  'degraded',
+  'unavailable',
+];
+
+/**
+ * The four watchdog checks, mirroring `WATCHDOG_CHECKS` in the API.
+ *
+ * A closed union rather than free strings for the reason the API states: a
+ * check id nothing produces must fail to compile rather than silently render
+ * an empty row.
+ */
+export type WatchdogCheckId =
+  | 'silence-detection'
+  | 'loop-detection'
+  | 'rate-limit-parking'
+  | 'git-liveness';
+
+/** In the API's own order, which is also the order the cockpit shows them. */
+export const WATCHDOG_CHECKS: readonly WatchdogCheckId[] = [
+  'silence-detection',
+  'loop-detection',
+  'rate-limit-parking',
+  'git-liveness',
+];
+
+/** What a runner declared it streams. Null means it filed no manifest at all. */
+export type StreamingFidelity = 'full' | 'partial' | 'none';
+
+/** How a runner reports rate limits. Null means it filed no manifest at all. */
+export type RateLimitSignal = 'structured' | 'heuristic' | 'none';
+
+/**
+ * One check, and what it is worth on this run.
+ *
+ * `signal` and `reason` are SERVER-authored prose, rendered verbatim. There is
+ * deliberately no client-side table of what each check watches or why it is
+ * degraded: the strings come from the module that also decides the statuses,
+ * so the cockpit cannot promise a check the detector declines to run.
+ */
+export interface CheckCoverage {
+  check: WatchdogCheckId;
+  status: CheckStatus;
+  /** WHAT it watches, in one noun phrase. Degrades independently of `status`. */
+  signal: string;
+  /**
+   * WHY it has that status, naming the declared capability responsible.
+   *
+   * Always present, `active` included — and it is rendered on every status for
+   * the reason the API populates it on every status: a UI that shows an
+   * explanation only when something is wrong teaches operators that a quiet
+   * badge means "nothing to explain", which is the skimming habit that makes
+   * the `unavailable` case easy to miss.
+   */
+  reason: string;
+  /** The silence threshold in force, in ms. Null on checks that have none. */
+  thresholdMs: number | null;
+}
+
+/**
+ * Which checks are protecting one run, derived from what its runner declared.
+ *
+ * VISION §6: *"equal observability across vendors is not achievable. A common
+ * floor that some runners exceed is."* This is that floor, made visible for
+ * one run.
+ */
+export interface RunCheckCoverage {
+  /** The runner whose declarations produced all of this. */
+  runnerKey: string;
+  /**
+   * Declared streaming fidelity, or null when the runner filed no manifest.
+   *
+   * Null is NOT `'none'` and must never render as it. `'none'` is a runner
+   * that told us it streams nothing; null is a runner that told us nothing at
+   * all, which is the more alarming of the two and is fixed differently — by
+   * registering the runner, not by changing it.
+   */
+  streamingFidelity: StreamingFidelity | null;
+  /** Declared rate-limit signal, or null when the runner filed no manifest. */
+  rateLimitSignal: RateLimitSignal | null;
+  /**
+   * The worst status among the checks, so a summary does not re-derive one.
+   * `unavailable` dominates: three healthy checks do not average away a
+   * fourth that cannot run.
+   */
+  weakest: CheckStatus;
+  /** Always all four, always in `WATCHDOG_CHECKS` order. */
+  checks: CheckCoverage[];
+}
+
+/**
+ * `GET /runs/:id` — a run, plus the coverage only the detail endpoint carries.
+ *
+ * A superset of `RunSummary` rather than a widening of it, mirroring
+ * `runDetailSchema` in the API: coverage costs a join through the runner's
+ * capability manifest and is read one run at a time, so the list stays
+ * `RunSummary` and the runs table does not render it.
+ */
+export interface RunDetail extends RunSummary {
+  checkCoverage: RunCheckCoverage;
+}
+
+// ---------------------------------------------------------------------------
 // Queue
 // ---------------------------------------------------------------------------
 

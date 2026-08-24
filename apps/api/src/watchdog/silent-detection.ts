@@ -126,13 +126,17 @@ function describe(
       : `${run.runnerKey} declares ${run.fidelity} streaming fidelity`;
 
   return (
-    `silent for ${duration(silentForMs)} (${observed}), exceeding the ` +
-    `${duration(thresholdMs)} threshold: ${basis}`
+    `silent for ${formatDuration(silentForMs)} (${observed}), exceeding the ` +
+    `${formatDuration(thresholdMs)} threshold: ${basis}`
   );
 }
 
 /**
  * A duration a human can check the verdict against.
+ *
+ * Exported because the check-coverage report (#104) states the same
+ * thresholds to the same operator, and two renderings of one number is the
+ * cheapest possible way to make them look like two different numbers.
  *
  * Rounding to whole minutes on both sides produced "silent for 2m, exceeding
  * the 2m threshold" for a 95-second silence against a 90-second threshold — a
@@ -140,7 +144,7 @@ function describe(
  * that makes an operator stop trusting a kill. Under an hour, seconds are
  * always shown.
  */
-function duration(ms: number): string {
+export function formatDuration(ms: number): string {
   const totalSeconds = Math.round(ms / 1000);
   if (totalSeconds < 60) return `${totalSeconds}s`;
 

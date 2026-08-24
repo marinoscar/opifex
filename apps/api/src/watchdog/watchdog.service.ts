@@ -7,11 +7,17 @@ import {
   decideParking,
   type BlockedRunState,
 } from './blocked-parking';
+import {
+  describeCheckCoverage,
+  tallyCoverage,
+  type CoverageTallies,
+} from './check-coverage';
 import { detectLoop, type ToolObservation } from './loop-detection';
 import { detectSilentRuns } from './silent-detection';
 import { actionsForLoop, actionsForSilence } from './watchdog.actions';
 import type {
   LivenessSource,
+  RateLimitSignal,
   StreamingFidelity,
   WatchedRunState,
 } from './watchdog.types';
@@ -41,6 +47,24 @@ export interface WatchdogSweepResult {
    * included unmeasurable ones would be a false reassurance.
    */
   loopCheckUnavailable: number;
+  /**
+   * How many of the judged runs each check is protecting, and how well (#104).
+   *
+   * `loopCheckUnavailable` above answers "what happened this tick"; this
+   * answers "what is standing" — how much of the fleet sits on runners that
+   * can never support a given check at all. One sweep is then enough to see
+   * the coverage picture, instead of it being reconstructible only by reading
+   * three detectors and a capability table.
+   *
+   * The two counts deliberately differ: `loopCheckUnavailable` counts checks
+   * ATTEMPTED and refused, so a run already found silent is not counted twice
+   * for the same tick, while these tallies cover every live run judged.
+   *
+   * Tallied over the live runs only. Blocked runs come from a separate query
+   * that does not join capabilities, and adding the join purely for a tally
+   * would put work on a tick to report on runs the tally would not change.
+   */
+  checkCoverage: CoverageTallies;
   /** Runs newly parked with a scheduled resume. */
   parkedRuns: number;
   /** Parked runs whose scheduled time has arrived. */
@@ -76,6 +100,20 @@ export class WatchdogService {
   async sweep(now: Date = new Date()): Promise<WatchdogSweepResult> {
     const runs = await this.loadLiveRuns();
     const verdicts = detectSilentRuns(runs, now);
+
+    // Arithmetic over data already loaded, with no query of its own — this
+    // runs on every tick, and coverage that cost a round trip per run would be
+    // the first thing an operator turned off.
+    const checkCoverage = tallyCoverage(
+      runs.map((run) =>
+        describeCheckCoverage({
+          runnerKey: run.runnerKey,
+          fidelity: run.fidelity,
+          rateLimitSignal: run.rateLimitSignal,
+          branch: run.branch,
+        }),
+      ),
+    );
 
     const actions = verdicts.flatMap(actionsForSilence);
 
@@ -124,6 +162,7 @@ export class WatchdogService {
       silentRuns: verdicts.length,
       loopingRuns,
       loopCheckUnavailable,
+      checkCoverage,
       parkedRuns: parking.parked,
       resumableRuns: parking.resumable,
       actions,
@@ -287,12 +326,20 @@ export class WatchdogService {
           select: { source: true },
         },
         runner: {
-          select: { capability: { select: { streamingFidelity: true } } },
+          select: {
+            capability: {
+              select: { streamingFidelity: true, rateLimitSignal: true },
+            },
+          },
         },
         workOrder: {
           select: {
             identity: true,
             issueNumber: true,
+            // The branch git-derived liveness watches. Read here rather than
+            // in a second pass: whether a run HAS a second liveness source is
+            // part of what covers it (#104).
+            branch: true,
             repository: { select: { owner: true, name: true } },
           },
         },
@@ -312,6 +359,9 @@ export class WatchdogService {
       fidelity:
         (run.runner?.capability?.streamingFidelity as StreamingFidelity) ??
         null,
+      rateLimitSignal:
+        (run.runner?.capability?.rateLimitSignal as RateLimitSignal) ?? null,
+      branch: run.workOrder.branch || null,
     }));
   }
 }

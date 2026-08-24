@@ -28,6 +28,8 @@ function run(overrides: Partial<WatchedRunState> = {}): WatchedRunState {
     lastEventSource: 'runner' as const,
     runnerKey: 'claude-code-local',
     fidelity: 'full',
+    rateLimitSignal: 'structured',
+    branch: 'factory/312-a3f91c2-a1',
     ...overrides,
   };
 }
@@ -366,6 +368,78 @@ describe('the stop side of detection latency (#59)', () => {
     expect(NOW.getTime() - verdict.progressStoppedAt.getTime()).toBe(
       verdict.silentForMs,
     );
+  });
+});
+
+/**
+ * #104's fourth acceptance criterion: *"a non-streaming runner is still
+ * detectably stalled, via git-derived liveness."*
+ *
+ * This is a CHARACTERISATION test — it passed the day it was written, because
+ * `WatchedRunState.lastEventAt` is deliberately the newest event of ANY
+ * source and #52 built the git watcher first for exactly this reason. It is
+ * here because the property is load-bearing and invisible: the obvious
+ * "improvement" of judging silence on runner-reported events only would starve
+ * a non-streaming runner of signal and kill every one of its healthy runs, and
+ * nothing else in the suite would fail.
+ */
+describe('a runner that streams nothing is still watched, via git', () => {
+  function gitOnly(overrides: Partial<WatchedRunState> = {}): WatchedRunState {
+    return run({
+      runnerKey: 'dark-runner',
+      fidelity: 'none',
+      rateLimitSignal: 'none',
+      lastEventSource: 'git',
+      ...overrides,
+    });
+  }
+
+  it('is NOT silent while commits are still landing', () => {
+    // Its only liveness is a commit landing on the branch, and an hour
+    // between commits is normal for a runner that reports nothing until it
+    // finishes. Killing it here would destroy work that is proceeding.
+    const verdicts = detectSilentRuns(
+      [gitOnly({ lastEventAt: minutesAgo(60) })],
+      NOW,
+    );
+
+    expect(verdicts).toEqual([]);
+  });
+
+  it('IS silent once git has been quiet past its own threshold', () => {
+    const verdicts = detectSilentRuns(
+      [gitOnly({ lastEventAt: minutesAgo(91) })],
+      NOW,
+    );
+
+    expect(verdicts).toHaveLength(1);
+    expect(verdicts[0].thresholdMs).toBe(SILENCE_THRESHOLDS_MS.none);
+  });
+
+  it('names GIT as the source that last saw it alive', () => {
+    // #59 requires the latency metric say which of the two independent sources
+    // was carrying a run when it went quiet. Git-derived detection is
+    // structurally slower, and an aggregate that blends the two describes
+    // neither.
+    const verdicts = detectSilentRuns(
+      [gitOnly({ lastEventAt: minutesAgo(91) })],
+      NOW,
+    );
+
+    expect(verdicts[0].detectionSource).toBe('git');
+  });
+
+  it('measures from the last commit, not from the start of the run', () => {
+    const startedAt = minutesAgo(600);
+    const lastCommit = minutesAgo(91);
+
+    const verdicts = detectSilentRuns(
+      [gitOnly({ startedAt, lastEventAt: lastCommit })],
+      NOW,
+    );
+
+    expect(verdicts[0].progressStoppedAt).toEqual(lastCommit);
+    expect(verdicts[0].silentForMs).toBe(NOW.getTime() - lastCommit.getTime());
   });
 });
 

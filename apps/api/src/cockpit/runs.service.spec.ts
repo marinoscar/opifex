@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 
 import { UNRESOLVED } from '../escalations/escalations.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SILENCE_THRESHOLDS_MS } from '../watchdog/silent-detection';
 import { RunsService } from './runs.service';
 
 /**
@@ -19,6 +20,12 @@ describe('RunsService', () => {
       attentionReason: null as string | null,
       resumesAt: null as Date | null,
       runnerKey: 'claude-code-local',
+      runner: {
+        capability: {
+          streamingFidelity: 'full',
+          rateLimitSignal: 'structured',
+        },
+      },
       costUsd: { toNumber: () => 1.25 },
       pullRequestUrl: null as string | null,
       workOrder: {
@@ -281,6 +288,88 @@ describe('RunsService', () => {
       await expect(service.findById('missing')).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+  });
+
+  describe('which checks are protecting the run (#104)', () => {
+    const ID = '11111111-1111-1111-1111-111111111111';
+
+    function coverageFor(run: Awaited<ReturnType<RunsService['findById']>>) {
+      return Object.fromEntries(
+        run.checkCoverage.checks.map((c) => [c.check, c.status]),
+      );
+    }
+
+    it('joins through the capability manifest rather than assuming one', async () => {
+      await service.findById(ID);
+
+      const { select } = findUnique.mock.calls[0][0];
+      expect(select.runner.select.capability.select).toEqual({
+        streamingFidelity: true,
+        rateLimitSignal: true,
+      });
+    });
+
+    it('reports every check active for a full-streaming runner', async () => {
+      const run = await service.findById(ID);
+
+      expect(coverageFor(run)['loop-detection']).toBe('active');
+      expect(run.checkCoverage.weakest).toBe('active');
+    });
+
+    it('reports loop detection UNAVAILABLE for a near-zero-streaming runner', async () => {
+      // The side-by-side #104 requires. The same run, the same fields, a
+      // different manifest — and the cockpit must not render these alike.
+      findUnique.mockResolvedValue(
+        runRow({
+          runnerKey: 'dark-runner',
+          runner: {
+            capability: {
+              streamingFidelity: 'none',
+              rateLimitSignal: 'none',
+            },
+          },
+        }),
+      );
+
+      const run = await service.findById(ID);
+
+      expect(coverageFor(run)['loop-detection']).toBe('unavailable');
+      expect(coverageFor(run)['rate-limit-parking']).toBe('unavailable');
+      // Still watched, on a weaker signal — not silently unprotected.
+      expect(coverageFor(run)['silence-detection']).toBe('degraded');
+      expect(run.checkCoverage.weakest).toBe('unavailable');
+    });
+
+    it('does not treat a runner with no manifest as a runner that declared the defaults', async () => {
+      // A missing manifest is a real gap in what is protecting the run.
+      // Assuming `full` would manufacture exactly the false confidence #104
+      // exists to prevent.
+      findUnique.mockResolvedValue(runRow({ runner: null }));
+
+      const run = await service.findById(ID);
+
+      expect(run.checkCoverage.streamingFidelity).toBeNull();
+      expect(coverageFor(run)['loop-detection']).toBe('unavailable');
+    });
+
+    it('states the silence threshold in force, so the number can be checked', async () => {
+      const run = await service.findById(ID);
+      const silence = run.checkCoverage.checks.find(
+        (c) => c.check === 'silence-detection',
+      );
+
+      expect(silence?.thresholdMs).toBe(SILENCE_THRESHOLDS_MS.full);
+    });
+
+    it('is NOT on the list, which stays the narrower row', async () => {
+      // Per-run detail: an operator reads coverage one run at a time, and the
+      // capability join on every row of a hundred-row page buys nothing the
+      // list renders.
+      const { items } = await service.list({});
+
+      expect(items[0]).not.toHaveProperty('checkCoverage');
+      expect(findMany.mock.calls[0][0].select.runner).toBeUndefined();
     });
   });
 

@@ -1,4 +1,5 @@
 import { PrismaService } from '../prisma/prisma.service';
+import { WATCHDOG_CHECKS } from './check-coverage';
 import { WatchdogService } from './watchdog.service';
 
 const NOW = new Date('2026-08-21T12:00:00Z');
@@ -12,10 +13,16 @@ function runRow(overrides: Record<string, unknown> = {}) {
     runnerKey: 'claude-code-local',
     // The newest event's source, for #59's per-source latency split.
     events: [{ source: 'runner' }],
-    runner: { capability: { streamingFidelity: 'full' } },
+    runner: {
+      capability: {
+        streamingFidelity: 'full',
+        rateLimitSignal: 'structured',
+      },
+    },
     workOrder: {
       identity: 'wo_opifex_312_a3f91c2_a1',
       issueNumber: 312,
+      branch: 'factory/312-a3f91c2-a1',
       repository: { owner: 'marinoscar', name: 'opifex' },
     },
     ...overrides,
@@ -464,5 +471,115 @@ describe('WatchdogService', () => {
 
       expect(second.actions).toEqual(first.actions);
     });
+  });
+});
+
+describe('what one sweep says about coverage (#104)', () => {
+  /**
+   * The fleet-wide half of #104. A sweep that reports what it FOUND but not
+   * what it could not look for is the false confidence the issue is about:
+   * zero looping runs reads as "nothing is looping" even when half the fleet
+   * is on runners where a loop is undetectable.
+   */
+  let prisma: {
+    run: { findMany: jest.Mock; update: jest.Mock };
+    runEvent: { findMany: jest.Mock };
+  };
+  let service: WatchdogService;
+
+  function withLiveRuns(rows: unknown[]) {
+    prisma.run.findMany.mockImplementation(
+      async (query: { where: { status: unknown } }) =>
+        query.where.status === 'blocked' ? [] : rows,
+    );
+  }
+
+  beforeEach(() => {
+    prisma = {
+      run: {
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      runEvent: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    withLiveRuns([]);
+    service = new WatchdogService(prisma as unknown as PrismaService);
+  });
+
+  it('loads the rate-limit signal and the branch, not only the fidelity', async () => {
+    // Both are part of what covers a run — parking needs a datable block, and
+    // git-derived liveness needs a branch to watch. Reading them in the query
+    // the sweep already makes is what keeps the tally free.
+    await service.sweep(NOW);
+
+    const [{ select }] = prisma.run.findMany.mock.calls[0];
+    expect(select.runner.select.capability.select.rateLimitSignal).toBe(true);
+    expect(select.workOrder.select.branch).toBe(true);
+  });
+
+  it('tallies a full-streaming and a near-zero-streaming runner side by side', async () => {
+    withLiveRuns([
+      // Quiet enough not to be judged silent, so the tally is about capability
+      // rather than about this tick's findings.
+      runRow({ lastEventAt: new Date(NOW.getTime() - 5_000) }),
+      runRow({
+        id: '018f2c31-7a4e-7c3b-9f21-000000000002',
+        runnerKey: 'dark-runner',
+        lastEventAt: new Date(NOW.getTime() - 5_000),
+        events: [{ source: 'git' }],
+        runner: {
+          capability: { streamingFidelity: 'none', rateLimitSignal: 'none' },
+        },
+      }),
+    ]);
+
+    const result = await service.sweep(NOW);
+
+    expect(result.checkCoverage['loop-detection']).toEqual({
+      active: 1,
+      degraded: 0,
+      unavailable: 1,
+    });
+    expect(result.checkCoverage['rate-limit-parking']).toEqual({
+      active: 1,
+      degraded: 0,
+      unavailable: 1,
+    });
+    expect(result.checkCoverage['silence-detection']).toEqual({
+      active: 1,
+      degraded: 1,
+      unavailable: 0,
+    });
+  });
+
+  it('reports every check even when the fleet is empty', async () => {
+    // A missing key would read as zero unavailable, which is the reassuring
+    // reading of "not measured".
+    const result = await service.sweep(NOW);
+
+    expect(Object.keys(result.checkCoverage).sort()).toEqual(
+      [...WATCHDOG_CHECKS].sort(),
+    );
+  });
+
+  it('counts a standing gap that loopCheckUnavailable does not', async () => {
+    // The two answer different questions on purpose. A run already judged
+    // silent is skipped by the loop check — so it is not counted there — but
+    // its runner still cannot support loop detection, and the tally says so.
+    withLiveRuns([
+      runRow({
+        runnerKey: 'dark-runner',
+        lastEventAt: new Date(NOW.getTime() - 200 * 60_000),
+        runner: {
+          capability: { streamingFidelity: 'none', rateLimitSignal: 'none' },
+        },
+      }),
+    ]);
+
+    const result = await service.sweep(NOW);
+
+    expect(result.silentRuns).toBe(1);
+    expect(result.loopCheckUnavailable).toBe(0);
+    expect(result.checkCoverage['loop-detection'].unavailable).toBe(1);
   });
 });

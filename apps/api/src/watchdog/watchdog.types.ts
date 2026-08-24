@@ -51,6 +51,20 @@ export interface WatchedRunState {
    * no capability manifest at all.
    */
   fidelity: StreamingFidelity | null;
+  /**
+   * The runner's declared rate-limit signal, or null with no manifest.
+   *
+   * Not used to judge silence — it is carried so the sweep can report which
+   * checks COVER each run (#104) without a second query per run. A watchdog
+   * that reports what it found but not what it could not look for is the
+   * false-confidence failure that issue exists to prevent.
+   */
+  rateLimitSignal: RateLimitSignal | null;
+  /**
+   * The branch git-derived liveness would watch, or null when the run has
+   * none. The second, independent liveness source exists only where this does.
+   */
+  branch: string | null;
 }
 
 /**
@@ -91,3 +105,18 @@ export interface SilenceVerdict {
    */
   reason: string;
 }
+
+/**
+ * How well a runner can report that it has hit a rate limit.
+ *
+ * Mirrors `RunnerSignalQuality` in schema.prisma, restated for the same reason
+ * the fidelities are: the coverage derivation must stay a pure function over
+ * plain data. A spec pins these against the Prisma enum.
+ *
+ * The schema states the consequence rather than leaving it implied:
+ * `structured` means a reset time arrives as data and a blocked run can be
+ * PARKED with a dated resume (#56); `heuristic` means the reset is inferred
+ * from prose, so auto-resume works but is approximate; `none` means "rate
+ * limits are not distinguishable — a blocked run escalates."
+ */
+export type RateLimitSignal = 'structured' | 'heuristic' | 'none';

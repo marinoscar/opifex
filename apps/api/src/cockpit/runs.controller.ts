@@ -11,6 +11,7 @@ import { Auth } from '../auth/decorators/auth.decorator';
 import { PERMISSIONS } from '../common/constants/roles.constants';
 import { ApiDataResponse } from '../common/decorators/api-data-response.decorator';
 import {
+  RunDetailDto,
   RunEventDto,
   RunEventsQueryDto,
   RunSummaryDto,
@@ -58,14 +59,22 @@ export class RunsController {
   @Get(':id')
   @Auth({ permissions: [PERMISSIONS.RUNS_READ] })
   @ApiOperation({
-    summary: 'Get one run',
+    summary: 'Get one run, with the watchdog checks covering it',
     description:
       'attentionReason and resumesAt are separate fields and must stay that way: the first means ' +
       'a human has to do something, the second means the system will handle it and acting is ' +
-      'wasted effort (VISION §9). The event timeline is a separate, paginated endpoint.',
+      'wasted effort (VISION §9). The event timeline is a separate, paginated endpoint.\n\n' +
+      'checkCoverage says which watchdog checks are actually protecting this run, derived from ' +
+      'what its runner DECLARED it can do (#104). A status of `unavailable` means the check ' +
+      'could not run at all — the failure mode it guards is unguarded here — and is NOT the ' +
+      'same as a check that ran and found nothing. Rendering the two alike manufactures false ' +
+      'confidence, which VISION §6 calls worse than not having the check. `degraded` means it ' +
+      'runs on a weaker signal or a coarser threshold: silence detection on a non-streaming ' +
+      'runner watches git commits at 90 minutes, not heartbeats at 90 seconds. It is only on ' +
+      'the detail response, not on the list.',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
-  @ApiDataResponse(RunSummaryDto, { description: 'The run' })
+  @ApiDataResponse(RunDetailDto, { description: 'The run' })
   @ApiResponse({ status: 404, description: 'Run not found' })
   async get(@Param('id', ParseUUIDPipe) id: string) {
     return this.runs.findById(id);

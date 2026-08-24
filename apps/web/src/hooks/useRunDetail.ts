@@ -11,19 +11,19 @@
 import { useCallback } from 'react';
 import { COCKPIT_POLL_INTERVAL_MS } from '../config/cockpitApi';
 import { getRun, getRunEvents, type RunEventsPage } from '../services/api';
-import type { RunSummary } from '../types/cockpit';
+import type { RunDetail } from '../types/cockpit';
 import { usePolledResource } from './usePolledResource';
 import type { UsePolledResourceResult } from './usePolledResource';
 
 export const RUN_EVENTS_PAGE_SIZE = 50;
 
-export function useRun(id: string): UsePolledResourceResult<RunSummary> {
+export function useRun(id: string): UsePolledResourceResult<RunDetail> {
   const fetcher = useCallback(
     (signal: AbortSignal) => getRun(id, signal),
     [id],
   );
 
-  return usePolledResource<RunSummary>({
+  return usePolledResource<RunDetail>({
     fetcher,
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     // An id that has not arrived yet must not fire a request for `/runs/`.
