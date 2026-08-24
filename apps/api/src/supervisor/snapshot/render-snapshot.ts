@@ -5,6 +5,7 @@ import {
   type SnapshotInput,
   type SnapshotLimits,
   type SnapshotRun,
+  type SnapshotSpecRejection,
   type SnapshotWorkOrder,
   type TruncationNote,
 } from './snapshot.types';
@@ -118,6 +119,17 @@ export function renderSnapshot(
     'No escalation is outstanding.',
   );
 
+  section(
+    lines,
+    notes,
+    'Issues the spec gate rejected',
+    input.specRejections,
+    limits.specRejections,
+    (rejection) =>
+      rejectionLines(rejection, input.generatedAt, limits.textField),
+    'No issue was turned away for a bad specification.',
+  );
+
   if (notes.length > 0) {
     lines.push('## Truncation');
     lines.push('');
@@ -226,6 +238,17 @@ function workOrderLines(
     `  acceptance criteria: ${wo.acceptanceCriteriaCount}; created ${age(wo.createdAt, now)} ago`,
   );
   return out;
+}
+
+function rejectionLines(
+  rejection: SnapshotSpecRejection,
+  now: Date,
+  textCap: number,
+): string[] {
+  return [
+    `- ${rejection.repository}#${rejection.issueNumber} · rejected ${age(rejection.rejectedAt, now)} ago`,
+    `  told the author: ${clip(rejection.message, textCap)}`,
+  ];
 }
 
 function escalationLines(

@@ -66,6 +66,7 @@ function input(overrides: Partial<SnapshotInput> = {}): SnapshotInput {
     queuedWorkOrders: [],
     quarantinedWorkOrders: [],
     escalations: [],
+    specRejections: [],
     ...overrides,
   };
 }

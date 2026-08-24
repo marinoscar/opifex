@@ -22,6 +22,9 @@ function prismaDouble() {
       count: jest.fn().mockResolvedValue(0),
       findMany: jest.fn().mockResolvedValue([]),
     },
+    issueSpecRejection: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   };
 }
 
@@ -186,6 +189,39 @@ describe('SnapshotService (#88)', () => {
       await service.collect(NOW);
 
       expect(prisma.run.groupBy.mock.calls.length).toBe(after * 2);
+    });
+
+    it('takes the newest spec rejections, not the oldest', async () => {
+      // Unlike the queues, which are oldest-first. A rejection from three
+      // months ago is history; the ones worth shaping are the ones somebody
+      // is waiting on now.
+      await service.collect(NOW);
+
+      const args = prisma.issueSpecRejection.findMany.mock.calls[0][0];
+      expect(args.orderBy).toEqual([{ commentedAt: 'desc' }, { id: 'desc' }]);
+      expect(args.take).toBe(DEFAULT_SNAPSHOT_LIMITS.specRejections + 1);
+    });
+
+    it('narrows a spec rejection to plain values', async () => {
+      prisma.issueSpecRejection.findMany.mockResolvedValue([
+        {
+          issueNumber: 401,
+          message: 'No testable acceptance criteria.',
+          commentedAt: NOW,
+          repository: { owner: 'marinoscar', name: 'opifex' },
+        },
+      ]);
+
+      const input = await service.collect(NOW);
+
+      expect(input.specRejections).toEqual([
+        {
+          repository: 'marinoscar/opifex',
+          issueNumber: 401,
+          message: 'No testable acceptance criteria.',
+          rejectedAt: NOW,
+        },
+      ]);
     });
   });
 
