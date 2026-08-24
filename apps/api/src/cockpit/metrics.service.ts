@@ -48,9 +48,16 @@ export class MetricsService {
     const to = new Date();
     const from = new Date(to.getTime() - days * DAY_MS);
 
-    const [detectionLatency, attemptsPerWorkOrder] = await Promise.all([
+    const [
+      detectionLatency,
+      attemptsPerWorkOrder,
+      firstPassAcceptance,
+      costPerMergedPr,
+    ] = await Promise.all([
       this.detectionLatency(from, to, days),
       this.attemptsPerWorkOrder(from, to, days),
+      this.firstPassAcceptance(from, to, days),
+      this.costPerMergedPr(from, to, days),
     ]);
 
     return {
@@ -63,11 +70,112 @@ export class MetricsService {
         // Not measured. See the table at the head of this file; each of these
         // is a real absence rather than a zero waiting to be filled in.
         deadTimePerDay: NOT_MEASURED,
-        firstPassAcceptance: NOT_MEASURED,
+        firstPassAcceptance,
         attemptsPerWorkOrder,
-        costPerMergedPr: NOT_MEASURED,
+        costPerMergedPr,
         quotaBurn: NOT_MEASURED,
       },
+    };
+  }
+
+  /**
+   * Metric 3: merged pull requests that needed no second attempt.
+   *
+   * VISION §10 says this one decides the roadmap — *"if first-pass acceptance
+   * is low, adding throughput actively makes life worse."* So the denominator
+   * matters as much as the number, and it is stated here as well as in the UI.
+   *
+   * **Numerator**: merged PRs whose work order was on attempt 1.
+   * **Denominator**: merged PRs in the window.
+   *
+   * A closed-unmerged PR is deliberately in neither. It is not a first-pass
+   * acceptance and it is not a failure of one — it is work that was withdrawn,
+   * and counting it as a miss would punish the operator for closing something
+   * they no longer wanted.
+   *
+   * Null when nothing merged. Zero would say "everything needed rework", which
+   * is a different and false claim.
+   */
+  private async firstPassAcceptance(
+    from: Date,
+    to: Date,
+    days: number,
+  ): Promise<MetricSample> {
+    const merged = await this.prisma.run.findMany({
+      where: {
+        pullRequestState: 'merged',
+        pullRequestMergedAt: { gte: from, lte: to },
+      },
+      select: {
+        pullRequestMergedAt: true,
+        workOrder: { select: { attempt: true } },
+      },
+    });
+
+    if (merged.length === 0) return NOT_MEASURED;
+
+    const rate = (rows: typeof merged) =>
+      rows.length === 0
+        ? null
+        : (rows.filter((row) => row.workOrder.attempt === 1).length /
+            rows.length) *
+          100;
+
+    return {
+      value: rate(merged),
+      trend: bucket(
+        // `raisedAt` is the shared bucketer's date key, not an escalation
+        // reference — the merge time is what buckets a merged pull request.
+        merged.map((row) => ({ raisedAt: row.pullRequestMergedAt!, row })),
+        from,
+        days,
+        (bucketRows) => rate(bucketRows.map((entry) => entry.row)),
+      ),
+    };
+  }
+
+  /**
+   * Metric 5: reported spend in the window, divided by merged pull requests.
+   *
+   * Reported spend only. An estimate drawn from authorized ceilings would make
+   * an economic-viability metric report the budget rather than the bill, and
+   * VISION §6 makes cost reporting a declared capability precisely so those two
+   * are never confused.
+   *
+   * Null when nothing merged. Dividing by zero is not "expensive".
+   */
+  private async costPerMergedPr(
+    from: Date,
+    to: Date,
+    days: number,
+  ): Promise<MetricSample> {
+    const merged = await this.prisma.run.findMany({
+      where: {
+        pullRequestState: 'merged',
+        pullRequestMergedAt: { gte: from, lte: to },
+      },
+      select: { pullRequestMergedAt: true, costUsd: true },
+    });
+
+    if (merged.length === 0) return NOT_MEASURED;
+
+    const perPr = (rows: typeof merged) => {
+      if (rows.length === 0) return null;
+      const spend = rows.reduce(
+        (total, row) => total + (row.costUsd ? Number(row.costUsd) : 0),
+        0,
+      );
+      return spend / rows.length;
+    };
+
+    return {
+      value: perPr(merged),
+      trend: bucket(
+        merged.map((row) => ({ raisedAt: row.pullRequestMergedAt!, row })),
+        from,
+        days,
+        (bucketRows) => perPr(bucketRows.map((entry) => entry.row)),
+      ),
     };
   }
 

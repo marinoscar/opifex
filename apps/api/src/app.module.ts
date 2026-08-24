@@ -7,6 +7,7 @@ import { ZodValidationPipe } from 'nestjs-zod';
 
 import { ContractsModule } from './contracts/contracts.module';
 import { RunSummaryModule } from './run-summary/run-summary.module';
+import { MergeStateModule } from './merge-state/merge-state.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { AuthModule } from './auth/auth.module';
@@ -40,6 +41,7 @@ import configuration from './config/configuration';
 
 @Module({
   imports: [
+    MergeStateModule,
     RunSummaryModule,
     ContractsModule,
     // Configuration
