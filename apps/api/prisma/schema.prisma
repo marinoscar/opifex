@@ -42,6 +42,7 @@ model User {
   supervisorProposalsReviewed SupervisorProposal[]  @relation("SupervisorProposalReviewedBy")
   trustGrantsGranted          TrustGrant[]          @relation("TrustGrantsGranted")
   trustGrantsRevoked          TrustGrant[]          @relation("TrustGrantsRevoked")
+  approvalRequestsDecided     ApprovalRequest[]     @relation("ApprovalRequestsDecided")
 
   @@map("users")
 }
@@ -420,10 +421,11 @@ model Repository {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  project        Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  workOrders     WorkOrder[]
-  specRejections IssueSpecRejection[]
-  trustGrants    TrustGrant[]
+  project          Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  workOrders       WorkOrder[]
+  specRejections   IssueSpecRejection[]
+  trustGrants      TrustGrant[]
+  approvalRequests ApprovalRequest[]
 
   @@unique([owner, name])
   @@index([projectId])
@@ -1271,8 +1273,9 @@ model Escalation {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  run            Run?  @relation(fields: [runId], references: [id], onDelete: Cascade)
-  acknowledgedBy User? @relation("EscalationAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  run              Run?              @relation(fields: [runId], references: [id], onDelete: Cascade)
+  acknowledgedBy   User?             @relation("EscalationAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  approvalRequests ApprovalRequest[] @relation("ApprovalRequestEscalation")
 
   @@index([runId])
   // The escalation queue: what is outstanding, oldest first.
@@ -1553,9 +1556,10 @@ model SupervisorProposal {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  invocation         SupervisorInvocation @relation(fields: [invocationId], references: [id], onDelete: Cascade)
-  reviewedBy         User?                @relation("SupervisorProposalReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
-  trustGrants        TrustGrant[]         @relation("TrustGrantsFromProposal")
+  invocation       SupervisorInvocation @relation(fields: [invocationId], references: [id], onDelete: Cascade)
+  reviewedBy       User?                @relation("SupervisorProposalReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  trustGrants      TrustGrant[]         @relation("TrustGrantsFromProposal")
+  approvalRequests ApprovalRequest[]    @relation("ApprovalRequestsFromProposal")
 
   @@index([invocationId])
   // The measurement query: per class, what fraction was approved.
@@ -1784,12 +1788,20 @@ model TrustGrant {
   renewedFromId String? @map("renewed_from_id") @db.Uuid
 
   // Relations
-  repository          Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
-  grantedBy           User                @relation("TrustGrantsGranted", fields: [grantedById], references: [id], onDelete: Restrict)
-  revokedBy           User?               @relation("TrustGrantsRevoked", fields: [revokedById], references: [id], onDelete: SetNull)
-  grantedFromProposal SupervisorProposal? @relation("TrustGrantsFromProposal", fields: [grantedFromProposalId], references: [id], onDelete: SetNull)
-  renewedFrom         TrustGrant?         @relation("TrustGrantRenewal", fields: [renewedFromId], references: [id], onDelete: SetNull)
-  renewals            TrustGrant[]        @relation("TrustGrantRenewal")
+  repository           Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  grantedBy            User                @relation("TrustGrantsGranted", fields: [grantedById], references: [id], onDelete: Restrict)
+  revokedBy            User?               @relation("TrustGrantsRevoked", fields: [revokedById], references: [id], onDelete: SetNull)
+  grantedFromProposal  SupervisorProposal? @relation("TrustGrantsFromProposal", fields: [grantedFromProposalId], references: [id], onDelete: SetNull)
+  renewedFrom          TrustGrant?         @relation("TrustGrantRenewal", fields: [renewedFromId], references: [id], onDelete: SetNull)
+  renewals             TrustGrant[]        @relation("TrustGrantRenewal")
+  /// Approval requests this grant authorized (skipped the human) - #100's
+  /// digest reads this to report what ran under trust.
+  approvalRequests     ApprovalRequest[]   @relation("ApprovalRequestsUnderGrant")
+  /// Approval requests where an operator tapped "Always approve this class"
+  /// and this grant was minted from the decision. The other edge of the two
+  /// distinct relationships an approval can have to a grant - see
+  /// `ApprovalRequest.grantId` vs `ApprovalRequest.createdGrantId`.
+  createdFromApprovals ApprovalRequest[]   @relation("ApprovalRequestsCreatingGrant")
 
   // THE authorization query: is there an active grant for this class in this
   // repository.
@@ -1801,4 +1813,278 @@ model TrustGrant {
   // "What did this user revoke" — the query the column exists for.
   @@index([revokedById])
   @@map("trust_grants")
+}
+
+// =============================================================================
+// Opifex Domain - Approval Requests
+// =============================================================================
+
+/// What happens to an approval nobody answers, resolved by ADR-0014's total
+/// order over ADR-0011's existing reversibility classification and
+/// `spendsMoney` - never a second axis of its own.
+///
+/// Recorded on the request itself, at raise time, rather than recomputed at
+/// resolution - see `ApprovalRequest.timeoutPolicy` for why that matters.
+enum ApprovalTimeoutPolicy {
+  /// Silence means yes, logged. ADR-0014 rule 4: only `reversible` classes
+  /// with no other rule matching land here - VISION §8's narrow reading, not
+  /// the wider one ADR-0014 explicitly declined to make.
+  auto_approve
+  /// Silence means no. ADR-0014 rules 2 and 3: anything that spends money, or
+  /// is merely `reversible-with-effort`, denies on timeout rather than
+  /// auto-approving. Under this order every autonomy-eligible class with a
+  /// real effect ends up here or in `park_and_escalate` - the trust grant,
+  /// not the timeout, is what actually delivers autonomy (ADR-0014).
+  deny
+  /// Silence means nothing resolves. ADR-0014 rule 1, and ADR-0013's rule 0
+  /// (a never-trustable effect) both land here in effect, though rule 0 is a
+  /// refusal rather than a gate outcome. `irreversible` is never
+  /// auto-approved under any grant or any timeout - VISION §8. See
+  /// `ApprovalRequest.timeoutAt`, which is null for this policy and stays
+  /// null for exactly this reason.
+  park_and_escalate
+}
+
+/// Where an approval request stands, and - critically - WHO or WHAT decided
+/// it. This is the enum the whole model exists to make precise.
+///
+/// `approved`/`denied` are a human's verdict; `auto_approved`/`auto_denied`
+/// are what happened because nobody answered before `timeoutAt`. Collapsing
+/// either pair into a single boolean would let #99's promotion ladder count
+/// silence as agreement - the single most important reason these are four
+/// values, not two: a class that is never proposed to a human and always
+/// times out reversible would promote itself by being ignored, which is
+/// exactly the self-dealing evidence problem VISION §7's "on evidence, never
+/// in bulk" exists to prevent.
+enum ApprovalStatus {
+  /// Raised, still within its timeout window (or has none - see
+  /// `park_and_escalate`), waiting on a human or the clock.
+  pending
+  /// A human said yes. Counts toward #99's approval-rate numerator.
+  approved
+  /// A human said no. Counts toward #99's approval-rate denominator, not its
+  /// numerator - a timeout denial (`auto_denied`) counts toward neither, per
+  /// the same argument mirrored.
+  denied
+  /// Nobody answered before `timeoutAt` and the resolved `timeoutPolicy` was
+  /// `auto_approve`. NOT evidence a human would have agreed - see the enum
+  /// doc comment. `decidedVia` is `timeout` for every row in this state.
+  auto_approved
+  /// Nobody answered before `timeoutAt` and the resolved `timeoutPolicy` was
+  /// `deny`. NOT evidence a human would have disapproved, mirroring
+  /// `auto_approved`'s argument exactly.
+  auto_denied
+  /// Raised under `park_and_escalate`, escalated, still waiting - and will
+  /// wait indefinitely. VISION §8: irreversible actions are never
+  /// auto-approved, so this status has no timer that resolves it. Only a
+  /// human moves a row out of `parked`, into `approved` or `denied`. This is
+  /// the "never auto-approve" guarantee expressed as a status with no exit
+  /// but a person.
+  parked
+  /// The underlying condition changed and the question stopped being worth
+  /// asking - the run finished, the work order was cancelled, the proposal
+  /// it was raised for was superseded. Distinct from `denied`: nobody
+  /// refused this, the world moved on before anyone had to.
+  superseded
+}
+
+/// How a resolved `ApprovalRequest` actually got resolved. Null while
+/// `status` is `pending` or `parked` - `parked` has no resolution yet by
+/// construction, and pairs with `decidedAt`/`decidedById`/`decisionNote` the
+/// same way `TrustGrantEndReason` pairs with `TrustGrant.endedAt`: a row with
+/// one set and not the others is a bug, not a valid state.
+enum ApprovalDecidedVia {
+  /// A person clicked Approve or Deny. VISION §8's "one tap from a phone."
+  human
+  /// Nobody answered before `timeoutAt`; the resolved `timeoutPolicy` decided
+  /// it. Pairs with `status` being `auto_approved` or `auto_denied`.
+  timeout
+  /// A `TrustGrant` already covered this action class and repository, so the
+  /// request was authorized without ever becoming a human-facing interrupt.
+  /// `grantId` names which one. VISION §8: "auto-approved actions still
+  /// record what *would* have been asked" - this row IS that record, and
+  /// #100's digest reads it.
+  grant
+}
+
+/// One question raised for a human, or resolved without one: "may this
+/// action proceed." VISION §8's whole approvals system is this row's
+/// lifecycle - raised with enough context to decide "in one tap", resolved by
+/// a human, a timeout, or a standing grant, and kept either way as the
+/// auditable record of what was asked and what happened.
+///
+/// ## Why this table, and not a field on `SupervisorProposal`
+///
+/// A proposal is the supervisor's judgment call about what to do (VISION §7,
+/// Phase 6 - advisory, off the execution path). An approval request is a gate
+/// on whether an action may actually take effect (VISION §8, Phase 7). Not
+/// every approval traces back to a proposal - `proposalId` is nullable
+/// precisely because an action can be raised for approval with nobody having
+/// proposed it first - and not every proposal that would be approved reaches
+/// execution at all under the current promotion ladder. Folding the two
+/// together would make "was this proposed" and "was this allowed to run" the
+/// same question, which ADR-0013 already spent a decision keeping separate
+/// for proposals versus effects; the same argument holds one level up.
+///
+/// ## `effects` is stored, not re-derived
+///
+/// `effects` holds the `AutonomyEffect[]` (ADR-0013) this action declared at
+/// raise time, so an approval can be AUDITED against what the action would
+/// actually have done, not against what it was labelled as. `effectsFor` is
+/// the single source of truth for that mapping (ADR-0013); this column is the
+/// record of what it produced for THIS request, frozen at the moment the gate
+/// was consulted, so a later change to `effectsFor` cannot retroactively
+/// change what a historical approval is understood to have authorized.
+model ApprovalRequest {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// An `ActionClassId` from `apps/api/src/supervisor/action-classes.ts`,
+  /// validated at the boundary rather than by a database enum - the same
+  /// reason `TrustGrant.actionClass` and `SupervisorProposal.actionClass`
+  /// are TEXT (ADR-0010, ADR-0011): the class taxonomy is expected to grow as
+  /// the promotion ladder does, an ordinary event, not a breaking one.
+  actionClass String @map("action_class")
+
+  repositoryId String @map("repository_id") @db.Uuid
+
+  /// The proposal that suggested this action, if any. Nullable - VISION §8's
+  /// gate applies to any action about to take effect, and not every one of
+  /// those was suggested by the supervisor first; a human-initiated action or
+  /// a deterministic dispatch decision can raise an approval with nothing in
+  /// `SupervisorProposal` behind it. `onDelete: SetNull`: the approval record
+  /// outlives the proposal row losing its provenance pointer, matching
+  /// `TrustGrant.grantedFromProposalId`'s rationale exactly.
+  proposalId String? @map("proposal_id") @db.Uuid
+
+  /// What this approval is about: `run`, `work-order`, `issue`, or `factory`
+  /// for something with no single subject - the same shape and the same
+  /// rationale as `SupervisorProposal.targetKind`. Free strings at the column,
+  /// a closed union at the boundary.
+  targetKind String? @map("target_kind")
+  /// The subject's stable identifier. NOT a foreign key, deliberately: the
+  /// request must outlive the row it discusses - a work order that finished
+  /// or an issue that closed does not erase the record of what was asked
+  /// about it, matching `SupervisorProposal.targetRef`'s rationale exactly.
+  targetRef  String? @map("target_ref")
+
+  /// What is being asked, one line.
+  summary String
+
+  /// Why it was proposed, in enough detail that a reviewer judges the
+  /// argument rather than the conclusion. VISION §8 requires "enough context
+  /// to decide - what, why, blast radius, and what happens if ignored" - this
+  /// is the "why".
+  reasoning String
+
+  /// What else is affected - the "blast radius" VISION §8 requires a reviewer
+  /// be shown alongside the why.
+  blastRadius String @map("blast_radius")
+
+  /// The `AutonomyEffect[]` (ADR-0013) this action declared at raise time.
+  /// Stored so an approval can be audited against what it would actually have
+  /// done, not against what it was labelled. See the model doc comment.
+  effects Json
+
+  /// The action's estimated cost, if it has one. NULL MEANS UNKNOWN, NOT
+  /// ZERO (VISION §6) - the same "unknown and zero are different" argument
+  /// `Run.costUsd` and `TrustGrant.budgetCeilingUsd`'s neighbours make
+  /// throughout this schema. A `spendsMoney` action whose cost could not be
+  /// estimated is not a free action; it is an action the gate could not price
+  /// and must not treat as costing nothing.
+  estimatedCostUsd Decimal? @map("estimated_cost_usd") @db.Decimal(10, 4)
+
+  /// The timeout disposition, resolved from the ADR-0014 total order against
+  /// the registry AT RAISE TIME and recorded here - NOT recomputed at
+  /// resolution time.
+  ///
+  /// This is load-bearing, not a caching optimization: this value is what the
+  /// operator was told would happen if they ignored the request (the
+  /// notification VISION §8 requires says "what happens if ignored").
+  /// Recomputing it later - after a registry edit, a reversibility
+  /// reclassification, or a `spendsMoney` flip - would mean the system acts
+  /// on a policy other than the one it promised, silently. The notification
+  /// and the eventual resolution must agree, and the only way to guarantee
+  /// that is to freeze the decision the moment it was communicated.
+  timeoutPolicy ApprovalTimeoutPolicy @map("timeout_policy")
+
+  /// When this request resolves itself if nobody answers. NULL FOR
+  /// `park_and_escalate` - that policy has no timer, ever.
+  ///
+  /// The null here IS the "never auto-approve" guarantee from VISION §8
+  /// expressed in data, not merely in application logic: there is no sweeper
+  /// query, no cron expression, and no timestamp anywhere that could cause a
+  /// `parked` request to resolve itself. A bug that iterated "everything with
+  /// a due timeout" would find no row for a parked request to accidentally
+  /// include, because none was ever written.
+  timeoutAt DateTime? @map("timeout_at") @db.Timestamptz
+
+  status ApprovalStatus @default(pending)
+
+  /// When it was decided - by a human, a timeout, or a grant. Null while
+  /// `pending` or `parked`.
+  decidedAt DateTime? @map("decided_at") @db.Timestamptz
+  /// Who decided it, when a human did. Null for `timeout` and `grant`
+  /// resolutions, and that null is meaningful the same way
+  /// `TrustGrant.revokedById`'s is: naming an actor for a resolution nobody
+  /// personally made would be inventing one. `onDelete: SetNull` - the
+  /// approval record outlives the account that decided it.
+  decidedById String? @map("decided_by_id") @db.Uuid
+  /// HOW it was decided - see `ApprovalDecidedVia`. Null while unresolved,
+  /// paired with `decidedAt`.
+  decidedVia  ApprovalDecidedVia? @map("decided_via")
+  /// Free text from the deciding human, or a system-generated note for a
+  /// timeout or grant resolution. Optional: a fast verdict with no prose is
+  /// still a verdict.
+  decisionNote String? @map("decision_note")
+
+  /// The grant that authorized this action, when one did - `decidedVia:
+  /// grant`. `onDelete: SetNull`: the approval record outlives the grant row
+  /// losing its attribution pointer.
+  ///
+  /// VISION §8: "auto-approved actions still record what *would* have been
+  /// asked" - THIS ROW is that record for a grant-authorized action, and
+  /// #100's digest reads it to report what ran under trust without
+  /// interrupting anyone.
+  grantId String? @map("grant_id") @db.Uuid
+
+  /// The grant that was MINTED from this approval, when an operator tapped
+  /// "Always approve this class" (VISION §8's third option, which "silently
+  /// attaches all four" grant attributes). `onDelete: SetNull`: the approval
+  /// record outlives the grant it created.
+  ///
+  /// Deliberately a SEPARATE column from `grantId`, not a reuse of it: one
+  /// grant may have AUTHORIZED this request, and a DIFFERENT grant may have
+  /// been BORN from the decision made on it - two distinct edges over the
+  /// lifetime of a single row. Collapsing them into one column would make
+  /// #100's digest unable to tell "this action ran under existing trust"
+  /// apart from "this action is the reason new trust now exists", which are
+  /// different facts a digest reader needs to distinguish.
+  createdGrantId String? @map("created_grant_id") @db.Uuid
+
+  /// The escalation raised for this request, set only when `timeoutPolicy` is
+  /// `park_and_escalate`. `onDelete: SetNull`: the approval record outlives
+  /// the escalation row losing its pointer.
+  escalationId String? @map("escalation_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  repository   Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  proposal     SupervisorProposal? @relation("ApprovalRequestsFromProposal", fields: [proposalId], references: [id], onDelete: SetNull)
+  decidedBy    User?               @relation("ApprovalRequestsDecided", fields: [decidedById], references: [id], onDelete: SetNull)
+  grant        TrustGrant?         @relation("ApprovalRequestsUnderGrant", fields: [grantId], references: [id], onDelete: SetNull)
+  createdGrant TrustGrant?         @relation("ApprovalRequestsCreatingGrant", fields: [createdGrantId], references: [id], onDelete: SetNull)
+  escalation   Escalation?         @relation("ApprovalRequestEscalation", fields: [escalationId], references: [id], onDelete: SetNull)
+
+  // The sweeper's query: what is pending and due.
+  @@index([status, timeoutAt])
+  // #99's per-class measurement.
+  @@index([actionClass, status])
+  @@index([repositoryId, status])
+  // The pending queue, oldest first.
+  @@index([status, createdAt])
+  // #100's per-grant attribution.
+  @@index([grantId])
+  @@map("approval_requests")
 }
