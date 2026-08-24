@@ -17,6 +17,7 @@ import { SpecQualityProposer } from './proposers/spec-quality.proposer';
 import { RunDiagnosisProposer } from './proposers/run-diagnosis.proposer';
 import { SupervisorTask } from './invocation/supervisor.task';
 import { SnapshotService } from './snapshot/snapshot.service';
+import { TrustDigestSource } from './brief/trust-digest.source';
 
 /**
  * The supervisor (VISION §7), observe-only.
@@ -46,6 +47,7 @@ import { SnapshotService } from './snapshot/snapshot.service';
     DecompositionProposer,
     IssueShapingProposer,
     SpecQualityProposer,
+    TrustDigestSource,
     DailyBriefService,
     DailyBriefTask,
     {

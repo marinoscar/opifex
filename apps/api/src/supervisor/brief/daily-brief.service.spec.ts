@@ -7,6 +7,8 @@ import type { DecisionLogService } from '../decision-log/decision-log.service';
 import type { SnapshotService } from '../snapshot/snapshot.service';
 import type { SnapshotInput } from '../snapshot/snapshot.types';
 import { DailyBriefService } from './daily-brief.service';
+import type { TrustDigestInput } from './trust-digest';
+import type { TrustDigestSource } from './trust-digest.source';
 
 const NOW = new Date('2026-08-24T08:00:00.000Z');
 
@@ -44,6 +46,7 @@ function build(
     webhookConfigured?: boolean;
     webhookAccepted?: boolean;
     targets?: { id: string }[];
+    trust?: jest.Mock;
   } = {},
 ) {
   const collect = options.collect ?? jest.fn().mockResolvedValue(state());
@@ -64,6 +67,11 @@ function build(
     gone: false,
   });
 
+  // Defaults to "no trust data was read", which is what a deployment with no
+  // grants produces and what every pre-#100 assertion below was written
+  // against.
+  const trust = options.trust ?? jest.fn().mockResolvedValue(null);
+
   const service = new DailyBriefService(
     { collect } as unknown as SnapshotService,
     { record } as unknown as DecisionLogService,
@@ -79,13 +87,14 @@ function build(
       send: webhookSend,
     } as unknown as FallbackWebhookTransport,
     { get: () => 'https://opifex.example' } as unknown as ConfigService,
+    { collect: trust } as unknown as TrustDigestSource,
   );
 
   jest.spyOn(service['logger'], 'log').mockImplementation(() => undefined);
   jest.spyOn(service['logger'], 'warn').mockImplementation(() => undefined);
   jest.spyOn(service['logger'], 'error').mockImplementation(() => undefined);
 
-  return { service, collect, record, pushSend, webhookSend };
+  return { service, collect, record, pushSend, webhookSend, trust };
 }
 
 describe('DailyBriefService (#93)', () => {
@@ -235,5 +244,126 @@ describe('DailyBriefService (#93)', () => {
         delivered: true,
       });
     });
+  });
+});
+
+/**
+ * A trust window with `count` grant-authorized actions in it.
+ *
+ * Deliberately minimal: `trust-digest.spec.ts` owns the digest's behaviour,
+ * and what these tests are about is the WIRING — that one artifact carries
+ * both halves (ADR-0012), and that the retrospective half failing does not
+ * take the urgent half with it.
+ */
+function trustWindow(count: number): TrustDigestInput {
+  return {
+    now: NOW,
+    windowStart: new Date(NOW.getTime() - 24 * 60 * 60 * 1000),
+    actions: Array.from({ length: count }, (_, i) => ({
+      approvalId: `appr-${i}`,
+      actionClass: 're-dispatch',
+      repositoryId: 'repo-1',
+      summary: `Re-dispatched wo_${i}`,
+      targetRef: `wo_${i}`,
+      grantId: 'grant-1',
+      estimatedCostUsd: 1.5,
+      at: new Date(NOW.getTime() - (i + 1) * 60 * 60 * 1000),
+      origin: 'grant' as const,
+    })),
+    totalActions: count,
+    activeGrants: [],
+    endedGrants: [],
+    previousWindowActionsByGrant: {},
+  };
+}
+
+describe('DailyBriefService — the trust digest section (#100, ADR-0012)', () => {
+  it('carries the digest inside the ONE daily message', async () => {
+    // No second cron, no second notification, no second endpoint. ADR-0012
+    // disqualified all three: "two competing daily summaries is how both get
+    // ignored."
+    const { service, record, pushSend } = build({
+      trust: jest.fn().mockResolvedValue(trustWindow(2)),
+    });
+
+    await service.send(NOW);
+
+    expect(pushSend).toHaveBeenCalledTimes(1);
+    const text = record.mock.calls[0][0].snapshotText;
+    expect(text).toContain('Opifex daily brief');
+    expect(text).toContain('Ran under trust: 2 action(s)');
+    expect(text).toContain('Re-dispatched wo_0');
+  });
+
+  it('feeds the existing trustExecuted / trustNotShown fields', async () => {
+    const { service, record } = build({
+      trust: jest.fn().mockResolvedValue(trustWindow(3)),
+    });
+
+    await service.send(NOW);
+
+    const details = record.mock.calls[0][1][0].details;
+    expect(details.trustExecuted).toHaveLength(3);
+    expect(details.trustNotShown).toBe(0);
+  });
+
+  it('records the structured digest, not only the prose', async () => {
+    // #99's ladder and #115's renewal prompt want the numbers, not the
+    // sentence.
+    const { service, record } = build({
+      trust: jest.fn().mockResolvedValue(trustWindow(2)),
+    });
+
+    await service.send(NOW);
+
+    const trust = record.mock.calls[0][1][0].details.trust;
+    expect(trust.quiet).toBe(false);
+    expect(trust.totalCostUsd).toBe(3);
+    expect(trust.perGrant[0].grantId).toBe('grant-1');
+  });
+
+  it('mentions trust activity in the log summary of an otherwise quiet day', async () => {
+    // Nothing needed a human — that is what the ranking means — and it is
+    // also not a day whose log entry should read as if nothing happened.
+    const { service, record } = build({
+      trust: jest.fn().mockResolvedValue(trustWindow(4)),
+    });
+
+    await service.send(NOW);
+
+    expect(record.mock.calls[0][1][0].summary).toBe(
+      'Nothing needed you today. 4 action(s) ran under trust.',
+    );
+  });
+
+  it('still sends the brief when the trust read fails', async () => {
+    // #94's argument one level down: the ranked half is about what needs a
+    // human NOW, and losing it because a trust query failed would trade the
+    // urgent half for the retrospective one.
+    const { service, record } = build({
+      trust: jest.fn().mockResolvedValue(null),
+    });
+
+    await service.send(NOW);
+
+    const text = record.mock.calls[0][0].snapshotText;
+    expect(text).toContain('Ran under trust: nothing');
+    expect(record.mock.calls[0][1][0].details.trust).toBeNull();
+    expect(record.mock.calls[0][1][0].summary).toBe(
+      'Nothing needed you today.',
+    );
+  });
+
+  it('asks for the trust window at the same instant it reads state', async () => {
+    // Two clock reads a second apart is how a grant ends up reported as
+    // active in one half of the brief and expired in the other.
+    const { service, trust, collect } = build({
+      trust: jest.fn().mockResolvedValue(trustWindow(1)),
+    });
+
+    await service.send(NOW);
+
+    expect(collect).toHaveBeenCalledWith(NOW);
+    expect(trust).toHaveBeenCalledWith(NOW);
   });
 });
