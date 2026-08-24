@@ -268,6 +268,31 @@ export class DecisionLogService {
   }
 
   /**
+   * The newest proposal of one class about one subject.
+   *
+   * Exists because the `[targetKind, targetRef]` index does, and because the
+   * caller that wants it — the run summary asking for a diagnosis (#92) — is
+   * asking about a single run. Paging the whole log and filtering in memory
+   * would work today and stop working the first busy week.
+   *
+   * `proposed` only. A declined row means the supervisor looked and had
+   * nothing to say, and surfacing that on a pull request would be noise.
+   */
+  async latestProposalFor(
+    targetKind: string,
+    targetRef: string,
+    actionClass: string,
+  ): Promise<ProposalView | null> {
+    const row = await this.prisma.supervisorProposal.findFirst({
+      where: { targetKind, targetRef, actionClass, outcome: 'proposed' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      include: { invocation: { select: { snapshotTruncated: true } } },
+    });
+
+    return row ? toProposalView(row) : null;
+  }
+
+  /**
    * One invocation, INCLUDING the snapshot text.
    *
    * The heavy field is on this endpoint and not on the proposal list on

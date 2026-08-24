@@ -4,6 +4,8 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { DecisionLogController } from './decision-log/decision-log.controller';
 import { DecisionLogService } from './decision-log/decision-log.service';
 import { SupervisorService } from './invocation/supervisor.service';
+import { SUPERVISOR_PROPOSERS } from './invocation/supervisor-proposer.port';
+import { RunDiagnosisProposer } from './proposers/run-diagnosis.proposer';
 import { SupervisorTask } from './invocation/supervisor.task';
 import { SnapshotService } from './snapshot/snapshot.service';
 
@@ -31,6 +33,16 @@ import { SnapshotService } from './snapshot/snapshot.service';
     DecisionLogService,
     SupervisorService,
     SupervisorTask,
+    RunDiagnosisProposer,
+    {
+      // The proposer list, assembled here so the set is readable in one place
+      // rather than discovered by scanning for a decorator. Every entry
+      // returns drafts and nothing else — the port's signature is what makes
+      // that true of proposers that do not exist yet.
+      provide: SUPERVISOR_PROPOSERS,
+      inject: [RunDiagnosisProposer],
+      useFactory: (...proposers: RunDiagnosisProposer[]) => proposers,
+    },
   ],
   exports: [SnapshotService, DecisionLogService, SupervisorService],
 })
