@@ -9,6 +9,7 @@ import { ContractsModule } from './contracts/contracts.module';
 import { RunSummaryModule } from './run-summary/run-summary.module';
 import { MergeStateModule } from './merge-state/merge-state.module';
 import { SupervisorModule } from './supervisor/supervisor.module';
+import { AutonomyModule } from './autonomy/autonomy.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { AuthModule } from './auth/auth.module';
@@ -44,6 +45,11 @@ import configuration from './config/configuration';
   imports: [
     MergeStateModule,
     SupervisorModule,
+    // The never-trustable boundary (#95, ADR-0013). Nothing executes yet, so
+    // nothing injects it — registered anyway so the guard is part of the
+    // application graph before the first executor needs it, rather than being
+    // wired up in the same pull request that first has something to refuse.
+    AutonomyModule,
     RunSummaryModule,
     ContractsModule,
     // Configuration

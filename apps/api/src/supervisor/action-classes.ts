@@ -68,6 +68,22 @@ export interface ActionClass {
    * lets the ladder distinguish "not yet measured" from "never proposed".
    */
   readonly hasProposer: boolean;
+  /**
+   * Whether this class's APPROVED EFFECT spends money.
+   *
+   * Not "does a proposal of this class cost anything" — every class costs the
+   * supervisor's own model invocation, so that reading would be `true`
+   * everywhere and would carry no information. This flags the classes whose
+   * effect, once a human approves it, causes a runner or model invocation with
+   * a cost beyond the invocation that proposed it.
+   *
+   * Recorded because VISION §8's timeout policy has three buckets, and only two
+   * of them are about reversibility: "reversible -> auto-approve on timeout;
+   * irreversible -> park and escalate; spends money -> deny on timeout". A
+   * class can be perfectly reversible and still belong in the third bucket, so
+   * `reversibility` alone cannot decide what silence means (#95, #98).
+   */
+  readonly spendsMoney: boolean;
 }
 
 /**
@@ -104,6 +120,8 @@ export const ACTION_CLASSES: readonly ActionClass[] = Object.freeze([
     reversibility: 'reversible',
     autonomyEligible: true,
     hasProposer: true,
+    // Narration. The only cost is the invocation that produced it.
+    spendsMoney: false,
   }),
   Object.freeze({
     id: 're-dispatch',
@@ -115,6 +133,9 @@ export const ACTION_CLASSES: readonly ActionClass[] = Object.freeze([
     reversibility: 'reversible-with-effort',
     autonomyEligible: true,
     hasProposer: false,
+    // A runner invocation at attempt n+1, on the same quota the factory
+    // is competing for.
+    spendsMoney: true,
   }),
   Object.freeze({
     id: 'decomposition',
@@ -126,6 +147,9 @@ export const ACTION_CLASSES: readonly ActionClass[] = Object.freeze([
     reversibility: 'reversible-with-effort',
     autonomyEligible: true,
     hasProposer: true,
+    // Child issues become dispatchable work orders, each with a runner
+    // invocation behind it.
+    spendsMoney: true,
   }),
   Object.freeze({
     id: 'issue-shaping',
@@ -136,6 +160,9 @@ export const ACTION_CLASSES: readonly ActionClass[] = Object.freeze([
     reversibility: 'reversible-with-effort',
     autonomyEligible: true,
     hasProposer: true,
+    // The edit itself is free; the reshaped issue is what gets dispatched,
+    // and a shaped issue exists in order to be run.
+    spendsMoney: true,
   }),
   Object.freeze({
     id: 'spec-quality-feedback',
@@ -147,6 +174,7 @@ export const ACTION_CLASSES: readonly ActionClass[] = Object.freeze([
     reversibility: 'reversible',
     autonomyEligible: true,
     hasProposer: true,
+    spendsMoney: false,
   }),
   Object.freeze({
     id: 'daily-brief',
@@ -158,6 +186,7 @@ export const ACTION_CLASSES: readonly ActionClass[] = Object.freeze([
     reversibility: 'reversible',
     autonomyEligible: true,
     hasProposer: true,
+    spendsMoney: false,
   }),
   Object.freeze({
     id: 'quarantine-decision',
@@ -173,6 +202,10 @@ export const ACTION_CLASSES: readonly ActionClass[] = Object.freeze([
     // conservative reading of it.
     autonomyEligible: false,
     hasProposer: false,
+    // Releasing a work order makes it dispatchable again rather than
+    // dispatching it; the deterministic dispatcher decides that, and it is
+    // the dispatch that spends.
+    spendsMoney: false,
   }),
 ]);
 
@@ -210,4 +243,18 @@ export function getActionClass(id: string): ActionClass | undefined {
  */
 export function isAutonomyEligible(id: string): boolean {
   return BY_ID.get(id)?.autonomyEligible === true;
+}
+
+/**
+ * Whether this class's approved effect spends money (VISION §8).
+ *
+ * An UNKNOWN class does not, matching `isAutonomyEligible`'s convention of
+ * refusing to infer anything about an id it does not recognise. The two
+ * defaults point the same way for the same reason: the caller that gets
+ * `false` here is a timeout policy choosing between "deny" and "escalate", and
+ * an unknown class should not be routed by a guess about its cost. It should
+ * fail the `isActionClass` check at the boundary long before it reaches this.
+ */
+export function spendsMoney(id: string): boolean {
+  return BY_ID.get(id)?.spendsMoney === true;
 }

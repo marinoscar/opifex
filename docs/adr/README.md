@@ -27,6 +27,7 @@ one.
 | [0010](0010-schema-versioning-and-compatibility.md) | Schemas are versioned per major, strict, and the producer emits what the consumer speaks  | Accepted | [#34](https://github.com/marinoscar/opifex/issues/34)   |
 | [0011](0011-supervisor-action-class-granularity.md) | Grant autonomy per (capability, effect) pair, from one frozen registry                    | Proposed | [#218](https://github.com/marinoscar/opifex/issues/218) |
 | [0012](0012-one-daily-artifact.md)                  | The trust digest extends the daily brief rather than competing with it                    | Proposed | [#226](https://github.com/marinoscar/opifex/issues/226) |
+| [0013](0013-never-trustable-effects.md)             | Never-trustable is a list of effects, checked at the execution boundary                   | Proposed | [#233](https://github.com/marinoscar/opifex/issues/233) |
 
 `0000-template.md` is the template. It is not a decision and never becomes one;
 see [Numbering](#numbering) for what that means for `Decision: ADR-0000`.
