@@ -91,3 +91,18 @@ export interface SilenceVerdict {
    */
   reason: string;
 }
+
+/**
+ * How well a runner can report that it has hit a rate limit.
+ *
+ * Mirrors `RunnerSignalQuality` in schema.prisma, restated for the same reason
+ * the fidelities are: the coverage derivation must stay a pure function over
+ * plain data. A spec pins these against the Prisma enum.
+ *
+ * The schema states the consequence rather than leaving it implied:
+ * `structured` means a reset time arrives as data and a blocked run can be
+ * PARKED with a dated resume (#56); `heuristic` means the reset is inferred
+ * from prose, so auto-resume works but is approximate; `none` means "rate
+ * limits are not distinguishable — a blocked run escalates."
+ */
+export type RateLimitSignal = 'structured' | 'heuristic' | 'none';
