@@ -4,6 +4,7 @@ import {
   getActionClass,
   isActionClass,
   isAutonomyEligible,
+  spendsMoney,
 } from './action-classes';
 
 describe('action-class taxonomy (#91, ADR-0011)', () => {
@@ -107,6 +108,50 @@ describe('action-class taxonomy (#91, ADR-0011)', () => {
           expect(entry.autonomyEligible).toBe(false);
         }
       }
+    });
+  });
+
+  describe('spend classification (VISION §8 timeout policy)', () => {
+    // "Reversible -> auto-approve on timeout; irreversible -> park and
+    // escalate; spends money -> deny on timeout." The third bucket is distinct
+    // from the first two, so `reversibility` alone cannot decide what silence
+    // means and the registry has to say (#95, #98).
+    it('classifies every class', () => {
+      for (const entry of ACTION_CLASSES) {
+        expect(typeof entry.spendsMoney).toBe('boolean');
+      }
+    });
+
+    it('does not mean "the supervisor invocation costs something"', () => {
+      // Every class costs that, so the flag would carry no information if it
+      // meant that. It means the APPROVED EFFECT spends.
+      expect(ACTION_CLASSES.some((entry) => !entry.spendsMoney)).toBe(true);
+      expect(ACTION_CLASSES.some((entry) => entry.spendsMoney)).toBe(true);
+    });
+
+    it('flags the classes whose effect causes a runner or model invocation', () => {
+      expect(
+        ACTION_CLASSES.filter((entry) => entry.spendsMoney).map((e) => e.id),
+      ).toEqual(['re-dispatch', 'decomposition', 'issue-shaping']);
+    });
+
+    it('does not flag the classes that only write to the log or notify', () => {
+      for (const id of [
+        'run-diagnosis',
+        'spec-quality-feedback',
+        'daily-brief',
+        'quarantine-decision',
+      ]) {
+        expect(spendsMoney(id)).toBe(false);
+      }
+    });
+
+    it('treats an unknown class as not spending, matching isAutonomyEligible', () => {
+      // Both defaults refuse to infer anything about an id the registry does
+      // not recognise; an unknown class should have failed `isActionClass` at
+      // the boundary long before reaching either.
+      expect(spendsMoney('re-dispatches')).toBe(false);
+      expect(spendsMoney('')).toBe(false);
     });
   });
 
