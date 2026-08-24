@@ -46,6 +46,7 @@ function runRow(overrides: Record<string, unknown> = {}) {
       identity: 'wo_opifex_312_a3f91c2_a1',
       issueNumber: 312,
       issueTitle: 'Add the thing',
+      acceptanceCriteria: ['a', 'b'],
       repository: { owner: 'marinoscar', name: 'opifex' },
     },
     ...overrides,
@@ -151,6 +152,7 @@ describe('SnapshotService (#88)', () => {
         stopReason: null,
         pullRequestNumber: null,
         pullRequestState: null,
+        acceptanceCriteriaCount: 2,
       });
     });
 

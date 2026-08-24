@@ -10,6 +10,7 @@ import {
 } from './invocation/supervisor-proposer.port';
 import { DecompositionProposer } from './proposers/decomposition.proposer';
 import { IssueShapingProposer } from './proposers/issue-shaping.proposer';
+import { SpecQualityProposer } from './proposers/spec-quality.proposer';
 import { RunDiagnosisProposer } from './proposers/run-diagnosis.proposer';
 import { SupervisorTask } from './invocation/supervisor.task';
 import { SnapshotService } from './snapshot/snapshot.service';
@@ -41,6 +42,7 @@ import { SnapshotService } from './snapshot/snapshot.service';
     RunDiagnosisProposer,
     DecompositionProposer,
     IssueShapingProposer,
+    SpecQualityProposer,
     {
       // The proposer list, assembled here so the set is readable in one place
       // rather than discovered by scanning for a decorator. Every entry
@@ -51,6 +53,7 @@ import { SnapshotService } from './snapshot/snapshot.service';
         RunDiagnosisProposer,
         DecompositionProposer,
         IssueShapingProposer,
+        SpecQualityProposer,
       ],
       useFactory: (...proposers: SupervisorProposer[]) => proposers,
     },

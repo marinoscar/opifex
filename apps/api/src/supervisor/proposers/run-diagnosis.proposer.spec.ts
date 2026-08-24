@@ -27,6 +27,7 @@ function run(overrides: Partial<SnapshotRun> = {}): SnapshotRun {
     stopReason: null,
     pullRequestNumber: null,
     pullRequestState: null,
+    acceptanceCriteriaCount: 3,
     ...overrides,
   };
 }

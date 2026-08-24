@@ -211,6 +211,7 @@ function toSnapshotRun(run: RunRow): SnapshotRun {
     pullRequestNumber: run.pullRequestNumber,
     pullRequestState:
       run.pullRequestState === null ? null : String(run.pullRequestState),
+    acceptanceCriteriaCount: run.workOrder.acceptanceCriteria.length,
   };
 }
 
