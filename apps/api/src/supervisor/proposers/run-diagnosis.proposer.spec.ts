@@ -61,14 +61,12 @@ function context(runs: SnapshotRun[], ask = jest.fn()): ProposerContext {
 }
 
 function answer(text: string) {
-  return jest
-    .fn()
-    .mockResolvedValue({
-      text,
-      costUsd: 0.01,
-      tokensInput: 10,
-      tokensOutput: 5,
-    });
+  return jest.fn().mockResolvedValue({
+    text,
+    costUsd: 0.01,
+    tokensInput: 10,
+    tokensOutput: 5,
+  });
 }
 
 describe('RunDiagnosisProposer (#92)', () => {
