@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 
+import { NotificationsModule } from '../notifications/notifications.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { DailyBriefService } from './brief/daily-brief.service';
+import { DailyBriefTask } from './brief/daily-brief.task';
 import { DecisionLogController } from './decision-log/decision-log.controller';
 import { DecisionLogService } from './decision-log/decision-log.service';
 import { SupervisorService } from './invocation/supervisor.service';
@@ -32,7 +35,7 @@ import { SnapshotService } from './snapshot/snapshot.service';
  * here is the failure this module's shape exists to make visible in review.
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, NotificationsModule],
   controllers: [DecisionLogController],
   providers: [
     SnapshotService,
@@ -43,6 +46,8 @@ import { SnapshotService } from './snapshot/snapshot.service';
     DecompositionProposer,
     IssueShapingProposer,
     SpecQualityProposer,
+    DailyBriefService,
+    DailyBriefTask,
     {
       // The proposer list, assembled here so the set is readable in one place
       // rather than discovered by scanning for a decorator. Every entry
@@ -58,6 +63,11 @@ import { SnapshotService } from './snapshot/snapshot.service';
       useFactory: (...proposers: SupervisorProposer[]) => proposers,
     },
   ],
-  exports: [SnapshotService, DecisionLogService, SupervisorService],
+  exports: [
+    SnapshotService,
+    DecisionLogService,
+    SupervisorService,
+    DailyBriefService,
+  ],
 })
 export class SupervisorModule {}

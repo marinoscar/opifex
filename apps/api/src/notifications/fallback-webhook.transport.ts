@@ -81,7 +81,7 @@ export class FallbackWebhookTransport implements NotificationTransport {
             `Blast radius: ${payload.blastRadius}\n` +
             `If ignored: ${payload.ifIgnored}\n\n` +
             `${payload.url}`,
-          priority: 'high',
+          priority: payload.priority,
           escalationId: payload.escalationId,
           kind: payload.kind,
           raisedAt: payload.raisedAt,
@@ -103,7 +103,8 @@ export class FallbackWebhookTransport implements NotificationTransport {
       }
 
       this.logger.log(
-        `Escalation ${payload.escalationId} sent via the fallback webhook`,
+        `${payload.escalationId ? `Escalation ${payload.escalationId}` : payload.kind} ` +
+          'sent via the fallback webhook',
       );
       return {
         targetId: target.id,

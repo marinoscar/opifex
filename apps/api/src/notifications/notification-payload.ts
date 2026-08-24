@@ -8,8 +8,16 @@
  * always survives is the one that says least.
  */
 export interface NotificationPayload {
-  /** The escalation this is about, for the receipt and the deep link. */
-  escalationId: string;
+  /**
+   * The escalation this is about, for the receipt and the deep link.
+   *
+   * OPTIONAL, because not everything sent through this transport is an
+   * escalation. The daily brief (#93) is deliberately not one — VISION §8
+   * defines the brief as "the things that did NOT warrant waking someone" —
+   * so it has no escalation row, and minting one would inflate the escalation
+   * lifecycle and the latency percentiles computed over it.
+   */
+  escalationId?: string;
   /**
    * The capability token the device posts back to confirm delivery.
    *
@@ -17,8 +25,23 @@ export interface NotificationPayload {
    * service worker has no session and no bearer token; requiring one would
    * mean either no receipts or a token stored where a service worker can read
    * it, and this is neither.
+   *
+   * Absent for anything that is not an escalation. Receipts exist to prove
+   * somebody was TOLD about a stall, and a brief nobody read is a brief, not
+   * a missed escalation — issuing a token that resolves to no escalation
+   * would make the receipt endpoint accept a credential for nothing.
    */
-  receiptId: string;
+  receiptId?: string;
+  /**
+   * How loudly to arrive.
+   *
+   * `high` interrupts; `normal` waits to be looked at. The distinction is the
+   * whole of VISION §8's batching goal — "not fewer decisions but decisions
+   * batched and moved off the critical path" — and a brief delivered at
+   * escalation priority would undo it by being the interruption it exists to
+   * replace.
+   */
+  priority: 'high' | 'normal';
 
   /** Notification title. Short enough for a lock screen. */
   title: string;
@@ -129,6 +152,7 @@ export function buildPayload(
   return {
     escalationId: escalation.id,
     receiptId,
+    priority: 'high',
     title: titleFor(escalation.kind),
     body: escalation.summary,
     // The detail already names the numbers that produced the decision (#47:

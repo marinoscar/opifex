@@ -28,6 +28,7 @@ const PAYLOAD = {
   url: 'https://opifex.test/runs',
   kind: 'run_stalled',
   raisedAt: '2026-08-22T12:00:00.000Z',
+  priority: 'high' as const,
 } satisfies NotificationPayload;
 
 function transport(env: Record<string, unknown> = {}) {

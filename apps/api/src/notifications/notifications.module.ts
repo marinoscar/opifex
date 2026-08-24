@@ -28,6 +28,15 @@ import { WebPushTransport } from './web-push.transport';
     PushSubscriptionsService,
     EscalationDispatcher,
   ],
-  exports: [EscalationDispatcher, PushSubscriptionsService],
+  // The two transports are exported so the daily brief (#93) can reuse them
+  // without minting an escalation to ride. VISION §8 defines the brief as the
+  // things that did NOT warrant waking someone, and an escalation row for it
+  // would inflate the lifecycle and the latency percentiles computed over it.
+  exports: [
+    EscalationDispatcher,
+    PushSubscriptionsService,
+    WebPushTransport,
+    FallbackWebhookTransport,
+  ],
 })
 export class NotificationsModule {}
