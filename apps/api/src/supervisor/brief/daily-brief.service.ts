@@ -7,7 +7,9 @@ import { PushSubscriptionsService } from '../../notifications/push-subscriptions
 import { WebPushTransport } from '../../notifications/web-push.transport';
 import { DecisionLogService } from '../decision-log/decision-log.service';
 import { SnapshotService } from '../snapshot/snapshot.service';
-import { composeBrief, rankBrief } from './daily-brief';
+import { type DailyBrief, composeBrief, rankBrief } from './daily-brief';
+import { type TrustDigest, buildTrustDigest } from './trust-digest';
+import { TrustDigestSource } from './trust-digest.source';
 
 /**
  * Compose, record and deliver the daily brief (#93).
@@ -39,6 +41,19 @@ import { composeBrief, rankBrief } from './daily-brief';
  * sent is in the log where an operator can find it, and the log entry says
  * delivery failed — which is the same distinction #58 insists on between "we
  * tried to tell you" and "we never noticed".
+ *
+ * ## One artifact, two halves (#100, ADR-0012)
+ *
+ * The trust digest is gathered here and rendered as a SECTION of this brief.
+ * No second cron, no second notification, no second endpoint: ADR-0012
+ * disqualified all three, because "two competing daily summaries is how both
+ * get ignored."
+ *
+ * The digest is also gathered SECOND and defensively. `TrustDigestSource`
+ * returns null rather than throwing, and a null digest means the brief goes
+ * out with its pre-#100 trust line. The ranked half is about what needs a
+ * human now; losing it because a trust query failed would trade the urgent
+ * half for the retrospective one.
  */
 @Injectable()
 export class DailyBriefService {
@@ -51,6 +66,7 @@ export class DailyBriefService {
     private readonly push: WebPushTransport,
     private readonly fallback: FallbackWebhookTransport,
     private readonly config: ConfigService,
+    private readonly trust: TrustDigestSource,
   ) {}
 
   /** Compose, record, deliver. Never throws. */
@@ -69,7 +85,10 @@ export class DailyBriefService {
       return { proposalId: null, delivered: false };
     }
 
-    const brief = rankBrief(state);
+    const digestInput = await this.trust.collect(now);
+    const digest = digestInput ? buildTrustDigest(digestInput) : undefined;
+
+    const brief = rankBrief(state, digest);
     const text = composeBrief(brief, state);
     const delivered = await this.deliver(brief.quiet, text, now);
 
@@ -93,15 +112,29 @@ export class DailyBriefService {
             // answer, not the absence of one, and #90 needs the log to have
             // no gaps.
             outcome: 'proposed',
-            summary: brief.quiet
-              ? 'Nothing needed you today.'
-              : `${brief.items.length} item(s) need you; top: ${brief.items[0].headline}`,
+            summary: proposalSummary(brief, digest),
             reasoning: text,
             targetKind: 'factory',
             details: {
               items: brief.items,
               trustExecuted: brief.trustExecuted,
               trustNotShown: brief.trustNotShown,
+              // The structured digest goes into the log alongside the prose,
+              // so "what ran under trust" is queryable rather than only
+              // readable. #99's ladder and #115's renewal prompt both want the
+              // numbers, not the sentence.
+              trust: digest
+                ? {
+                    windowStart: digestInput?.windowStart.toISOString() ?? null,
+                    quiet: digest.quiet,
+                    totalCostUsd: digest.totalCostUsd,
+                    costUnknownActions: digest.costUnknownActions,
+                    perGrant: digest.perGrant,
+                    grantStates: digest.grantStates,
+                    endedGrants: digest.endedGrants,
+                    anomalies: digest.anomalies,
+                  }
+                : null,
               delivered,
             },
           },
@@ -171,6 +204,25 @@ export class DailyBriefService {
 
     return anyAccepted;
   }
+}
+
+/**
+ * The one line the decision log shows for this brief.
+ *
+ * The ranked half sets the sentence; the trust half APPENDS to it rather than
+ * replacing it. A day where nothing needed a human but twelve actions ran
+ * unattended is still "nothing needed you" — that is what the ranking means —
+ * and it is also not a day whose log entry should read as if nothing happened.
+ */
+function proposalSummary(brief: DailyBrief, digest?: TrustDigest): string {
+  const base = brief.quiet
+    ? 'Nothing needed you today.'
+    : `${brief.items.length} item(s) need you; top: ${brief.items[0].headline}`;
+
+  const ranUnderTrust = digest ? digest.executed.length + digest.notShown : 0;
+  if (ranUnderTrust === 0) return base;
+
+  return `${base} ${ranUnderTrust} action(s) ran under trust.`;
 }
 
 function firstLine(text: string): string {

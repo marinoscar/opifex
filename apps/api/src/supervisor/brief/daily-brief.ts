@@ -1,4 +1,18 @@
 import type { SnapshotInput } from '../snapshot/snapshot.types';
+import {
+  type TrustDigest,
+  type TrustExecutedItem,
+  renderTrustDigest,
+} from './trust-digest';
+
+/**
+ * Re-exported so the name stays where ADR-0012 put it.
+ *
+ * The definition moved to `trust-digest.ts` with #100, because that is now
+ * what produces these items. Every existing importer keeps working, and the
+ * shape is unchanged apart from three OPTIONAL fields — see the interface.
+ */
+export type { TrustExecutedItem };
 
 /**
  * The daily brief (#93, ADR-0012).
@@ -69,15 +83,20 @@ export interface DailyBrief {
    * list silently omits something that happened without them.
    */
   trustExecuted: TrustExecutedItem[];
-  /** How many trust-executed actions exist beyond those listed. Always 0 today. */
+  /** How many trust-executed actions exist beyond those listed. */
   trustNotShown: number;
-}
-
-export interface TrustExecutedItem {
-  actionClass: string;
-  summary: string;
-  ref: string;
-  at: string;
+  /**
+   * The rest of the trust digest (#100): cost per grant, budget and expiry
+   * headroom, grants that ended, and what looked unusual.
+   *
+   * OPTIONAL, and that is load-bearing rather than laziness. Absent means "no
+   * trust data was read" — which is what a deployment with no grants, or one
+   * whose digest query failed, produces — and it renders as the pre-#100
+   * sentence rather than as a set of empty headings. #94's argument, applied
+   * one level down: the ranked half of the brief must not be lost because the
+   * retrospective half could not be computed.
+   */
+  trustDigest?: TrustDigest;
 }
 
 /** How many ranked items the brief carries. */
@@ -89,8 +108,17 @@ export const MAX_BRIEF_ITEMS = 12;
  * PURE, and takes the same snapshot input the supervisor reasons from, so the
  * brief and the proposals in the log describe one factory rather than two
  * reads of it a second apart.
+ *
+ * `digest` is optional and is NOT consulted by the ranking. ADR-0012 gives the
+ * reason: the two halves answer different questions, and letting what ran
+ * under trust reorder what needs a human would blur the one property #93 says
+ * the brief is worth building for — that the top item is reliably the thing
+ * most worth looking at.
  */
-export function rankBrief(state: SnapshotInput): DailyBrief {
+export function rankBrief(
+  state: SnapshotInput,
+  digest?: TrustDigest,
+): DailyBrief {
   const items: BriefItem[] = [];
 
   for (const escalation of state.escalations) {
@@ -167,8 +195,9 @@ export function rankBrief(state: SnapshotInput): DailyBrief {
   return {
     items: ranked,
     quiet: ranked.length === 0,
-    trustExecuted: [],
-    trustNotShown: 0,
+    trustExecuted: digest?.executed ?? [],
+    trustNotShown: digest?.notShown ?? 0,
+    ...(digest ? { trustDigest: digest } : {}),
   };
 }
 
@@ -220,6 +249,11 @@ export function composeBrief(brief: DailyBrief, state: SnapshotInput): string {
  * action that happened without the operator and was not reported.
  */
 export function trustSection(brief: DailyBrief): string[] {
+  // #100's digest renders itself, because it knows about cost, headroom,
+  // endings and anomalies — and because it owns the one-line quiet form, which
+  // depends on facts (are there grants at all?) this function cannot see.
+  if (brief.trustDigest) return renderTrustDigest(brief.trustDigest);
+
   if (brief.trustExecuted.length === 0 && brief.trustNotShown === 0) {
     return [
       'Ran under trust: nothing. No action class is promoted, so every action ' +

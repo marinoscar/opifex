@@ -11,6 +11,7 @@ import {
   rankBrief,
   trustSection,
 } from './daily-brief';
+import { type TrustDigest, buildTrustDigest } from './trust-digest';
 
 const NOW = new Date('2026-08-24T12:00:00.000Z');
 
@@ -281,5 +282,97 @@ describe('trustSection (ADR-0012)', () => {
 
     expect(lines.join('\n')).toContain('4 more not listed');
     expect(lines.join('\n')).toContain('meant to be complete');
+  });
+});
+
+describe('trustSection with a digest (#100)', () => {
+  /** The smallest digest that says "nothing, and nothing to say about it". */
+  function quietDigest(): TrustDigest {
+    return buildTrustDigest({
+      now: NOW,
+      windowStart: new Date(NOW.getTime() - 24 * 60 * 60 * 1000),
+      actions: [],
+      totalActions: 0,
+      activeGrants: [],
+      endedGrants: [],
+      previousWindowActionsByGrant: {},
+    });
+  }
+
+  function digestWith(count: number): TrustDigest {
+    return buildTrustDigest({
+      now: NOW,
+      windowStart: new Date(NOW.getTime() - 24 * 60 * 60 * 1000),
+      actions: Array.from({ length: count }, (_, i) => ({
+        approvalId: `appr-${i}`,
+        actionClass: 're-dispatch',
+        repositoryId: 'repo-1',
+        summary: `Re-dispatched wo_${i}`,
+        targetRef: `wo_${i}`,
+        grantId: 'grant-1',
+        estimatedCostUsd: 0.25,
+        at: new Date(NOW.getTime() - (i + 1) * 60 * 60 * 1000),
+        origin: 'grant' as const,
+      })),
+      totalActions: count,
+      activeGrants: [],
+      endedGrants: [],
+      previousWindowActionsByGrant: {},
+    });
+  }
+
+  it('leaves the ranked half alone — the digest never reorders it', () => {
+    // ADR-0012: the two halves answer different questions, and letting what
+    // ran under trust reorder what needs a human would blur the one property
+    // #93 says the brief is worth building for.
+    const input = state({
+      escalations: [escalation()],
+      quarantinedWorkOrders: [order()],
+    });
+
+    expect(rankBrief(input, digestWith(5)).items).toEqual(
+      rankBrief(input).items,
+    );
+  });
+
+  it('fills trustExecuted and trustNotShown from the digest', () => {
+    const brief = rankBrief(state(), digestWith(3));
+
+    expect(brief.trustExecuted).toHaveLength(3);
+    expect(brief.trustNotShown).toBe(0);
+    expect(brief.trustDigest).toBeDefined();
+  });
+
+  it('keeps a quiet trust section to one line', () => {
+    const lines = trustSection(rankBrief(state(), quietDigest()));
+
+    expect(lines).toHaveLength(1);
+  });
+
+  it('keeps the whole brief short on a day that was quiet both ways', () => {
+    const input = state();
+    const text = composeBrief(rankBrief(input, quietDigest()), input);
+
+    expect(text.split('\n').length).toBeLessThan(10);
+    expect(text).toContain('Ran under trust: nothing');
+  });
+
+  it('renders the pre-#100 line when no digest was read at all', () => {
+    // Absent means "no trust data was read", not "nothing ran", and it must
+    // not render as a set of empty headings.
+    const lines = trustSection(rankBrief(state()));
+
+    expect(lines.join('\n')).toContain('No action class is promoted');
+  });
+
+  it('lists what ran under trust below the ranked items', () => {
+    const input = state({ escalations: [escalation()] });
+    const text = composeBrief(rankBrief(input, digestWith(2)), input);
+
+    expect(text.indexOf('1. Unacknowledged')).toBeLessThan(
+      text.indexOf('Ran under trust:'),
+    );
+    expect(text).toContain('Re-dispatched wo_0');
+    expect(text).toContain('Re-dispatched wo_1');
   });
 });
