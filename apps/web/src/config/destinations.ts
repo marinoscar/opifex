@@ -36,11 +36,13 @@ import PaidIcon from '@mui/icons-material/Paid';
 import SettingsIcon from '@mui/icons-material/Settings';
 import PeopleIcon from '@mui/icons-material/People';
 import AdminIcon from '@mui/icons-material/AdminPanelSettings';
+import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
 
 export type DestinationKey =
   | 'dashboard'
   | 'runs'
   | 'approvals'
+  | 'trust'
   | 'queue'
   | 'projects'
   | 'cost'
@@ -91,6 +93,9 @@ export const DESTINATION_ROUTES: Record<DestinationKey, readonly string[]> = {
   // `/approvals/:id` is covered by this prefix — the detail screen is the
   // destination's whole point, not a place of its own.
   approvals: ['/approvals'],
+  // `/trust/grants/:id` is covered by this prefix. A grant's detail screen is
+  // not a place of its own — it is the destination's whole point.
+  trust: ['/trust'],
   queue: ['/queue'],
   projects: ['/projects'],
   cost: ['/cost'],
@@ -224,6 +229,27 @@ export const DESTINATIONS: readonly Destination[] = [
     // reaching to read.
     status: 'live',
     permission: 'approvals:read',
+  },
+  {
+    key: 'trust',
+    label: 'Trust',
+    compactLabel: 'Trust',
+    Icon: VerifiedUserIcon,
+    path: '/trust',
+    section: 'operate',
+    // LIVE as of #101, gaining its real permission in the same pull request as
+    // the endpoints — the rule this file's header sets. `trust:read` is what
+    // `TrustController` and `PromotionController` both enforce on every read,
+    // and all three seeded roles hold it: a viewer may see what runs
+    // unattended and why it stopped.
+    //
+    // NOT `trust:revoke`, which a viewer lacks. Gating the destination on the
+    // acting permission would hide from a viewer the one screen that says what
+    // the factory is currently allowed to do without asking — a destination
+    // gate is about REACHABILITY, and the revoke and demote controls gate
+    // themselves inside the page.
+    status: 'live',
+    permission: 'trust:read',
   },
   {
     key: 'queue',

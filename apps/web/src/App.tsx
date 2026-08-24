@@ -25,6 +25,8 @@ const WorkOrderDetailPage = lazy(() => import('./pages/WorkOrderDetailPage'));
 const QueuePage = lazy(() => import('./pages/QueuePage'));
 const ApprovalsPage = lazy(() => import('./pages/ApprovalsPage'));
 const ApprovalDetailPage = lazy(() => import('./pages/ApprovalDetailPage'));
+const TrustPage = lazy(() => import('./pages/TrustPage'));
+const TrustGrantDetailPage = lazy(() => import('./pages/TrustGrantDetailPage'));
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
 const CostPage = lazy(() => import('./pages/CostPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
@@ -111,6 +113,42 @@ function AppRoutes() {
                       fallback={<Navigate to="/" replace />}
                     >
                       <ApprovalDetailPage />
+                    </RequirePermission>
+                  }
+                />
+                {/* Trust (#101, epic #22). Gated on `trust:read`, which is
+                    the string `TrustController` and `PromotionController` both
+                    enforce on every read, and which all three seeded roles
+                    hold — a viewer may see what runs unattended and stop
+                    nothing.
+
+                    `trust:revoke` is deliberately NOT a route gate, for the
+                    same reason `approvals:decide` is not: a viewer is entitled
+                    to READ what may run unattended, and what they must not get
+                    is the buttons. The page gates those itself. Note that
+                    `trust:revoke` is held by contributors as well as admins —
+                    narrowing autonomy is always the safe direction, and an
+                    operator who can see a grant misbehaving must never have to
+                    find an admin before stopping it. */}
+                <Route
+                  path="/trust"
+                  element={
+                    <RequirePermission
+                      permission="trust:read"
+                      fallback={<Navigate to="/" replace />}
+                    >
+                      <TrustPage />
+                    </RequirePermission>
+                  }
+                />
+                <Route
+                  path="/trust/grants/:id"
+                  element={
+                    <RequirePermission
+                      permission="trust:read"
+                      fallback={<Navigate to="/" replace />}
+                    >
+                      <TrustGrantDetailPage />
                     </RequirePermission>
                   }
                 />

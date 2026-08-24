@@ -237,6 +237,8 @@ describe('destinations — the table itself', () => {
    *   cockpit/cost.controller.ts    → PERMISSIONS.RUNS_READ         (#80)
    *   repositories.controller.ts    → PERMISSIONS.PROJECTS_READ     (#43)
    *   approvals.controller.ts       → PERMISSIONS.APPROVALS_READ    (#98)
+   *   trust/trust.controller.ts     → PERMISSIONS.TRUST_READ        (#101)
+   *   promotion/promotion.controller.ts → PERMISSIONS.TRUST_READ    (#101)
    * Nothing else in `apps/api` guards a page this app routes to.
    */
   const ENFORCED_PERMISSIONS = [
@@ -246,6 +248,7 @@ describe('destinations — the table itself', () => {
     'runs:read',
     'projects:read',
     'approvals:read',
+    'trust:read',
   ];
 
   it('gates the admin destinations on the permission the API enforces', () => {
@@ -270,6 +273,17 @@ describe('destinations — the table itself', () => {
         `${destination.key} requires ${destination.permission}, which no controller enforces`,
       ).toContain(destination.permission);
     }
+  });
+
+  it('gates trust on the READ permission, not the revoking one', () => {
+    // #101. `TrustController` and `PromotionController` both enforce
+    // `trust:read` on every read, and all three seeded roles hold it. Gating
+    // the DESTINATION on `trust:revoke` instead would hide from a viewer the
+    // one screen that says what the factory may currently do unattended — a
+    // destination gate is about REACHABILITY, and the revoke and demote
+    // controls gate themselves inside the page.
+    expect(byKey.trust.permission).toBe('trust:read');
+    expect(byKey.trust.status).toBe('live');
   });
 
   it('gates approvals on the READ permission, not the decide one', () => {
@@ -338,6 +352,9 @@ describe('destinations — the table itself', () => {
       'runs',
       'settings',
       'system',
+      // #101, in the same pull request as `TrustController` and
+      // `PromotionController`.
+      'trust',
       'users',
     ]);
   });
@@ -480,6 +497,7 @@ describe('destinations — the bottom-bar split', () => {
       // deep-links to the approval itself, so the bar is not how a phone
       // reaches it. It sits in the sheet, in table order.
       'approvals',
+      'trust',
       'projects',
       'cost',
       'settings',

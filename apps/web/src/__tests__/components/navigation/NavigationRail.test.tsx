@@ -59,6 +59,10 @@ const ADMIN_PERMISSIONS = [
   // #98 gave the Approvals destination a real permission, and `prisma/seed.ts`
   // grants `approvals:read` to all three roles.
   'approvals:read',
+  // #101 gave the Trust destination a real permission, and `prisma/seed.ts`
+  // grants `trust:read` to all three roles — a viewer may see what runs
+  // unattended and stop nothing.
+  'trust:read',
 ];
 
 /**
@@ -78,6 +82,10 @@ const VIEWER_PERMISSIONS = [
   // answer nothing (`approvals:decide` is withheld). A fixture without it
   // would assert that a viewer cannot reach the approval queue, which is false.
   'approvals:read',
+  // #101 gave the Trust destination a real permission, and `prisma/seed.ts`
+  // grants `trust:read` to all three roles — a viewer may see what runs
+  // unattended and stop nothing.
+  'trust:read',
 ];
 
 describe('NavigationRail', () => {
@@ -393,6 +401,7 @@ describe('NavigationRail', () => {
         '/',
         '/runs',
         '/approvals',
+        '/trust',
         '/queue',
         '/projects',
         '/cost',
