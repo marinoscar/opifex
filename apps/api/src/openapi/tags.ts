@@ -154,6 +154,17 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
           'dispatch policy, out of date by one poll interval.',
       },
       {
+        name: 'Supervisor',
+        description:
+          'The AI supervisor decision log (VISION §7), observe-only. Proposals the supervisor ' +
+          'WOULD have executed, the exact snapshot each was derived from, and whether a human ' +
+          'would have approved it. There is no endpoint that applies a proposal and there is not ' +
+          'meant to be: rung 1 of the promotion ladder is "writes proposals and executes ' +
+          'nothing", and an apply endpoint would promote every action class at once, bypassing ' +
+          'the measurement the ladder is built on. Proposals the supervisor DECLINED to make are ' +
+          'rows too — a class nothing proposes must not look like a class that proposes well.',
+      },
+      {
         name: 'Repositories',
         description:
           'Which repositories Opifex watches, and the policy for each: whether the reconciler ' +
