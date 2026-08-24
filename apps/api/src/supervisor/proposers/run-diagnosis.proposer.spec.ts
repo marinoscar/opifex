@@ -51,6 +51,7 @@ function context(runs: SnapshotRun[], ask = jest.fn()): ProposerContext {
     queuedWorkOrders: [],
     quarantinedWorkOrders: [],
     escalations: [],
+    specRejections: [],
   } satisfies SnapshotInput;
 
   return {

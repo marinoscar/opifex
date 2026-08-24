@@ -35,6 +35,7 @@ function state(
     queuedWorkOrders: [],
     quarantinedWorkOrders: [],
     escalations: [],
+    specRejections: [],
   };
 }
 

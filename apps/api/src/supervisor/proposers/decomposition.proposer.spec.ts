@@ -49,6 +49,7 @@ function context(
     queuedWorkOrders: [],
     quarantinedWorkOrders: orders,
     escalations: [],
+    specRejections: [],
   } satisfies SnapshotInput;
 
   return {

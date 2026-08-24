@@ -84,6 +84,23 @@ export interface SnapshotWorkOrder {
   createdAt: Date;
 }
 
+/**
+ * One issue the deterministic spec gate turned away (#62).
+ *
+ * The truest signal of an under-specified issue available anywhere in this
+ * system: not a guess from the text, but a record that the gate REFUSED to
+ * project a work order from it and told the author why. #111 calls the gate
+ * "a floor, not feedback" — it says no without saying what yes looks like —
+ * and this is what lets the supervisor answer the second half.
+ */
+export interface SnapshotSpecRejection {
+  repository: string;
+  issueNumber: number;
+  /** What the author was told, verbatim. */
+  message: string;
+  rejectedAt: Date;
+}
+
 /** One outstanding escalation. */
 export interface SnapshotEscalation {
   id: string;
@@ -125,6 +142,8 @@ export interface SnapshotInput {
   quarantinedWorkOrders: SnapshotWorkOrder[];
   /** Outstanding escalations, oldest first. */
   escalations: SnapshotEscalation[];
+  /** Issues the spec gate rejected, most recent first. */
+  specRejections: SnapshotSpecRejection[];
 }
 
 /**
@@ -143,6 +162,7 @@ export interface SnapshotLimits {
   queuedWorkOrders: number;
   quarantinedWorkOrders: number;
   escalations: number;
+  specRejections: number;
   /** Longest single free-text field before it is elided, in characters. */
   textField: number;
 }
@@ -160,6 +180,7 @@ export const DEFAULT_SNAPSHOT_LIMITS: SnapshotLimits = Object.freeze({
   queuedWorkOrders: 15,
   quarantinedWorkOrders: 10,
   escalations: 10,
+  specRejections: 10,
   textField: 240,
 });
 

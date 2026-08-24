@@ -74,6 +74,7 @@ export class SnapshotService {
       queuedWorkOrders,
       quarantinedWorkOrders,
       escalations,
+      specRejections,
     ] = await Promise.all([
       this.prisma.run.groupBy({ by: ['status'], _count: { _all: true } }),
       this.prisma.run.count({
@@ -122,6 +123,14 @@ export class SnapshotService {
         orderBy: [{ raisedAt: 'asc' }, { id: 'asc' }],
         take: limits.escalations + 1,
       }),
+      // Newest first, unlike the queues above. A rejection from three months
+      // ago is history; the ones worth shaping are the ones somebody is
+      // waiting on right now.
+      this.prisma.issueSpecRejection.findMany({
+        orderBy: [{ commentedAt: 'desc' }, { id: 'desc' }],
+        take: limits.specRejections + 1,
+        include: { repository: { select: { owner: true, name: true } } },
+      }),
     ]);
 
     const runCount = countByStatus(runsByStatus);
@@ -152,6 +161,12 @@ export class SnapshotService {
         summary: esc.summary,
         raisedAt: esc.raisedAt,
         runId: esc.runId,
+      })),
+      specRejections: specRejections.map((rejection) => ({
+        repository: repoName(rejection.repository),
+        issueNumber: rejection.issueNumber,
+        message: rejection.message,
+        rejectedAt: rejection.commentedAt,
       })),
     };
   }

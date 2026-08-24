@@ -9,6 +9,7 @@ import {
   type SupervisorProposer,
 } from './invocation/supervisor-proposer.port';
 import { DecompositionProposer } from './proposers/decomposition.proposer';
+import { IssueShapingProposer } from './proposers/issue-shaping.proposer';
 import { RunDiagnosisProposer } from './proposers/run-diagnosis.proposer';
 import { SupervisorTask } from './invocation/supervisor.task';
 import { SnapshotService } from './snapshot/snapshot.service';
@@ -39,13 +40,18 @@ import { SnapshotService } from './snapshot/snapshot.service';
     SupervisorTask,
     RunDiagnosisProposer,
     DecompositionProposer,
+    IssueShapingProposer,
     {
       // The proposer list, assembled here so the set is readable in one place
       // rather than discovered by scanning for a decorator. Every entry
       // returns drafts and nothing else — the port's signature is what makes
       // that true of proposers that do not exist yet.
       provide: SUPERVISOR_PROPOSERS,
-      inject: [RunDiagnosisProposer, DecompositionProposer],
+      inject: [
+        RunDiagnosisProposer,
+        DecompositionProposer,
+        IssueShapingProposer,
+      ],
       useFactory: (...proposers: SupervisorProposer[]) => proposers,
     },
   ],
