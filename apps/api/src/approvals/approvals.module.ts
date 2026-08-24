@@ -2,10 +2,12 @@ import { Module } from '@nestjs/common';
 
 import { AutonomyModule } from '../autonomy/autonomy.module';
 import { EscalationsModule } from '../escalations/escalations.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TrustModule } from '../trust/trust.module';
 import { ApprovalGateService } from './approval-gate.service';
 import { ApprovalGateTask } from './approval-gate.task';
+import { ApprovalsController } from './approvals.controller';
 
 /**
  * The approval gate (#97, epic #22, VISION §8).
@@ -21,6 +23,11 @@ import { ApprovalGateTask } from './approval-gate.task';
  *   human be told rather than the request closing silently.
  * - `PrismaModule` — the `ApprovalRequest` row, which is the record VISION §8's
  *   digest and #99's ladder both read.
+ * - `NotificationsModule` — #98's other half. VISION §8's requirement is not
+ *   that an approval be RECORDED but that it be answerable "one tap from a
+ *   phone", and a queue nobody is told about is the 2am email read at 9am the
+ *   vision opens by naming. This imports the two transports only; it does NOT
+ *   import a dispatcher that could act.
  *
  * ## What is deliberately absent
  *
@@ -33,17 +40,32 @@ import { ApprovalGateTask } from './approval-gate.task';
  * reason it matters there — the gate is the thing standing between a proposal
  * and an effect, and a gate that can also open the door is not a gate.
  *
+ * Still no executor. `NotificationsModule` is a way to TELL a human, not a way
+ * to do anything: the transports send text to a device, and the strongest
+ * thing this module can now cause is a phone to light up. That is the same
+ * line #90 draws — a capability absent from the module graph is structurally
+ * unavailable — and it is intact.
+ *
  * No `ConfigModule` either. `TIMEOUT_WINDOW_MS` is a constant in code, and
  * ADR-0014 disqualifies configurable timeouts: "a safety default that can be
  * set per class is a policy, not a guarantee." A `ConfigModule` in this list
  * would be the first visible step toward one.
  *
- * No controller — #98 owns the HTTP surface, including the `approvals:read` /
+ * The controller (#98) owns the HTTP surface, including the `approvals:read` /
  * `approvals:decide` split and the extra `trust:grant` check that "Always
- * approve this class" requires.
+ * approve this class" requires — a composition `ApprovalGateService` cannot
+ * make, because it has no view of the caller's permissions and should not
+ * acquire one.
  */
 @Module({
-  imports: [PrismaModule, AutonomyModule, TrustModule, EscalationsModule],
+  imports: [
+    PrismaModule,
+    AutonomyModule,
+    TrustModule,
+    EscalationsModule,
+    NotificationsModule,
+  ],
+  controllers: [ApprovalsController],
   providers: [ApprovalGateService, ApprovalGateTask],
   exports: [ApprovalGateService],
 })

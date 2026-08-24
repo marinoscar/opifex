@@ -192,6 +192,16 @@ export interface SweepTimeoutsResult {
 export interface ListPendingQuery {
   repositoryId?: string;
   actionClass?: string;
+  /**
+   * Narrow to ONE of the two open statuses.
+   *
+   * Typed as the two-member union rather than `ApprovalStatus`, so this filter
+   * can only ever narrow the queue and never widen it to a decided row. A
+   * wider type would make "show me the approved ones through the pending
+   * endpoint" a reachable state, and the queue would stop meaning "things
+   * waiting on you".
+   */
+  status?: 'pending' | 'parked';
 }
 
 /**
