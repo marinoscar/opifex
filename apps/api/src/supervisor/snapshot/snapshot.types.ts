@@ -68,6 +68,16 @@ export interface SnapshotRun {
   pullRequestNumber: number | null;
   /** `merged`, `closed`, or null while the pull request is still open. */
   pullRequestState: string | null;
+  /**
+   * How many acceptance criteria the work order carried.
+   *
+   * Carried on the RUN, not only on the queued work order, because #111's
+   * whole question is which specification shapes produced first-pass
+   * acceptance. Correlating that needs the criteria count beside the outcome,
+   * and a count is all it needs — the text would cost the snapshot its bound
+   * for a correlation that only uses the number.
+   */
+  acceptanceCriteriaCount: number;
 }
 
 /** One work order the supervisor may be asked to reason about. */
