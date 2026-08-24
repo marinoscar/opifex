@@ -1762,6 +1762,22 @@ model TrustGrant {
   /// Free text from the granting human - why this scope, why this ceiling.
   note String?
 
+  /// When the renewal prompt for this grant was sent (#115).
+  ///
+  /// The DEDUPE KEY, and the only reason this is a column rather than an
+  /// in-memory set. The prompt task runs hourly and the near-expiry window is
+  /// 48 hours, so without a persisted mark one grant would produce up to 48
+  /// identical notifications - the interruption VISION §8 exists to remove,
+  /// and the fastest way to teach an operator that trust notifications are
+  /// noise to be swiped away. An in-memory set would forget on every restart
+  /// and would be per-process, which is the same bug with a longer fuse.
+  ///
+  /// Null means "not prompted yet", NOT "not near expiry". A grant renewed
+  /// before its window opens is never prompted and keeps a null here; the
+  /// successor row starts null again, which is correct - a renewal earns its
+  /// own prompt near its own expiry.
+  renewalPromptedAt DateTime? @map("renewal_prompted_at") @db.Timestamptz
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 

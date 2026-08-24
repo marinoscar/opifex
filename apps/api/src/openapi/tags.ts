@@ -182,6 +182,20 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
           'one enforced by a `where` clause would not.',
       },
       {
+        name: 'Trust',
+        description:
+          'Trust grants (VISION §8): what may run unattended, and for how long. A grant is ' +
+          'always an action class in ONE repository — never "trust the agent" — and carries ' +
+          'four attributes attached automatically: scope, expiry, a budget ceiling, and ' +
+          'auto-revoke thresholds. Expiry is the mechanism, not a reminder: an expired grant ' +
+          'stops authorizing on the timestamp with no grace period, so doing nothing revokes. ' +
+          'Renewal is the other half of that bargain — one tap that ends a grant and issues a ' +
+          'successor whose terms are taken fresh from the defaults and narrowed by the old ' +
+          "grant's own, never widened, because a chain of renewals that copied its terms " +
+          'forward would launder a one-time generous decision into a permanent one. A lapsed ' +
+          'grant cannot be renewed at all: that is a new decision, with a name on it.',
+      },
+      {
         name: 'Repositories',
         description:
           'Which repositories Opifex watches, and the policy for each: whether the reconciler ' +

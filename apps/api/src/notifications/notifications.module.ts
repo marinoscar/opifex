@@ -6,6 +6,7 @@ import { EscalationDispatcher } from './escalation-dispatcher.service';
 import { FallbackWebhookTransport } from './fallback-webhook.transport';
 import { NotificationsController } from './notifications.controller';
 import { PushSubscriptionsService } from './push-subscriptions.service';
+import { RenewalNotifier } from './renewal-notifier.service';
 import { WebPushTransport } from './web-push.transport';
 
 /**
@@ -29,6 +30,7 @@ import { WebPushTransport } from './web-push.transport';
     PushSubscriptionsService,
     EscalationDispatcher,
     ApprovalNotifier,
+    RenewalNotifier,
   ],
   // The two transports are exported so the daily brief (#93) can reuse them
   // without minting an escalation to ride. VISION §8 defines the brief as the
@@ -40,12 +42,20 @@ import { WebPushTransport } from './web-push.transport';
   // happened, and giving it an escalation row so it could ride the dispatcher
   // would put every unanswered question into the stop-to-notified percentiles
   // that measure how long a broken run went unnoticed.
+  //
+  // `RenewalNotifier` (#115) is exported on the same argument again: a grant
+  // approaching its expiry is not a stall, nothing is broken, and the default
+  // outcome of ignoring it is the safe one. It is consumed by the hourly
+  // renewal-prompt task in `TrustModule`, which is the only direction that
+  // edge runs — nothing in this directory knows what a trust grant is beyond
+  // the structural payload input.
   exports: [
     EscalationDispatcher,
     PushSubscriptionsService,
     WebPushTransport,
     FallbackWebhookTransport,
     ApprovalNotifier,
+    RenewalNotifier,
   ],
 })
 export class NotificationsModule {}

@@ -1,0 +1,32 @@
+-- One-tap trust-grant renewal (#115, epic #22): the dedupe key for the
+-- expiry prompt.
+--
+-- VISION §8: "Expiry - days or session. Renewal is one tap; silence revokes."
+-- #96 delivered the second half; the prompt is the first, and a prompt that
+-- repeats is not a prompt. The renewal task runs hourly against a 48-hour
+-- near-expiry window, so one grant would otherwise produce up to 48 identical
+-- notifications - exactly the interruption VISION §8 exists to remove, and the
+-- fastest way to teach an operator that trust notifications are noise.
+--
+-- A column rather than an in-memory set: a set forgets on restart and is
+-- per-process, which is the same duplicate-notification bug with a longer
+-- fuse. Claimed with a conditional UPDATE ("... WHERE renewal_prompted_at IS
+-- NULL"), so two workers racing produce one send rather than two.
+--
+-- NULL means "not prompted yet", never "not near expiry". A grant renewed
+-- before its window opens is never prompted and stays NULL; the successor row
+-- starts NULL again, which is correct - a renewal earns its own prompt near
+-- its own expiry.
+--
+-- Nullable with no default and no backfill. Existing grants are treated as
+-- un-prompted, which is the safe direction: the worst case is one prompt for a
+-- grant already near expiry when this deploys, and the alternative (backfilling
+-- now()) would silently suppress the first real prompt for every live grant.
+ALTER TABLE "trust_grants"
+  ADD COLUMN "renewal_prompted_at" TIMESTAMPTZ;
+
+-- No index. The prompt query already selects on ("status", "expires_at") - the
+-- index trust_grants_status_expires_at_idx from 20260825120000_trust_grants -
+-- and then claims one row at a time by primary key. An index on a column that
+-- is NULL for almost every row and never appears alone in a WHERE clause would
+-- cost every write and serve no read.
