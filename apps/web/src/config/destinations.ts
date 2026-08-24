@@ -30,6 +30,7 @@ import type { SvgIconComponent } from '@mui/icons-material';
 import SpeedIcon from '@mui/icons-material/Speed';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
+import ThumbsUpDownIcon from '@mui/icons-material/ThumbsUpDown';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import PaidIcon from '@mui/icons-material/Paid';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -39,6 +40,7 @@ import AdminIcon from '@mui/icons-material/AdminPanelSettings';
 export type DestinationKey =
   | 'dashboard'
   | 'runs'
+  | 'approvals'
   | 'queue'
   | 'projects'
   | 'cost'
@@ -86,6 +88,9 @@ export const DESTINATION_ROUTES: Record<DestinationKey, readonly string[]> = {
   // its ATTEMPTS — and the next place a reader goes from it is a run. Leaving
   // the rail on Runs matches where they came from and where they are going.
   runs: ['/runs', '/work-orders'],
+  // `/approvals/:id` is covered by this prefix — the detail screen is the
+  // destination's whole point, not a place of its own.
+  approvals: ['/approvals'],
   queue: ['/queue'],
   projects: ['/projects'],
   cost: ['/cost'],
@@ -200,6 +205,25 @@ export const DESTINATIONS: readonly Destination[] = [
     // seeded viewer role holds it.
     status: 'live',
     permission: 'runs:read',
+  },
+  {
+    key: 'approvals',
+    label: 'Approvals',
+    // Seven characters. "Approvals" is nine and would be clipped in the 56px
+    // rail; the verb is what the destination is for anyway.
+    compactLabel: 'Approve',
+    Icon: ThumbsUpDownIcon,
+    path: '/approvals',
+    section: 'operate',
+    // LIVE as of #98, gaining its real permission in the same pull request as
+    // the endpoint — the rule this file's header sets. `approvals:read` is
+    // what `ApprovalsController` enforces on the list and the detail, and all
+    // three seeded roles hold it (a viewer may see what is waiting and answer
+    // nothing). Deciding needs `approvals:decide`, which is a CONTENT gate
+    // inside the page rather than a reachability one: the queue is worth
+    // reaching to read.
+    status: 'live',
+    permission: 'approvals:read',
   },
   {
     key: 'queue',

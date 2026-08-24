@@ -47,6 +47,10 @@ export const mockUser: MockUser = {
     'runs:read',
     'workorders:read',
     'escalations:read',
+    // A viewer may SEE what is waiting on a person and answer nothing:
+    // `approvals:decide` is withheld from the role for the same reason
+    // `escalations:acknowledge` is (#98).
+    'approvals:read',
   ],
   isActive: true,
   createdAt: new Date().toISOString(),
@@ -77,6 +81,12 @@ export const mockAdminUser: MockUser = {
     'runs:read',
     'workorders:read',
     'escalations:read',
+    // The admin holds all three approval-related permissions, which is what
+    // makes VISION §8's third option — "Always approve this class" — available
+    // to them and to nobody else.
+    'approvals:read',
+    'approvals:decide',
+    'trust:grant',
   ],
   isActive: true,
   createdAt: new Date().toISOString(),

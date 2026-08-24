@@ -207,6 +207,14 @@ import type {
   PushSubscriptionRecord,
 } from '../types';
 import type {
+  Approval,
+  ApprovalDetail,
+  ClassApprovalRates,
+  DecideApprovalInput,
+  DecideApprovalResult,
+  OpenApprovalStatus,
+} from '../types/approvals';
+import type {
   MetricsSummary,
   QueueEntry,
   RunEvent,
@@ -653,4 +661,121 @@ export async function createPushSubscription(input: {
 
 export async function deletePushSubscription(id: string): Promise<void> {
   await api.delete<void>(`/notifications/subscriptions/${id}`);
+}
+
+// ---------------------------------------------------------------------------
+// Approvals (epic #22, issue #98, VISION §8)
+// ---------------------------------------------------------------------------
+
+/**
+ * `GET /approvals` — everything still waiting on a person, OLDEST FIRST.
+ *
+ * The order is the server's answer and is never re-sorted here or by the page:
+ * the oldest open approval is the one that has been ignored longest, which is
+ * the ordering the queue exists to surface. The endpoint declares no `sort`
+ * parameter for the same reason, so the table offers no sortable header.
+ *
+ * `actionClass` is deliberately NOT offered by the cockpit's filter surface:
+ * the accepted values are the ADR-0011 registry ids, no endpoint exposes that
+ * registry to a browser, and a second copy of the taxonomy in this app is
+ * exactly the drift the registry exists to prevent. `status` is safe because
+ * its two members are the closed set the API's own enum pins.
+ */
+export async function getApprovals(
+  params: {
+    repositoryId?: string;
+    actionClass?: string;
+    status?: OpenApprovalStatus;
+  } = {},
+  signal?: AbortSignal,
+): Promise<Approval[]> {
+  const searchParams = new URLSearchParams();
+  if (params.repositoryId)
+    searchParams.set('repositoryId', params.repositoryId);
+  if (params.actionClass) searchParams.set('actionClass', params.actionClass);
+  if (params.status) searchParams.set('status', params.status);
+
+  const query = searchParams.toString();
+  return api.get<Approval[]>(query ? `/approvals?${query}` : '/approvals', {
+    signal,
+  });
+}
+
+/**
+ * `GET /approvals/:id` — one approval, with the registry entry joined on.
+ *
+ * `actionClassEntry` is what makes the detail screen answerable from a phone:
+ * the class `title` and the one-sentence `definition`, plus the
+ * `autonomyEligible` flag that decides whether "Always approve this class" can
+ * do anything at all.
+ */
+export async function getApproval(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ApprovalDetail> {
+  return api.get<ApprovalDetail>(`/approvals/${encodeURIComponent(id)}`, {
+    signal,
+  });
+}
+
+/** `GET /approvals/rates` — per class, how often a human approves it. */
+export async function getApprovalRates(
+  days?: number,
+  signal?: AbortSignal,
+): Promise<ClassApprovalRates[]> {
+  return api.get<ClassApprovalRates[]>(
+    days === undefined ? '/approvals/rates' : `/approvals/rates?days=${days}`,
+    { signal },
+  );
+}
+
+/**
+ * `POST /approvals/:id/decide` — VISION §8's "one tap from a phone".
+ *
+ * Authenticated with the ordinary session; the notification that deep-links
+ * here carries no authority of its own. Throws `ApiError` on 403 (the
+ * `alwaysApproveThisClass` refusal, where NOTHING was recorded), 409 (the
+ * request is no longer open) and 404.
+ */
+export async function decideApproval(
+  id: string,
+  input: DecideApprovalInput,
+): Promise<DecideApprovalResult> {
+  return api.post<DecideApprovalResult>(
+    `/approvals/${encodeURIComponent(id)}/decide`,
+    input,
+  );
+}
+
+/**
+ * The `details` block the approval endpoints attach to a refusal.
+ *
+ * `HttpExceptionFilter` overwrites the envelope's `code` from the status, so
+ * the discriminator the cockpit branches on travels in `details.reason` —
+ * which is why this reads `details` and not `ApiError.code`.
+ */
+export interface ApprovalErrorDetails {
+  reason?: string;
+  /**
+   * Explicit on the 403, and `false` there.
+   *
+   * The whole request is refused when `alwaysApproveThisClass` is set without
+   * `trust:grant` — the single verdict is NOT applied — and this field exists
+   * so a client never has to infer that from a status code.
+   */
+  decisionApplied?: boolean;
+  approvalId?: string;
+  requiredPermission?: string;
+  status?: string;
+  decidedVia?: string | null;
+  decidedAt?: string | null;
+  decidedById?: string | null;
+}
+
+/** Reads the approval `details` block off an `ApiError`, if it has one. */
+export function approvalErrorDetails(error: unknown): ApprovalErrorDetails {
+  if (!(error instanceof ApiError)) return {};
+  const details = error.details;
+  if (typeof details !== 'object' || details === null) return {};
+  return details as ApprovalErrorDetails;
 }
