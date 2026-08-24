@@ -1,4 +1,4 @@
-import { thresholdFor } from './silent-detection';
+import { formatDuration, thresholdFor } from './silent-detection';
 import type { RateLimitSignal, StreamingFidelity } from './watchdog.types';
 
 /**
@@ -207,7 +207,7 @@ function silenceCoverage(input: RunCoverageInput): CheckCoverage {
         reason:
           `${input.runnerKey} declares full streaming fidelity, so silence is measured on ` +
           `heartbeats the runner emits continuously: a stall shows up within ` +
-          `${minutes(thresholdMs)}.`,
+          `${formatDuration(thresholdMs)}.`,
       };
     case 'partial':
       return {
@@ -217,7 +217,7 @@ function silenceCoverage(input: RunCoverageInput): CheckCoverage {
         reason:
           `${input.runnerKey} declares partial streaming fidelity — coarse progress with no ` +
           `tool detail — so long gaps between phases are normal and the threshold is relaxed ` +
-          `to ${minutes(thresholdMs)}. A run that stalls mid-phase is not detected until then.`,
+          `to ${formatDuration(thresholdMs)}. A run that stalls mid-phase is not detected until then.`,
       };
     case 'none':
       return {
@@ -227,7 +227,7 @@ function silenceCoverage(input: RunCoverageInput): CheckCoverage {
         reason:
           `${input.runnerKey} declares no streaming, so silence is measured on git activity ` +
           `rather than on anything the runner reports. A run can legitimately think for a long ` +
-          `time before committing, so the threshold is ${minutes(thresholdMs)} — the run is ` +
+          `time before committing, so the threshold is ${formatDuration(thresholdMs)} — the run is ` +
           `still detectably stalled, but materially later than a streaming runner.`,
       };
     case null:
@@ -237,7 +237,7 @@ function silenceCoverage(input: RunCoverageInput): CheckCoverage {
         signal: 'any event, from any source — nothing is declared',
         reason:
           `${input.runnerKey} has filed no capability manifest, so nothing is known about what ` +
-          `it reports and the most permissive threshold (${minutes(thresholdMs)}) applies. ` +
+          `it reports and the most permissive threshold (${formatDuration(thresholdMs)}) applies. ` +
           `Registering the runner is what fixes this.`,
       };
   }
@@ -276,7 +276,11 @@ function loopCoverage(input: RunCoverageInput): CheckCoverage {
       input.fidelity === null
         ? `${input.runnerKey} has filed no capability manifest, so nothing establishes that it ` +
           `reports per-tool detail. A run looping on this runner is NOT detected here.`
-        : `${input.runnerKey} declares ${input.fidelity} streaming fidelity, which carries no ` +
+        : `${input.runnerKey} declares ${
+            input.fidelity === 'none'
+              ? 'no streaming at all'
+              : 'partial streaming fidelity'
+          }, which carries no ` +
           `per-tool detail. A run looping on this runner is NOT detected here — this check ` +
           `is not passing, it is absent.`,
   };
@@ -457,12 +461,4 @@ export function tallyCoverage(coverages: RunCheckCoverage[]): CoverageTallies {
   }
 
   return tallies;
-}
-
-/** Whole minutes where they are whole, seconds below a minute. */
-function minutes(ms: number): string {
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const mins = Math.round(seconds / 60);
-  return mins < 60 ? `${mins}m` : `${Math.round(mins / 60)}h`;
 }

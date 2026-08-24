@@ -11,7 +11,11 @@ import {
   type WatchdogCheckId,
 } from './check-coverage';
 import { detectLoop } from './loop-detection';
-import { SILENCE_THRESHOLDS_MS, thresholdFor } from './silent-detection';
+import {
+  SILENCE_THRESHOLDS_MS,
+  formatDuration,
+  thresholdFor,
+} from './silent-detection';
 import type { RateLimitSignal, StreamingFidelity } from './watchdog.types';
 
 /**
@@ -134,6 +138,20 @@ describe('describeCheckCoverage: a full-streaming and a near-zero-streaming runn
     );
     expect(entryOf(dark, 'silence-detection').thresholdMs).toBeGreaterThan(
       entryOf(streaming, 'silence-detection').thresholdMs as number,
+    );
+  });
+
+  it('renders the threshold the way the kill verdict will render it', () => {
+    // The operator reads this number here and reads it again in the reason a
+    // kill records. Two renderings of one number is the cheapest possible way
+    // to make them look like two different numbers — 90 seconds shown as "2m"
+    // beside a "1m 30s" threshold is a justification that cannot justify
+    // itself, which is what `silent-detection` already says about its own.
+    expect(entryOf(streaming, 'silence-detection').reason).toContain(
+      formatDuration(SILENCE_THRESHOLDS_MS.full),
+    );
+    expect(entryOf(dark, 'silence-detection').reason).toContain(
+      formatDuration(SILENCE_THRESHOLDS_MS.none),
     );
   });
 
