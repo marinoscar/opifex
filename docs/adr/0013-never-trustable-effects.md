@@ -64,8 +64,8 @@ hand the first time it fires.
 
 ### This is not a second registry, because it partitions a different kind of thing
 
-`ACTION_CLASSES` partitions *proposals* — what the supervisor is asking to do, for the
-purpose of measurement. `NEVER_TRUSTABLE` partitions *effects* — what a proposal, once
+`ACTION_CLASSES` partitions _proposals_ — what the supervisor is asking to do, for the
+purpose of measurement. `NEVER_TRUSTABLE` partitions _effects_ — what a proposal, once
 approved, would actually change, for the purpose of prohibition. A registry and a guard
 list are not two descriptions of the same object competing to be the source of truth for
 it; they describe two different objects that happen to be produced together. They cannot
@@ -86,12 +86,12 @@ lives in one file, reviewed once, rather than in however many places call it.
 The autonomy execution request carries a required, non-optional `effects: Effect[]`
 field. There is no path from a proposal to the execution boundary that skips populating
 it — an executor without effects does not typecheck, let alone run. This is what closes
-the honesty hole a self-reported, *optional* declaration would leave open: an optional
+the honesty hole a self-reported, _optional_ declaration would leave open: an optional
 field is a field someone forgets, and "someone forgot" is not a security property.
 
 It closes that hole partially, and the ADR should say so rather than imply otherwise: a
-required field guarantees an executor produces *some* effect list, not that the list is
-*correct*. A caller that lies about its own effects — reports `file-write` for something
+required field guarantees an executor produces _some_ effect list, not that the list is
+_correct_. A caller that lies about its own effects — reports `file-write` for something
 that also force-pushes — still passes the guard. That is why `effectsFor` is centralised
 and tested rather than delegated to each caller's self-report: the honesty of the
 declaration is a property of one function, tested once, instead of a property trusted
@@ -103,7 +103,7 @@ of every executor that will ever exist.
 database lookup. It does not own a spend ceiling either — it takes one as a parameter.
 
 That last point is a correction worth stating plainly, because the obvious design is
-wrong. A literal `HARD_SPEND_CEILING_USD` in this module would be a *second* ceiling: the
+wrong. A literal `HARD_SPEND_CEILING_USD` in this module would be a _second_ ceiling: the
 repo already has one, built for #65 at `apps/api/src/budget/hard-spend-ceiling.ts`, and
 its header already argues the VISION §8 case — it reads `OPIFEX_HARD_SPEND_CEILING_USD`
 from `process.env` once, in a constructor, into `readonly` fields with no setter,
@@ -198,6 +198,6 @@ applies to guardrails: build the mechanism that actually closes the gap before b
 a second one that overlaps it, rather than building both because neither commitment is
 fully trusted. Second, and more concretely, two mechanisms that can disagree are worse
 than one: if the class-level flag and the effect-level guard ever computed different
-answers for the same action, neither one would be *the* guarantee any more — an operator
+answers for the same action, neither one would be _the_ guarantee any more — an operator
 reading an incident would not know which layer to trust, and "we have two checks" is not
 an answer to "which one is authoritative."
