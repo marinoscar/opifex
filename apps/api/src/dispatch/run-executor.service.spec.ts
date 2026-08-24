@@ -66,6 +66,7 @@ describe('RunExecutorService', () => {
     queueReason: null,
     reason: 'Dispatch to claude-code-local',
     candidates: [],
+    avoidedQuotaPark: false,
   };
 
   const QUEUED: DispatchDecision = {
@@ -74,6 +75,7 @@ describe('RunExecutorService', () => {
     queueReason: 'capable-runners-are-at-capacity',
     reason: 'Everything is full',
     candidates: [],
+    avoidedQuotaPark: false,
   };
 
   let decide: jest.Mock;

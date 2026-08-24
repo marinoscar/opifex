@@ -51,6 +51,7 @@ describe('QueueService', () => {
           headroom: 2,
         },
       ],
+      avoidedQuotaPark: false,
       ...overrides,
     };
   }

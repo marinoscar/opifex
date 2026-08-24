@@ -20,6 +20,51 @@ import type {
  * because the reason it made is part of the provenance record.
  */
 
+/**
+ * What is known about one runner's quota, ALREADY RESOLVED against a clock.
+ *
+ * ## Why this is resolved outside and passed in
+ *
+ * "Is this runner out of quota" is a question about now, and `decideDispatch`
+ * has no now — see this file's header. So the caller
+ * (`DispatchService.loadPool`, which owns a clock and a database) does the
+ * comparison and hands the ANSWER in. Nothing here compares `resumesAt` to
+ * anything; it exists only to be printed.
+ *
+ * ## It is binary and dated, not a percentage
+ *
+ * There is no quota meter to read (#231 is unbuilt, and inventing a second one
+ * here would guarantee drift). What Opifex genuinely observes is first-hand and
+ * already recorded: runs of this runner sitting `blocked` on a rate-limit
+ * reason with a reset time still in the future. That supports exactly one
+ * claim — *this runner is out of quota until T* — and no fraction of headroom
+ * is derivable from it. When #231 lands it can populate this same shape with a
+ * better basis, and the routing rule below does not change.
+ *
+ * ## Absent means UNKNOWN, and unknown is usable
+ *
+ * A runner that has simply never blocked has no quota position at all, which is
+ * why the field on `RunnerPoolEntry` is optional. VISION §6 is explicit that
+ * unknown is not zero: an absent position must route as freely as a healthy
+ * one, never as an exhausted one. `exhausted: false` stays representable so a
+ * future meter can assert availability positively rather than by silence.
+ */
+export interface RunnerQuotaPosition {
+  /** True only when an observed, dated block is still in force. */
+  exhausted: boolean;
+  /**
+   * When it lifts, ISO 8601, or null when nothing could date it.
+   *
+   * A pre-formatted string rather than a `Date` on purpose: a `Date` invites
+   * exactly the comparison this function must not make, and a string keeps the
+   * whole input JSON-round-trippable — which is what "reproducible from its
+   * inputs a year later" means in practice.
+   */
+  resumesAt: string | null;
+  /** The observation this was derived from, named in the recorded reason. */
+  basis: string;
+}
+
 /** How a runner is doing right now, as routing needs to see it. */
 export interface RunnerPoolEntry {
   capabilities: RunnerCapabilities;
@@ -27,6 +72,17 @@ export interface RunnerPoolEntry {
   enabled: boolean;
   /** Runs currently occupying this runner's concurrency. */
   liveRuns: number;
+  /**
+   * Its quota position (#105), or undefined when nothing is known.
+   *
+   * Note this is NOT how Opifex limits its share of a shared subscription.
+   * VISION §11 notes automated runs compete with the operator's own
+   * interactive use, and `RunnerCapabilities.maxConcurrency` is already the
+   * encoding of that competition — "the runner's own limit on how much of that
+   * quota it will take, not a performance hint". This field is about quota that
+   * is already SPENT, and deliberately adds no second mechanism for sharing it.
+   */
+  quota?: RunnerQuotaPosition;
 }
 
 export interface DispatchLimits {
@@ -64,6 +120,11 @@ export type QueueReason =
   | 'no-runners-registered'
   | 'no-runner-has-the-capabilities'
   | 'capable-runners-are-at-capacity'
+  // Distinct from being at capacity, because the two need different patience
+  // and different fixes: a full runner frees a slot when one of ITS runs ends,
+  // while an exhausted one waits on a vendor window nothing here controls, and
+  // the standing answer to it is a second runner with separate quota (#105).
+  | 'capable-runners-quota-exhausted'
   | 'global-concurrency-reached'
   | 'only-preview-runners-and-no-ga-fallback'
   // The three spend refusals (#65). They queue rather than fail for the same
@@ -86,6 +147,14 @@ export interface CandidateVerdict {
   unmetNeeds: RunnerNeed[];
   /** Runs it could still take. Zero means full. */
   headroom: number;
+  /**
+   * Its quota position as routing saw it (#105), when one was known.
+   *
+   * Recorded on every verdict, not only on the runner it disqualified: "the
+   * runner we chose had no known quota problem" is part of reconstructing the
+   * decision, and undefined here says honestly that nothing was observed.
+   */
+  quota?: RunnerQuotaPosition;
 }
 
 export interface DispatchDecision {
@@ -104,6 +173,22 @@ export interface DispatchDecision {
   reason: string;
   /** Every runner considered, in the order routing ranked them. */
   candidates: CandidateVerdict[];
+  /**
+   * True when quota-aware routing moved work that would otherwise have parked.
+   *
+   * The countable event behind #105's justification: at least one runner that
+   * could have taken this work order was out of quota, and a DIFFERENT capable
+   * runner took it instead. Counting these over time is the before-and-after
+   * measure of VISION §10's metric 2.
+   *
+   * It is the event, not the arithmetic. Dead time per day needs stall
+   * durations, which #232 owns and which are not recorded yet — so this
+   * deliberately says only "a park was avoided here", and claims nothing about
+   * how many minutes that saved.
+   *
+   * Always false on a queued decision: nothing moved.
+   */
+  avoidedQuotaPark: boolean;
 }
 
 /**
@@ -188,6 +273,21 @@ export function isPreview(capabilities: RunnerCapabilities): boolean {
  *
  * Getting this backwards is how a fleet ends up quietly load-bearing on
  * something its own vendor calls a preview.
+ *
+ * ## The quota rule, and why it is checked where it is
+ *
+ * #105: *"quota is a tiebreaker among capable runners, not an override."* So
+ * the quota check sits strictly AFTER `unmetNeeds` and `servesTier` — a runner
+ * with quota to spare and the wrong capabilities is rejected before its quota
+ * is ever looked at, which makes "capability requirements are never relaxed for
+ * quota reasons" a property of the control flow rather than of somebody's care.
+ *
+ * It sits strictly BEFORE the preview branch for the mirror-image reason: that
+ * branch can return ELIGIBLE (for an acknowledged preview runner), and no path
+ * may return eligible for a runner that is known to be out of quota. The cost
+ * is that a preview runner which is also exhausted reports the quota fact
+ * rather than the structural one; the structural one comes back the moment its
+ * quota does, and dispatching into a spent quota does not.
  */
 export function decideDispatch(
   input: {
@@ -247,6 +347,22 @@ export function decideDispatch(
         servesTier(input.modelTier, entry.capabilities),
     );
 
+  // Capable runners whose quota is observably spent — computed from the pool
+  // rather than read back out of the verdict text, so "capable" here means the
+  // same thing it means above: meets every need AND serves the tier. A runner
+  // rejected for its tier is not an alternative this work order lost, and
+  // counting it as one would inflate the very metric #105 is judged by.
+  const quotaExhaustedCapable = new Set(
+    enabled
+      .filter(
+        (entry) =>
+          entry.quota?.exhausted === true &&
+          unmetNeeds(input.needs, entry.capabilities).length === 0 &&
+          servesTier(input.modelTier, entry.capabilities),
+      )
+      .map((entry) => entry.capabilities.key),
+  );
+
   const candidates = enabled
     .map((entry) => {
       const unmet = unmetNeeds(input.needs, entry.capabilities);
@@ -273,6 +389,19 @@ export function decideDispatch(
           false,
           `serves model tier(s) ${entry.capabilities.modelTiers?.join(', ')} ` +
             `and this work order asked for '${input.modelTier}'`,
+        );
+      }
+      if (entry.quota?.exhausted) {
+        // Queued, not dispatched-and-hoped. Sending work to a runner already
+        // known to be out of quota buys a blocked run, another attempt on the
+        // ceiling and another park — the dead time #105 exists to remove.
+        return verdict(
+          entry,
+          input.needs,
+          false,
+          entry.quota.resumesAt
+            ? `is out of quota until ${entry.quota.resumesAt} (${entry.quota.basis})`
+            : `is out of quota (${entry.quota.basis})`,
         );
       }
       if (isPreview(entry.capabilities) && !hasGaFallback(input.needs)) {
@@ -322,7 +451,7 @@ export function decideDispatch(
 
   if (!chosen) {
     return queued(
-      diagnose(candidates),
+      diagnose(candidates, quotaExhaustedCapable),
       explain(candidates, input.needs),
       candidates,
     );
@@ -333,6 +462,13 @@ export function decideDispatch(
       ? 'no specific capabilities'
       : input.needs.join(', ');
 
+  // The chosen runner can never be in that set — the check above rejects an
+  // exhausted runner outright — so this reads "somebody else was out of quota
+  // and this work moved anyway", which is exactly the countable event.
+  const avoidedQuotaPark =
+    quotaExhaustedCapable.size > 0 &&
+    !quotaExhaustedCapable.has(chosen.runnerKey);
+
   return {
     outcome: 'dispatch',
     runnerKey: chosen.runnerKey,
@@ -340,8 +476,15 @@ export function decideDispatch(
     reason:
       `Dispatch to ${chosen.runnerKey}: it ${chosen.reason} (${needsText}), ` +
       `with ${chosen.headroom} slot(s) free. ` +
-      `Considered ${candidates.length} runner(s).`,
+      `Considered ${candidates.length} runner(s).` +
+      (avoidedQuotaPark
+        ? ` Quota-aware routing avoided a park: ${[...quotaExhaustedCapable]
+            .sort()
+            .join(', ')} could have taken this work order but ` +
+          `${quotaExhaustedCapable.size === 1 ? 'is' : 'are'} out of quota.`
+        : ''),
     candidates,
+    avoidedQuotaPark,
   };
 }
 
@@ -374,8 +517,25 @@ function byPreference(a: CandidateVerdict, b: CandidateVerdict): number {
  * only patience; the preview case needs somebody to notice the fleet has no
  * GA option at all. Reporting the mildest of several would understate the
  * problem.
+ *
+ * Quota exhaustion slots in ABOVE capacity and below the preview case, and the
+ * ordering is the point rather than an accident of where it was appended. A
+ * full runner is the factory working — a slot frees when one of its own runs
+ * ends, and the operator does nothing. An exhausted one is the factory unable
+ * to work at all until a window nothing here controls rolls over, which is the
+ * dead time VISION §1 opens with; it is reported whenever it is present among
+ * capable runners, not only when it is the sole cause, because "a capable
+ * runner is out of quota until T" is the more serious of the two and the one
+ * whose standing answer (register a second runner) an operator can act on.
+ *
+ * The exhausted set is passed in rather than recovered from the verdict text:
+ * a `reason.includes(...)` on a sentence written for humans is a coupling that
+ * breaks silently the first time the sentence is reworded.
  */
-function diagnose(candidates: readonly CandidateVerdict[]): QueueReason {
+function diagnose(
+  candidates: readonly CandidateVerdict[],
+  quotaExhaustedCapable: ReadonlySet<string>,
+): QueueReason {
   const capable = candidates.filter(
     (candidate) => candidate.unmetNeeds.length === 0,
   );
@@ -388,6 +548,7 @@ function diagnose(candidates: readonly CandidateVerdict[]): QueueReason {
   ) {
     return 'only-preview-runners-and-no-ga-fallback';
   }
+  if (quotaExhaustedCapable.size > 0) return 'capable-runners-quota-exhausted';
   return 'capable-runners-are-at-capacity';
 }
 
@@ -419,6 +580,7 @@ function verdict(
     reason,
     unmetNeeds: unmetNeeds(needs, entry.capabilities),
     headroom: Math.max(0, entry.capabilities.maxConcurrency - entry.liveRuns),
+    quota: entry.quota,
   };
 }
 
@@ -437,5 +599,9 @@ function queued(
     queueReason,
     reason,
     candidates,
+    // Nothing moved, so there is nothing to count. A queued decision on an
+    // exhausted fleet is the OLD behaviour still working (#56 parks it), not
+    // this feature doing something.
+    avoidedQuotaPark: false,
   };
 }
