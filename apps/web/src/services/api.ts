@@ -225,6 +225,7 @@ import type {
 import type {
   MetricsSummary,
   QueueEntry,
+  RunDetail,
   RunEvent,
   RunStatus,
   RunSummary,
@@ -561,12 +562,19 @@ export async function getRuns(
   return api.get<RunsPage>(query ? `/runs?${query}` : '/runs', { signal });
 }
 
-/** `GET /runs/:id` — one run, with its work order resolved. */
+/**
+ * `GET /runs/:id` — one run, with its work order resolved.
+ *
+ * Returns `RunDetail`, not `RunSummary`: the detail endpoint carries
+ * `checkCoverage` (#104) and the list endpoint deliberately does not. Typing
+ * the two the same would let a panel that needs coverage be handed a list row
+ * that can never have it.
+ */
 export async function getRun(
   id: string,
   signal?: AbortSignal,
-): Promise<RunSummary> {
-  return api.get<RunSummary>(`/runs/${encodeURIComponent(id)}`, { signal });
+): Promise<RunDetail> {
+  return api.get<RunDetail>(`/runs/${encodeURIComponent(id)}`, { signal });
 }
 
 export interface RunEventsPage {
