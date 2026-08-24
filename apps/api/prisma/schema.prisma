@@ -2088,3 +2088,128 @@ model ApprovalRequest {
   @@index([grantId])
   @@map("approval_requests")
 }
+
+// ---------------------------------------------------------------------------
+// The promotion ladder (#99, epic #22, VISION §7 "Earned autonomy")
+// ---------------------------------------------------------------------------
+
+/// Which of VISION §7's rungs an action class currently stands on.
+///
+/// Three values, not four. VISION §7 lists "Observe, Measure, Promote, Demote",
+/// but demotion is a TRANSITION, not a place to stand - a demoted class is one
+/// that is measuring again, and giving it its own rung would mean a class could
+/// be simultaneously "demoted" and accumulating the evidence that re-promotes
+/// it. What was demoted, and how often, lives in `changeReason` and
+/// `demotionCount` instead, where it can be read without corrupting the rung.
+///
+/// A Prisma enum here, unlike `actionClass`, which is TEXT: ADR-0010 makes an
+/// enum addition a MAJOR schema bump, and adding an action class is an ordinary
+/// event while adding a rung to VISION §7's ladder is not.
+enum PromotionRung {
+  /// The supervisor proposes and executes nothing, and no human has judged a
+  /// single proposal of this class yet. Zero evidence, not bad evidence.
+  observe
+  /// Evidence exists and is accruing. This is where a class sits while it is
+  /// short of the sample or the rate, and it is also where a demoted class
+  /// lands - `observe` would claim the class had never been measured, which
+  /// is the one thing a regression proves false.
+  measure
+  /// Cleared both thresholds. The class is ELIGIBLE for a trust grant; it does
+  /// not have one. See `PromotionService` on why the ladder never mints.
+  promoted
+}
+
+/// Why a class last changed rung.
+///
+/// A category, paired with the sentence in `changeDetail` and the numbers in
+/// `evidenceJson`. #99 requires that "both promotion and demotion notify, and
+/// both state their evidence" - these three columns are that requirement in
+/// storage, so the evidence survives the notification nobody read.
+enum PromotionChangeReason {
+  /// Cleared the rate threshold with sufficient sample.
+  promoted_on_evidence
+  /// Recent evidence fell below the demotion rate. VISION §7 rung 4:
+  /// "automatic on regression, not a judgment call."
+  demoted_on_regression
+  /// The class is `autonomyEligible: false` in the registry and must never
+  /// stand on the promoted rung, whatever its record says.
+  demoted_ineligible
+  /// A human took autonomy back directly. Reserved for #101's operator
+  /// surface; the ladder itself never writes it.
+  demoted_manually
+  /// Reserved for #101's explicit global pause. The ladder never writes this
+  /// either, and that is the guarantee rather than an omission: #99 requires
+  /// the ladder be pausable "without dismantling the grants", so a pause
+  /// changes no rung and therefore records no rung change.
+  paused_globally
+}
+
+/// Where one action class stands on the ladder, and on what evidence.
+///
+/// ONE ROW PER CLASS, enforced by the unique index rather than by convention.
+/// Two rows for `re-dispatch` would mean two answers to "may this run
+/// unattended", and the reader that picked the wrong one would be granting
+/// autonomy nobody measured.
+///
+/// ## Why the evidence is frozen and not recomputed
+///
+/// `evidenceJson` holds the counts the decision was actually made from,
+/// written at decision time and never refreshed. Recomputing it on read would
+/// be cheaper and would always be self-consistent - and it would also describe
+/// a DIFFERENT FACTORY from the one the decision was made in. #99 requires
+/// promotion and demotion to "state their evidence"; evidence that changes
+/// after the fact cannot be checked against the decision, which is the only
+/// thing stating it was for. The same argument `ApprovalRequest.timeoutPolicy`
+/// and `effects` make about freezing at raise time (ADR-0013).
+model PromotionState {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// An `ActionClassId` from `apps/api/src/supervisor/action-classes.ts`,
+  /// validated at the boundary rather than by a database enum - ADR-0011, and
+  /// the same choice `TrustGrant.actionClass` and `ApprovalRequest.actionClass`
+  /// make, for the same reason.
+  actionClass String @unique @map("action_class")
+
+  rung PromotionRung @default(observe)
+
+  /// When the rung last changed. NOT "when the ladder last ran": an hourly
+  /// evaluation that concluded nothing must not move this, or the column stops
+  /// answering "how long has this been promoted" and starts answering "is the
+  /// cron alive", which is a question the scheduler already answers.
+  changedAt DateTime @default(now()) @map("changed_at") @db.Timestamptz
+
+  /// Null on a row that has never changed rung since it was created.
+  changeReason PromotionChangeReason? @map("change_reason")
+  /// The sentence a human reads, naming the numbers. `changeReason` alone is a
+  /// category - the same split `TrustGrant.endReason`/`endDetail` makes.
+  changeDetail String?                @map("change_detail")
+
+  /// The `ClassEvidence` the decision was made from, frozen. See above.
+  evidenceJson Json? @map("evidence_json")
+
+  /// When this class was MOST RECENTLY promoted, and most recently demoted.
+  /// Both retained after a demotion: "promoted for six weeks, then demoted
+  /// yesterday" and "promoted and demoted within a day" are different facts
+  /// about how well the measurement is working, and keeping only the live one
+  /// would erase the second.
+  promotedAt DateTime? @map("promoted_at") @db.Timestamptz
+  demotedAt  DateTime? @map("demoted_at") @db.Timestamptz
+
+  /// How many times this class has been demoted, ever.
+  ///
+  /// Here because promoting something for the fourth time is a different act
+  /// from promoting it once, and a rung alone cannot tell the two apart. A
+  /// class that oscillates is evidence about the THRESHOLDS, not about the
+  /// class - and without this counter that evidence is only visible to whoever
+  /// happened to read the notifications.
+  demotionCount Int @default(0) @map("demotion_count")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  /// #101's read: "what is promoted right now". Small table, but the index is
+  /// what makes the cockpit query a lookup rather than a scan that grows with
+  /// the taxonomy.
+  @@index([rung])
+  @@map("promotion_states")
+}
