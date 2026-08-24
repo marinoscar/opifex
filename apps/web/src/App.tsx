@@ -21,6 +21,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 // each one grows a DataTable.
 const RunsPage = lazy(() => import('./pages/RunsPage'));
 const RunDetailPage = lazy(() => import('./pages/RunDetailPage'));
+const WorkOrderDetailPage = lazy(() => import('./pages/WorkOrderDetailPage'));
 const QueuePage = lazy(() => import('./pages/QueuePage'));
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
 const CostPage = lazy(() => import('./pages/CostPage'));
@@ -69,6 +70,10 @@ function AppRoutes() {
                     the pull request that adds its endpoint. */}
                 <Route path="/runs" element={<RunsPage />} />
                 <Route path="/runs/:id" element={<RunDetailPage />} />
+                <Route
+                  path="/work-orders/:idOrIdentity"
+                  element={<WorkOrderDetailPage />}
+                />
                 <Route path="/queue" element={<QueuePage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/cost" element={<CostPage />} />

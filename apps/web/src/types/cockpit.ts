@@ -180,6 +180,55 @@ export interface QueueEntry {
   waitingOn: string | null;
 }
 
+/**
+ * A work order as `GET /api/work-orders/:idOrIdentity` returns it (#84).
+ *
+ * The `document` is the work order itself — the same bytes that went into the
+ * authorization record on the issue and the execution record on the branch
+ * (#63). Shapes mirror `apps/api/src/cockpit/dto/work-orders.dto.ts`.
+ */
+export interface WorkOrderDocument {
+  schemaVersion: string;
+  identity: string;
+  branch: string;
+  repository: { owner: string; name: string };
+  baseCommit: string;
+  attempt: number;
+  issue: { number: number; url: string };
+  decisionRefs?: string[];
+  taskSpec: string;
+  acceptanceCriteria: string[];
+  pathConstraints: string[];
+  budgetCeilingUsd: number | null;
+  wallClockTimeoutMinutes: number | null;
+  needs: string[];
+}
+
+export interface WorkOrderRunRef {
+  id: string;
+  status: string;
+  runner: string;
+  startedAt: string;
+  endedAt: string | null;
+  costUsd: number | null;
+  pullRequestUrl: string | null;
+}
+
+export interface WorkOrderDetail {
+  id: string;
+  status: string;
+  holdReason: string | null;
+  queuedAt: string | null;
+  createdAt: string;
+  /** The issue comment carrying the authorization record. Null until dispatch. */
+  authorizationCommentUrl: string | null;
+  /** The pinned base commit, in full. */
+  baseCommit: string;
+  document: WorkOrderDocument;
+  /** Every attempt, which is success metric 4 made visible. */
+  runs: WorkOrderRunRef[];
+}
+
 // ---------------------------------------------------------------------------
 // Events (VISION §9, "the normalized event floor")
 // ---------------------------------------------------------------------------
