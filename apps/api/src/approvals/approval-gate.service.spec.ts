@@ -21,6 +21,8 @@ import type { TrustGrantView } from '../trust/trust-grant.types';
 import { ApprovalNotPendingException } from './approval-not-pending.exception';
 import {
   ApprovalGateService,
+  PARKED_BACKFILL_WINDOW_MS,
+  parkedApprovalMarker,
   type ApprovalRequestRow,
 } from './approval-gate.service';
 import type { RaiseApprovalInput } from './approval.types';
@@ -46,8 +48,28 @@ const USER = 'user-1';
  *
  * Same approach as `trust-grant.service.spec.ts`, for the same reason.
  */
-function prismaDouble(seed: ApprovalRequestRow[] = []) {
+/**
+ * The subset of `Escalation` the backfill's dedupe lookup reads (#237).
+ *
+ * Deliberately holds `detail`, because the dedupe key IS a substring of the
+ * detail — there is no column pointing back at an approval — and a double that
+ * matched on anything else would pass whether or not the marker was written.
+ */
+interface EscalationRow {
+  id: string;
+  kind: string;
+  runId: string | null;
+  summary: string;
+  detail: string;
+  raisedAt: Date;
+}
+
+function prismaDouble(
+  seed: ApprovalRequestRow[] = [],
+  escalationSeed: EscalationRow[] = [],
+) {
   const rows: ApprovalRequestRow[] = seed.map((r) => ({ ...r }));
+  const escalationRows: EscalationRow[] = escalationSeed.map((e) => ({ ...e }));
   let seq = 0;
 
   function matches(row: ApprovalRequestRow, where: any = {}): boolean {
@@ -81,9 +103,18 @@ function prismaDouble(seed: ApprovalRequestRow[] = []) {
       }
     }
 
+    if (where.escalationId !== undefined) {
+      if (where.escalationId === null) {
+        if (row.escalationId !== null) return false;
+      } else if (row.escalationId !== where.escalationId) return false;
+    }
+
     const createdAt = where.createdAt;
     if (createdAt?.gte !== undefined) {
       if (row.createdAt.getTime() < createdAt.gte.getTime()) return false;
+    }
+    if (createdAt?.lt !== undefined) {
+      if (row.createdAt.getTime() >= createdAt.lt.getTime()) return false;
     }
 
     return true;
@@ -162,6 +193,10 @@ function prismaDouble(seed: ApprovalRequestRow[] = []) {
       return { ...target };
     }),
 
+    count: jest.fn(async ({ where }: any) => {
+      return rows.filter((r) => matches(r, where)).length;
+    }),
+
     groupBy: jest.fn(async ({ where }: any) => {
       const buckets = new Map<string, any>();
       for (const row of rows.filter((r) => matches(r, where))) {
@@ -179,10 +214,36 @@ function prismaDouble(seed: ApprovalRequestRow[] = []) {
     }),
   };
 
+  const escalation = {
+    findFirst: jest.fn(async ({ where, orderBy }: any) => {
+      let found = escalationRows.filter((e) => {
+        if (where.kind !== undefined && e.kind !== where.kind) return false;
+        if (where.runId !== undefined && e.runId !== where.runId) return false;
+        // The whole point of the lookup. A double that ignored `contains`
+        // would report "already escalated" for every approval and hide a
+        // broken marker instead of failing on it.
+        if (
+          where.detail?.contains !== undefined &&
+          !e.detail.includes(where.detail.contains)
+        )
+          return false;
+        return true;
+      });
+      if (orderBy?.raisedAt === 'asc') {
+        found = [...found].sort(
+          (a, b) => a.raisedAt.getTime() - b.raisedAt.getTime(),
+        );
+      }
+      return found[0] ? { ...found[0] } : null;
+    }),
+  };
+
   return {
-    prisma: { approvalRequest } as unknown as PrismaService,
+    prisma: { approvalRequest, escalation } as unknown as PrismaService,
     rows,
+    escalationRows,
     approvalRequest,
+    escalation,
   };
 }
 
@@ -255,9 +316,32 @@ function trustDouble(
   };
 }
 
-function escalationsDouble(id = 'escalation-1') {
+/**
+ * A stand-in for `EscalationsService` that also RECORDS what it raised.
+ *
+ * The recording is not incidental. #237's dedupe asks the escalation table
+ * whether the question has already been asked, so a double whose raises leave
+ * no trace would make "the escalation exists but the link failed" untestable —
+ * and that is the case the whole design turns on.
+ */
+function escalationsDouble(store: EscalationRow[]) {
+  let seq = 0;
   return {
-    raiseSystem: jest.fn(async () => ({ id })),
+    raiseSystem: jest.fn(
+      async (input: { summary: string; detail: string; raisedAt?: Date }) => {
+        seq += 1;
+        const created: EscalationRow = {
+          id: `escalation-${seq}`,
+          kind: 'system',
+          runId: null,
+          summary: input.summary,
+          detail: input.detail,
+          raisedAt: input.raisedAt ?? NOW,
+        };
+        store.push(created);
+        return { id: created.id };
+      },
+    ),
   } as unknown as EscalationsService & { raiseSystem: jest.Mock };
 }
 
@@ -286,16 +370,17 @@ function build(
     grant?: TrustGrantView;
     createResult?: TrustGrantView | Error;
     notifyFailure?: Error;
+    escalations?: EscalationRow[];
   } = {},
 ) {
-  const db = prismaDouble(options.rows ?? []);
+  const db = prismaDouble(options.rows ?? [], options.escalations ?? []);
   const neverTrustable = neverTrustableDouble(options.refusals ?? []);
   const grants = trustDouble(
     options.authorized ?? false,
     options.grant,
     options.createResult,
   );
-  const escalations = escalationsDouble();
+  const escalations = escalationsDouble(db.escalationRows);
   const notifier = notifierDouble(options.notifyFailure);
   const service = new ApprovalGateService(
     db.prisma,
@@ -505,6 +590,13 @@ describe('ApprovalGateService', () => {
       expect(written.timeoutAt).toBeNull();
       expect(escalations.raiseSystem).toHaveBeenCalledTimes(1);
       expect(written.escalationId).toBe('escalation-1');
+
+      // The marker #237's dedupe searches for. Written here and read by
+      // `findEscalationFor`; if the two ever disagree the backfill stops
+      // recognising its own work and starts raising duplicates.
+      const detail = (escalations.raiseSystem as jest.Mock).mock.calls[0][0]
+        .detail as string;
+      expect(detail).toContain(parkedApprovalMarker(written.id));
     });
 
     it('keeps the request parked even when the escalation cannot be raised', async () => {
@@ -657,6 +749,282 @@ describe('ApprovalGateService', () => {
       const result = await service.sweepTimeouts(NOW);
 
       expect(result).toMatchObject({ examined: 1, raced: 1, autoDenied: 0 });
+    });
+  });
+
+  // ==========================================================================
+  // The backfill (#237)
+  // ==========================================================================
+
+  describe('backfillParkedEscalations (#237)', () => {
+    const FIVE_MINUTES = 5 * 60 * 1000;
+    const LATER = new Date(NOW.getTime() + FIVE_MINUTES);
+
+    /** A request that parked and never got its escalation. */
+    function unescalated(
+      overrides: Partial<ApprovalRequestRow> = {},
+    ): ApprovalRequestRow {
+      return row({
+        id: 'parked-1',
+        actionClass: 'invented-class',
+        timeoutPolicy: 'park_and_escalate',
+        timeoutAt: null,
+        status: 'parked',
+        escalationId: null,
+        createdAt: NOW,
+        ...overrides,
+      });
+    }
+
+    /** An escalation already raised for `approvalId`, carrying the marker. */
+    function escalationFor(
+      approvalId: string,
+      id = 'escalation-existing',
+    ): EscalationRow {
+      return {
+        id,
+        kind: 'system',
+        runId: null,
+        summary: 'Approval parked, waiting on a human: Re-dispatch',
+        detail: `Whatever else it says.\n${parkedApprovalMarker(approvalId)}`,
+        raisedAt: NOW,
+      };
+    }
+
+    it('escalates a parked approval whose raise failed, on a later pass', async () => {
+      const { service, db, escalations } = build({ authorized: false });
+      (escalations.raiseSystem as jest.Mock).mockRejectedValueOnce(
+        new Error('escalations are down'),
+      );
+
+      await service.gate(
+        raiseInput({ actionClass: 'invented-class' as never }),
+        NOW,
+      );
+
+      // The state #237 describes: blocked, recorded, and nothing pointing at
+      // an escalation.
+      expect(db.rows[0]!.status).toBe('parked');
+      expect(db.rows[0]!.escalationId).toBeNull();
+
+      const result = await service.backfillParkedEscalations(LATER);
+
+      expect(result).toMatchObject({
+        examined: 1,
+        raised: 1,
+        linked: 0,
+        raced: 0,
+        failed: 0,
+        abandoned: 0,
+      });
+      expect(db.rows[0]!.escalationId).toBe('escalation-1');
+      expect(db.rows[0]!.status).toBe('parked');
+    });
+
+    /**
+     * THE test. `escalateParked` can fail in two ways that leave IDENTICAL
+     * rows: the raise throws (no escalation exists) or the link write throws
+     * (an escalation exists, is dispatched, and may already be on somebody's
+     * phone). A backfill defined as "parked with a null escalationId, raise
+     * one" pages the operator twice for the second case — the exact noise
+     * VISION §8 and #57 exist to remove, delivered by the mechanism that was
+     * supposed to fix a missed notification.
+     */
+    it('does NOT raise a second escalation when only the link write failed', async () => {
+      const { service, db, escalations } = build({ authorized: false });
+      // The raise lands; the pointer write does not.
+      (db.approvalRequest.updateMany as jest.Mock).mockRejectedValueOnce(
+        new Error('write conflict'),
+      );
+
+      await service.gate(
+        raiseInput({ actionClass: 'invented-class' as never }),
+        NOW,
+      );
+
+      expect(escalations.raiseSystem).toHaveBeenCalledTimes(1);
+      expect(db.escalationRows).toHaveLength(1);
+      // Indistinguishable from the failed-raise case, from the row alone.
+      expect(db.rows[0]!.escalationId).toBeNull();
+
+      const result = await service.backfillParkedEscalations(LATER);
+
+      // Nobody was paged a second time.
+      expect(escalations.raiseSystem).toHaveBeenCalledTimes(1);
+      expect(db.escalationRows).toHaveLength(1);
+      // And the pointer is repaired to the escalation that already existed.
+      expect(result).toMatchObject({ examined: 1, raised: 0, linked: 1 });
+      expect(db.rows[0]!.escalationId).toBe('escalation-1');
+    });
+
+    it('links a pre-existing escalation rather than raising a new one', async () => {
+      const { service, db, escalations } = build({
+        rows: [unescalated()],
+        escalations: [escalationFor('parked-1')],
+      });
+
+      const result = await service.backfillParkedEscalations(LATER);
+
+      expect(escalations.raiseSystem).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ examined: 1, raised: 0, linked: 1 });
+      expect(db.rows[0]!.escalationId).toBe('escalation-existing');
+    });
+
+    /**
+     * The dedupe must key on THIS approval, not on "some parked approval was
+     * escalated once". A marker match that were merely fuzzy would silently
+     * convert every real recovery into a no-op, which fails in the direction
+     * that leaves nobody told.
+     */
+    it('ignores an escalation raised for a different approval', async () => {
+      const { service, db, escalations } = build({
+        rows: [unescalated()],
+        escalations: [escalationFor('some-other-approval')],
+      });
+
+      const result = await service.backfillParkedEscalations(LATER);
+
+      expect(escalations.raiseSystem).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ raised: 1, linked: 0 });
+      expect(db.rows[0]!.escalationId).toBe('escalation-1');
+    });
+
+    /**
+     * The question was answered. Raising it now is pure noise, and the filter
+     * that prevents it is the status itself: a parked request a human decides
+     * becomes `approved` or `denied`, and a retired one becomes `superseded`.
+     */
+    it.each<ApprovalStatus>(['approved', 'denied', 'superseded'])(
+      'never backfills a request already decided as %s',
+      async (status) => {
+        const { service, db, escalations } = build({
+          rows: [
+            unescalated({
+              id: `decided-${status}`,
+              status,
+              decidedAt: NOW,
+              decidedById: status === 'superseded' ? null : USER,
+              decidedVia: status === 'superseded' ? null : 'human',
+            }),
+          ],
+        });
+
+        const result = await service.backfillParkedEscalations(LATER);
+
+        expect(result).toMatchObject({ examined: 0, raised: 0, abandoned: 0 });
+        expect(escalations.raiseSystem).not.toHaveBeenCalled();
+        expect(db.rows[0]!.escalationId).toBeNull();
+      },
+    );
+
+    it('leaves a parked approval that already has an escalation alone', async () => {
+      const { service, db, escalations } = build({
+        rows: [unescalated({ escalationId: 'escalation-7' })],
+      });
+
+      const result = await service.backfillParkedEscalations(LATER);
+
+      expect(result).toMatchObject({ examined: 0, raised: 0, linked: 0 });
+      expect(escalations.raiseSystem).not.toHaveBeenCalled();
+      expect(db.rows[0]!.escalationId).toBe('escalation-7');
+    });
+
+    /**
+     * The bound. Past the window nothing more is attempted — the same end
+     * state #136's attempt cap produces — and the count is what makes that
+     * honest rather than quiet.
+     */
+    it('reports a request older than the window as abandoned, and does not retry it', async () => {
+      const wayLater = new Date(
+        NOW.getTime() + PARKED_BACKFILL_WINDOW_MS + FIVE_MINUTES,
+      );
+      const { service, db, escalations } = build({ rows: [unescalated()] });
+
+      const result = await service.backfillParkedEscalations(wayLater);
+
+      expect(result).toMatchObject({ examined: 0, raised: 0, abandoned: 1 });
+      expect(escalations.raiseSystem).not.toHaveBeenCalled();
+      // Still blocked, still waiting on a person. Nothing auto-resolves it.
+      expect(db.rows[0]!.status).toBe('parked');
+      expect(db.rows[0]!.escalationId).toBeNull();
+      expect(db.rows[0]!.decidedVia).toBeNull();
+    });
+
+    it('still retries at the last moment inside the window', async () => {
+      const justInside = new Date(
+        NOW.getTime() + PARKED_BACKFILL_WINDOW_MS - 1,
+      );
+      const { service } = build({ rows: [unescalated()] });
+
+      const result = await service.backfillParkedEscalations(justInside);
+
+      expect(result).toMatchObject({ examined: 1, raised: 1, abandoned: 0 });
+    });
+
+    it('counts a retry that failed again, and leaves the row for the next tick', async () => {
+      const { service, db, escalations } = build({ rows: [unescalated()] });
+      (escalations.raiseSystem as jest.Mock).mockRejectedValue(
+        new Error('escalations are still down'),
+      );
+
+      const result = await service.backfillParkedEscalations(LATER);
+
+      expect(result).toMatchObject({ examined: 1, raised: 0, failed: 1 });
+      expect(db.rows[0]!.escalationId).toBeNull();
+      expect(db.rows[0]!.status).toBe('parked');
+    });
+
+    /**
+     * A human answering between the select and the link write. The escalation
+     * is already raised at that point and stands; it is counted as `raced`
+     * rather than as a repair, because nothing was repaired.
+     */
+    it('does not overwrite a request that stopped being parked mid-pass', async () => {
+      const { service, db, escalations } = build({ rows: [unescalated()] });
+      (escalations.raiseSystem as jest.Mock).mockImplementationOnce(
+        async () => {
+          // The human taps approve while the escalation is being raised.
+          db.rows[0]!.status = 'approved';
+          return { id: 'escalation-late' };
+        },
+      );
+
+      const result = await service.backfillParkedEscalations(LATER);
+
+      expect(result).toMatchObject({ examined: 1, raised: 0, raced: 1 });
+      expect(db.rows[0]!.status).toBe('approved');
+      expect(db.rows[0]!.escalationId).toBeNull();
+    });
+
+    it('is a no-op when nothing is parked', async () => {
+      const { service, escalations } = build({ rows: [row({ id: 'a1' })] });
+
+      const result = await service.backfillParkedEscalations(LATER);
+
+      expect(result).toMatchObject({
+        examined: 0,
+        raised: 0,
+        linked: 0,
+        raced: 0,
+        failed: 0,
+        abandoned: 0,
+      });
+      expect(escalations.raiseSystem).not.toHaveBeenCalled();
+    });
+
+    it('says the escalation is late rather than letting it read as fresh', async () => {
+      const { service, escalations } = build({ rows: [unescalated()] });
+
+      await service.backfillParkedEscalations(
+        new Date(NOW.getTime() + 90 * 60 * 1000),
+      );
+
+      const detail = (escalations.raiseSystem as jest.Mock).mock.calls[0][0]
+        .detail as string;
+      expect(detail).toContain('Raised late');
+      expect(detail).toContain('90 minute(s) ago');
+      // The consequence-for-silence is unchanged: still no timer, ever.
+      expect(detail).toContain('never auto-approved');
     });
   });
 
