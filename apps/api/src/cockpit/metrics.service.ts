@@ -9,7 +9,9 @@ import { stats } from '../escalations/detection-latency';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   METRICS_DEFAULT_DAYS,
+  NO_DISPATCHES,
   NOT_MEASURED,
+  type AvoidedParks,
   type MetricSample,
   type MetricsSummary,
 } from './dto/metrics.dto';
@@ -61,12 +63,14 @@ export class MetricsService {
       attemptsPerWorkOrder,
       firstPassAcceptance,
       costPerMergedPr,
+      avoidedParks,
     ] = await Promise.all([
       this.detectionLatency(from, to, days),
       this.deadTimePerDay(from, to, days),
       this.attemptsPerWorkOrder(from, to, days),
       this.firstPassAcceptance(from, to, days),
       this.costPerMergedPr(from, to, days),
+      this.avoidedParks(from, to),
     ]);
 
     return {
@@ -84,6 +88,107 @@ export class MetricsService {
         // absence rather than a zero waiting to be filled in.
         quotaBurn: NOT_MEASURED,
       },
+      // BESIDE the six, never among them (#264). A sibling key rather than a
+      // seventh entry in `metrics`, so nothing that walks `METRIC_IDS` can
+      // render it as a metric or fold it into one. See `avoidedParksSchema`.
+      avoidedParks,
+    };
+  }
+
+  /**
+   * Parks that quota-aware routing prevented, over the window (#264).
+   *
+   * ## A count of events. There is no duration here and there must not be
+   *
+   * The obvious next move is to join a duration and report hours avoided, and
+   * it is wrong: the park never happened, so there is no interval. Producing
+   * hours would mean estimating how long it WOULD have lasted — the exhausted
+   * runner's reset minus the decision instant — which is an estimate wearing a
+   * measurement's clothes. That is the substitution `quotaBurn` refuses above,
+   * and #232 declined to make it here for the same reason. `resumes_at` is
+   * stored on the row for explanation and nothing subtracts it.
+   *
+   * ## Zero and "not measured" are different claims, as everywhere else here
+   *
+   * An empty ledger over a window in which work WAS dispatched is a real zero:
+   * routing had chances to move work off a spent runner and none arose. An
+   * empty ledger over a window with no dispatches at all has measured nothing
+   * — routing never got the chance — and returns null.
+   *
+   * Both states are reachable today, which is the test that this distinction
+   * is real rather than decorative. `deadTimePerDay` draws the same line, on
+   * the same shape: rows, then a probe for whether anything happened at all.
+   *
+   * ## It reads zero until a second runner exists, and that is why it is here
+   *
+   * With one registered runner there is nowhere for work to move, so the
+   * answer is zero by construction (#102/#103 are blocked on the vendor). A
+   * number that reads zero for a TRUE reason is what has to be in place before
+   * the thing it measures arrives, or the before-and-after has no before.
+   * `basis` says so on the panel, so the zero does not read as a failure.
+   */
+  private async avoidedParks(from: Date, to: Date): Promise<AvoidedParks> {
+    // The event is instantaneous, so this is a plain containment test rather
+    // than the overlap `deadTimePerDay` needs. Nothing to clip.
+    const rows = await this.prisma.avoidedPark.findMany({
+      where: { occurredAt: { gte: from, lte: to } },
+      select: { occurredAt: true, exhaustedRunnerKeys: true },
+      orderBy: { occurredAt: 'desc' },
+    });
+
+    // Runs STARTED in the window, which is exactly the set of dispatches: the
+    // executor creates the row and the decision in the same pass. This is the
+    // denominator that makes a zero meaningful, and the probe that separates
+    // it from an absence.
+    const dispatches = await this.prisma.run.count({
+      where: { startedAt: { gte: from, lte: to } },
+    });
+
+    if (rows.length === 0) {
+      if (dispatches === 0) return NO_DISPATCHES;
+
+      return {
+        count: 0,
+        byExhaustedRunner: [],
+        mostRecentAt: null,
+        basis:
+          `No park was avoided across ${dispatches} dispatch(es) in this window. ` +
+          'That is a measurement, not a gap: work moved off a rate-limited runner ' +
+          'zero times. With one registered runner there is nowhere for it to move.',
+      };
+    }
+
+    const perRunner = new Map<string, number>();
+    for (const row of rows) {
+      // A dispatch that moved off two spent runners at once counts once
+      // OVERALL and once against each of them. An attribution, not a
+      // partition — which is why `count` is `rows.length` and never the sum
+      // of this map.
+      for (const key of row.exhaustedRunnerKeys) {
+        perRunner.set(key, (perRunner.get(key) ?? 0) + 1);
+      }
+    }
+
+    const byExhaustedRunner = [...perRunner]
+      .map(([runnerKey, count]) => ({ runnerKey, count }))
+      .sort(
+        (a, b) => b.count - a.count || a.runnerKey.localeCompare(b.runnerKey),
+      );
+
+    return {
+      count: rows.length,
+      byExhaustedRunner,
+      mostRecentAt: rows[0].occurredAt.toISOString(),
+      basis:
+        `${rows.length} park(s) avoided across ${dispatches} dispatch(es) in this window: ` +
+        byExhaustedRunner
+          .map(
+            (entry) =>
+              `work moved off ${entry.runnerKey} ${entry.count} time(s)`,
+          )
+          .join(', ') +
+        '. A count of events, not a duration — the parks did not happen, so there ' +
+        'are no hours to report.',
     };
   }
 

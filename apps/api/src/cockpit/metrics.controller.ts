@@ -33,7 +33,13 @@ export class MetricsController {
       'tracks, and quota burn needs consumption against a window capacity nothing captures. ' +
       'Computing something adjacent and labelling it the metric would answer a question nobody ' +
       'asked. `trend` carries only the days that had data, oldest first, because the series ' +
-      'cannot express a gap and a zero would draw a line claiming a perfect day.',
+      'cannot express a gap and a zero would draw a line claiming a perfect day. ' +
+      '`avoidedParks` is a SIBLING of `metrics`, not a seventh metric: it counts the parks ' +
+      'quota-aware routing prevented (#264), which is a count of EVENTS and never a duration. ' +
+      'The park did not happen, so it has no hours; converting it to hours or adding it to ' +
+      'deadTimePerDay would report an estimate as a measurement. Its `count` is null only when ' +
+      'nothing was dispatched at all — zero avoided parks is a real reading, and the honest ' +
+      'permanent one while the fleet has a single runner.',
   })
   @ApiQuery({ name: 'days', required: false, type: Number })
   @ApiDataResponse(MetricsSummaryDto, {
