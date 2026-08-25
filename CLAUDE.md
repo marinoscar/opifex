@@ -503,7 +503,7 @@ Key variables (see `infra/compose/.env.example` for full list):
 - `POSTGRES_HOST` - Database hostname (default: localhost)
 - `POSTGRES_PORT` - Database port (default: 5432)
 - `POSTGRES_USER` - Database user (default: postgres)
-- `POSTGRES_PASSWORD` - Database password (default: postgres)
+- `POSTGRES_PASSWORD` - Database password (default: `postgres`). **Required and enforced at boot in production only** (#299): the API refuses to start if `NODE_ENV=production` and the value is unset, empty, or still the `postgres` default — that last check is the one that does the work, since `cp infra/compose/.env.example infra/compose/.env` (the setup step above) ships that exact default. Outside production the default applies with no enforcement, deliberately, so `docker compose up` on a laptop stays frictionless. Unlike `JWT_SECRET` there is no minimum length: this is a password an existing database already has, not one generated for the occasion. See `apps/api/src/config/env.validation.ts`.
 - `POSTGRES_DB` - Database name (default: appdb)
 - `POSTGRES_SSL` - Enable SSL connection (default: false)
 

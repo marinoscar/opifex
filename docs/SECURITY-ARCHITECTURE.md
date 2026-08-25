@@ -1304,13 +1304,13 @@ app.enableCors({
 
 **Critical Secrets (Must Protect):**
 
-| Variable               | Purpose               | Security Requirement                                                                          |
-| ---------------------- | --------------------- | --------------------------------------------------------------------------------------------- |
-| `JWT_SECRET`           | Signs JWT tokens      | **Required, enforced at boot**: min 32 chars, random, never commit                            |
-| `COOKIE_SECRET`        | Signs session cookies | Optional (falls back to `JWT_SECRET`); if set, **enforced at boot** to the same 32-char floor |
-| `GOOGLE_CLIENT_SECRET` | OAuth with Google     | From Google Console, never commit                                                             |
-| `DATABASE_URL`         | Database connection   | Contains credentials, never commit                                                            |
-| `POSTGRES_PASSWORD`    | Database password     | Strong password, never commit                                                                 |
+| Variable               | Purpose               | Security Requirement                                                                                                           |
+| ---------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `JWT_SECRET`           | Signs JWT tokens      | **Required, enforced at boot**: min 32 chars, random, never commit                                                             |
+| `COOKIE_SECRET`        | Signs session cookies | Optional (falls back to `JWT_SECRET`); if set, **enforced at boot** to the same 32-char floor                                  |
+| `GOOGLE_CLIENT_SECRET` | OAuth with Google     | From Google Console, never commit                                                                                              |
+| `DATABASE_URL`         | Database connection   | Contains credentials, never commit                                                                                             |
+| `POSTGRES_PASSWORD`    | Database password     | **Required in production, enforced at boot** (#299): rejects unset, empty, and the literal `postgres` default; no length floor |
 
 `JWT_SECRET` and `COOKIE_SECRET` are validated by `apps/api/src/config/env.validation.ts`
 (#278) before the application boots. A missing or short value throws at
@@ -1326,6 +1326,35 @@ there is nothing left that is safe to serve by staying up.
 
 `openssl rand -base64 32` produces 44 characters, comfortably over the
 32-character floor.
+
+`POSTGRES_PASSWORD` is validated by the same file, but more weakly, and
+deliberately so (#299). The check applies only when `NODE_ENV=production`; in
+development, in test, and when `NODE_ENV` is absent entirely, nothing is
+required and the default in `infra/compose/.env.example` still applies, so
+`docker compose up` on a laptop stays frictionless. In production it rejects
+an unset value, an empty one, and — this is the half that does the work — the
+literal string `postgres`, which is exactly what `.env.example` ships and
+what `cp infra/compose/.env.example infra/compose/.env` (this repository's
+documented setup step) produces. A presence-only check would have passed that
+exact deployment while reporting success. Unlike `JWT_SECRET` there is no
+length floor: this is a password an existing database already has rather than
+one generated for the occasion, and a minimum would reject working
+deployments to express a preference nobody could act on. Problems are
+reported together with any other environment problems in one message, the
+same way `JWT_SECRET`'s are.
+
+This is hardening, not a vulnerability, and the distinction is worth holding
+onto rather than blurring with `JWT_SECRET` above. `JWT_SECRET`'s fallback was
+an _inbound_ verification key — a repo-public value meant anyone could mint a
+token and be believed. `POSTGRES_PASSWORD`'s fallback is an _outbound_
+credential: a wrong value fails to connect, loudly, and never grants anyone
+access to us. #278 is the serious one.
+
+**Known gap:** a host that is production in every way but does not set
+`NODE_ENV=production` — a staging box, a one-off container — is not covered.
+`NODE_ENV` is the only signal available; requiring the variable everywhere
+would not close the gap, it would only force every developer to type the same
+weak password explicitly.
 
 **Generate Secrets:**
 
@@ -1426,6 +1455,12 @@ MICROSOFT_CALLBACK_URL=http://localhost:3535/api/auth/microsoft/callback
 ```
 
 **Database:**
+
+`POSTGRES_PASSWORD` is required only when `NODE_ENV=production` — the API
+refuses to start on a production deployment whose value is unset, empty, or
+still the `postgres` default (#299). Outside production the default applies
+with no enforcement, deliberately, so a fresh checkout boots without a
+decision here.
 
 ```bash
 DATABASE_URL=postgresql://postgres:postgres@db:5432/appdb

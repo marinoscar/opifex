@@ -147,6 +147,13 @@ every invalid variable at once. `COOKIE_SECRET` is optional — cookies fall
 back to signing with `JWT_SECRET` when it is unset — but if you set one it is
 held to the same 32-character floor.
 
+`POSTGRES_PASSWORD` has no equivalent enforcement on this host. The boot-time
+check (#299) only fires when `NODE_ENV=production`, and per the table below
+this deployment runs `NODE_ENV=development` for the Vite dev server — so a
+copied default here would boot silently instead of failing loudly. Copy the
+real password from another app's `.env`, not `.env.example`'s `postgres`;
+nothing on this host will catch it if you don't.
+
 `.env.example` documents every variable. The ones that must change for this host:
 
 | Variable                                                  | Value                                                  | Where it comes from                                                            |
@@ -158,7 +165,7 @@ held to the same 32-character floor.
 | `CORS_ORIGIN`                                             | `https://opifex.dev.marin.cr`                          | literal                                                                        |
 | `POSTGRES_HOST`                                           | `postgres`                                             | literal — devnet DNS                                                           |
 | `POSTGRES_USER`                                           | `admin`                                                | shared PostgreSQL user                                                         |
-| `POSTGRES_PASSWORD`                                       | —                                                      | copy from another app's `.env` on this host                                    |
+| `POSTGRES_PASSWORD`                                       | —                                                      | copy from another app's `.env` on this host — **not enforced here**, see below |
 | `POSTGRES_DB`                                             | `opifex`                                               | literal                                                                        |
 | `POSTGRES_SSL`                                            | `false`                                                | literal — same Docker network                                                  |
 | `JWT_SECRET`                                              | —                                                      | **generate — mandatory, ≥32 chars, enforced at boot**                          |

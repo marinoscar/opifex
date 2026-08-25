@@ -1009,6 +1009,9 @@ APP_URL=http://localhost:3535
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_USER=postgres
+# Required only when NODE_ENV=production: the API refuses to start on a
+# default or empty value there (#299). Outside production the default below
+# applies unchecked. See apps/api/src/config/env.validation.ts.
 POSTGRES_PASSWORD=postgres
 POSTGRES_DB=appdb
 
