@@ -240,7 +240,49 @@ cd infra/compose
 docker compose -f base.compose.yml -f dev.compose.yml up -d --build
 # only if apps/api/prisma/migrations/ changed:
 docker compose -f base.compose.yml -f dev.compose.yml exec api npm run prisma:migrate
+# every deploy, unconditionally — see below
+docker compose -f base.compose.yml -f dev.compose.yml exec api npm run prisma:seed
 ```
+
+`--build` is not optional. Without it the containers keep the `node_modules`
+baked into the previous image, so a dependency added since that build is simply
+missing at runtime — and nothing says so at deploy time.
+
+**Run the seed on every deploy, without first deciding whether it is needed.**
+It is idempotent: every write is an `upsert` and nothing is ever deleted, so
+running it against an up-to-date database changes nothing. Deciding whether it
+is needed means knowing whether `apps/api/prisma/seed.ts` gained a row since
+the last deploy — and that is precisely the judgement that was skipped for the
+Opifex domain permissions. They never reached this host, so every cockpit
+endpoint returned 403 to every user, admin included, for as long as those
+endpoints had been deployed, while the deployment reported healthy throughout
+(#173).
+
+## Verifying a deploy
+
+```bash
+# The permission set the API enforces vs. the rows behind it. On a healthy
+# deploy this prints `"missing": 0`; when the database is behind the code the
+# endpoint answers 503 and the same line prints the names that never got
+# seeded. Fix by re-running the seed above.
+curl -s https://opifex.dev.marin.cr/api/health | jq '.data.info.seed // .details.seed'
+
+# The same check as pass/fail, for a script: `-f` exits non-zero on the 503.
+curl -sfo /dev/null https://opifex.dev.marin.cr/api/health && echo 'deploy verified'
+
+# The web app must return HTML, not a Vite import-resolution overlay
+curl -sI https://opifex.dev.marin.cr/ | head -1
+
+# What the API concluded about the permission set at boot
+cd /home/marinoscar/git/opifex/infra/compose
+docker compose -f base.compose.yml -f dev.compose.yml logs api \
+  | grep -Ei 'seed drift|permission set'
+```
+
+`/api/health/ready` deliberately does **not** fail on seed drift. It reports it
+in `info.seed` and stays ready, because an API taken out of service cannot
+serve the diagnosis and is where the fix is run from. `/api/health` is the
+strict check — use that one to verify a deploy.
 
 The internal Nginx re-resolves the `api` and `web` container names through
 Docker's DNS every 10s, so a rebuild no longer strands it on stale IPs.
