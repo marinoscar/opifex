@@ -59,6 +59,18 @@ export class GitHubWriteService {
   private readonly logger = new Logger(GitHubWriteService.name);
   private readonly writesEnabled: boolean;
 
+  /**
+   * How many write requests have left this process since boot.
+   *
+   * Monotonic, and deliberately kept HERE rather than in any caller: this
+   * class is the only path to a GitHub write, so a counter maintained here is
+   * closed under write paths that do not exist yet. #317 is what a counter
+   * maintained elsewhere looks like — the reconciler tick log recorded a
+   * literal `0`, and would still have missed the dispatch writes even if
+   * somebody had wired the label executor's own tally into it.
+   */
+  private issuedWrites = 0;
+
   constructor(
     private readonly http: GitHubHttpService,
     private readonly config: ConfigService,
@@ -75,6 +87,20 @@ export class GitHubWriteService {
 
   get enabled(): boolean {
     return this.writesEnabled;
+  }
+
+  /**
+   * Writes issued since boot, for a caller that wants a delta over a window.
+   *
+   * "Issued" means: got past the kill switch and had its request handed to the
+   * HTTP layer. It counts writes that changed nothing (a label already absent)
+   * and writes that threw, because both TOUCHED GitHub — a mutation that
+   * returns 500 may still have landed, and a counter that dropped it would
+   * report a clean window that was not one. It does NOT count writes the kill
+   * switch suppressed, which is what makes a delta of zero mean "read-only".
+   */
+  get writesIssued(): number {
+    return this.issuedWrites;
   }
 
   /**
@@ -288,6 +314,17 @@ export class GitHubWriteService {
         description,
       };
     }
+
+    // Counted BEFORE the await, and outside any try: from here on a request
+    // is on its way out, and whether it succeeds, no-ops or throws does not
+    // change that it left. Counting after the fact would drop exactly the
+    // writes whose effect is unknown, which are the ones an audit needs most.
+    //
+    // It can over-count by one if the HTTP layer refuses to send (a rate-limit
+    // stop). That bias is deliberate: this number's job is to catch a window
+    // that was supposed to be read-only, so a false alarm costs an
+    // investigation and a false all-clear costs the guarantee.
+    this.issuedWrites += 1;
 
     const { url, noop } = await execute();
     this.logger.log(noop ? `${description} (already true)` : description);

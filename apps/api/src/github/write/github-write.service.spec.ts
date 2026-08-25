@@ -250,6 +250,68 @@ describe('GitHubWriteService', () => {
     });
   });
 
+  /**
+   * #317: the reconcile log's `actionsExecuted` was a literal `0`, so the
+   * observation week's only safety check could not fail. The counter lives
+   * here, at the one place every GitHub write must pass through, so that it
+   * is closed under write paths that do not exist yet.
+   */
+  describe('the issued-writes counter', () => {
+    it('starts at zero', () => {
+      expect(build(http, true).writesIssued).toBe(0);
+    });
+
+    it('does NOT move while the kill switch is off', async () => {
+      // The load-bearing assertion. This is what makes "actionsExecuted is 0
+      // for the whole observation week" a measurement instead of an assertion.
+      const service = build(http, false);
+
+      await service.addLabel(REPO, 312, 'factory/dispatched');
+      await service.postGeneralComment(REPO, 312, 'a note');
+      await service.postAuthorizationRecord(REPO, 312, { id: 'wo' });
+
+      expect(service.writesIssued).toBe(0);
+    });
+
+    it('counts every kind of write, not just labels', async () => {
+      // A tick reaches GitHub through four paths and only two of them report
+      // a tally. Counting here is what stops the dispatch writes going unseen.
+      const service = build(http, true);
+
+      await service.addLabel(REPO, 312, 'factory/dispatched');
+      await service.postAuthorizationRecord(REPO, 312, { id: 'wo' });
+      await service.postRunSummary(REPO, 9, 'done');
+
+      expect(service.writesIssued).toBe(3);
+    });
+
+    it('counts a write that changed nothing, because it still touched GitHub', async () => {
+      // A removal of a label that is not there sends the DELETE and spends
+      // rate-limit budget. It is a touch, and the week's rule is about touches.
+      const service = build(http, true);
+      http.request.mockRejectedValueOnce(
+        new GitHubNotFoundError('Label does not exist', 404, 'DELETE', '/x'),
+      );
+
+      const result = await service.removeLabel(REPO, 312, 'factory/dispatched');
+
+      expect(result.noop).toBe(true);
+      expect(service.writesIssued).toBe(1);
+    });
+
+    it('counts a write that THREW, because its effect is unknown', async () => {
+      // A mutation that answers 500 may still have landed. Dropping it here
+      // would report a clean window that was not one.
+      const service = build(http, true);
+      http.request.mockRejectedValueOnce(new Error('502 from GitHub'));
+
+      await expect(
+        service.addLabel(REPO, 312, 'factory/dispatched'),
+      ).rejects.toThrow('502');
+      expect(service.writesIssued).toBe(1);
+    });
+  });
+
   describe('what this service cannot do', () => {
     it('exposes no member outside the classified set', () => {
       // If a method is added without a `WriteAction`, it shows up here. The
@@ -274,6 +336,10 @@ describe('GitHubWriteService', () => {
         'postGeneralComment',
         'postRunSummary',
         'removeLabel',
+        // The issued-writes counter (#317), a read-only getter. Here rather
+        // than exempted, because the point of this list is that anything new
+        // on the class is added to it deliberately.
+        'writesIssued',
       ]);
     });
   });
