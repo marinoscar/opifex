@@ -506,4 +506,51 @@ describe('Health Endpoints (Integration)', () => {
       });
     });
   });
+
+  describe('Empty fleet (#277)', () => {
+    /** No rows in `runners` at all — the ordinary "never registered" case. */
+    function emptyFleet(): void {
+      (context.prismaMock.runner.findMany as jest.Mock).mockResolvedValue([]);
+    }
+
+    it('stays 200 on readiness with an empty fleet, and reports it', async () => {
+      // The remedy for an empty fleet runs INSIDE the container readiness
+      // would take down; failing readiness over it would remove the
+      // diagnosis and the fix at the same time. See FleetIndicator.
+      context.prismaMock.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+      emptyFleet();
+
+      const response = await request(context.app.getHttpServer())
+        .get('/api/health/ready')
+        .expect(200);
+
+      expect(response.body.data.status).toBe('ok');
+      expect(response.body.data.info.fleet).toMatchObject({
+        status: 'up',
+        checked: true,
+        registered: 0,
+        routable: 0,
+      });
+    });
+
+    it('fails the full health check on an empty fleet, naming it in the 503', async () => {
+      // Registration is unconditional (see RunnersModule), so a deployment
+      // with no routable runner is code and database disagreeing — the same
+      // class of failure as seed drift, and this is the check a redeploy
+      // verifies against.
+      context.prismaMock.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+      emptyFleet();
+
+      const response = await request(context.app.getHttpServer())
+        .get('/api/health')
+        .expect(503);
+
+      expect(response.body.statusCode).toBe(503);
+      expect(response.body.details.fleet).toMatchObject({
+        status: 'down',
+        registered: 0,
+        routable: 0,
+      });
+    });
+  });
 });
