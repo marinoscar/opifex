@@ -115,7 +115,7 @@ rather than going quiet.
 ## 3. Create the label taxonomy
 
 `.github/labels.yml` is the declaration; nothing applies it on its own. Until it
-is applied, **the seven `factory:*` / `factory/*` labels do not exist on the
+is applied, **the eight `factory:*` / `factory/*` labels do not exist on the
 repository** — and a label that does not exist cannot be put on an issue, so
 nothing can ever carry `factory:ready`, and the reconciler correctly computes
 zero actions on every tick, forever. That is how the first attempt at this week
@@ -199,13 +199,20 @@ How `readModelTier` resolves the label set on an issue:
   - Falling back to the default is the only rule that cannot stall work or
     spend money on a guess.
 
-**An unrecognised value in either family is ignored — silently, today.** A
-typo (`needs:telemetry`, `tier:huge`) does not count toward the label's
-effect, is not surfaced in `unknownInputLabels` (that field is `factory:`-only,
-see above), and produces no warning or record anywhere the operator can see.
-#297 is open to give this a signal; until it lands, a misspelled `needs:` or
-`tier:` label reads as "not requested," indistinguishable from an issue where
-the operator never intended to set one.
+**An unrecognised value in any of the three families is surfaced, not silent
+(#297, #305).** A typo (`needs:telemetry`, `tier:huge`, or an unrecognised
+`factory:` value) is classified by `classifyIgnoredLabels`
+(`apps/api/src/github/labels/ignored-labels.ts`) and folded into that issue's
+`reason` on every tick — visible in the tick log (§6) whether or not any write
+flag is on, the same as every other computed finding during the observation
+week. It still does **not** count toward `unknownInputLabels` (that field
+stays `factory:`-only, per its own name); the classifier's output is a
+separate field, `ignoredLabels`. Once mirror labels are enabled for the
+repository (§7 stage 1), the same finding is also written to GitHub as the
+`factory/label-ignored` mirror label — one label covering all three families,
+because the offending label is sitting two labels away on the same issue, and
+the precise family, kind, and offending names are in the `reason` and the
+action evidence instead of the label itself.
 
 **Do not confuse either family with `factory:*` or `factory/*`:**
 
@@ -217,11 +224,11 @@ the operator never intended to set one.
   generated. They decide which runner and which model class handle the work,
   never whether it happens.
 - `factory/*` **mirror** labels (`factory/dispatched`, `factory/blocked`,
-  `factory/review`, `factory/quarantine`) are written **by** Opifex for
-  visibility only — `.github/labels.yml`'s own description text says so for
-  each one — and must never be hand-edited. Treating a mirror label as
-  something to set, the way `needs:`/`tier:`/`factory:` are set, is the
-  specific mix-up this section exists to head off.
+  `factory/review`, `factory/quarantine`, `factory/label-ignored`) are written
+  **by** Opifex for visibility only — `.github/labels.yml`'s own description
+  text says so for each one — and must never be hand-edited. Treating a mirror
+  label as something to set, the way `needs:`/`tier:`/`factory:` are set, is
+  the specific mix-up this section exists to head off.
 
 ---
 
@@ -331,12 +338,19 @@ Do it in stages, and let each one sit before the next:
    `PATCH /api/repositories/{id}` with `{"mirrorLabelsEnabled": true}`, and set
    `GITHUB_WRITES_ENABLED=true`. Both must be on for a label to be written. This
    is the first time Opifex touches GitHub — proving the write path before
-   dispatch exists is the entire reason labels come first.
+   dispatch is switched on is the entire reason labels come first.
 2. **Watch the labels.** `factory/dispatched`, `factory/blocked`,
    `factory/review`, `factory/quarantine` should appear and disappear in step
    with what the tick log said. Your own `factory:ready`, `factory:hold` and
    `factory:clear-quarantine` are inputs and are never touched.
-3. **Dispatch** — not yet. Nothing executes a run until Phase 4 (#18) lands.
+3. **Dispatch** — not part of this runbook. The executor
+   (`apps/api/src/dispatch/run-executor.service.ts`) and the `claude-code-local`
+   runner it calls both exist and are wired into the app, but three switches
+   keep them off: `DISPATCH_ENABLED` (global), `CLAUDE_CODE_LOCAL_ENABLED` (the
+   runner itself), and each repository's own `dispatchEnabled` (§4). All three
+   default `false`, and deliberately stay that way for the whole observation
+   week — turning them on is the step after this runbook, not part of it. See
+   `docs/ARCHITECTURE.md` §3.9 for what each flag gates.
 
 ---
 
@@ -356,8 +370,21 @@ Do it in stages, and let each one sit before the next:
 
 Being explicit, so the gaps do not get quietly assumed away:
 
-- **Nothing is executed.** Every `kill-and-re-run`, `kill-and-re-plan`, `park`
-  and `dispatch` is computed and discarded. The executor is Phase 4.
+- **`dispatch` is computed and not acted on, because the switches that would
+  act on it are off.** `run-executor.service.ts` runs the whole decision for
+  every queued work order and logs what it _would_ have dispatched — the same
+  code path that will actually submit once `DISPATCH_ENABLED`,
+  `CLAUDE_CODE_LOCAL_ENABLED`, and the repository's own `dispatchEnabled` are
+  all `true`. Nothing about this observation week turns them on.
+- **`kill-and-re-run`, `kill-and-re-plan`, and `park` are computed and
+  discarded, and no flag changes that.** These are the watchdog's own
+  recovery actions for a run already in flight — abandon-and-restart a silent
+  run, kill-and-replan a looping one, park a rate-limited one until its reset.
+  Unlike `dispatch`, no executor exists for any of the three yet: the mirror-
+  label executor only ever touches `add-mirror-label` /
+  `remove-mirror-label`, and nothing else in the reconciler's write path
+  handles them. A stalled run is escalated to you; it is not yet killed and
+  restarted by the system itself.
 - **Detection latency here is a control-plane measurement.** Real runs from a
   real runner will move it.
 - **A quiet week proves less than it looks.** If no run ever stalls, the watchdog
