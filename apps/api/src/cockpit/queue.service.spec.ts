@@ -25,6 +25,10 @@ describe('QueueService', () => {
       baseCommit: 'a3f91c2000000000000000000000000000000000',
       attempt: 1,
       needs: [] as string[],
+      // The column, as the select returns it. Null is the ordinary case and
+      // the fixture says so rather than omitting the field — an omitted
+      // optional in a fixture is exactly how #273 went unnoticed.
+      modelTier: null as string | null,
       status: 'queued',
       holdReason: null as string | null,
       queuedAt: new Date('2026-08-23T01:00:00Z'),
@@ -336,6 +340,49 @@ describe('QueueService', () => {
       await service.list();
 
       expect(decide).toHaveBeenCalledTimes(1);
+    });
+
+    it('asks twice for the same needs with different model tiers', async () => {
+      // #273: keyed on needs alone, these two would share one decision and
+      // the "waiting on" line would name the wrong constraint for one of them.
+      findMany.mockResolvedValue([
+        row({ id: 'a', needs: [], modelTier: 'small' }),
+        row({ id: 'b', needs: [], modelTier: 'large' }),
+      ]);
+
+      await service.list();
+
+      expect(decide).toHaveBeenCalledTimes(2);
+    });
+
+    it('passes the tier to the policy, not just to the key', async () => {
+      findMany.mockResolvedValue([row({ id: 'a', modelTier: 'large' })]);
+
+      await service.list();
+
+      expect(decide).toHaveBeenCalledWith([], undefined, 'large');
+    });
+
+    it('does not let a tier the column holds but this build cannot read reach the policy', async () => {
+      // A read model renders the other ninety-nine rows rather than refusing
+      // the page. `rehydrateWorkOrder` still refuses to DISPATCH such a row.
+      findMany.mockResolvedValue([row({ id: 'a', modelTier: 'enormous' })]);
+
+      await service.list();
+
+      expect(decide).toHaveBeenCalledWith([], undefined, undefined);
+    });
+
+    it('cannot collide a need with a tier of the same name', async () => {
+      // `needs: ['a']` + tier `b` must not key the same as `needs: ['a','b']`.
+      findMany.mockResolvedValue([
+        row({ id: 'a', needs: ['full-streaming'], modelTier: 'small' }),
+        row({ id: 'b', needs: ['full-streaming', 'small'], modelTier: null }),
+      ]);
+
+      await service.list();
+
+      expect(decide).toHaveBeenCalledTimes(2);
     });
 
     it('routes each row against ITS OWN needs decision', async () => {
