@@ -44,8 +44,10 @@ export class ReconcilerController {
       'whenever GITHUB_WRITES_ENABLED is off, which is the whole of the VISION §12 observation ' +
       'week: there this log is the record of what the reconciler WOULD have done, and a non-zero ' +
       'value means something is enabled that should not be. It is not a subset of ' +
-      'actionsComputed. Use actionsOnly=true to skip the quiet ticks, which are the great ' +
-      'majority.',
+      "actionsComputed. executionFailures says which of a tick's own acting-phase writes went " +
+      'wrong and why — null when no executor ran at all on that tick, [] when one ran and ' +
+      'reported nothing, so the two are not interchangeable. Use actionsOnly=true to skip the ' +
+      'quiet ticks, which are the great majority.',
   })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
@@ -65,7 +67,10 @@ export class ReconcilerController {
     summary: 'Get one tick, with its full projection and action list',
     description:
       'projections and actions are null for a tick that computed nothing — the heavy payload is ' +
-      'stored only when there was something to review.',
+      'stored only when there was something to review. executionFailures is null for a tick ' +
+      'whose acting-phase executors never ran, which is different from [], meaning they ran and ' +
+      "nothing failed. It covers the reconciler's own writes — mirror labels and spec-feedback " +
+      "comments — and not dispatch's, whose failures are recorded on the run.",
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiDataResponse(TickRecordDto, { description: 'The tick' })
