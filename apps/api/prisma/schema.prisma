@@ -1214,8 +1214,9 @@ model Runner {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  capability RunnerCapability?
-  runs       Run[]
+  capability   RunnerCapability?
+  runs         Run[]
+  quotaWindows QuotaWindow[]
 
   @@index([enabled])
   @@map("runners")
@@ -1267,6 +1268,127 @@ model RunnerCapability {
   runner Runner @relation(fields: [runnerId], references: [id], onDelete: Cascade)
 
   @@map("runner_capabilities")
+}
+
+// =============================================================================
+// Opifex Domain - Quota
+// =============================================================================
+
+/// How the vendor described its own rate-limit position, normalized (#231).
+///
+/// An ORDINAL, not a fraction, and that distinction is the whole design.
+/// VISION §10's metric 6 wants quota BURN - consumption over window capacity -
+/// and no capacity number exists to divide by: `runner-capability.schema.json`
+/// has no field for one, no vendor API publishes one (#102 established there
+/// is no non-interactive cloud API at all), and an operator-declared ceiling
+/// would be a guess sitting in a denominator.
+///
+/// What the vendor does say, on every `rate_limit_event` line, is which of
+/// these three it currently considers true. That is first-hand and it is
+/// ordered - `warning` genuinely comes before `exhausted` - so it supports
+/// "this subscription is under pressure" without ever implying a percentage.
+enum QuotaPressure {
+  /// The vendor said something this system does not recognize. A window with
+  /// an unreadable status still has a reset time worth recording, and NULL is
+  /// not available here for the same reason it is not on `RunEvent.source`:
+  /// unknown must be a value somebody chose, not an absence to be defaulted.
+  unknown
+  /// Room in the window. The one thing a blocked-run signal (#105) can never
+  /// say: it is derived from parks, so it can only observe exhaustion.
+  allowed
+  /// The vendor's own "approaching the limit". This is the value #89's
+  /// supervisor quota gate can stand down BEFORE a worker is parked, rather
+  /// than after.
+  warning
+  /// Requests are being refused. The same instant the run is parked (#56).
+  exhausted
+}
+
+/// One vendor rate-limit window, and what Opifex put through it (#231).
+///
+/// ## What a row is, and what it deliberately is not
+///
+/// It is a WINDOW the vendor named, identified by the reset instant it gave.
+/// `claude-code-local` emits `rate_limit_event` lines carrying `resetsAt` and
+/// a `rateLimitType` label ("five_hour", "weekly") on healthy turns as well as
+/// refused ones, and the healthy ones were being dropped on the floor. They
+/// are the only place the window boundary is observable BEFORE the wall is
+/// hit, which is exactly what #113's reset-window-aware scheduling needs.
+///
+/// It is not a meter reading. Nothing here stores a consumption figure,
+/// because consumption is already recorded on `run_events.cost_usd` and
+/// `tokens_*`, and a second copy would be a second source of truth that drifts
+/// - the failure `dispatch/dispatch-policy.ts` warns about for the position
+/// signal. `QuotaService` sums those events between this window's start and
+/// its reset, so the sum can only ever be as right as the events are.
+///
+/// ## The consumption it frames is Opifex's OWN, and that is a hard ceiling on
+/// what can be claimed
+///
+/// VISION §11: the subscription is shared, and automated runs compete with the
+/// operator's own interactive use. Opifex sees its runs and nothing else. So
+/// even a perfect capacity number would be divided into an incomplete
+/// numerator, missing an unobservable share. That is why no burn fraction is
+/// computed anywhere from these rows, and why the read model names its total
+/// `opifexConsumption` at every layer it crosses.
+model QuotaWindow {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Which runner observed it. Runners are the only thing that can see a
+  /// vendor window at all, and two runners on separate subscriptions have
+  /// genuinely separate windows - so this is per runner rather than per fleet,
+  /// which is the first of #231's two open questions answered by the data
+  /// rather than by assumption.
+  runnerKey String @map("runner_key")
+
+  /// The vendor's own label for the window, verbatim: "five_hour", "weekly".
+  ///
+  /// TEXT rather than an enum, because the set belongs to the vendor. A closed
+  /// enum would reject the first window kind a CLI release adds, and rejecting
+  /// it would discard the reset time along with the label. `"unknown"` when no
+  /// label came through - a literal rather than NULL, so the unique key below
+  /// keeps working (Postgres treats NULLs as distinct, so a nullable column
+  /// there would insert a fresh row on every single observation).
+  kind String
+
+  /// When the vendor said this window rolls. The window's identity.
+  resetsAt DateTime @map("resets_at") @db.Timestamptz
+
+  /// The latest reading, and the worst one, kept apart on purpose.
+  ///
+  /// `pressure` is what routing and the supervisor gate want: how things stand
+  /// now. `peakPressure` is what a human reviewing the day wants: whether this
+  /// window ever hit the wall, which `pressure` forgets the moment the vendor
+  /// says `allowed` again.
+  pressure     QuotaPressure
+  peakPressure QuotaPressure @map("peak_pressure")
+
+  /// First and last time an observation carried this reset instant.
+  ///
+  /// `firstObservedAt` is the fallback window start when the label names no
+  /// length, and the read model says which of the two it used - a derived
+  /// start and an observed one are different claims about the same field.
+  firstObservedAt DateTime @map("first_observed_at") @db.Timestamptz
+  lastObservedAt  DateTime @map("last_observed_at") @db.Timestamptz
+
+  /// How many lines carried this window. Not a consumption measure - the CLI
+  /// emits these on its own cadence - but it separates a window seen once from
+  /// one seen throughout, which is how much the row can be trusted to cover.
+  observations Int @default(1)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  runner Runner @relation(fields: [runnerKey], references: [key], onDelete: Restrict)
+
+  /// The upsert key. One row per window per runner, however many lines
+  /// mentioned it.
+  @@unique([runnerKey, kind, resetsAt])
+  /// "The current window for this runner": the newest reset instant still
+  /// ahead of now.
+  @@index([runnerKey, resetsAt])
+  @@map("quota_windows")
 }
 
 // =============================================================================
