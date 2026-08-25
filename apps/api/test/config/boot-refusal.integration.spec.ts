@@ -129,3 +129,87 @@ describe('boot refusal without JWT_SECRET (#278)', () => {
     await app.close();
   });
 });
+
+/**
+ * Boot-time enforcement of #299: the API must refuse to start under
+ * `NODE_ENV=production` with a `POSTGRES_PASSWORD` that is unset or still the
+ * shipped default. Same three traps as the suite above apply here — see the
+ * file-level comment on `bootFresh` — plus one addition: unlike the
+ * `JWT_SECRET` cases, these tests also have to flip `NODE_ENV` itself, since
+ * `test/setup.ts` forces `NODE_ENV=test` for the whole suite and the rule in
+ * `env.validation.ts` only fires under `production`.
+ *
+ * `.env.test` ships no `POSTGRES_PASSWORD` (see its own comment), so
+ * `JWT_SECRET` is already valid here from that file and does not need to be
+ * touched by these cases.
+ */
+describe('boot refusal without a chosen POSTGRES_PASSWORD in production (#299)', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalPostgresPassword = process.env.POSTGRES_PASSWORD;
+
+  afterEach(() => {
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+
+    if (originalPostgresPassword === undefined) {
+      delete process.env.POSTGRES_PASSWORD;
+    } else {
+      process.env.POSTGRES_PASSWORD = originalPostgresPassword;
+    }
+
+    jest.resetModules();
+  });
+
+  it('rejects NestFactory.create when NODE_ENV=production and POSTGRES_PASSWORD is unset', async () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.POSTGRES_PASSWORD;
+    jest.resetModules();
+
+    let caught: unknown;
+    try {
+      const app = await bootFresh();
+      // Should be unreachable — close it if it somehow got here, so a
+      // failing assertion below doesn't also leak a listener.
+      await app.close();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeDefined();
+    expect(String(caught)).toContain('POSTGRES_PASSWORD');
+  });
+
+  it('rejects NestFactory.create when NODE_ENV=production and POSTGRES_PASSWORD is the shipped default', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.POSTGRES_PASSWORD = 'postgres';
+    jest.resetModules();
+
+    let caught: unknown;
+    try {
+      const app = await bootFresh();
+      await app.close();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeDefined();
+    expect(String(caught)).toContain('POSTGRES_PASSWORD');
+  });
+
+  it('boots successfully once POSTGRES_PASSWORD is a real value in production (control)', async () => {
+    // Without this, both failures above could just as easily mean
+    // "app.module.ts can never boot under NODE_ENV=production in this test
+    // file for an unrelated reason" and would pass while proving nothing
+    // about POSTGRES_PASSWORD specifically.
+    process.env.NODE_ENV = 'production';
+    process.env.POSTGRES_PASSWORD = 'a-real-password-nobody-guessed';
+    jest.resetModules();
+
+    const app = await bootFresh();
+
+    await app.close();
+  });
+});

@@ -9,6 +9,18 @@
 describe('AppModule — TestAuthModule registration', () => {
   const originalNodeEnv = process.env.NODE_ENV;
   const originalTestAuth = process.env.TEST_AUTH_ENABLED;
+  const originalPostgresPassword = process.env.POSTGRES_PASSWORD;
+
+  beforeEach(() => {
+    // Importing AppModule evaluates `ConfigModule.forRoot({ validate })`, and
+    // since #299 `validateEnv` refuses a NODE_ENV=production environment whose
+    // POSTGRES_PASSWORD is unset or still the shipped default. `.env.test`
+    // deliberately sets no POSTGRES_* variables, so the production case below
+    // would throw at `require('./app.module')` — before it could report
+    // anything about TestAuthModule at all. One is set here for every case, so
+    // the only variable that differs between them stays NODE_ENV.
+    process.env.POSTGRES_PASSWORD = 'app-module-spec-password';
+  });
 
   afterEach(() => {
     process.env.NODE_ENV = originalNodeEnv;
@@ -17,6 +29,12 @@ describe('AppModule — TestAuthModule registration', () => {
       delete process.env.TEST_AUTH_ENABLED;
     } else {
       process.env.TEST_AUTH_ENABLED = originalTestAuth;
+    }
+
+    if (originalPostgresPassword === undefined) {
+      delete process.env.POSTGRES_PASSWORD;
+    } else {
+      process.env.POSTGRES_PASSWORD = originalPostgresPassword;
     }
   });
 

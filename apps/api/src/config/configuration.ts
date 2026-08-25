@@ -3,6 +3,18 @@ export default () => {
   const host = process.env.POSTGRES_HOST || 'localhost';
   const port = process.env.POSTGRES_PORT || '5432';
   const user = process.env.POSTGRES_USER || 'postgres';
+  // POSTGRES_PASSWORD's default SURVIVES, but only outside production (#299).
+  //
+  // `config/env.validation.ts` refuses the boot when NODE_ENV=production and
+  // this variable is unset or still `postgres`, and that check runs when
+  // `app.module.ts` is imported — before this factory is ever invoked. So the
+  // literal below is reachable in development and test only, which is the
+  // whole point: it keeps `docker compose up` and a fresh checkout working
+  // without ever being able to ship.
+  //
+  // Left in place deliberately rather than deleted. Do not re-file it: read
+  // env.validation.ts's "WHY POSTGRES_PASSWORD IS ONLY REQUIRED IN
+  // PRODUCTION" note first, which is the argument for this shape.
   const password = process.env.POSTGRES_PASSWORD || 'postgres';
   const dbName = process.env.POSTGRES_DB || 'appdb';
   const ssl = process.env.POSTGRES_SSL === 'true';

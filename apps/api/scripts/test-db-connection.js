@@ -43,6 +43,16 @@ function constructDatabaseUrl() {
   const host = process.env.POSTGRES_HOST || 'localhost';
   const port = process.env.POSTGRES_PORT || '5432';
   const user = process.env.POSTGRES_USER || 'postgres';
+  // DELIBERATELY EXEMPT from #299's production requirement.
+  //
+  // The rule that a production deployment may not fall back to `postgres`
+  // lives in one place, `src/config/env.validation.ts`, and it gates the API
+  // process. This is a CLI wrapper: it serves no traffic, and a wrong password
+  // here surfaces immediately as a Prisma authentication error rather than as
+  // a running service on a credential nobody chose — which is the failure mode
+  // that made #299 hardening rather than a vulnerability in the first place.
+  // Restating the rule in CommonJS would create exactly the second place to
+  // disagree that env.validation.ts warns against.
   const password = process.env.POSTGRES_PASSWORD || 'postgres';
   const dbName = process.env.POSTGRES_DB || 'appdb';
   const ssl = process.env.POSTGRES_SSL === 'true';
