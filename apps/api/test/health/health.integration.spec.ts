@@ -454,6 +454,12 @@ describe('Health Endpoints (Integration)', () => {
         .expect(503);
 
       expect(response.body.statusCode).toBe(503);
+      // The names survive the error filter into `details`, which is what the
+      // verify step in docs/ssl-nginx-setup.md reads on a failed deploy.
+      expect(response.body.details.seed).toMatchObject({
+        status: 'down',
+        missingPermissions: ['runs:read'],
+      });
     });
 
     it('passes the full health check on a correctly seeded database', async () => {
