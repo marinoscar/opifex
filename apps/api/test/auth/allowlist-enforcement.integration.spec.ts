@@ -30,6 +30,13 @@ describe('Auth Service - Allowlist Enforcement', () => {
     resetPrismaMock();
     setupBaseMocks();
 
+    // NOT a counterexample to the 32-character floor #278 introduced. This is
+    // a stubbed ConfigService handed straight to AuthService, so
+    // `ConfigModule.forRoot`'s `validate` never sees it, and nothing reads the
+    // uppercase `JWT_SECRET` key off ConfigService anyway — the real secret is
+    // read as `jwt.secret`, by JwtModule and JwtStrategy, neither of which is
+    // constructed here. The value is inert fixture data; the floor is enforced
+    // on the real environment in src/config/env.validation.ts.
     mockConfigService = {
       get: jest.fn((key: string, defaultValue?: any) => {
         const config: Record<string, any> = {
