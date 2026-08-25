@@ -414,6 +414,41 @@ describe('ChildProcessSupervisor', () => {
       expect(proc.stderr().length).toBeLessThanOrEqual(STDERR_TAIL_BYTES);
       expect(proc.stderr().endsWith('TAIL')).toBe(true);
     });
+
+    it('reports a read failure on an output stream rather than dying of it', () => {
+      // #249 again, in the direction it was not filed for: `stdout` and
+      // `stderr` carry data handlers and no error handler, so a read failure
+      // on either pipe reaches the process by the identical route. Reported
+      // rather than settled — `close` still brings the real exit status, and
+      // truncated output is a note on the run, not its outcome.
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        pid: 4243,
+        stdin: new PassThrough(),
+        stdout,
+        stderr,
+      }) as unknown as ChildProcess;
+
+      const reported: Error[] = [];
+      const proc = new SupervisedProcess(child, {
+        command: NODE,
+        args: [],
+        cwd,
+        onError: (error) => reported.push(error),
+      });
+
+      stdout.emit('error', new Error('read EIO'));
+      stderr.emit('error', new Error('connection reset'));
+
+      expect(reported.map((error) => error.message)).toEqual([
+        'stdout failed: read EIO',
+        'stderr failed: connection reset',
+      ]);
+      // Still running, as far as the supervisor is concerned: only the child
+      // itself ends the run.
+      expect(proc.isAlive()).toBe(true);
+    });
   });
 
   describe('kill', () => {

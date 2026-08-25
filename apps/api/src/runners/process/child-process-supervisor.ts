@@ -140,6 +140,8 @@ export class SupervisedProcess {
     child.stderr?.setEncoding('utf8');
     child.stderr?.on('data', (chunk: string) => this.consumeStderr(chunk));
 
+    this.guardOutputStream('stdout', child.stdout);
+    this.guardOutputStream('stderr', child.stderr);
     this.guardStdin();
 
     // A child whose stdin we never write to would otherwise sit waiting for
@@ -186,6 +188,32 @@ export class SupervisedProcess {
     this.child.stdin?.on('error', (error: NodeJS.ErrnoException) => {
       if (error.code === 'EPIPE') return;
       this.report(error);
+    });
+  }
+
+  /**
+   * The same gap as {@link guardStdin}, on the streams we only read.
+   *
+   * #249 was about stdin, but the missing listener is a property of the
+   * stream and not of the direction: `stdout` and `stderr` carry `data`
+   * handlers and no `error` handler, so a read failure on either pipe — an
+   * `EIO` against a group that has just been `SIGKILL`ed, a reset descriptor —
+   * would take the process down by the identical route. Far rarer than the
+   * stdin race, and guarded anyway, because the cost of being wrong about how
+   * rare it is falls on the one component that is supposed to still be alive
+   * to report it.
+   *
+   * Reported, never settled. `close` still fires with the real exit status,
+   * and a truncated output stream is a note on the run rather than the run's
+   * outcome — the same rule the runner states: the supervisor's outcome is
+   * the fact, the output stream is a report.
+   */
+  private guardOutputStream(
+    name: 'stdout' | 'stderr',
+    stream: NodeJS.ReadableStream | null,
+  ): void {
+    stream?.on('error', (error: Error) => {
+      this.report(new Error(`${name} failed: ${error.message}`));
     });
   }
 
