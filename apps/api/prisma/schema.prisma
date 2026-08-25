@@ -1815,8 +1815,15 @@ model ReconcileTick {
   ///
   /// Null, not `[]`, when no acting-phase executor ran at all this tick — the
   /// row is created before `ReconcilerTask` calls either executor (see
-  /// `ReconcileLogService.record`), and for the whole observation week
-  /// (`GITHUB_WRITES_ENABLED` off) that call never happens. So null means
+  /// `ReconcileLogService.record`). Mirror labels stay null through the whole
+  /// observation week because no repository has `mirrorLabelsEnabled` yet, so
+  /// that executor is never called. Spec feedback does not: the
+  /// `GITHUB_WRITES_ENABLED` kill switch is enforced inside
+  /// `GitHubWriteService.guardedWrite`, not at the executor boundary, so a
+  /// tick with a spec rejection still calls `SpecFeedbackExecutor.report()`
+  /// regardless of the flag. Seeing `[]` here during the observation week is
+  /// normal — it means that call ran and had nothing to report, not that a
+  /// write slipped past the flag. So null means
   /// "nothing acted", `[]` means "acted, nothing failed", and a populated
   /// array means "acted, and here is what to check" — #47's standard: which
   /// action, which target, what error, answerable from the row alone.
