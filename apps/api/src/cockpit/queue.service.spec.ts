@@ -52,6 +52,7 @@ describe('QueueService', () => {
         },
       ],
       avoidedQuotaPark: false,
+      avoidedPark: null,
       ...overrides,
     };
   }

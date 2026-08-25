@@ -22,6 +22,7 @@ describe('MetricsService', () => {
   let runFindMany: jest.Mock;
   let runCount: jest.Mock;
   let deadIntervalFindMany: jest.Mock;
+  let avoidedParkFindMany: jest.Mock;
   let service: MetricsService;
 
   /** A merged pull request, as metrics 3 and 5 count it (#215). */
@@ -45,12 +46,14 @@ describe('MetricsService', () => {
     // honesty tests below assert produces null rather than zero.
     runCount = jest.fn().mockResolvedValue(0);
     deadIntervalFindMany = jest.fn().mockResolvedValue([]);
+    avoidedParkFindMany = jest.fn().mockResolvedValue([]);
 
     service = new MetricsService({
       escalation: { findMany: escalationFindMany },
       workOrder: { findMany: workOrderFindMany },
       run: { findMany: runFindMany, count: runCount },
       deadInterval: { findMany: deadIntervalFindMany },
+      avoidedPark: { findMany: avoidedParkFindMany },
     } as unknown as PrismaService);
   });
 
@@ -408,6 +411,142 @@ describe('MetricsService', () => {
         value: null,
         trend: [],
       });
+    });
+  });
+
+  describe('parks avoided, BESIDE metric 2 (#264)', () => {
+    function park(occurredAt: string, exhausted: string[]) {
+      return {
+        occurredAt: new Date(occurredAt),
+        exhaustedRunnerKeys: exhausted,
+      };
+    }
+
+    it('is not one of the six, so nothing can render it as a metric', async () => {
+      // The structural half of "beside metric 2, and visibly not part of it".
+      // A member of `metrics` would be walked by `METRIC_IDS`, handed to a
+      // tile with a unit formatter, and could be added to `deadTimePerDay`.
+      const summary = await service.summary(7);
+
+      expect(METRIC_IDS).not.toContain('avoidedParks');
+      expect(Object.keys(summary.metrics)).not.toContain('avoidedParks');
+      expect(summary.avoidedParks).toBeDefined();
+    });
+
+    it('carries no hours anywhere, because the park did not happen', async () => {
+      // The failure this whole issue exists to prevent. There is no interval
+      // to measure, so hours could only come from estimating how long the
+      // avoided park WOULD have lasted.
+      avoidedParkFindMany.mockResolvedValue([
+        park('2026-08-23T10:00:00Z', ['spent']),
+      ]);
+      runCount.mockResolvedValue(3);
+
+      const summary = await service.summary(7);
+
+      // The keys are the structural guarantee: there is no field a renderer
+      // could format as a duration, and none to add to `deadTimePerDay`.
+      for (const key of Object.keys(summary.avoidedParks)) {
+        expect(key).not.toMatch(/hours|duration|ms$|seconds|minutes/i);
+      }
+      expect(summary.avoidedParks.count).toBe(1);
+      // The only mention of hours anywhere is the sentence saying there are
+      // none, which is the point rather than a leak.
+      expect(summary.avoidedParks.basis).toContain(
+        'A count of events, not a duration',
+      );
+      expect(summary.avoidedParks.basis).toContain('no hours to report');
+    });
+
+    it('is NULL when nothing dispatched at all, never zero', async () => {
+      // A freshly deployed control plane has not measured zero avoided parks;
+      // it has not measured. Same discipline `deadTimePerDay` applies.
+      const summary = await service.summary(7);
+
+      expect(summary.avoidedParks.count).toBeNull();
+      expect(summary.avoidedParks.basis).toContain('Not measured');
+    });
+
+    it('is ZERO when work dispatched and none of it moved', async () => {
+      // Today's honest, permanent answer with a single registered runner:
+      // there is nowhere for work to move. It must not read as an absence.
+      runCount.mockResolvedValue(12);
+
+      const summary = await service.summary(7);
+
+      expect(summary.avoidedParks.count).toBe(0);
+      expect(summary.avoidedParks.basis).toContain('12 dispatch(es)');
+      expect(summary.avoidedParks.basis).toContain('measurement, not a gap');
+    });
+
+    it('distinguishes the two states on the same empty ledger', async () => {
+      // The distinction is the acceptance criterion, so it is asserted as a
+      // difference rather than as two independent readings. Both states are
+      // reachable today, which is what makes it real rather than decorative.
+      const notMeasured = await service.summary(7);
+      runCount.mockResolvedValue(1);
+      const measuredZero = await service.summary(7);
+
+      expect(notMeasured.avoidedParks.count).toBeNull();
+      expect(measuredZero.avoidedParks.count).toBe(0);
+    });
+
+    it('counts the events in the window', async () => {
+      avoidedParkFindMany.mockResolvedValue([
+        park('2026-08-23T12:00:00Z', ['spent']),
+        park('2026-08-23T11:00:00Z', ['spent']),
+        park('2026-08-23T10:00:00Z', ['spent']),
+      ]);
+      runCount.mockResolvedValue(9);
+
+      const summary = await service.summary(7);
+
+      expect(summary.avoidedParks.count).toBe(3);
+      expect(summary.avoidedParks.mostRecentAt).toBe(
+        '2026-08-23T12:00:00.000Z',
+      );
+    });
+
+    it('asks only for events inside the window', async () => {
+      await service.summary(7);
+
+      const [{ where }] = avoidedParkFindMany.mock.calls[0];
+      expect(where.occurredAt.gte).toBeInstanceOf(Date);
+      expect(where.occurredAt.lte).toBeInstanceOf(Date);
+    });
+
+    it('names which runner the work moved off, so the count is actionable', async () => {
+      // A bare integer is not something an operator can do anything with.
+      avoidedParkFindMany.mockResolvedValue([
+        park('2026-08-23T12:00:00Z', ['claude-code-local']),
+        park('2026-08-23T11:00:00Z', ['claude-code-local']),
+        park('2026-08-23T10:00:00Z', ['other']),
+      ]);
+      runCount.mockResolvedValue(9);
+
+      const summary = await service.summary(7);
+
+      expect(summary.avoidedParks.byExhaustedRunner).toEqual([
+        { runnerKey: 'claude-code-local', count: 2 },
+        { runnerKey: 'other', count: 1 },
+      ]);
+      expect(summary.avoidedParks.basis).toContain(
+        'work moved off claude-code-local 2 time(s)',
+      );
+    });
+
+    it('counts one event when two runners were spent at once', async () => {
+      // The attribution may exceed the count, and that is deliberate: a
+      // dispatch that moved off two spent runners is ONE avoided park.
+      avoidedParkFindMany.mockResolvedValue([
+        park('2026-08-23T12:00:00Z', ['a', 'b']),
+      ]);
+      runCount.mockResolvedValue(1);
+
+      const summary = await service.summary(7);
+
+      expect(summary.avoidedParks.count).toBe(1);
+      expect(summary.avoidedParks.byExhaustedRunner).toHaveLength(2);
     });
   });
 });

@@ -15,7 +15,7 @@ import type { Runner, WorkOrderSpec } from '../runners/runner.types';
 import type { GeneratedWorkOrder } from '../work-orders/work-order-generator';
 import { WorkOrderRecordsService } from '../work-orders/work-order-records.service';
 import { DispatchService } from './dispatch.service';
-import type { QueueReason } from './dispatch-policy';
+import type { DispatchDecision, QueueReason } from './dispatch-policy';
 
 /**
  * Hands an authorized work order to a runner.
@@ -172,6 +172,10 @@ export class RunExecutorService {
         runnerKey: decision.runnerKey,
         runnerVersion: capabilities.version,
         status: 'running',
+        // The avoided park (#264), written in the SAME statement as the run
+        // rather than after it. See `avoidedParkRow` for why it is written
+        // here at all and not where the decision was made.
+        ...avoidedParkRow(decision, new Date()),
       },
     });
 
@@ -272,6 +276,62 @@ export interface DispatchWorkOrderInput {
   workOrder: GeneratedWorkOrder;
   /** The `WorkOrder` row's id. The generated document carries the identity. */
   workOrderId: string;
+}
+
+/**
+ * The avoided park, as a nested create on the run that carries it (#264).
+ *
+ * ## Why HERE, and not in `DispatchService` where the decision is made
+ *
+ * That is the obvious home and it is the wrong one. `cockpit/queue.service.ts`
+ * calls `decide()` HYPOTHETICALLY — once per distinct needs set, every time
+ * the queue panel polls, to answer "why is this work order not running yet".
+ * Persisting inside the decision would manufacture avoided parks for work that
+ * never dispatched, at whatever rate a browser refreshes, and the count would
+ * measure dashboard traffic. The executor is the only place that knows a
+ * dispatch actually happened: the spend gate, observation mode and an
+ * unimplementable runner key all abort after a perfectly good decision.
+ *
+ * ## Why in the same statement as the run
+ *
+ * A nested create is one INSERT pair in one call. A second `create` afterwards
+ * could fail on its own and leave a dispatched run whose avoided park was
+ * silently lost — an undercount with no symptom, which is the failure mode a
+ * metric can least afford.
+ *
+ * ## Still a count, never a duration
+ *
+ * `resumesAt` is carried so the count is explainable, and nothing subtracts it
+ * from anything. The park did not happen; it has no length. See the
+ * `AvoidedPark` model comment in `schema.prisma`.
+ */
+function avoidedParkRow(decision: DispatchDecision, occurredAt: Date) {
+  const park = decision.avoidedPark;
+  if (!park) return {};
+
+  // The SOONEST reset among the spent runners. Undated positions are dropped
+  // rather than treated as "no reset": routing only calls a DATED block
+  // exhaustion, so an undated entry here would be a pool somebody hand-built.
+  const resets = park.exhausted
+    .map((runner) => runner.resumesAt)
+    .filter((value): value is string => value !== null)
+    .map((value) => new Date(value))
+    .filter((date) => !Number.isNaN(date.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  return {
+    avoidedPark: {
+      create: {
+        occurredAt,
+        chosenRunnerKey: park.chosenRunnerKey,
+        exhaustedRunnerKeys: park.exhausted.map((runner) => runner.runnerKey),
+        resumesAt: resets[0] ?? null,
+        basis: park.exhausted.map(
+          (runner) => `${runner.runnerKey} ${runner.basis}`,
+        ),
+      },
+    },
+  };
 }
 
 /**
