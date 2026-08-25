@@ -76,7 +76,13 @@ describe('retired supervisor settings (ADR-0016)', () => {
 
     it('says what still covers the concern the ceiling was reached for', () => {
       expect(warning).toContain('SUPERVISOR_STAND_DOWN_WHEN_BLOCKED');
-      expect(warning).toContain('#261');
+      // Names the variable rather than the issue, now that one exists.
+      // Pointing an operator at a GitHub issue was the best available answer
+      // while #261 was open; a setting they can actually export is a better
+      // one, and leaving the issue number there would have them reading a
+      // closed thread to find a value this line could just tell them.
+      expect(warning).toContain('SUPERVISOR_HARD_SPEND_CEILING_USD');
+      expect(warning).toContain('ADR-0017');
     });
 
     it('does not claim the supervisor competes for anyone else’s quota', () => {

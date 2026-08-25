@@ -9,6 +9,8 @@ import { DecisionLogController } from './decision-log/decision-log.controller';
 import { DecisionLogService } from './decision-log/decision-log.service';
 import { createSupervisorModel } from './invocation/anthropic-supervisor-model';
 import { SupervisorService } from './invocation/supervisor.service';
+import { SupervisorSpendCeilingService } from './invocation/supervisor-spend-ceiling';
+import { SupervisorSpendLedgerService } from './invocation/supervisor-spend-ledger.service';
 import { SUPERVISOR_MODEL } from './invocation/supervisor-model.port';
 import {
   SUPERVISOR_PROPOSERS,
@@ -51,6 +53,13 @@ import { TrustDigestSource } from './brief/trust-digest.source';
     RetiredSupervisorConfigService,
     SnapshotService,
     DecisionLogService,
+    // The supervisor's own spend ceiling and the tally it is measured against
+    // (#261, ADR-0017). Deliberately NOT `HardSpendCeilingService` and NOT
+    // `SpendLedgerService`: those are dispatch's, and a supervisor whose
+    // ability to run depends on what the workers have spent goes quiet exactly
+    // when worker spend is the thing worth explaining.
+    SupervisorSpendCeilingService,
+    SupervisorSpendLedgerService,
     SupervisorService,
     SupervisorTask,
     RunDiagnosisProposer,

@@ -67,8 +67,9 @@ export const RETIRED_SUPERVISOR_SETTINGS: readonly RetiredSetting[] =
         'count is',
       instead:
         'the supervisor still stands down while any run is parked on a rate limit ' +
-        '(SUPERVISOR_STAND_DOWN_WHEN_BLOCKED, still on by default); for a real cap on ' +
-        'the supervisor’s metered spend see #261',
+        '(SUPERVISOR_STAND_DOWN_WHEN_BLOCKED, still on by default), and the real cap on ' +
+        'its metered spend is SUPERVISOR_HARD_SPEND_CEILING_USD, measured over ' +
+        'SUPERVISOR_HARD_SPEND_CEILING_WINDOW_DAYS (ADR-0017)',
     },
   ]);
 

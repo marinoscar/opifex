@@ -1801,6 +1801,21 @@ enum SupervisorInvocationOutcome {
   /// Skipped because worker quota was scarce (#89). Diagnosis is worth less
   /// than execution, so when the two compete, execution wins.
   skipped_quota
+  /// Skipped because the supervisor's own spend ceiling had no room for the
+  /// tick, or because no ceiling was configured to check against (ADR-0017).
+  ///
+  /// Its own value rather than a share of `skipped_quota`, because the two
+  /// name different facts an operator has to tell apart: `skipped_quota` says
+  /// the factory is parked and there is nothing worth diagnosing yet;
+  /// `skipped_budget` says the diagnosis would cost money
+  /// SUPERVISOR_HARD_SPEND_CEILING_USD does not have room for. One is about
+  /// the state of the work, the other about a dollar figure, and only one of
+  /// them is fixed by waiting.
+  ///
+  /// A tick STOPPED PART WAY by the same ceiling is `partial`, not this: it
+  /// ran, and what it produced is recorded. Its `failureReason` names the
+  /// ceiling, so the two `partial` causes never read alike.
+  skipped_budget
 }
 
 /// Whether a proposer proposed anything.
@@ -1885,6 +1900,23 @@ model SupervisorInvocation {
   costUsd      Decimal? @map("cost_usd") @db.Decimal(10, 4)
   tokensInput  Int?     @map("tokens_input")
   tokensOutput Int?     @map("tokens_output")
+
+  /// How many model calls in this invocation priced at null (#282).
+  ///
+  /// `costUsd` alone cannot say. A tick where one proposer's call priced and
+  /// another's did not sums only the KNOWN part, and the result is
+  /// indistinguishable from a tick where every call priced and happened to
+  /// total that figure - which is the unpriced call being read as free, the
+  /// exact reading `model-pricing.ts` refuses to allow.
+  ///
+  /// Above zero, `costUsd` is a FLOOR rather than a total. That is the shape
+  /// `SpendLedgerService` already uses for `unboundedRuns`, so both budget
+  /// surfaces say "unknown" the same way.
+  ///
+  /// Zero on every row written before this column existed. Nothing backfills
+  /// it: a count nobody measured is not evidence, and the rows that predate
+  /// the fix are silent about exactly the thing it records.
+  unpricedCalls Int @default(0) @map("unpriced_calls")
 
   /// Why it failed or was skipped. Null for a clean invocation.
   failureReason String? @map("failure_reason")

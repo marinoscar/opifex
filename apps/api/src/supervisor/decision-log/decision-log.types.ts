@@ -46,7 +46,21 @@ export interface ProposalDraft {
 
 /** How an invocation ended. Mirrors `SupervisorInvocationOutcome`. */
 export type InvocationOutcome =
-  'completed' | 'partial' | 'failed' | 'skipped_disabled' | 'skipped_quota';
+  | 'completed'
+  | 'partial'
+  | 'failed'
+  | 'skipped_disabled'
+  | 'skipped_quota'
+  /**
+   * Refused by the supervisor's own spend ceiling before the tick began, or
+   * because no ceiling was configured to check against (ADR-0017).
+   *
+   * Distinct from `skipped_quota` on purpose: that one says the factory is
+   * parked, this one says a dollar figure had no room. A tick stopped part
+   * way by the same ceiling is `partial`, with a `failureReason` that names
+   * it.
+   */
+  | 'skipped_budget';
 
 /** Everything recorded about one scheduled invocation. */
 export interface InvocationDraft {
@@ -62,6 +76,16 @@ export interface InvocationDraft {
   snapshotTruncated?: boolean;
   snapshotCharacters?: number;
   costUsd?: number | null;
+  /**
+   * How many model calls in this invocation priced at null (#282).
+   *
+   * Above zero, `costUsd` is a FLOOR and not a total: the unpriced calls
+   * contributed real money that nothing measured. Recorded beside the figure
+   * rather than folded into it, because folding it in is the bug — an
+   * unpriced call added as zero says "free", and free is a measurement
+   * nobody took.
+   */
+  unpricedCalls?: number;
   tokensInput?: number | null;
   tokensOutput?: number | null;
   failureReason?: string | null;

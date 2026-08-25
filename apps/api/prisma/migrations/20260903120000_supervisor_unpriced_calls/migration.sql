@@ -1,0 +1,22 @@
+-- Count the supervisor's unpriced model calls, so cost_usd reads as a floor (#282).
+--
+-- `SupervisorService` accumulated an invocation's cost with an `add()` that
+-- treats a null as "add nothing". That is right for a tick where NOTHING
+-- priced -- the column stays null, and null is not zero (VISION §6) -- and
+-- wrong for the mixed tick, which is the one that actually happens: bump
+-- SUPERVISOR_MODEL_NAME to a dated snapshot `model-pricing.ts` has not caught
+-- up with, and one proposer's call prices while another's does not. The row
+-- then stores only the known part and reports it as a total, which is the
+-- unpriced call being counted as free.
+--
+-- The fix needs somewhere to say "this figure is a floor". This is that
+-- column: the count of calls in the invocation that priced at null, alongside
+-- the money rather than folded into it -- the same shape `spend_ledger`'s
+-- `unboundedRuns` already gives the dispatch ceiling.
+--
+-- NOT NULL DEFAULT 0, and no backfill. Existing rows genuinely have no
+-- measurement of this, and inventing one would be the synthesized figure the
+-- column exists to prevent. What their zero means is "written before anyone
+-- counted", which is a known, bounded gap and not a claim about those ticks.
+ALTER TABLE "supervisor_invocations"
+  ADD COLUMN "unpriced_calls" INTEGER NOT NULL DEFAULT 0;

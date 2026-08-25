@@ -1,0 +1,32 @@
+-- A supervisor tick refused by its own spend ceiling (#261, ADR-0017).
+--
+-- The supervisor now checks SUPERVISOR_HARD_SPEND_CEILING_USD before it does
+-- anything, and a tick it refuses still writes a row -- #90 requires the
+-- decision log have no gaps, because a missing entry is indistinguishable
+-- from one that silently failed.
+--
+-- A NEW value rather than a reuse of `skipped_quota`. The two say different
+-- things: `skipped_quota` means the factory is parked and there is nothing
+-- worth diagnosing yet, `skipped_budget` means the diagnosis would cost money
+-- the ceiling does not have room for. Waiting fixes the first and never fixes
+-- the second, so an operator reading the log has to be able to tell them
+-- apart.
+--
+-- No new value for a tick stopped BETWEEN proposers by the same ceiling. That
+-- is already `partial` -- "it ran, not everything completed, and what did is
+-- recorded" -- and its `failure_reason` names the ceiling so it never reads
+-- like a proposer error. Minting `partial_budget` would start growing this
+-- enum a value per reason a tick can end early.
+--
+-- ADD VALUE is additive and irreversible in PostgreSQL: no row changes, and
+-- nothing that reads the existing five values is affected. ADR-0010 does make
+-- "add a value to any enum" a MAJOR bump, and that rule is scoped, in its own
+-- first paragraph, to the three published JSON contracts under `schemas/`:
+-- work order, runner capability manifest, run event. Checked rather than
+-- assumed - `SupervisorInvocationOutcome` appears in none of those files, is
+-- declared and consumed entirely inside this API, and carries no
+-- `schemaVersion` for a consumer to negotiate against. So no schema major
+-- follows from this. What the value does reach is the decision-log DTO's
+-- `outcome` union, which is widened in the same change so the OpenAPI
+-- document never describes fewer outcomes than the column can hold.
+ALTER TYPE "SupervisorInvocationOutcome" ADD VALUE 'skipped_budget';
