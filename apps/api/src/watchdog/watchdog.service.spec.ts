@@ -383,6 +383,26 @@ describe('WatchdogService', () => {
       expect((await service.sweep(NOW)).actions).toEqual([]);
     });
 
+    /**
+     * EVERY blocked run, not only the ones this tick parked. The ledger behind
+     * metric 2 is reconciled against what is true now, and reporting only the
+     * transition would record the first minute of a four-hour quota wait and
+     * none of the rest.
+     */
+    it('reports every blocked run as parked dead time, even while waiting', async () => {
+      const blockedSince = new Date(NOW.getTime() - 5 * 60_000);
+      mockBlocked([
+        blockedRow({ resumesAt: new Date(NOW.getTime() + 60 * 60_000) }),
+      ]);
+
+      const result = await service.sweep(NOW);
+
+      expect(result.parkedRuns).toBe(0);
+      expect(result.deadObservations).toEqual([
+        { runId: 'blocked-run', kind: 'parked', since: blockedSince },
+      ]);
+    });
+
     it('reads the newest run.blocked event for the reason and reset', async () => {
       mockBlocked([blockedRow()]);
 
@@ -393,6 +413,38 @@ describe('WatchdogService', () => {
       )![0];
       expect(blockedQuery.select.events.where).toEqual({ type: 'run_blocked' });
       expect(blockedQuery.select.events.take).toBe(1);
+    });
+  });
+
+  describe('dead-time observations (#232)', () => {
+    /**
+     * The interval begins when progress actually STOPPED, which is the same
+     * instant `Escalation.progressStoppedAt` records. Metric 1 and metric 2
+     * share a start and differ entirely in where they end — recording the
+     * detection instant here would silently discount every stall by however
+     * long it took to notice, which is metric 1's number, not metric 2's.
+     */
+    it('dates a stall from when progress stopped, not from the sweep', async () => {
+      const lastEventAt = new Date(NOW.getTime() - 47 * 60_000);
+      mockLiveRuns([runRow({ lastEventAt })]);
+
+      const result = await service.sweep(NOW);
+
+      expect(result.deadObservations).toEqual([
+        {
+          runId: '018f2c31-7a4e-7c3b-9f21-4d5e6a7b8c9d',
+          kind: 'stalled',
+          since: lastEventAt,
+        },
+      ]);
+    });
+
+    it('observes nothing about a healthy run', async () => {
+      mockLiveRuns([runRow({ lastEventAt: new Date(NOW.getTime() - 30_000) })]);
+
+      const result = await service.sweep(NOW);
+
+      expect(result.deadObservations).toEqual([]);
     });
   });
 

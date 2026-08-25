@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import type { DeadObservation } from '../dead-time/dead-time.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ReconcileAction } from '../reconciler/diff/actions.types';
 import {
@@ -69,6 +70,25 @@ export interface WatchdogSweepResult {
   parkedRuns: number;
   /** Parked runs whose scheduled time has arrived. */
   resumableRuns: number;
+  /**
+   * Every run this sweep found making NO PROGRESS, and since when (#232).
+   *
+   * The ledger behind VISION §10's metric 2 is written from this. It is
+   * reported rather than written here for the same reason the escalations are:
+   * the watchdog decides, `reconciler.task.ts` persists, and a detector that
+   * could write rows would be on the wrong side of that line.
+   *
+   * Both kinds, because VISION §10 defines metric 2 as *"hours parked or
+   * stalled"*. They stay tagged rather than merged — a stalled hour is a
+   * supervision failure and a parked hour is the system waiting out a quota,
+   * and collapsing them is the conflation VISION §9 calls the most common
+   * supervision bug.
+   *
+   * Distinct from `silentRuns` and `parkedRuns` above, which count what
+   * CHANGED this tick. This lists what is true right now, which is what a
+   * reconciled ledger needs.
+   */
+  deadObservations: DeadObservation[];
 }
 
 /**
@@ -165,6 +185,22 @@ export class WatchdogService {
       checkCoverage,
       parkedRuns: parking.parked,
       resumableRuns: parking.resumable,
+      // Silent runs first, then parked. A run cannot be both — `blocked` is
+      // excluded from the silence detector's judgeable set precisely so a
+      // parked run is never also called stalled — so the two lists are
+      // disjoint by construction rather than by de-duplication here.
+      deadObservations: [
+        ...verdicts.map((verdict) => ({
+          runId: verdict.runId,
+          kind: 'stalled' as const,
+          // NOT `now`, and not the tick that noticed. The interval begins when
+          // progress actually stopped, which is the same instant
+          // `Escalation.progressStoppedAt` records — metric 1 and metric 2
+          // share a start and differ entirely in where they end.
+          since: verdict.progressStoppedAt,
+        })),
+        ...parking.deadObservations,
+      ],
       actions,
     };
   }
@@ -186,6 +222,7 @@ export class WatchdogService {
     resumable: number;
     judgedRunIds: string[];
     actions: ReconcileAction[];
+    deadObservations: DeadObservation[];
   }> {
     const runs = await this.loadBlockedRuns();
     const actions: ReconcileAction[] = [];
@@ -221,6 +258,17 @@ export class WatchdogService {
       resumable,
       judgedRunIds: runs.map((run) => run.runId),
       actions,
+      // EVERY blocked run, not just the ones this tick parked. The ledger is
+      // reconciled against what is true now, and a run parked three ticks ago
+      // is still accruing dead time — reporting only the transitions would
+      // record the first minute of a four-hour quota wait and none of the
+      // rest. `blockedSince` is the CURRENT block's own event, so a run that
+      // blocked, resumed and blocked again dates its second park correctly.
+      deadObservations: runs.map((run) => ({
+        runId: run.runId,
+        kind: 'parked' as const,
+        since: run.blockedSince,
+      })),
     };
   }
 
