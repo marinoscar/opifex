@@ -349,5 +349,103 @@ describe('QuotaService', () => {
       expect(runFindMany).toHaveBeenCalledTimes(1);
       expect(eventFindMany).toHaveBeenCalledTimes(1);
     });
+
+    it('widens the query to the union span, but sums each window only over its own', async () => {
+      // The risky part of `loadConsumption`. A `weekly` row widens what is
+      // ASKED of Postgres — `earliest` becomes the weekly start, not the
+      // five_hour one — but that union must never leak into what is SUMMED:
+      // each window still filters the rows down to its own span in `reading`.
+      const weekly = {
+        ...window,
+        kind: 'weekly',
+        resetsAt: new Date('2026-08-28T20:00:00.000Z'), // -> starts 08-21T20:00
+      };
+      findMany.mockResolvedValue([window, weekly]);
+      eventFindMany.mockResolvedValue([
+        // Inside the weekly span (08-21T20:00 .. NOW) but BEFORE the
+        // five_hour span starts (08-25T10:00) — belongs to weekly alone.
+        event('2026-08-23T00:00:00.000Z', { costUsd: { toNumber: () => 3 } }),
+        // Inside both spans.
+        event('2026-08-25T10:30:00.000Z', { costUsd: { toNumber: () => 1 } }),
+      ]);
+
+      const [{ windows }] = await service.readings(NOW);
+      const fiveHour = windows.find((w) => w.windowKind === 'five_hour')!;
+      const weeklyReading = windows.find((w) => w.windowKind === 'weekly')!;
+
+      // The query itself widened to the longest live window's start.
+      expect(eventFindMany.mock.calls[0][0].where.occurredAt.gte).toEqual(
+        new Date('2026-08-21T20:00:00.000Z'),
+      );
+
+      // But the five_hour reading never sees the early event — it is not in
+      // ITS span, regardless of what the union query fetched.
+      expect(fiveHour.opifexConsumption.reportedUsd).toBe(1);
+      // The weekly reading, whose span really does start that early, sees
+      // both.
+      expect(weeklyReading.opifexConsumption.reportedUsd).toBe(4);
+    });
+
+    it('sums a zero-reporting event with an unreported one as zero, never as null', async () => {
+      // The distinction moved from Prisma's `_sum` into hand-written code,
+      // which is exactly where a regression would be silent: unreported and
+      // zero are different facts (VISION §6), and `0` from one event must
+      // survive being folded in with `null` from another.
+      findMany.mockResolvedValue([window]);
+      eventFindMany.mockResolvedValue([
+        event('2026-08-25T10:30:00.000Z', {
+          tokensInput: null,
+          tokensOutput: null,
+        }),
+        event('2026-08-25T10:31:00.000Z', { tokensInput: 0, tokensOutput: 5 }),
+      ]);
+
+      const [{ windows }] = await service.readings(NOW);
+
+      expect(windows[0].opifexConsumption.tokensInput).toBe(0);
+      expect(windows[0].opifexConsumption.tokensOutput).toBe(5);
+    });
+
+    it('reports tokens as null, never zero, when nothing in the span reported them', async () => {
+      findMany.mockResolvedValue([window]);
+      eventFindMany.mockResolvedValue([
+        event('2026-08-25T10:30:00.000Z', {
+          tokensInput: null,
+          tokensOutput: null,
+        }),
+        event('2026-08-25T10:31:00.000Z', {
+          tokensInput: null,
+          tokensOutput: null,
+        }),
+      ]);
+
+      const [{ windows }] = await service.readings(NOW);
+
+      expect(windows[0].opifexConsumption.tokensInput).toBeNull();
+      expect(windows[0].opifexConsumption.tokensOutput).toBeNull();
+    });
+
+    it('sums three 0.0001 costs to 0.0003, with no float tail', async () => {
+      // `run_events.cost_usd` is `Decimal(10,4)`; plain JS addition of three
+      // 0.0001s is 0.00030000000000000003. This pins the rounding that keeps
+      // the sum at the column's own scale now that it happens in memory
+      // rather than in Postgres.
+      findMany.mockResolvedValue([window]);
+      eventFindMany.mockResolvedValue([
+        event('2026-08-25T10:30:00.000Z', {
+          costUsd: { toNumber: () => 0.0001 },
+        }),
+        event('2026-08-25T10:31:00.000Z', {
+          costUsd: { toNumber: () => 0.0001 },
+        }),
+        event('2026-08-25T10:32:00.000Z', {
+          costUsd: { toNumber: () => 0.0001 },
+        }),
+      ]);
+
+      const [{ windows }] = await service.readings(NOW);
+
+      expect(windows[0].opifexConsumption.reportedUsd).toBe(0.0003);
+    });
   });
 });
