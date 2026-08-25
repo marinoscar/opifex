@@ -235,6 +235,29 @@ describe('RunExecutorService', () => {
       expect(Object.keys(spec)).not.toContain('runnerKey');
     });
 
+    it('carries the model tier across the runner seam (#273)', async () => {
+      // Routing having chosen a runner that SERVES the tier is not the same
+      // as the runner knowing which tier to USE — dropping it here would
+      // leave a `tier:small` work order running on the runner's default
+      // model, which is the spend the tier exists to avoid.
+      await executor.dispatchWorkOrder({
+        workOrder: workOrder({ modelTier: 'small' }),
+        workOrderId: WORK_ORDER_ID,
+      });
+
+      const spec = submit.mock.calls[0][0];
+      expect(spec.modelTier).toBe('small');
+    });
+
+    it('sends no modelTier key at all when the work order asked for none', async () => {
+      // An absent tier is not the same fact as an explicit undefined, and the
+      // seam should not have to tell the two apart.
+      await dispatch();
+
+      const spec = submit.mock.calls[0][0];
+      expect('modelTier' in spec).toBe(false);
+    });
+
     it('records the version the runner reported, not a constant', async () => {
       await dispatch();
 
