@@ -172,6 +172,54 @@ describe('DispatchService', () => {
       ).toBe(true);
     });
 
+    it('recovers availability from the stored manifest (#253)', async () => {
+      // `available` has no column — the verbatim manifest is where a field the
+      // database does not model yet survives, and the schema says so in as
+      // many words. A fact the runner declared, registration wrote down and
+      // routing never saw would be the same as a fact nobody recorded, except
+      // that this one decides whether work is routed at all.
+      prisma.runner.findMany.mockResolvedValue([
+        runnerRow({
+          capability: {
+            ...runnerRow().capability,
+            manifest: {
+              available: false,
+              unavailableReason: '`claude --version` could not be probed',
+            },
+          },
+        }),
+      ]);
+
+      const decision = await service.decide([]);
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.reason).toContain('could not be probed');
+      // Capacity survives intact: it is unusable, not gone.
+      expect(decision.candidates[0].headroom).toBe(2);
+    });
+
+    it('routes a runner whose manifest never mentions availability', async () => {
+      // Every manifest written before 1.3.0, which is all of them. Absent
+      // means available, and a falsy read here would ground the fleet.
+      const decision = await service.decide([]);
+
+      expect(decision.outcome).toBe('dispatch');
+    });
+
+    it('does not ground a runner over a manifest it cannot read', async () => {
+      // The manifest is JSON the database hands back as whatever went in. A
+      // parse slip must fail towards routing, not away from it: the schema
+      // already refused a malformed manifest at registration, so this is the
+      // second line rather than the first.
+      for (const manifest of [null, 'not-an-object', ['available'], {}]) {
+        prisma.runner.findMany.mockResolvedValue([
+          runnerRow({ capability: { ...runnerRow().capability, manifest } }),
+        ]);
+
+        expect((await service.decide([])).outcome).toBe('dispatch');
+      }
+    });
+
     it('loads runners in a stable order', async () => {
       await service.decide([]);
 

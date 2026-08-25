@@ -1,6 +1,7 @@
 import type { RunnerCapabilities, RunnerNeed } from '../runners/runner.types';
 import {
   decideDispatch,
+  isAvailable,
   isPreview,
   satisfies,
   unmetNeeds,
@@ -183,6 +184,128 @@ describe('dispatch policy', () => {
       jest.useRealTimers();
 
       expect(later.runnerKey).toBe('claude-code-local');
+    });
+  });
+
+  describe('availability, which is not capacity (#253)', () => {
+    it('routes nothing to a runner that reports it cannot work', () => {
+      const decision = decideDispatch(
+        { needs: [] },
+        [entry({ available: false, unavailableReason: 'no CLI on PATH' })],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.runnerKey).toBeNull();
+      expect(decision.candidates[0].eligible).toBe(false);
+    });
+
+    it('prints the runner’s own reason rather than inventing one', () => {
+      // Routing branches on the boolean and never on the prose. What an
+      // operator can act on is the sentence the runner wrote, and "at its
+      // concurrency limit" — the old spelling of this state — sent them to
+      // wait for a slot that was never the problem.
+      const decision = decideDispatch(
+        { needs: [] },
+        [
+          entry({
+            available: false,
+            unavailableReason: '`claude --version` could not be probed',
+          }),
+        ],
+        NO_LIMIT,
+      );
+
+      expect(decision.reason).toContain('cannot take work right now');
+      expect(decision.reason).toContain('could not be probed');
+      expect(decision.reason).not.toContain('concurrency limit');
+    });
+
+    it('keeps its real capacity while it cannot use it', () => {
+      // The whole reason this is a field rather than `maxConcurrency: 0`: the
+      // slots are there and will be usable the moment the binary is. The
+      // verdict records the headroom it actually has, so the recorded decision
+      // does not claim the runner shrank.
+      const decision = decideDispatch(
+        { needs: [] },
+        [entry({ available: false, unavailableReason: 'no CLI' }, 0)],
+        NO_LIMIT,
+      );
+
+      expect(decision.candidates[0].headroom).toBe(2);
+    });
+
+    it('treats an absent availability as available', () => {
+      // The additive default, and the trap `isAvailable` exists to stop:
+      // `!capabilities.available` would ground every runner whose manifest
+      // predates the field, which is every runner written before 1.3.0.
+      expect(isAvailable(capabilities({}))).toBe(true);
+      expect(isAvailable(capabilities({ available: undefined }))).toBe(true);
+      expect(isAvailable(capabilities({ available: true }))).toBe(true);
+      expect(isAvailable(capabilities({ available: false }))).toBe(false);
+
+      const decision = decideDispatch({ needs: [] }, [entry()], NO_LIMIT);
+      expect(decision.outcome).toBe('dispatch');
+    });
+
+    it('says it plainly when a runner is unavailable and gave no reason', () => {
+      // The schema requires a reason, so this is a runner that got past
+      // registration some other way — an older row, a hand-written manifest.
+      // Saying "and gave no reason" is better than printing 'undefined'.
+      const decision = decideDispatch(
+        { needs: [] },
+        [entry({ available: false })],
+        NO_LIMIT,
+      );
+
+      expect(decision.reason).toContain('gave no reason');
+    });
+
+    it('keeps unavailable distinct from an operator switching it off', () => {
+      // Three facts, three fields (#262). Collapsing any two of them loses a
+      // distinction the operator needs to know what to fix.
+      const off = decideDispatch(
+        { needs: [] },
+        [entry({}, 0, false)],
+        NO_LIMIT,
+      );
+      const broken = decideDispatch(
+        { needs: [] },
+        [entry({ available: false, unavailableReason: 'no CLI on PATH' })],
+        NO_LIMIT,
+      );
+      const full = decideDispatch(
+        { needs: [] },
+        [entry({ maxConcurrency: 2 }, 2)],
+        NO_LIMIT,
+      );
+
+      expect(off.reason).toContain('disabled');
+      expect(off.reason).not.toContain('cannot take work right now');
+      expect(broken.reason).toContain('cannot take work right now');
+      expect(broken.reason).not.toContain('disabled');
+      expect(full.reason).toContain('concurrency limit of 2');
+      expect(full.reason).not.toContain('cannot take work right now');
+    });
+
+    it('rejects for a missing capability before reporting bad health', () => {
+      // Structural first, transient second — the same ordering the quota check
+      // uses. A runner that could NEVER do this work should say so, rather
+      // than implying it would be a candidate once its binary came back.
+      const decision = decideDispatch(
+        { needs: ['full-streaming'] },
+        [
+          entry({
+            streamingFidelity: 'none',
+            available: false,
+            unavailableReason: 'no CLI',
+          }),
+        ],
+        NO_LIMIT,
+      );
+
+      expect(decision.queueReason).toBe('no-runner-has-the-capabilities');
+      expect(decision.reason).toContain('does not advertise full-streaming');
     });
   });
 

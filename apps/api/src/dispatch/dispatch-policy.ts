@@ -239,6 +239,25 @@ export function servesTier(
   return served.includes(modelTier);
 }
 
+/**
+ * Whether a runner can take work right now (#253).
+ *
+ * ABSENT MEANS AVAILABLE, and the whole function exists to make that hard to
+ * get wrong: `!capabilities.available` reads a manifest that has never heard of
+ * the field as unavailable, which would ground every runner written before it
+ * — the same trap `servesTier` avoids for `modelTiers`, and the reason both are
+ * functions rather than inline truthiness tests.
+ *
+ * Availability is NOT capacity and NOT the operator's switch. A runner with
+ * `available: false` still declares its real `maxConcurrency`, because the
+ * slots exist and are momentarily unusable; and `RunnerPoolEntry.enabled` is
+ * still the flag a human sets. Three facts, three fields, three different
+ * things for an operator to do about them.
+ */
+export function isAvailable(capabilities: RunnerCapabilities): boolean {
+  return capabilities.available !== false;
+}
+
 /** Needs this runner cannot meet. */
 export function unmetNeeds(
   needs: readonly RunnerNeed[],
@@ -389,6 +408,26 @@ export function decideDispatch(
           false,
           `serves model tier(s) ${entry.capabilities.modelTiers?.join(', ')} ` +
             `and this work order asked for '${input.modelTier}'`,
+        );
+      }
+      if (!isAvailable(entry.capabilities)) {
+        // Sits with the quota check rather than with capacity, because it is
+        // the same KIND of fact: a transient condition the runner reported
+        // about itself, after the structural questions — does it advertise the
+        // needs, does it serve the tier — have already been answered. A runner
+        // that could never do this work should say so rather than saying it is
+        // temporarily unwell.
+        //
+        // The reason is the runner's own sentence, printed verbatim. Routing
+        // branches on the boolean and never on the prose: a reason string the
+        // policy parsed would be a capability in disguise.
+        return verdict(
+          entry,
+          input.needs,
+          false,
+          entry.capabilities.unavailableReason
+            ? `reports it cannot take work right now: ${entry.capabilities.unavailableReason}`
+            : 'reports it cannot take work right now, and gave no reason',
         );
       }
       if (entry.quota?.exhausted) {
