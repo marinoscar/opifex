@@ -770,6 +770,9 @@ model Run {
   escalations Escalation[]
   /// Periods this run made no progress, for VISION §10 metric 2 (#232).
   deadIntervals DeadInterval[]
+  /// At most one: a run is dispatched by exactly one decision, and that
+  /// decision either avoided a park or did not (#264).
+  avoidedPark   AvoidedPark?
 
   @@index([workOrderId])
   // The watchdog's whole query: live runs ordered by how long they have been
@@ -1009,6 +1012,128 @@ model DeadInterval {
   // acceptance criterion true.
   @@index([startedAt])
   @@map("dead_intervals")
+}
+
+/// A park that quota-aware routing prevented (#264).
+///
+/// `DispatchDecision.avoidedQuotaPark` (#105) has been the countable event
+/// behind quota-aware routing since it was built, and nothing counted it: the
+/// boolean was written to one log line and died with the in-memory decision,
+/// so *"counting these over time"* meant grepping container logs. This is the
+/// ledger that makes it a number.
+///
+/// ## A count of EVENTS. Never, under any circumstance, a duration
+///
+/// The park did not happen. There is no interval, so there is nothing to
+/// measure — and the only way to produce hours from this table would be to
+/// estimate how long the park WOULD have lasted, which is `resumes_at` minus
+/// the decision instant. That is an estimate wearing a measurement's clothes,
+/// it is the exact substitution `cockpit/metrics.service.ts` refuses for
+/// `quotaBurn`, and #232 declined to do it here for the same reason.
+///
+/// *"14 parks avoided this week"* is honest. *"9.2 hours of dead time
+/// avoided"* is not. This table therefore has no duration column, and the
+/// count it feeds sits BESIDE `deadTimePerDay` in the metrics summary rather
+/// than inside `metrics` — where nothing can iterate it as a seventh metric or
+/// add it to metric 2.
+///
+/// ## Why a table rather than a column on `runs`
+///
+/// A boolean column would have been cheaper, and it was the obvious move. Four
+/// things decided against it:
+///
+///  1. **The explanatory facts are plural.** The exhausted runner keys are a
+///     list and each has its own reset time. That is three or four sparse
+///     columns on the widest, hottest table in the schema, for a fact that is
+///     false on essentially every row.
+///  2. **Counting wants a window scan.** Here it is `occurred_at` against an
+///     index over a table with one row per event. On `runs` it would be a
+///     predicate on a near-uniformly-false boolean.
+///  3. **`dead_intervals` set the precedent.** Metric 2's own ledger is a
+///     separate table for a countable event about a run, with its own window
+///     index. Its neighbour should read the same way.
+///  4. **The cascade is free and correct.** When a runner's own capacity
+///     backstop refuses after routing said yes, `run-executor.service.ts`
+///     DELETES the run row — the work was re-queued and no park was in fact
+///     avoided. The foreign key retracts the claim without anybody
+///     remembering to.
+///
+/// ## Written where the dispatch happens, not where the decision is made
+///
+/// The single writer is `dispatch/run-executor.service.ts`, in the same
+/// `run.create` call that creates the run. Writing it in `DispatchService`
+/// instead — the obvious home, since that is where the decision is made —
+/// would be wrong: `cockpit/queue.service.ts` calls `decide()` HYPOTHETICALLY,
+/// once per distinct needs set, every time the queue panel polls, to answer
+/// "why is this not running yet". Persisting there would manufacture avoided
+/// parks for work that never dispatched, at the rate the browser refreshes.
+///
+/// ## It reads zero until a second runner exists, and that is the point
+///
+/// With one registered runner there is nowhere for work to move, so
+/// `avoidedQuotaPark` is false by construction (#102/#103 are blocked on the
+/// vendor). A metric that reads zero for a TRUE reason is exactly what should
+/// be in place before the thing it measures arrives — otherwise the
+/// before-and-after has no before.
+model AvoidedPark {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// The run that took the work instead.
+  ///
+  /// Unique: one dispatch decision produces one run and at most one avoided
+  /// park, so a second row against the same run would be a double count of a
+  /// single event. The database enforces it rather than the writer, because
+  /// the writer is a retryable tick.
+  runId String @unique @map("run_id") @db.Uuid
+
+  /// When routing decided. Not when the run ended, and not when it started.
+  ///
+  /// The event is instantaneous, which is the whole difference between this
+  /// table and `dead_intervals` — there is no second timestamp because there
+  /// is no second end to record.
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz
+
+  /// The runner that took the work. Half of the operator's sentence: work
+  /// moved OFF one runner and ONTO this one.
+  chosenRunnerKey String @map("chosen_runner_key")
+
+  /// The capable runners that were out of quota, ordered by key.
+  ///
+  /// Never empty — a row exists only because at least one was. Plural because
+  /// more than one can be spent at once; still ONE row, because two spent
+  /// runners and a third that took the work is one avoided park, and counting
+  /// rows has to equal counting events.
+  ///
+  /// "Capable" means what routing means by it: met every declared need and
+  /// served the requested tier. A runner rejected for its tier was never an
+  /// alternative this work order lost.
+  exhaustedRunnerKeys String[] @map("exhausted_runner_keys")
+
+  /// The soonest any of them said its window rolls, or NULL if none could date
+  /// it — routing only treats a DATED block as exhaustion, so in practice this
+  /// is set.
+  ///
+  /// Recorded to EXPLAIN the count, never to subtract from anything.
+  /// `resumes_at − occurred_at` is the length of the park that did not happen:
+  /// a counterfactual, not a measurement. Nothing may turn it into "hours
+  /// avoided", and the reason it is stored anyway is that a bare integer is
+  /// not actionable — *"work moved off claude-code-local while it was
+  /// rate-limited until 14:20"* names something an operator can go and check.
+  resumesAt DateTime? @map("resumes_at") @db.Timestamptz
+
+  /// One line per exhausted runner naming the observation its exhaustion
+  /// rested on, verbatim from the decision. #64's standard applied to this
+  /// record too: a reviewer should be able to reconstruct why the row exists
+  /// without reading routing code.
+  basis String[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  /// The count's window scan, which is the only read this table has.
+  @@index([occurredAt])
+  @@map("avoided_parks")
 }
 
 // =============================================================================
