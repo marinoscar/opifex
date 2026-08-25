@@ -90,6 +90,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
       422: 'UNPROCESSABLE_ENTITY',
       429: 'TOO_MANY_REQUESTS',
       500: 'INTERNAL_ERROR',
+      // A feature this build has but this deployment did not configure --
+      // Google login without GOOGLE_CLIENT_ID, for instance (#138). Without
+      // the entry the body would carry the useless code 'ERROR'.
+      501: 'NOT_IMPLEMENTED',
     };
     return codeMap[status] || 'ERROR';
   }

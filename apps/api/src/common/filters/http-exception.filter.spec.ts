@@ -313,6 +313,25 @@ describe('HttpExceptionFilter', () => {
       );
     });
 
+    it('should map 501 to NOT_IMPLEMENTED', () => {
+      // A feature this build has but this deployment did not configure -- the
+      // answer the Google OAuth routes give when GOOGLE_CLIENT_ID is unset
+      // (#138). Without the mapping the body would say only 'ERROR'.
+      const exception = new HttpException(
+        'Google login is not configured on this deployment',
+        HttpStatus.NOT_IMPLEMENTED,
+      );
+
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 501,
+          code: 'NOT_IMPLEMENTED',
+        }),
+      );
+    });
+
     it('should map 429 to TOO_MANY_REQUESTS', () => {
       const exception = new HttpException(
         'Too many requests',
