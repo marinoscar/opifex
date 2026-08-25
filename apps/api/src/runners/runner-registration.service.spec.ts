@@ -4,7 +4,10 @@ import { ConfigService } from '@nestjs/config';
 import { ContractValidator } from '../contracts/contract-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClaudeCodeLocalRunner } from './claude-code-local/claude-code-local.runner';
-import { RunnerRegistrationService } from './runner-registration.service';
+import {
+  REGISTRATION_INTERVAL_MS,
+  RunnerRegistrationService,
+} from './runner-registration.service';
 import type { RunnerCapabilities } from './runner.types';
 
 /**
@@ -455,6 +458,243 @@ describe('RunnerRegistrationService', () => {
         capabilitiesThrows: new Error('probe exploded'),
       });
       await expect(service.onModuleInit()).resolves.toBeUndefined();
+    });
+  });
+  describe('converging rather than trying once (#162)', () => {
+    /**
+     * Every level captured, because the claims below are as much about what is
+     * NOT said as about what is.
+     */
+    function spyOnLogger() {
+      return {
+        error: jest.spyOn(Logger.prototype, 'error').mockImplementation(),
+        warn: jest.spyOn(Logger.prototype, 'warn').mockImplementation(),
+        log: jest.spyOn(Logger.prototype, 'log').mockImplementation(),
+        debug: jest.spyOn(Logger.prototype, 'debug').mockImplementation(),
+      };
+    }
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('registers the runner once the database comes back', async () => {
+      // The test that would have caught the bug. A database away for the boot
+      // attempt used to leave the fleet table empty for the life of the
+      // process: `loadPool()` returned nothing and every work order queued
+      // behind "No runners are registered" until somebody restarted the API.
+      spyOnLogger();
+      const service = build();
+      (prisma.$transaction as jest.Mock).mockRejectedValueOnce(
+        new Error("Can't reach database server at 127.0.0.1:5432"),
+      );
+
+      await service.onModuleInit();
+      expect(runnerUpsert).not.toHaveBeenCalled();
+
+      // The database came back; the next tick is what has to notice.
+      await service.registerAll();
+
+      expect(runnerUpsert).toHaveBeenCalledTimes(1);
+      expect(capabilityUpsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports the recovery, so an operator who read the failure learns it is over', async () => {
+      // An error that is silently retried until it works is worse than either
+      // alternative: the operator has seen the failure and has no way to find
+      // out it cleared, so they go on believing the fleet is empty.
+      const logger = spyOnLogger();
+      const service = build();
+      (prisma.$transaction as jest.Mock).mockRejectedValueOnce(
+        new Error('database is down'),
+      );
+
+      await service.onModuleInit();
+      await service.registerAll();
+
+      const recovery = logger.log.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) => line.includes('after failing for'));
+      expect(recovery).toHaveLength(1);
+      expect(recovery[0]).toContain('claude-code-local');
+      expect(recovery[0]).toContain('can route to it again');
+    });
+
+    it('says the first failure at error and the repeats at debug', async () => {
+      // First attempt: exactly what the operator saw before this change.
+      // Repeats: found only by someone who turned the level up and is asking
+      // whether the loop is still running.
+      const logger = spyOnLogger();
+      const service = build();
+      (prisma.$transaction as jest.Mock).mockRejectedValue(
+        new Error('database is down'),
+      );
+
+      await service.onModuleInit();
+      expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(String(logger.error.mock.calls[0][0])).toContain(
+        'dispatch will not route to it',
+      );
+
+      await service.registerAll();
+      await service.registerAll();
+
+      expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(logger.debug).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-asserts a transient failure every tenth attempt, with how long', async () => {
+      // The compromise #162 is actually about. Never repeating is the bug —
+      // one line at boot, scrolled past. Repeating every tick is how a log
+      // stops being read. "Still failing, eleven minutes in" is new
+      // information; the identical line a minute later is not.
+      const logger = spyOnLogger();
+      const service = build();
+      (prisma.$transaction as jest.Mock).mockRejectedValue(
+        new Error('database is down'),
+      );
+
+      for (let attempt = 0; attempt < 20; attempt++) {
+        await service.registerAll();
+      }
+
+      const errors = logger.error.mock.calls.map((call) => String(call[0]));
+      expect(errors).toHaveLength(3); // attempt 1, then 10 and 20
+      expect(errors[1]).toContain('Still cannot register');
+      expect(errors[1]).toContain('10 attempts');
+      expect(errors[2]).toContain('20 attempts');
+    });
+
+    it('reports a failure whose reason changed, straight away', async () => {
+      // A new reason is new information whatever the counter says. An
+      // unreachable database and a rejected password call for different
+      // responses, and suppressing the second because the first was recent
+      // would tell the operator to keep waiting for a blip that is over.
+      const logger = spyOnLogger();
+      const service = build();
+      const transaction = prisma.$transaction as jest.Mock;
+
+      transaction.mockRejectedValue(new Error("Can't reach database server"));
+      await service.registerAll();
+      await service.registerAll();
+
+      transaction.mockRejectedValue(new Error('Authentication failed'));
+      await service.registerAll();
+
+      const errors = logger.error.mock.calls.map((call) => String(call[0]));
+      expect(errors).toHaveLength(2);
+      expect(errors[1]).toContain('Authentication failed');
+    });
+
+    it('does not repeat itself about a manifest that will never validate', async () => {
+      // A schema failure is a pure function of the document, so the hundredth
+      // check produces the identical violations. Retrying it is free; SAYING
+      // it a hundred times is how an operator learns to ignore the log — and
+      // this line competes for attention with the escalations that matter.
+      const logger = spyOnLogger();
+      const service = build({
+        capabilities: {
+          manifest: {
+            ...CAPABILITIES.manifest,
+            streamingFidelity: 'excellent',
+          },
+        },
+      });
+
+      for (let attempt = 0; attempt < 50; attempt++) {
+        await service.registerAll();
+      }
+
+      expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(String(logger.error.mock.calls[0][0])).toContain(
+        'runner-capability.schema.json',
+      );
+      // And the boundary still holds on every one of those attempts.
+      expect(runnerUpsert).not.toHaveBeenCalled();
+    });
+
+    it('says nothing at all when a healthy registration is repeated', async () => {
+      // The cost of converging forever must not be a line a minute. The state
+      // did not change, so there is nothing to report.
+      const logger = spyOnLogger();
+      const service = build();
+
+      await service.onModuleInit();
+      expect(logger.log).toHaveBeenCalledTimes(1);
+
+      await service.registerAll();
+      await service.registerAll();
+
+      expect(logger.log).toHaveBeenCalledTimes(1);
+      expect(logger.warn).not.toHaveBeenCalled();
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.debug).not.toHaveBeenCalled();
+      // Still written every time, though. The upsert is how a fleet row
+      // deleted by hand heals, and how an `available` snapshot taken while the
+      // CLI was missing is corrected once it is installed.
+      expect(runnerUpsert).toHaveBeenCalledTimes(3);
+    });
+
+    it('speaks again when the registration itself changed', async () => {
+      // A CLI upgrade, a flag flipped, a binary that appeared: each moves the
+      // signature, so suppression never hides a change an operator would act
+      // on.
+      const logger = spyOnLogger();
+      const config = {
+        get: () => true,
+      } as unknown as ConfigService;
+      let version = '2.1.240';
+      const runner = {
+        capabilities: jest.fn(async () => capabilitiesOf({ version })),
+      } as unknown as ClaudeCodeLocalRunner;
+      const service = new RunnerRegistrationService(
+        buildPrisma(),
+        config,
+        runner,
+        contracts,
+      );
+
+      await service.registerAll();
+      await service.registerAll();
+      expect(logger.log).toHaveBeenCalledTimes(1);
+
+      version = '2.2.0';
+      await service.registerAll();
+
+      expect(logger.log).toHaveBeenCalledTimes(2);
+      expect(String(logger.log.mock.calls[1][0])).toContain('2.2.0');
+    });
+
+    it('keeps trying when the runner cannot describe itself', async () => {
+      // A probe that threw is a machine in a bad moment, not a verdict. The
+      // fleet is left unchanged, and the next tick asks again.
+      spyOnLogger();
+      const service = build({
+        capabilitiesThrows: new Error('probe exploded'),
+      });
+
+      const first = await service.registerAll();
+      const second = await service.registerAll();
+
+      expect(first).toMatchObject({ transient: 1, registered: 0 });
+      expect(second).toMatchObject({ transient: 1 });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('counts what a pass did, so the tick has something to act on', async () => {
+      spyOnLogger();
+      await expect(build().registerAll()).resolves.toEqual({
+        registered: 1,
+        transient: 0,
+        permanent: 0,
+      });
+    });
+
+    it('re-runs often enough that a database blip is measured in a minute', async () => {
+      // Pinned rather than described: the whole complaint in #162 is a fleet
+      // table that stayed empty indefinitely, and the bound on "indefinitely"
+      // is this constant.
+      expect(REGISTRATION_INTERVAL_MS).toBeLessThanOrEqual(60_000);
     });
   });
 });
