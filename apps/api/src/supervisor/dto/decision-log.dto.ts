@@ -96,6 +96,10 @@ export const invocationSchema = z.object({
     'failed',
     'skipped_disabled',
     'skipped_quota',
+    // The supervisor's own spend ceiling refused the tick, or no ceiling was
+    // configured for it to check against (ADR-0017). Separate from
+    // `skipped_quota`, which is about parked workers rather than dollars.
+    'skipped_budget',
   ]),
   model: z.string(),
   snapshotText: z.string(),

@@ -46,7 +46,21 @@ export interface ProposalDraft {
 
 /** How an invocation ended. Mirrors `SupervisorInvocationOutcome`. */
 export type InvocationOutcome =
-  'completed' | 'partial' | 'failed' | 'skipped_disabled' | 'skipped_quota';
+  | 'completed'
+  | 'partial'
+  | 'failed'
+  | 'skipped_disabled'
+  | 'skipped_quota'
+  /**
+   * Refused by the supervisor's own spend ceiling before the tick began, or
+   * because no ceiling was configured to check against (ADR-0017).
+   *
+   * Distinct from `skipped_quota` on purpose: that one says the factory is
+   * parked, this one says a dollar figure had no room. A tick stopped part
+   * way by the same ceiling is `partial`, with a `failureReason` that names
+   * it.
+   */
+  | 'skipped_budget';
 
 /** Everything recorded about one scheduled invocation. */
 export interface InvocationDraft {
