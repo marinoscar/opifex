@@ -115,7 +115,7 @@ describe('ReconcileLogService', () => {
     it('opens the row at 0 writes, because none have been issued yet', async () => {
       // Not a claim that none will be: the row is created BEFORE the task runs
       // the executors, so zero is what is true at this instant. The real
-      // figure is stamped on afterwards by `recordWritesIssued` (#317).
+      // figure is stamped on afterwards by `recordExecution` (#317).
       await service.record(tick({ actions: [ACTION] }));
 
       const [{ data }] = prisma.reconcileTick.create.mock.calls[0];
@@ -143,13 +143,65 @@ describe('ReconcileLogService', () => {
     });
   });
 
-  describe('recordWritesIssued', () => {
+  describe('recordExecution', () => {
     it('writes the count onto the tick the writes belong to', async () => {
-      await service.recordWritesIssued('tick-uuid', 3);
+      await service.recordExecution('tick-uuid', {
+        writesIssued: 3,
+        executionFailures: null,
+      });
 
       expect(prisma.reconcileTick.update).toHaveBeenCalledWith({
         where: { id: 'tick-uuid' },
+        // No `executionFailures` key at all: null from the caller means no
+        // acting-phase executor ran, and the column is already null (#320).
         data: { actionsExecuted: 3 },
+      });
+    });
+
+    it('records an EMPTY failure list, which is not the same as none', async () => {
+      // `[]` says the acting phase ran and found nothing wrong. Leaving the
+      // column null would say it never ran, which is the signal #320 exists
+      // to keep.
+      await service.recordExecution('tick-uuid', {
+        writesIssued: 2,
+        executionFailures: [],
+      });
+
+      expect(prisma.reconcileTick.update).toHaveBeenCalledWith({
+        where: { id: 'tick-uuid' },
+        data: { actionsExecuted: 2, executionFailures: [] },
+      });
+    });
+
+    it('records the failures alongside the count, in one update', async () => {
+      await service.recordExecution('tick-uuid', {
+        writesIssued: 2,
+        executionFailures: [
+          {
+            source: 'mirror-label',
+            actionType: 'add-mirror-label',
+            repository: 'acme/app',
+            issueNumber: 312,
+            reason: 'GitHub said 403',
+          },
+        ],
+      });
+
+      expect(prisma.reconcileTick.update).toHaveBeenCalledTimes(1);
+      expect(prisma.reconcileTick.update).toHaveBeenCalledWith({
+        where: { id: 'tick-uuid' },
+        data: {
+          actionsExecuted: 2,
+          executionFailures: [
+            {
+              source: 'mirror-label',
+              actionType: 'add-mirror-label',
+              repository: 'acme/app',
+              issueNumber: 312,
+              reason: 'GitHub said 403',
+            },
+          ],
+        },
       });
     });
 
@@ -159,8 +211,105 @@ describe('ReconcileLogService', () => {
       prisma.reconcileTick.update.mockRejectedValue(new Error('disk full'));
 
       await expect(
-        service.recordWritesIssued('tick-uuid', 3),
+        service.recordExecution('tick-uuid', {
+          writesIssued: 3,
+          executionFailures: [],
+        }),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  /**
+   * #320, at the boundary the controller actually returns: `toResponse`
+   * (private, exercised only through `history`/`findById`) must carry
+   * `executionFailures` through untouched. `null` and `[]` are not
+   * interchangeable here either — a mapper that defaulted a missing/null
+   * column to `[]`, the way `projections`/`actions` legitimately do below,
+   * would destroy the exact distinction #320 exists to persist. Both
+   * `ReconcilerController` methods return these objects with no
+   * transformation of their own, so what reaches the HTTP body is exactly
+   * what is asserted here.
+   */
+  describe('executionFailures reaching the response (toResponse)', () => {
+    function dbRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'tick-uuid',
+        startedAt: new Date('2026-08-21T10:00:00Z'),
+        finishedAt: new Date('2026-08-21T10:00:01Z'),
+        durationMs: 1000,
+        outcome: 'completed',
+        repositoriesObserved: 1,
+        actionsComputed: 1,
+        actionsExecuted: 1,
+        allFromCache: false,
+        rateLimitRemaining: 4999,
+        failures: [],
+        executionFailures: null,
+        projections: null,
+        actions: null,
+        ...overrides,
+      };
+    }
+
+    it('history: passes a null executionFailures column through as null', async () => {
+      prisma.reconcileTick.findMany.mockResolvedValue([
+        dbRow({ executionFailures: null }),
+      ]);
+
+      const { items } = await service.history({ page: 1, pageSize: 25 });
+
+      expect(items[0]!.executionFailures).toBeNull();
+    });
+
+    it('history: passes an empty-array executionFailures column through as [], not null', async () => {
+      prisma.reconcileTick.findMany.mockResolvedValue([
+        dbRow({ executionFailures: [] }),
+      ]);
+
+      const { items } = await service.history({ page: 1, pageSize: 25 });
+
+      expect(items[0]!.executionFailures).toEqual([]);
+      expect(items[0]!.executionFailures).not.toBeNull();
+    });
+
+    it('history: passes a populated executionFailures column through untouched', async () => {
+      const populated = [
+        {
+          source: 'mirror-label',
+          actionType: 'add-mirror-label',
+          repository: 'acme/app',
+          issueNumber: 312,
+          reason: 'label action carried no label',
+        },
+      ];
+      prisma.reconcileTick.findMany.mockResolvedValue([
+        dbRow({ executionFailures: populated }),
+      ]);
+
+      const { items } = await service.history({ page: 1, pageSize: 25 });
+
+      expect(items[0]!.executionFailures).toEqual(populated);
+    });
+
+    it('findById: passes a null executionFailures column through as null', async () => {
+      prisma.reconcileTick.findUnique.mockResolvedValue(
+        dbRow({ executionFailures: null }),
+      );
+
+      const tick = await service.findById('tick-uuid');
+
+      expect(tick?.executionFailures).toBeNull();
+    });
+
+    it('findById: passes an empty-array executionFailures column through as [], not null', async () => {
+      prisma.reconcileTick.findUnique.mockResolvedValue(
+        dbRow({ executionFailures: [] }),
+      );
+
+      const tick = await service.findById('tick-uuid');
+
+      expect(tick?.executionFailures).toEqual([]);
+      expect(tick?.executionFailures).not.toBeNull();
     });
   });
 

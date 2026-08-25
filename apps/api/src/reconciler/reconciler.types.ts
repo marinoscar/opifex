@@ -109,3 +109,49 @@ export interface TickFailure {
   repository: string;
   reason: string;
 }
+
+/**
+ * One thing that went wrong in the ACTING phase, normalized (#320).
+ *
+ * Distinct from {@link TickFailure} above, which is observation-only: a
+ * repository that could not be READ. This is a repository that was written to,
+ * or should have been, and something came back wrong.
+ *
+ * The two executors that produce these return different shapes —
+ * `MirrorLabelExecutor` carries the whole `ReconcileAction`, `SpecFeedbackExecutor`
+ * carries a repository and an issue number and no action at all — so this is
+ * the intersection: what BOTH can actually supply, which is also the minimum
+ * #47 asks of evidence. Which action, which target, what error, answerable
+ * from the tick row without opening a container log.
+ *
+ * Persisted on `reconcile_ticks.execution_failures`, where the null/`[]`
+ * distinction lives: null means no acting-phase executor ran at all this tick,
+ * `[]` means one ran and reported nothing wrong. Read the doc comment on the
+ * Prisma model before changing either.
+ */
+export interface TickExecutionFailure {
+  /** Which executor reported it. */
+  source: 'mirror-label' | 'spec-feedback';
+  /**
+   * What was being attempted.
+   *
+   * The `ReconcileAction['type']` for a mirror-label failure. Spec feedback
+   * acts on a REJECTION rather than on a computed action, so it reports the
+   * synthetic `post-spec-feedback` — a reader needs to know what was tried,
+   * and leaving the field empty for half the entries would cost more than
+   * naming an operation that has no action type behind it.
+   */
+  actionType: string;
+  /** `owner/name`, the same format both executors already use. */
+  repository: string;
+  issueNumber: number;
+  /**
+   * Why it failed, as the executor saw it.
+   *
+   * NOT always a GitHub error. `MirrorLabelExecutor` reports `label action
+   * carried no label` here — a diff-engine bug it cannot distinguish from a
+   * refused write from where it stands. Read this before concluding GitHub
+   * said no.
+   */
+  reason: string;
+}

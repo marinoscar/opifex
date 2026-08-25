@@ -2,7 +2,21 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import type { TickRecord } from '../reconciler.types';
+import type { TickExecutionFailure, TickRecord } from '../reconciler.types';
+
+/**
+ * What `ReconcilerTask` knows once the tick's acting phase is over, and the
+ * log row does not yet (#317, #320).
+ */
+export interface TickExecution {
+  /** GitHub writes issued during the tick's window. */
+  writesIssued: number;
+  /**
+   * Acting-phase failures, normalized — or null when no acting-phase executor
+   * ran at all, which is not the same as one running clean.
+   */
+  executionFailures: TickExecutionFailure[] | null;
+}
 
 export interface TickHistoryQuery {
   page: number;
@@ -31,9 +45,10 @@ export class ReconcileLogService {
    * Record one tick, and return the id of the row it went into.
    *
    * The id is what lets `ReconcilerTask` come back and stamp on what the tick
-   * actually executed (#317): the row is created BEFORE the executors run,
-   * because a tick that never reaches them must still be logged, so the
-   * execution count cannot be known here.
+   * actually executed (#317, #320): the row is created BEFORE the executors
+   * run, because a tick that never reaches them must still be logged, so
+   * neither the execution count nor the executors' failures can be known
+   * here.
    *
    * Never throws, and returns `null` when the write failed. A tick that
    * reconciled correctly but failed to write its log row must not be reported
@@ -65,7 +80,7 @@ export class ReconcileLogService {
           // Zero because nothing has executed YET, not because nothing will.
           //
           // This row is written before `ReconcilerTask` runs the executors, so
-          // the real figure arrives later via `recordWritesIssued`. Until it
+          // the real figure arrives later via `recordExecution`. Until it
           // does, the honest value is zero: no write has left the process on
           // this tick's behalf at the moment the row is created.
           //
@@ -74,6 +89,9 @@ export class ReconcileLogService {
           // log", which it was not — nothing anywhere wrote another value, so
           // the observation week's one safety check could not fail.
           actionsExecuted: 0,
+          // `executionFailures` is deliberately not set here at all, leaving
+          // it null: no acting-phase executor has run yet, and `[]` would
+          // claim this tick acted and found nothing wrong (#320).
           allFromCache: record.allFromCache,
           rateLimitRemaining: record.rateLimitRemaining,
           failures: toJson(record.failures),
@@ -92,7 +110,16 @@ export class ReconcileLogService {
   }
 
   /**
-   * Stamp on how many GitHub writes the tick issued.
+   * Stamp on what the tick's acting phase actually did.
+   *
+   * One update carrying both figures, not two. They are produced by the same
+   * pass of `ReconcilerTask` and describe the same window, so splitting them
+   * would double the write cost of every acting tick and — worse — allow a
+   * crash between the two to leave a row claiming writes with its failure
+   * record still null, which is the exact "looks complete and is not" state
+   * #320 exists to remove.
+   *
+   * ## `writesIssued`
    *
    * **What the number means, exactly.** It is the count of write requests that
    * got past `GITHUB_WRITES_ENABLED` and were handed to the HTTP layer while
@@ -111,23 +138,49 @@ export class ReconcileLogService {
    * supposed to be read-only, where a false alarm costs an investigation and a
    * missed write costs the guarantee.
    *
-   * Called only when the count is non-zero, so during an observation week —
-   * when the kill switch is off and nothing can be issued — the loop makes no
-   * second write at all.
+   * ## `executionFailures`
+   *
+   * Null when no acting-phase executor ran at all, and the column is then left
+   * exactly as `record` created it. `[]` when one ran and reported nothing
+   * wrong. That distinction is the whole point of the field — writing `[]`
+   * where null belongs would turn "never tried" into a clean bill of health —
+   * so this method sets the column ONLY when the caller has an answer, and the
+   * caller's `null` is a statement that it has none.
+   *
+   * Scoped to the reconciler's own executors. A dispatch write that failed is
+   * recorded on the RUN, not here; see the Prisma model's comment.
+   *
+   * Called only when there is something to say — a non-zero count, or an
+   * acting phase that ran — so an observation-week tick that computed nothing
+   * still makes no second write at all.
    *
    * Never throws, for the same reason `record` does not.
    */
-  async recordWritesIssued(tickId: string, writes: number): Promise<void> {
+  async recordExecution(
+    tickId: string,
+    execution: TickExecution,
+  ): Promise<void> {
+    const { writesIssued, executionFailures } = execution;
+
     try {
       await this.prisma.reconcileTick.update({
         where: { id: tickId },
-        data: { actionsExecuted: writes },
+        data: {
+          actionsExecuted: writesIssued,
+          // Omitted, not set to null: the column is already null from
+          // `record`, and Prisma's two JSON nulls are a distinction this row
+          // does not need to take a position on.
+          ...(executionFailures === null
+            ? {}
+            : { executionFailures: toJson(executionFailures) }),
+        },
       });
     } catch (error) {
       // Loud, and worded for whoever finds it: the log now UNDER-REPORTS what
       // happened, which is the one direction this record must not fail in.
       this.logger.error(
-        `Tick ${tickId} issued ${writes} GitHub write(s) but the count could not be ` +
+        `Tick ${tickId} issued ${writesIssued} GitHub write(s) and reported ` +
+          `${executionFailures?.length ?? 0} execution failure(s); none of it could be ` +
           `recorded — the tick log understates this tick: ${
             error instanceof Error ? error.message : String(error)
           }`,
@@ -190,6 +243,9 @@ function toResponse(tick: ReconcileTickRow) {
     allFromCache: tick.allFromCache,
     rateLimitRemaining: tick.rateLimitRemaining,
     failures: tick.failures,
+    // `?? null` on the others is a default for a missing heavy payload; here
+    // null is MEANINGFUL and is passed straight through — see the DTO.
+    executionFailures: tick.executionFailures,
     projections: tick.projections ?? null,
     actions: tick.actions ?? null,
   };

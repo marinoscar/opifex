@@ -39,7 +39,46 @@ export const tickRecordSchema = z.object({
   actionsExecuted: z.number().int(),
   allFromCache: z.boolean(),
   rateLimitRemaining: z.number().int().nullable(),
+  /** Repositories that could not be OBSERVED, `[{ repository, reason }]`. */
   failures: z.unknown(),
+  /**
+   * Failures from the tick's ACTING phase — mirror-label writes and
+   * spec-feedback comments — as `[{ source, actionType, repository,
+   * issueNumber, reason }]`. Unrelated to `failures` above, which is
+   * observation-only.
+   *
+   * `null` and `[]` mean different things and the difference matters: `null`
+   * means no acting-phase executor ran on this tick at all, which is the
+   * normal state while `GITHUB_WRITES_ENABLED` is off and nothing is being
+   * acted on; `[]` means one ran and reported nothing wrong. A clean tick is
+   * `[]`; a tick that never tried is `null`. Do not treat them as the same.
+   *
+   * A `reason` is not necessarily a GitHub error — a label action that
+   * carried no label is reported here too, and that is a defect in the diff
+   * engine rather than a refused write.
+   *
+   * Scoped to the reconciler's own executors. A dispatch that failed to post
+   * its authorization record or create its branch is counted in
+   * `actionsExecuted` but reported on the RUN, not here.
+   */
+  executionFailures: z
+    .unknown()
+    .nullable()
+    // `.describe`, not just the comment above: a JSDoc comment on a zod field
+    // does NOT reach the generated OpenAPI document (verified against
+    // `npm run openapi:dump`), and this distinction is one an API consumer has
+    // to be told about rather than infer.
+    .describe(
+      "Failures from the tick's ACTING phase — mirror-label writes and spec-feedback " +
+        'comments — as [{ source, actionType, repository, issueNumber, reason }]. Unrelated ' +
+        'to failures, which is observation-only. null and [] are NOT the same: null means no ' +
+        'acting-phase executor ran on this tick at all, [] means one ran and reported nothing ' +
+        'wrong. A reason is not necessarily a GitHub error — a label action that carried no ' +
+        'label is reported here too, and that is a defect in the diff engine rather than a ' +
+        "refused write. Scoped to the reconciler's own executors: a dispatch that failed to " +
+        'post its authorization record or create its branch is counted in actionsExecuted but ' +
+        'reported on the run, not here.',
+    ),
   /** Null on a quiet tick — see the retention note on the Prisma model. */
   projections: z.unknown().nullable(),
   actions: z.unknown().nullable(),
