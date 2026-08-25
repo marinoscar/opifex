@@ -79,6 +79,8 @@ describe('rehydrateWorkOrder', () => {
       pathConstraints: from.pathConstraints,
       decisionRefs: from.decisionRefs,
       needs: from.needs,
+      // What the column holds: the tier, or null when none was asked for.
+      modelTier: from.modelTier ?? null,
       budgetCeilingUsd: from.budgetCeilingUsd,
       wallClockTimeoutMinutes: from.wallClockTimeoutMinutes,
       repository: { owner: from.repositoryOwner, name: from.repositoryName },

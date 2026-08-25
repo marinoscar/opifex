@@ -54,6 +54,7 @@ describe('DispatchQueueService', () => {
       pathConstraints: w.pathConstraints,
       decisionRefs: w.decisionRefs,
       needs: w.needs,
+      modelTier: w.modelTier ?? null,
       budgetCeilingUsd: w.budgetCeilingUsd,
       wallClockTimeoutMinutes: w.wallClockTimeoutMinutes,
       repository: {

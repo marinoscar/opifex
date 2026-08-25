@@ -346,6 +346,10 @@ export class WorkOrderProjectionService {
           pathConstraints: workOrder.pathConstraints,
           decisionRefs: workOrder.decisionRefs,
           needs: workOrder.needs,
+          // `?? null` rather than omitted: absent and null mean the same thing
+          // here (the runner's own default), and writing it explicitly keeps
+          // the column's meaning identical to the wire contract's.
+          modelTier: workOrder.modelTier ?? null,
           budgetCeilingUsd: workOrder.budgetCeilingUsd,
           wallClockTimeoutMinutes: workOrder.wallClockTimeoutMinutes,
         },

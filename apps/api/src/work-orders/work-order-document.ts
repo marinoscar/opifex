@@ -1,4 +1,5 @@
 import { WORK_ORDER_SCHEMA_VERSION } from '../contracts/generated';
+import type { ModelTier } from '../runners/runner.types';
 import type { GeneratedWorkOrder } from './work-order-generator';
 
 /**
@@ -82,7 +83,13 @@ export interface WorkOrderDocument {
   budgetCeilingUsd: number | null;
   wallClockTimeoutMinutes: number | null;
   needs: string[];
-  modelTier?: string;
+  /**
+   * The closed union, not `string` — unlike `needs` beside it, which stays
+   * loose only because `RunnerNeed` predates the generated contract. Typed
+   * narrowly so a consumer that renders the document (the cockpit's detail
+   * DTO) cannot be handed a tier the schema does not allow.
+   */
+  modelTier?: ModelTier;
 }
 
 /**

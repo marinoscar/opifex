@@ -92,6 +92,13 @@ export const workOrderDocumentSchema = z.object({
   budgetCeilingUsd: z.number().nullable(),
   wallClockTimeoutMinutes: z.number().int().nullable(),
   needs: z.array(z.string()),
+  /**
+   * Absent when the work order never asked for a tier, which is the ordinary
+   * case. Optional rather than nullable because the DOCUMENT omits the key
+   * entirely — `toWorkOrderDocument` never writes `null` here, and a schema
+   * that allowed it would describe a document this build cannot produce.
+   */
+  modelTier: z.enum(['small', 'standard', 'large']).optional(),
 });
 
 export const workOrderRunSchema = z.object({

@@ -204,6 +204,7 @@ const DETAIL_SELECT = {
   pathConstraints: true,
   decisionRefs: true,
   needs: true,
+  modelTier: true,
   budgetCeilingUsd: true,
   wallClockTimeoutMinutes: true,
   status: true,

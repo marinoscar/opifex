@@ -261,6 +261,7 @@ const WORK_ORDER_SELECT = {
   pathConstraints: true,
   decisionRefs: true,
   needs: true,
+  modelTier: true,
   budgetCeilingUsd: true,
   wallClockTimeoutMinutes: true,
   repository: { select: { owner: true, name: true, dispatchEnabled: true } },
