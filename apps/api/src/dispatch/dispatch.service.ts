@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { RUNNER_CAPABILITY_MODEL_TIERS } from '../contracts/generated';
 import { PrismaService } from '../prisma/prisma.service';
 import type { BlockedReason } from '../run-events/run-event.types';
 import type {
@@ -157,7 +158,7 @@ export class DispatchService {
         .map((runner) => ({
           enabled: runner.enabled,
           liveRuns: liveByRunner.get(runner.key) ?? 0,
-          capabilities: toCapabilities(runner, runner.capability!),
+          capabilities: toCapabilities(runner, runner.capability!, this.logger),
           // Undefined for a runner with no observed block, which the policy
           // reads as UNKNOWN and routes to freely.
           quota: quotaByRunner.get(runner.key),
@@ -297,24 +298,46 @@ type CapabilityRow = Awaited<
  * `RunnerCapabilities` from `runner.types.ts`, which restates its enums so it
  * stays a pure contract with no Prisma import. A spec pins the two together.
  *
- * ## Availability comes out of the verbatim manifest, not a column
+ * ## Two routing inputs come out of the verbatim manifest, not out of columns
  *
- * `available` (#253) has no column, and the manifest JSON is kept verbatim for
- * exactly this: *"a field this schema does not model yet is not silently
- * discarded."* Reading it here is what makes the round trip complete — a fact
- * the runner declares, the registration writes down and routing never sees is
- * the same as a fact nobody recorded, and this one decides whether work is
- * routed at all.
+ * `modelTiers` (#205) and `available` (#253) have no column between them, and
+ * the manifest JSON is kept verbatim for exactly this: *"a field this schema
+ * does not model yet is not silently discarded."* Reading them here is what
+ * makes the round trip complete — a fact the runner declares, the registration
+ * writes down and routing never sees is the same as a fact nobody recorded,
+ * and both of these decide whether work is routed at all.
  *
- * Read defensively, because the manifest is JSON the database will hand back
- * as whatever was put in: anything that is not literally `false` leaves the
- * runner available, which is the same absent-means-available default the
- * schema states and `isAvailable` enforces. A parse slip must not ground the
- * fleet.
+ * Skipping the `modelTiers` read is precisely how `servesTier` came to be
+ * unreachable in production (#265): every runner arrived with the field
+ * undefined, the "serves any tier" default fired every time, and a refusal
+ * branch that existed and was tested could not run.
+ *
+ * Read defensively in both cases, because the manifest is JSON the database
+ * will hand back as whatever was put in, and a parse slip on the dispatch path
+ * must not ground the fleet. `ContractValidator` already refused a malformed
+ * manifest at registration, so this is the second line rather than the first.
+ *
+ * ## Whether either deserves a column
+ *
+ * A fair question, and deliberately not answered here. Both are consulted on
+ * every dispatch, and reading a routing input out of JSON on the hot path is
+ * the kind of thing that is fine until it isn't — the point it stops being
+ * fine is when routing wants to FILTER on it (`where: { modelTiers: { has:
+ * ... } }` needs a column and an index; `loadPool` reading every row does
+ * not). Today the pool is every registered runner, a handful of rows loaded
+ * whole, so the JSON read costs nothing a column would save. Adding one now
+ * would also mean a migration and a second place for the same fact to live,
+ * which is how a column and a manifest start to disagree. Recorded as a
+ * question for when the fleet is big enough to make it a real one.
+ *
+ * Exported for its spec, and on purpose: this is the one step between the
+ * database and a policy that is pure precisely so it can be tested, and #265
+ * is the bill for having tested both ends and not the join.
  */
 function toCapabilities(
   runner: RunnerRow,
   capability: CapabilityRow,
+  logger: Pick<Logger, 'warn'>,
 ): RunnerCapabilities {
   return {
     key: runner.key,
@@ -335,9 +358,79 @@ function toCapabilities(
     resumable: capability.resumable,
     maxConcurrency: capability.maxConcurrency,
     branchPatterns: capability.branchPatterns,
+    ...modelTiersOf(capability.manifest, runner.key, logger),
     ...availabilityOf(capability.manifest),
     manifest: (capability.manifest ?? {}) as Record<string, unknown>,
   };
+}
+
+/**
+ * The tier vocabulary, taken from the generated contract rather than respelled.
+ *
+ * The annotation is the point: `ModelTier` in `runner.types.ts` restates the
+ * schema's enum by hand so the seam stays free of generated imports, and this
+ * assignment fails to compile the day the schema grows a fourth tier that the
+ * hand-written union has not been told about. A parser that quietly rejected
+ * the new tier as unknown would ignore the declaration of every runner that
+ * adopted it.
+ */
+const KNOWN_MODEL_TIERS: readonly ModelTier[] = RUNNER_CAPABILITY_MODEL_TIERS;
+
+/**
+ * The model tiers this runner declared, recovered from the stored manifest.
+ *
+ * Returns nothing at all for a runner that never mentioned tiers, so the field
+ * stays ABSENT rather than becoming an explicit list of everything — the seam
+ * type says undefined means ANY, and that default is what keeps a runner
+ * written before tiers existed eligible for the work it had been taking.
+ *
+ * ## A value it cannot read is treated as absent, and said out loud
+ *
+ * Dropped WHOLE, never repaired. Filtering `['small', 'huge']` down to
+ * `['small']` would invent a restriction the runner never declared and refuse
+ * work it can do, while keeping the unknown string would let a value nothing
+ * understands take part in a routing decision. Falling back to the documented
+ * default is the only reading that changes nothing: the runner is routed the
+ * way every runner was routed before it said anything.
+ *
+ * Logged because that fallback is not free — a runner whose declaration was
+ * discarded is now being sent work it may have been trying to refuse, and the
+ * only symptom otherwise is a dispatch that looks entirely ordinary.
+ */
+function modelTiersOf(
+  manifest: CapabilityRow['manifest'],
+  runnerKey: string,
+  logger: Pick<Logger, 'warn'>,
+): Pick<RunnerCapabilities, 'modelTiers'> {
+  const declared = declaredIn(manifest)?.modelTiers;
+  if (declared === undefined) return {};
+
+  // Empty counts as malformed rather than as "serves nothing": the schema sets
+  // `minItems: 1`, and the policy already reads an empty list as ANY, so the
+  // two agree on the outcome and this way it is also reported.
+  const known =
+    Array.isArray(declared) &&
+    declared.length > 0 &&
+    declared.every(isKnownTier);
+
+  if (!known) {
+    logger.warn(
+      `Runner ${runnerKey} declares modelTiers ${JSON.stringify(declared)}, which is not a ` +
+        `non-empty list of ${KNOWN_MODEL_TIERS.join(', ')}; ignoring the declaration and ` +
+        `treating the runner as serving any tier`,
+    );
+    return {};
+  }
+
+  // Copied rather than aliased, so the routing input cannot be reached through
+  // the verbatim `manifest` this same projection also hands out.
+  return { modelTiers: [...(declared as ModelTier[])] };
+}
+
+function isKnownTier(value: unknown): value is ModelTier {
+  return (
+    typeof value === 'string' && KNOWN_MODEL_TIERS.includes(value as ModelTier)
+  );
 }
 
 /**
@@ -347,21 +440,15 @@ function toCapabilities(
  * fields stay ABSENT rather than becoming an explicit `true` — the seam type
  * says undefined means available, and writing the default in would make a
  * manifest that said nothing indistinguishable from one that asserted it was
- * fine.
+ * fine. Anything that is not literally `false` leaves the runner available,
+ * which is the same absent-means-available default the schema states and
+ * `isAvailable` enforces.
  */
 function availabilityOf(
   manifest: CapabilityRow['manifest'],
 ): Pick<RunnerCapabilities, 'available' | 'unavailableReason'> {
-  if (
-    typeof manifest !== 'object' ||
-    manifest === null ||
-    Array.isArray(manifest)
-  ) {
-    return {};
-  }
-
-  const declared = manifest as Record<string, unknown>;
-  if (declared.available !== false) return {};
+  const declared = declaredIn(manifest);
+  if (!declared || declared.available !== false) return {};
 
   return {
     available: false,
@@ -372,4 +459,26 @@ function availabilityOf(
   };
 }
 
-export { OCCUPYING_STATUSES, QUOTA_BLOCK_REASONS };
+/**
+ * The manifest as a plain object, or null for anything that is not one.
+ *
+ * Shared by both manifest reads above because both face the same fact: this is
+ * JSON the database returns as whatever went in, and `typeof null === 'object'`
+ * with `Array.isArray` on top is the guard that keeps a defensive read from
+ * becoming a throw on the dispatch path.
+ */
+function declaredIn(
+  manifest: CapabilityRow['manifest'],
+): Record<string, unknown> | null {
+  if (
+    typeof manifest !== 'object' ||
+    manifest === null ||
+    Array.isArray(manifest)
+  ) {
+    return null;
+  }
+
+  return manifest as Record<string, unknown>;
+}
+
+export { OCCUPYING_STATUSES, QUOTA_BLOCK_REASONS, toCapabilities };
