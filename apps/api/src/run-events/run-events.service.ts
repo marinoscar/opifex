@@ -32,6 +32,20 @@ export interface RejectedEvent {
 }
 
 /**
+ * The statuses a run may still conclude FROM.
+ *
+ * The same three `dispatch.service.ts` counts as occupying a concurrency slot,
+ * and that is not a coincidence: a run holding a slot is exactly a run that has
+ * not finished, so every one of them has to be able to give the slot back.
+ *
+ * `quarantined` is excluded deliberately, and that exclusion is why this is a
+ * named set rather than "anything not terminal" — VISION §8 says a run cannot
+ * clear its own quarantine, and a runner-reported event concluding one would be
+ * it doing precisely that.
+ */
+const CONCLUDABLE_STATUSES = ['running', 'stalled', 'blocked'] as const;
+
+/**
  * Accepts runner-reported events, validates them against the contract, and
  * persists them.
  *
@@ -236,7 +250,7 @@ export class RunEventsService {
 
     const blocked = events.find((event) => event.type === 'run.blocked');
 
-    await this.prisma.run.updateMany({
+    const advanced = await this.prisma.run.updateMany({
       // The guard is in the WHERE clause rather than a read-then-compare, so
       // two concurrent deliveries cannot both decide they are newest.
       where: {
@@ -254,7 +268,88 @@ export class RunEventsService {
     });
 
     await this.rollUpCost(runId);
-    await this.concludeRun(runId, events);
+
+    const terminal = terminalEventIn(events);
+
+    // A run that is about to conclude is not un-stalled first: the conclusion
+    // below already accepts a stalled run, and writing `running` on the way
+    // past would put a state through the row that never actually happened.
+    if (!terminal && advanced.count > 0) {
+      await this.resumeStalledRun(runId, newest);
+    }
+
+    if (terminal) {
+      await this.concludeRun(runId, terminal);
+    }
+  }
+
+  /**
+   * Return a stalled run to `running` when it starts reporting again (#254).
+   *
+   * ## The choice this makes, and why
+   *
+   * The alternative was to leave a resumed run `stalled` until it concluded,
+   * on the grounds that the status then preserves the record that it was once
+   * stuck. That reading loses on two counts.
+   *
+   * `Run.status` is present tense. The schema defines `running` as *"events are
+   * flowing; nothing to do"* and `stalled` as *"silent or looping"*, so a run
+   * whose events are flowing again satisfies the first sentence by definition
+   * and leaving it `stalled` makes the column say something untrue. It is also
+   * the column humans are shown: the daily brief tells the operator a stalled
+   * run *"is spending nothing and finishing nothing"*
+   * (`supervisor/brief/daily-brief.ts`), and the snapshot counts it under
+   * `runsStalled`. Both would be false about a run that is mid-flight. A wrong
+   * attention item is worse than a late one, because only one of them still
+   * means anything.
+   *
+   * And nothing is lost — the part that had to be checked rather than assumed.
+   * The stall survives in two durable places this does not touch: the
+   * `Escalation` raised for it carries `progressStoppedAt` and
+   * `detectLatencyMs`, and `run_events` is append-only, so the gap between two
+   * consecutive `occurredAt` values stays computable forever. #232's stall
+   * durations read exactly those, and this transition is what finally gives
+   * them an END to measure to — pinning the status at `stalled` would leave
+   * #232 with a start and no stop, which is the state it is filed against.
+   *
+   * ## Only on a batch that moved liveness forward
+   *
+   * `advanced.count` is the same monotonic guard `lastEventAt` uses, reused
+   * rather than re-derived: an old or redelivered event that could not make a
+   * live run look staler must not make a stalled one look alive either.
+   *
+   * The write is still guarded on `status: 'stalled'` in the WHERE clause, in
+   * the idiom of everything else here — a read-then-compare would let a run
+   * that concluded in between be dragged back out of its terminal state.
+   *
+   * ## `attentionReason` is deliberately left alone
+   *
+   * The poller writes it when it loses a run's handle, and *nobody is watching
+   * this run* stays true whether or not the run is reporting. The cockpit is
+   * explicit (`cockpit/runs.service.ts`) that the attention panel drains on the
+   * escalation lifecycle rather than on this field, so clearing it here would
+   * erase an operator's explanation without resolving anything.
+   *
+   * ## Runner-reported events only
+   *
+   * Git-derived liveness advances `lastEventAt` on its own path
+   * (`liveness/git-liveness.service.ts`) and never reaches this method. Whether
+   * a landing commit should also un-stall a run is that module's decision — it
+   * exists to NOTICE disagreement between the two sources rather than to
+   * reconcile them, and quietly reconciling one here would undo that.
+   */
+  private async resumeStalledRun(runId: string, newest: Date): Promise<void> {
+    const resumed = await this.prisma.run.updateMany({
+      where: { id: runId, status: 'stalled' },
+      data: { status: 'running' },
+    });
+
+    if (resumed.count > 0) {
+      this.logger.log(
+        `Run ${runId} is reporting again as of ${newest.toISOString()}; ` +
+          'returned to running.',
+      );
+    }
   }
 
   /**
@@ -271,10 +366,31 @@ export class RunEventsService {
    *
    * ## Monotonic, like `lastEventAt` and the cost roll-up
    *
-   * The guard is `status: 'running'` in the WHERE clause. A redelivered
-   * terminal event cannot drag a run back out of a terminal state, and a late
-   * `run.failed` cannot overwrite a `succeeded` that already landed — whichever
-   * conclusion arrives first wins, and the events remain the record of why.
+   * The guard is {@link CONCLUDABLE_STATUSES} in the WHERE clause. A
+   * redelivered terminal event cannot drag a run back out of a terminal state,
+   * and a late `run.failed` cannot overwrite a `succeeded` that already landed
+   * — whichever conclusion arrives first wins, and the events remain the record
+   * of why.
+   *
+   * ## Why the set, and not just `running` (#254)
+   *
+   * It WAS `status: 'running'`, and that was a permanent slot leak. A run the
+   * watchdog or the poller had marked `stalled` matched nothing, so its
+   * `run.completed` was a silent no-op and it stayed `stalled` forever — while
+   * `stalled` still counts against `maxConcurrency`. Two recovered stalls wedge
+   * a `maxConcurrency: 2` runner for the life of the deployment, presenting as
+   * `capable-runners-are-at-capacity` with nothing visibly running. It does not
+   * even take a real failure to get there: 90 seconds of silence is several
+   * missed heartbeats for a full-streaming runner, so one slow tool call is
+   * enough to strand a run whose work completed correctly. `blocked` is in the
+   * set for the same reason — a parked run whose child is cancelled or exits
+   * reports a terminal event and would otherwise wedge identically.
+   *
+   * Widening it does not weaken the idempotence the guard exists for, because
+   * that idempotence never came from the value being exactly `running`: it
+   * comes from the status CHANGING on the first write. `succeeded` and `failed`
+   * are outside the set, so the second delivery of a terminal event matches
+   * zero rows exactly as it did before.
    *
    * ## `result` is carried onto the run
    *
@@ -284,30 +400,16 @@ export class RunEventsService {
    */
   private async concludeRun(
     runId: string,
-    events: RunEventPayload[],
+    terminal: RunEventPayload,
   ): Promise<void> {
-    // The last terminal event in the batch, by when it happened. A batch
-    // carrying both is malformed, but picking deterministically beats picking
-    // by array order.
-    const terminal = events
-      .filter(
-        (event) =>
-          event.type === 'run.completed' || event.type === 'run.failed',
-      )
-      .sort(
-        (a, b) =>
-          new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime(),
-      )
-      .pop();
-
-    if (!terminal) return;
-
     const succeeded = terminal.type === 'run.completed';
     const result = terminal.result;
 
     const updated = await this.prisma.run.updateMany({
-      // Only a live run concludes. This is what makes redelivery a no-op.
-      where: { id: runId, status: 'running' },
+      // Only an unfinished run concludes. Redelivery is a no-op because the
+      // first write moves the status OUT of this set, not because the set is
+      // narrow.
+      where: { id: runId, status: { in: [...CONCLUDABLE_STATUSES] } },
       data: {
         status: succeeded ? 'succeeded' : 'failed',
         endedAt: new Date(terminal.occurredAt),
@@ -422,6 +524,30 @@ export class RunEventsService {
       });
     }
   }
+}
+
+/**
+ * The terminal event a batch concludes on, or undefined.
+ *
+ * The LAST one by when it happened. A batch carrying both a completion and a
+ * failure is malformed, but picking deterministically beats picking by array
+ * order.
+ *
+ * Lifted out of `concludeRun` because the resume path needs the same answer:
+ * a run that is about to conclude must not be un-stalled on the way there.
+ */
+function terminalEventIn(
+  events: RunEventPayload[],
+): RunEventPayload | undefined {
+  return events
+    .filter(
+      (event) => event.type === 'run.completed' || event.type === 'run.failed',
+    )
+    .sort(
+      (a, b) =>
+        new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime(),
+    )
+    .pop();
 }
 
 /**
