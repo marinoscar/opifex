@@ -9,8 +9,10 @@
  * function with a forwarded abort signal once the registry flips.
  *
  * The registry is mocked with a MUTABLE stand-in so both sides of that flip can
- * be exercised in one file — the real one is `available: false` everywhere, and
- * a test that could only see that half would not prove the wiring works.
+ * be exercised in one file. That mattered when the real registry was
+ * `available: false` everywhere, and it still matters now that it is `true`
+ * everywhere: a test that could only see the live half would no longer prove
+ * that `available: false` suppresses the request at all.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
