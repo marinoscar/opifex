@@ -59,6 +59,12 @@ export default tseslint.config(
       // declared below it. Fixed by declaring the handler first (#185).
       'react-hooks/immutability': 'error',
 
+      // Five findings, all the same shape: a "latest value" ref assigned
+      // during render. Each now syncs in a layout effect instead, so a render
+      // React discards cannot publish its props to the tree that stayed on
+      // screen (#185).
+      'react-hooks/refs': 'error',
+
       // The automatic JSX runtime (React 19 + Vite) means importing React to
       // use JSX is exactly the unused import the rest of this config flags.
       'react/react-in-jsx-scope': 'off',
