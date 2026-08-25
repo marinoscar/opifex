@@ -24,6 +24,7 @@ import { TrustGrantService } from '../trust/trust-grant.service';
 import { notPendingFor } from './approval-not-pending.exception';
 import type {
   ApprovalRequestView,
+  BackfillParkedResult,
   ClassApprovalRates,
   DecideApprovalInput,
   DecideResult,
@@ -56,6 +57,50 @@ export const SWEEP_BATCH_LIMIT = 200;
  * `EscalationsService.UNRESOLVED` makes about its own set.
  */
 export const OPEN_STATUSES: readonly ApprovalStatus[] = ['pending', 'parked'];
+
+/**
+ * How long after parking the escalation backfill keeps trying (#237).
+ *
+ * ## Why a window at all, and why this one
+ *
+ * The backfill exists because `escalateParked` swallows its failure, so a
+ * parked approval can sit with `escalationId: null`. Retrying is bounded for
+ * the same reason #136 caps `MAX_DELIVERY_ATTEMPTS`: an unbounded retry is not
+ * a recovery, it is a permanent background query nobody ever reads the result
+ * of, and a system that retries forever never has to admit it failed.
+ *
+ * The bound is WALL-CLOCK rather than an attempt count because there is no
+ * attempt column to increment and inventing one would be a schema change for
+ * a counter whose only consumer is a log line. Twenty-four hours of
+ * five-minute ticks is roughly 288 attempts, which is far past the point where
+ * "escalations cannot be raised" stops being about this approval.
+ *
+ * The upper end matters in the other direction too. A fresh page about an
+ * approval parked a day ago READS AS NEW, and VISION §8's contract is that
+ * what the notification says is what is true — so past the window the honest
+ * move is to stop paging and say so, not to page late. The operator was
+ * already pushed about the approval when it was raised (`notify` runs whether
+ * or not the escalation lands), and the request is still in the pending queue
+ * where `listPending` has been showing it the whole time.
+ *
+ * Past the window the end state is the same shape #136 produces: nothing more
+ * is attempted, the row stays `parked` and un-auto-approvable, its view
+ * carries `escalationMissing: true`, and `ApprovalGateTask` says out loud that
+ * nobody got a receipt.
+ */
+export const PARKED_BACKFILL_WINDOW_HOURS = 24;
+export const PARKED_BACKFILL_WINDOW_MS =
+  PARKED_BACKFILL_WINDOW_HOURS * 60 * 60 * 1000;
+
+/**
+ * How many parked approvals one backfill pass repairs.
+ *
+ * Much smaller than `SWEEP_BATCH_LIMIT`: every row here costs a raise, a
+ * write and an un-indexed `contains` lookup, and a backlog of more than a
+ * handful means escalations are broken fleet-wide rather than that one raise
+ * lost a race. Anything left over is picked up five minutes later.
+ */
+export const PARKED_BACKFILL_BATCH_LIMIT = 25;
 
 /**
  * The approval gate (#97, epic #22, VISION §8, ADR-0013, ADR-0014).
@@ -343,42 +388,112 @@ export class ApprovalGateService {
    * whose refusal depends on a successful second write is a gate that fails
    * open under exactly the load that makes writes fail.
    *
-   * The cost of swallowing is real and worth naming rather than implying: a
-   * parked approval with a null `escalationId` is a question nobody was told
-   * about, which is the failure VISION §9 says this project exists to
-   * eliminate. It is at least VISIBLE — the row is queryable, and the log line
-   * is an error — but nothing re-attempts it today. See the follow-up note in
-   * #98/#100 territory: a backfill for parked rows with no escalation.
+   * ## What is actually lost, stated precisely (#237)
+   *
+   * NOT the notification. `gate` calls `notify` unconditionally after this,
+   * and `ApprovalNotifier` sends over Web Push and the fallback webhook
+   * without consulting `EscalationsService` at all — so the operator's phone
+   * still rings and the push still deep-links to the approval. What is lost is
+   * the RECEIPT and the RETRY: the `Escalation` row is the thing that carries
+   * `deliveryAttempts` and #136's bounded redelivery, and the approval push
+   * explicitly does not chase a receipt. The request also drops out of the
+   * escalation list, which is the surface an operator scans for "what is
+   * waiting on me".
+   *
+   * That is narrower than "nobody was told" and still worth repairing, because
+   * the class of action it drops is by construction the irreversible one. So
+   * `backfillParkedEscalations` retries it on the same five-minute tick.
+   *
+   * ## Two try blocks, not one
+   *
+   * The raise and the link fail differently and the log must say which. A
+   * single `try` around both reports "escalation failed" for a case where the
+   * escalation EXISTS and will be delivered, and only the pointer is missing —
+   * which sends whoever reads the log looking for a notification that already
+   * went out. The persisted state is the same either way (`escalationId` stays
+   * null), which is exactly why the backfill cannot distinguish them from the
+   * row and must dedupe on lookup instead.
+   *
+   * When only the link fails, the id is still RETURNED, so `notify` can pass
+   * it to the device and the pair groups as one alert. The row is repaired on
+   * the next backfill pass.
    */
   private async escalateParked(
     approvalId: string,
     input: RaiseApprovalInput,
     noGrantDetail: string,
   ): Promise<string | null> {
+    let escalationId: string;
+
     try {
-      const escalation = await this.escalations.raiseSystem({
-        summary: `Approval parked, waiting on a human: ${input.summary}`,
-        detail:
-          `${input.reasoning}\n\nBlast radius: ${input.blastRadius}\n\n` +
-          'If ignored: nothing. This action class is irreversible, so it is ' +
-          'never auto-approved under any grant or any timeout (VISION §8, ' +
-          'ADR-0014 rule 1). There is no timer on this request — it waits ' +
-          `until a person answers it.\n\nGrant: ${noGrantDetail}\n` +
-          `Approval: ${approvalId}`,
-      });
-
-      await this.prisma.approvalRequest.update({
-        where: { id: approvalId },
-        data: { escalationId: escalation.id },
-      });
-
-      return escalation.id;
+      const escalation = await this.escalations.raiseSystem(
+        parkedEscalationContent(
+          {
+            id: approvalId,
+            summary: input.summary,
+            reasoning: input.reasoning,
+            blastRadius: input.blastRadius,
+          },
+          { noGrantDetail },
+        ),
+      );
+      escalationId = escalation.id;
     } catch (error) {
       this.logger.error(
-        `Approval ${approvalId} is parked but nobody was told — escalation ` +
-          `failed: ${describeError(error)}`,
+        `Approval ${approvalId} is parked and no escalation could be raised ` +
+          `— the push still went out, but there is no receipt and nothing in ` +
+          `the escalation list. The backfill will retry within ` +
+          `${PARKED_BACKFILL_WINDOW_HOURS}h: ${describeError(error)}`,
       );
       return null;
+    }
+
+    const linked = await this.linkEscalation(approvalId, escalationId);
+    if (linked !== 'linked') {
+      this.logger.error(
+        `Approval ${approvalId} is parked and escalation ${escalationId} was ` +
+          'raised for it, but the link could not be written. Somebody WAS ' +
+          'told; the approval simply does not point at the escalation yet. ' +
+          'The backfill repairs the pointer without raising a second one.',
+      );
+    }
+
+    return escalationId;
+  }
+
+  /**
+   * Point a parked approval at its escalation.
+   *
+   * Conditional on the row still being parked with no escalation, for the same
+   * reason `sweepTimeouts` and `decide` are conditional: a human answering in
+   * the same instant must win, and a second writer must not overwrite a
+   * pointer that is already there.
+   *
+   * Three outcomes rather than a boolean, because "somebody else got there
+   * first" and "the write failed" are different facts and the backfill counts
+   * them in different buckets — one is normal and one is the thing being
+   * repaired failing again.
+   *
+   * Swallows, because the caller has already established that the escalation
+   * exists — an exception here would lose that fact and, in `gate`, would fail
+   * a raise for a reason unrelated to whether the action may proceed.
+   */
+  private async linkEscalation(
+    approvalId: string,
+    escalationId: string,
+  ): Promise<LinkOutcome> {
+    try {
+      const { count } = await this.prisma.approvalRequest.updateMany({
+        where: { id: approvalId, status: 'parked', escalationId: null },
+        data: { escalationId },
+      });
+      return count === 1 ? 'linked' : 'lost';
+    } catch (error) {
+      this.logger.error(
+        `Approval ${approvalId} could not be linked to escalation ` +
+          `${escalationId}: ${describeError(error)}`,
+      );
+      return 'failed';
     }
   }
 
@@ -747,6 +862,204 @@ export class ApprovalGateService {
     return result;
   }
 
+  // -------------------------------------------------------------------------
+  // The backfill (#237)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Find parked approvals that never got their escalation, and finish the job.
+   *
+   * ## Why this is not part of `sweepTimeouts`
+   *
+   * #237 is explicit, and it is the right call: a parked row has a null
+   * `timeoutAt` and `status: 'parked'`, and the timeout sweep's query excludes
+   * it twice over. That double exclusion IS the never-auto-approve guarantee.
+   * Widening the sweep's WHERE clause to reach parked rows would put "resolve
+   * by the clock" and "tell somebody" in one method, one query and one loop —
+   * and the first bug in the shared branch would be an irreversible action
+   * auto-approving. Two methods on one tick share the schedule and nothing
+   * else.
+   *
+   * ## The duplicate an obvious implementation would raise
+   *
+   * "Find parked approvals with `escalationId: null` and raise the missing
+   * escalation" is WRONG on its own, and the reason is `escalateParked`'s two
+   * failure modes. If the raise fails, no escalation exists. If the raise
+   * succeeds and the LINK write fails, an escalation exists, has been
+   * dispatched, and may already be on somebody's phone — and the row looks
+   * identical: `escalationId` is null in both cases. Raising again for the
+   * second case pages an operator twice about one question, which is precisely
+   * the noise VISION §8 and #57 both exist to remove, delivered by the
+   * mechanism that was supposed to fix a missed notification.
+   *
+   * Restructuring the raise cannot fix this, and it is worth saying why since
+   * it is the tempting answer: moving the link write out of the `try` makes
+   * the two failures LOG differently (it does, now) but it cannot make them
+   * PERSIST differently, because the only thing that would record "the
+   * escalation exists" is the write that just failed. So the check has to
+   * happen at lookup time, against the escalation itself.
+   *
+   * That is what `parkedApprovalMarker` is for: every escalation raised for a
+   * parked approval carries `Approval: <id>` in its detail, so the backfill
+   * asks the escalation table whether the question was already asked before
+   * asking it again. When one is found the row is simply LINKED — the repair
+   * is the pointer, and nobody is paged a second time.
+   *
+   * ## Decided rows are excluded, by their status
+   *
+   * A parked approval a human answers becomes `approved` or `denied` (and a
+   * superseded one becomes `superseded`), so `status: 'parked'` already
+   * excludes every decided row without a second condition. This matters more
+   * than it looks: escalating an answered question is pure noise, and the
+   * filter that prevents it is the same one that defines the work.
+   *
+   * The residual race — the row is selected, a human decides it, and the raise
+   * lands anyway — is settled by `linkEscalation` being conditional on the row
+   * still being parked. The escalation is raised in that window, which is a
+   * genuine if rare cost, and it is counted as `raced` rather than reported as
+   * a repair.
+   */
+  async backfillParkedEscalations(
+    now: Date = new Date(),
+  ): Promise<BackfillParkedResult> {
+    const cutoff = new Date(now.getTime() - PARKED_BACKFILL_WINDOW_MS);
+
+    const stale = await this.prisma.approvalRequest.findMany({
+      where: {
+        status: 'parked',
+        escalationId: null,
+        createdAt: { gte: cutoff },
+      },
+      select: {
+        id: true,
+        summary: true,
+        reasoning: true,
+        blastRadius: true,
+        createdAt: true,
+      },
+      // Oldest first: the one that has been un-escalated longest is the one
+      // closest to falling out of the window entirely.
+      orderBy: { createdAt: 'asc' },
+      take: PARKED_BACKFILL_BATCH_LIMIT,
+    });
+
+    // Counted, never touched. These are past the retry bound and will not be
+    // paged about — the count is the honest admission that they exist, and
+    // `ApprovalGateTask` is what says it out loud. A `count` rather than a
+    // `findMany` so an old backlog costs one indexed query per tick, not a
+    // scan plus a text lookup per row forever.
+    const abandoned = await this.prisma.approvalRequest.count({
+      where: {
+        status: 'parked',
+        escalationId: null,
+        createdAt: { lt: cutoff },
+      },
+    });
+
+    const result: BackfillParkedResult = {
+      examined: stale.length,
+      raised: 0,
+      linked: 0,
+      raced: 0,
+      failed: 0,
+      abandoned,
+    };
+
+    for (const approval of stale) {
+      try {
+        const existing = await this.findEscalationFor(approval.id);
+
+        if (existing) {
+          // Somebody was already told. Repair the pointer, page nobody.
+          const outcome = await this.linkEscalation(approval.id, existing);
+          if (outcome === 'linked') {
+            result.linked += 1;
+            this.logger.warn(
+              `Approval ${approval.id} was already escalated as ${existing} ` +
+                'but had lost the link; the pointer is repaired and no ' +
+                'second escalation was raised.',
+            );
+          } else if (outcome === 'lost') {
+            result.raced += 1;
+          } else {
+            result.failed += 1;
+          }
+          continue;
+        }
+
+        const escalation = await this.escalations.raiseSystem(
+          parkedEscalationContent(approval, {
+            parkedAt: approval.createdAt,
+            now,
+          }),
+        );
+        const outcome = await this.linkEscalation(approval.id, escalation.id);
+
+        if (outcome === 'linked') {
+          result.raised += 1;
+        } else if (outcome === 'lost') {
+          // The row stopped being an un-escalated parked request between the
+          // select and the write — almost always a human deciding it. The
+          // escalation is already raised and will be delivered; that is the
+          // price of not holding a lock across a notification path.
+          result.raced += 1;
+          this.logger.warn(
+            `Approval ${approval.id} was escalated as ${escalation.id} by the ` +
+              'backfill, but stopped being a parked, un-escalated request ' +
+              'before the link was written. The escalation stands.',
+          );
+        } else {
+          result.failed += 1;
+        }
+      } catch (error) {
+        result.failed += 1;
+        this.logger.error(
+          `Approval ${approval.id} is parked and still has no escalation; ` +
+            `the backfill failed too: ${describeError(error)}`,
+        );
+      }
+    }
+
+    if (result.raised > 0 || result.linked > 0) {
+      this.logger.log(
+        `Parked escalation backfill: ${result.raised} raised, ` +
+          `${result.linked} re-linked, ${result.raced} raced, ` +
+          `${result.failed} failed (of ${result.examined} examined).`,
+      );
+    }
+
+    return result;
+  }
+
+  /**
+   * The escalation already raised for this approval, if there is one.
+   *
+   * Matches on the marker in `detail` rather than on a foreign key, because
+   * the foreign key is exactly what is missing — an `Escalation` has no column
+   * pointing back at an approval, the edge is `ApprovalRequest.escalationId`
+   * and this runs precisely when that edge failed to be written.
+   *
+   * Un-indexed and deliberately so: it runs only for rows that are already
+   * anomalous, at most `PARKED_BACKFILL_BATCH_LIMIT` times per tick, and the
+   * alternative — a column on `Escalation` — would be a schema change whose
+   * only reader is this recovery path. Oldest first, so a repeated failure
+   * that somehow produced two escalations links the one an operator is most
+   * likely to have already seen.
+   */
+  private async findEscalationFor(approvalId: string): Promise<string | null> {
+    const existing = await this.prisma.escalation.findFirst({
+      where: {
+        kind: 'system',
+        runId: null,
+        detail: { contains: parkedApprovalMarker(approvalId) },
+      },
+      select: { id: true },
+      orderBy: { raisedAt: 'asc' },
+    });
+
+    return existing?.id ?? null;
+  }
+
   /**
    * Retire a request because the condition it was about changed.
    *
@@ -999,9 +1312,98 @@ export function toView(row: ApprovalRequestRow): ApprovalRequestView {
     grantId: row.grantId,
     createdGrantId: row.createdGrantId,
     escalationId: row.escalationId,
+    // Derived here rather than stored, so it cannot drift from the two columns
+    // it is about. See `ApprovalRequestView.escalationMissing`: this is "no
+    // escalation record exists for a request that is by construction the
+    // highest-consequence thing the gate produces", not "nobody was told".
+    escalationMissing: row.status === 'parked' && row.escalationId === null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/** What `linkEscalation` did. See its doc for why three and not two. */
+type LinkOutcome = 'linked' | 'lost' | 'failed';
+
+/**
+ * The line that ties an `Escalation` back to the approval that raised it.
+ *
+ * A marker in the detail text rather than a column, and both halves of that
+ * are deliberate. `Escalation` has no pointer to an approval — the edge is
+ * `ApprovalRequest.escalationId`, one-directional — and #237's backfill runs
+ * exactly when that edge is missing, so it needs some way to ask "was this
+ * question already asked" that does not depend on the write that failed.
+ *
+ * A function rather than two string literals in two files: the raise writes it
+ * and `findEscalationFor` searches for it, and the day those two disagree is
+ * the day the backfill stops finding existing escalations and starts raising
+ * duplicates — the one failure this whole mechanism exists to avoid. The id is
+ * a UUID, so the marker is unambiguous as a substring.
+ */
+export function parkedApprovalMarker(approvalId: string): string {
+  return `Approval: ${approvalId}`;
+}
+
+/** The fields an escalation for a parked approval is written from. */
+interface ParkedEscalationSubject {
+  id: string;
+  summary: string;
+  reasoning: string;
+  blastRadius: string;
+}
+
+/**
+ * What the operator reads when an approval parks.
+ *
+ * Shared by the raise and the backfill so the two say the same thing about the
+ * same situation — including the marker, without which the backfill cannot
+ * recognise its own earlier work.
+ *
+ * The two callers differ in what they can honestly claim. At raise time the
+ * gate knows why no grant covered the action and says so. The backfill does
+ * not: `ApprovalRequest` records the decision, not the grant search that
+ * preceded it, so a backfilled escalation OMITS the grant line rather than
+ * guessing at one, and instead states how late it is and why — an escalation
+ * that reads as fresh when it is hours old is the notification lying about
+ * itself, which is the failure VISION §8's timeout contract exists to prevent.
+ */
+function parkedEscalationContent(
+  subject: ParkedEscalationSubject,
+  context: { noGrantDetail?: string; parkedAt?: Date; now?: Date },
+): { summary: string; detail: string } {
+  const provenance =
+    context.noGrantDetail !== undefined
+      ? `Grant: ${context.noGrantDetail}\n`
+      : lateNotice(context.parkedAt, context.now);
+
+  return {
+    summary: `Approval parked, waiting on a human: ${subject.summary}`,
+    detail:
+      `${subject.reasoning}\n\nBlast radius: ${subject.blastRadius}\n\n` +
+      'If ignored: nothing. This action class is irreversible, so it is ' +
+      'never auto-approved under any grant or any timeout (VISION §8, ' +
+      'ADR-0014 rule 1). There is no timer on this request — it waits ' +
+      `until a person answers it.\n\n${provenance}` +
+      parkedApprovalMarker(subject.id),
+  };
+}
+
+/** How the backfill introduces an escalation that should have gone out earlier. */
+function lateNotice(parkedAt?: Date, now?: Date): string {
+  const minutes =
+    parkedAt && now
+      ? Math.max(0, Math.round((now.getTime() - parkedAt.getTime()) / 60_000))
+      : null;
+
+  return (
+    'Raised late, by the backfill pass: the escalation for this approval ' +
+    'failed when it was parked' +
+    (minutes === null ? '' : `, ${minutes} minute(s) ago`) +
+    '. The approval itself was pushed at the time it was raised, so this may ' +
+    'be the second time you have seen it — it is the same question, not a ' +
+    'new one, and it is still waiting.\n' +
+    'The action has been blocked the entire time (#237).\n'
+  );
 }
 
 function describeError(error: unknown): string {

@@ -122,6 +122,15 @@ export const approvalSchema = z.object({
   createdGrantId: z.uuid().nullable(),
   /** Set only for a parked approval, which raises one (VISION §8). */
   escalationId: z.uuid().nullable(),
+  /**
+   * A parked request with no escalation record (#237).
+   *
+   * Derived from `status` and `escalationId`, exposed because the operator
+   * needs a way to SEE this rather than only find it in a log. It means the
+   * escalation — and with it the delivery receipt and #136's redelivery — was
+   * never created; the approval itself was still pushed when it was raised.
+   */
+  escalationMissing: z.boolean(),
 
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
