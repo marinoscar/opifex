@@ -1,7 +1,25 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { GoogleStrategy, GoogleProfile } from './google.strategy';
+import {
+  GoogleStrategy,
+  GoogleProfile,
+  createGoogleStrategy,
+} from './google.strategy';
 import { Profile } from 'passport-google-oauth20';
+
+/**
+ * A ConfigService stand-in returning whatever `google.*` values a case needs.
+ */
+function configWith(values: Record<string, string>): ConfigService {
+  return {
+    get: (key: string) => values[key],
+  } as unknown as ConfigService;
+}
+
+const FULL_CONFIG = {
+  'google.clientId': 'test-client-id',
+  'google.clientSecret': 'test-client-secret',
+  'google.callbackUrl': 'http://localhost:3000/api/auth/google/callback',
+};
 
 /**
  * Helper function to create mock Google Profile objects
@@ -22,33 +40,75 @@ function createMockProfile(overrides: Partial<Profile> = {}): Profile {
 
 describe('GoogleStrategy', () => {
   let strategy: GoogleStrategy;
-  let mockConfigService: jest.Mocked<ConfigService>;
 
-  beforeEach(async () => {
-    mockConfigService = {
-      get: jest.fn((key: string) => {
-        const config: Record<string, string> = {
-          'google.clientId': 'test-client-id',
-          'google.clientSecret': 'test-client-secret',
-          'google.callbackUrl':
-            'http://localhost:3000/api/auth/google/callback',
-        };
-        return config[key] || '';
-      }),
-    } as any;
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        GoogleStrategy,
-        { provide: ConfigService, useValue: mockConfigService },
-      ],
-    }).compile();
-
-    strategy = module.get<GoogleStrategy>(GoogleStrategy);
+  beforeEach(() => {
+    // Constructed directly rather than through a Nest container: since #138
+    // the strategy takes already-validated options and is not `@Injectable()`,
+    // precisely so that it cannot be registered as a plain class provider and
+    // constructed with credentials that are not there.
+    strategy = new GoogleStrategy({
+      clientID: 'test-client-id',
+      clientSecret: 'test-client-secret',
+      callbackURL: 'http://localhost:3000/api/auth/google/callback',
+    });
   });
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('createGoogleStrategy', () => {
+    it('builds a strategy when both credentials are set', () => {
+      expect(createGoogleStrategy(configWith(FULL_CONFIG))).toBeInstanceOf(
+        GoogleStrategy,
+      );
+    });
+
+    it('builds a strategy without a callback URL', () => {
+      // Google falls back to the redirect URI registered on the OAuth client;
+      // the old `|| ''` would have sent an empty redirect_uri instead.
+      const { 'google.callbackUrl': _omitted, ...rest } = FULL_CONFIG;
+
+      expect(createGoogleStrategy(configWith(rest))).toBeInstanceOf(
+        GoogleStrategy,
+      );
+    });
+
+    it('returns undefined instead of throwing when nothing is configured', () => {
+      // The regression #138 is about: this used to be
+      // `OAuth2Strategy requires a clientID option` at boot.
+      expect(createGoogleStrategy(configWith({}))).toBeUndefined();
+    });
+
+    it('returns undefined when only the client id is set', () => {
+      expect(
+        createGoogleStrategy(
+          configWith({ 'google.clientId': 'test-client-id' }),
+        ),
+      ).toBeUndefined();
+    });
+
+    it('returns undefined when only the client secret is set', () => {
+      expect(
+        createGoogleStrategy(
+          configWith({ 'google.clientSecret': 'test-client-secret' }),
+        ),
+      ).toBeUndefined();
+    });
+
+    it('treats empty-string credentials as unset', () => {
+      // `''` was the value the old fallback supplied, and it is exactly the
+      // value passport rejects.
+      expect(
+        createGoogleStrategy(
+          configWith({
+            'google.clientId': '',
+            'google.clientSecret': '',
+            'google.callbackUrl': '',
+          }),
+        ),
+      ).toBeUndefined();
+    });
   });
 
   describe('validate', () => {
