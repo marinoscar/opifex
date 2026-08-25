@@ -908,6 +908,72 @@ describe('dispatch policy', () => {
         expect(decision.reason).toContain('spent');
       });
 
+      it('carries the facts that make the count explainable (#264)', () => {
+        // A bare integer is not actionable. "Work moved off `spent` while it
+        // was rate-limited until 18:00" names something an operator can go
+        // and look at, and it is what gets persisted.
+        const decision = decideDispatch({ needs: [] }, pool, NO_LIMIT);
+
+        expect(decision.avoidedPark).toEqual({
+          chosenRunnerKey: 'fresh',
+          exhausted: [
+            {
+              runnerKey: 'spent',
+              resumesAt: '2026-08-23T18:00:00.000Z',
+              basis: EXHAUSTED.basis,
+            },
+          ],
+        });
+      });
+
+      it('carries no duration, because the park did not happen', () => {
+        // The whole discipline of #264 in one assertion. There is no interval
+        // to measure; hours would have to be estimated from `resumesAt`, which
+        // is an estimate wearing a measurement's clothes.
+        const park = decideDispatch({ needs: [] }, pool, NO_LIMIT).avoidedPark!;
+
+        for (const key of Object.keys(park)) {
+          expect(key).not.toMatch(/hours|duration|ms$|seconds|minutes/i);
+        }
+        for (const key of Object.keys(park.exhausted[0])) {
+          expect(key).not.toMatch(/hours|duration|ms$|seconds|minutes/i);
+        }
+      });
+
+      it('records ONE park for two spent runners, not two', () => {
+        // Counting rows has to equal counting events: two spent runners and a
+        // third that took the work is a single avoided park. The spent ones
+        // are attribution inside it.
+        const decision = decideDispatch(
+          { needs: [] },
+          [
+            withQuota(entry({ key: 'spent-b' }), EXHAUSTED),
+            withQuota(entry({ key: 'spent-a' }), EXHAUSTED),
+            withQuota(entry({ key: 'fresh' })),
+          ],
+          NO_LIMIT,
+        );
+
+        expect(decision.avoidedPark?.chosenRunnerKey).toBe('fresh');
+        expect(
+          decision.avoidedPark?.exhausted.map((runner) => runner.runnerKey),
+        ).toEqual(['spent-a', 'spent-b']);
+      });
+
+      it('keeps the boolean and the record in lockstep', () => {
+        // They are one fact built at one site, so they cannot drift. Asserted
+        // across the cases this file already exercises rather than trusted.
+        for (const pools of [
+          pool,
+          [withQuota(entry({ key: 'only' }), EXHAUSTED)],
+          [entry()],
+          [] as RunnerPoolEntry[],
+        ]) {
+          const decision = decideDispatch({ needs: [] }, pools, NO_LIMIT);
+          expect(decision.avoidedQuotaPark).toBe(decision.avoidedPark !== null);
+        }
+      });
+
       it('prefers the runner with quota even when the spent one has more headroom', () => {
         // Headroom is the tiebreaker among USABLE runners. A runner that
         // cannot spend a token has no usable headroom at all.
@@ -973,6 +1039,7 @@ describe('dispatch policy', () => {
 
         expect(decision.outcome).toBe('dispatch');
         expect(decision.avoidedQuotaPark).toBe(false);
+        expect(decision.avoidedPark).toBeNull();
       });
 
       it('never returns an exhausted acknowledged preview runner as eligible', () => {

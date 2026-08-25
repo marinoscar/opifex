@@ -181,14 +181,72 @@ export interface DispatchDecision {
    * runner took it instead. Counting these over time is the before-and-after
    * measure of VISION §10's metric 2.
    *
-   * It is the event, not the arithmetic. Dead time per day needs stall
-   * durations, which #232 owns and which are not recorded yet — so this
-   * deliberately says only "a park was avoided here", and claims nothing about
-   * how many minutes that saved.
+   * It is the event, not the arithmetic. A park that did not happen has no
+   * duration to measure — turning one into "hours saved" would need an
+   * estimate of how long it WOULD have lasted, which is a guess wearing a
+   * measurement's clothes. So this says only "a park was avoided here", and
+   * claims nothing about how many minutes that saved.
    *
    * Always false on a queued decision: nothing moved.
+   *
+   * Derived from `avoidedPark` at the single site that builds it, so the two
+   * cannot drift: true exactly when `avoidedPark !== null`.
    */
   avoidedQuotaPark: boolean;
+  /**
+   * The same event, with the facts that make it explainable (#264).
+   *
+   * Non-null exactly when `avoidedQuotaPark` is true. It exists because a bare
+   * integer is not actionable: *"work moved off claude-code-local 14 times
+   * while it was rate-limited"* names a runner an operator can go and look at,
+   * and *"14"* does not.
+   *
+   * These facts cannot be recovered from `candidates` afterwards. A verdict
+   * carries its runner's `quota` position whether or not that position is what
+   * disqualified it, and the one thing that would separate "capable but out of
+   * quota" from "rejected for its tier, and also out of quota" is the reason
+   * PROSE — which nothing downstream may parse, on the same grounds routing
+   * itself never parses it. So the policy states it, because the policy is the
+   * only place that knows.
+   */
+  avoidedPark: AvoidedPark | null;
+}
+
+/**
+ * One capable runner that was observably out of quota when routing decided.
+ *
+ * "Capable" means the same thing here it means in the decision: it met every
+ * declared need AND served the requested tier. A runner rejected for its tier
+ * is not an alternative this work order lost, and counting it as one would
+ * inflate the very number #105 is judged by.
+ */
+export interface ExhaustedRunner {
+  runnerKey: string;
+  /**
+   * When its window rolls, ISO 8601, or null when nothing could date it.
+   *
+   * Carried verbatim from `RunnerQuotaPosition.resumesAt` — a string rather
+   * than a `Date` for the reason stated there, and because the one arithmetic
+   * it invites (`resumesAt − now`, "how long the park would have been") is
+   * precisely the counterfactual #264 exists to refuse.
+   */
+  resumesAt: string | null;
+  /** The observation the exhaustion rests on, verbatim. */
+  basis: string;
+}
+
+/**
+ * A park that quota-aware routing prevented, as a record rather than a flag.
+ *
+ * ONE of these per dispatch, never one per exhausted runner: two spent runners
+ * and a third that took the work is a single avoided park. Counting rows has
+ * to equal counting events, or the number stops meaning what its label says.
+ */
+export interface AvoidedPark {
+  /** The runner that took the work instead. */
+  chosenRunnerKey: string;
+  /** Every capable runner that was spent, ordered by key. Never empty. */
+  exhausted: ExhaustedRunner[];
 }
 
 /**
@@ -371,15 +429,19 @@ export function decideDispatch(
   // same thing it means above: meets every need AND serves the tier. A runner
   // rejected for its tier is not an alternative this work order lost, and
   // counting it as one would inflate the very metric #105 is judged by.
+  //
+  // Kept as ENTRIES rather than only keys since #264, because the reset time
+  // and the basis sentence are what make the persisted count explainable, and
+  // both live on the pool entry. The key set below is derived from it, so the
+  // two are one fact rather than two.
+  const quotaExhaustedEntries = enabled.filter(
+    (entry) =>
+      entry.quota?.exhausted === true &&
+      unmetNeeds(input.needs, entry.capabilities).length === 0 &&
+      servesTier(input.modelTier, entry.capabilities),
+  );
   const quotaExhaustedCapable = new Set(
-    enabled
-      .filter(
-        (entry) =>
-          entry.quota?.exhausted === true &&
-          unmetNeeds(input.needs, entry.capabilities).length === 0 &&
-          servesTier(input.modelTier, entry.capabilities),
-      )
-      .map((entry) => entry.capabilities.key),
+    quotaExhaustedEntries.map((entry) => entry.capabilities.key),
   );
 
   const candidates = enabled
@@ -504,9 +566,30 @@ export function decideDispatch(
   // The chosen runner can never be in that set — the check above rejects an
   // exhausted runner outright — so this reads "somebody else was out of quota
   // and this work moved anyway", which is exactly the countable event.
-  const avoidedQuotaPark =
+  //
+  // Built as the RECORD, with the boolean derived from it one line later.
+  // Two fields that had to be kept in agreement by hand would eventually
+  // disagree, and the shape that disagrees silently is the one where a
+  // persisted count and a logged flag stop matching.
+  const avoidedPark: AvoidedPark | null =
     quotaExhaustedCapable.size > 0 &&
-    !quotaExhaustedCapable.has(chosen.runnerKey);
+    !quotaExhaustedCapable.has(chosen.runnerKey)
+      ? {
+          chosenRunnerKey: chosen.runnerKey,
+          exhausted: quotaExhaustedEntries
+            .map((entry) => ({
+              runnerKey: entry.capabilities.key,
+              // Non-null by construction — `exhausted` is only ever set
+              // alongside these — but read defensively rather than asserted,
+              // because a pure function must not throw on a pool somebody
+              // hand-built for a test.
+              resumesAt: entry.quota?.resumesAt ?? null,
+              basis: entry.quota?.basis ?? 'reported out of quota',
+            }))
+            .sort((a, b) => a.runnerKey.localeCompare(b.runnerKey)),
+        }
+      : null;
+  const avoidedQuotaPark = avoidedPark !== null;
 
   return {
     outcome: 'dispatch',
@@ -524,6 +607,7 @@ export function decideDispatch(
         : ''),
     candidates,
     avoidedQuotaPark,
+    avoidedPark,
   };
 }
 
@@ -642,5 +726,6 @@ function queued(
     // exhausted fleet is the OLD behaviour still working (#56 parks it), not
     // this feature doing something.
     avoidedQuotaPark: false,
+    avoidedPark: null,
   };
 }
