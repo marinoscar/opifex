@@ -67,7 +67,10 @@ export function useUserSettings(
     }
   }, [setMode, syncTheme, isMounted]);
 
+  // Load on mount; same shape and same reasoning as the suppression in
+  // useSystemSettings.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount, see above
     fetchSettings();
   }, [fetchSettings]);
 

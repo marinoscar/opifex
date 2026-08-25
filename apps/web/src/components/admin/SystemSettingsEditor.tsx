@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Box, Typography, TextField, Button, Alert } from '@mui/material';
 import { SystemSettings } from '../../types';
 
@@ -24,11 +24,16 @@ export function SystemSettingsEditor({
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
+  // Re-seed the editor when a fresh `settings` object arrives. Adjusted during
+  // render rather than in an effect so the textarea never paints the previous
+  // JSON for a frame after a save lands (react-hooks/set-state-in-effect).
+  const [seededFrom, setSeededFrom] = useState(settings);
+  if (settings !== seededFrom) {
+    setSeededFrom(settings);
     setJsonValue(
       JSON.stringify({ ui: settings.ui, features: settings.features }, null, 2),
     );
-  }, [settings]);
+  }
 
   const validateJson = (): Record<string, unknown> | null => {
     try {

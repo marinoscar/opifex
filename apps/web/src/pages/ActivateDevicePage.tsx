@@ -46,8 +46,12 @@ export default function ActivateDevicePage() {
   // handleVerifyCode so the effect does not close over a binding that is
   // still in its temporal dead zone at the point the effect is created
   // (react-hooks/immutability).
+  // Kicks off a request on mount; `handleVerifyCode` clears `error` before its
+  // first `await`, which on mount is a no-op — `error` starts `null`. The state
+  // that matters is set from the response, well past the effect body.
   useEffect(() => {
     if (codeFromUrl && state.step === 'input') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount, see above
       handleVerifyCode(codeFromUrl);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

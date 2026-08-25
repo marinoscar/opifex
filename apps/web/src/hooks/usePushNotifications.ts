@@ -81,7 +81,10 @@ export function usePushNotifications(): UsePushNotificationsResult {
     }
   }, [isMounted]);
 
+  // Load on mount; `refresh` clears `error` before its first `await`. Same
+  // shape and same reasoning as the suppression in useSystemSettings.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount, see above
     void refresh();
   }, [refresh]);
 

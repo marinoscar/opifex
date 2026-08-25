@@ -18,7 +18,7 @@
  * promising a term the API stopped honouring.
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Button,
   CircularProgress,
@@ -59,9 +59,15 @@ export function DemoteClassDialog({
 }: DemoteClassDialogProps) {
   const [note, setNote] = useState('');
 
-  useEffect(() => {
+  // Adjusted during render rather than in an effect: an effect reset the field
+  // one commit AFTER the dialog appeared, so the previous row's note was on
+  // screen for a frame (react-hooks/set-state-in-effect). Keyed on the
+  // false -> true edge, so re-renders while open leave typing alone.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) setNote('');
-  }, [open]);
+  }
 
   const trimmed = note.trim();
 

@@ -270,17 +270,28 @@ export function useDataTableLayoutPrefs<Row>({
 
   // --- Hydration ------------------------------------------------------------
 
+  // The two `setHydrated` calls below are the only synchronous state writes in
+  // this effect, and both are no-ops on mount: `hydrated` is initialised to
+  // `!tableId`, so the branch that runs is always the one already reflected in
+  // state. They do real work only when `tableId` CHANGES on a live mount, and
+  // there the re-render is the point — the table has to stop claiming it is
+  // hydrated for a key it has not read yet. The effect cannot become derived
+  // state either way: it also seeds `mirrorRef`, and a ref may only be written
+  // on commit (react-hooks/refs, above).
   useEffect(() => {
     if (!tableId) {
       mirrorRef.current = {
         sort: sortRef.current?.sort ?? null,
         pageSize: paginationRef.current?.pageSize,
       };
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- no-op on mount, see above
       setHydrated(true);
       return;
     }
 
     let cancelled = false;
+    // Same no-op-on-mount reasoning as the write above, which carries the
+    // suppression for the whole effect (the rule reports once per effect).
     setHydrated(false);
 
     void (async () => {
