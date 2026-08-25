@@ -60,6 +60,7 @@ P1
       labels: [label('feature')],
       inputLabels: [INPUT_LABELS.READY],
       unknownInputLabels: [],
+      ignoredLabels: [],
       ...overrides,
     } as NormalizedIssue;
   }
@@ -234,8 +235,13 @@ P1
     });
 
     it('ignores a mistyped needs label rather than refusing the issue', () => {
-      // unknownInputLabels already surfaces typos. Refusing to create a work
-      // order over a spelling mistake would be a disproportionate response.
+      // Refusing to create a work order over a spelling mistake would be a
+      // disproportionate response. This comment used to justify the silence by
+      // claiming `unknownInputLabels` surfaced the typo; it never did — that
+      // field matches the `factory:` prefix only, which is how a misspelled
+      // `needs:` label stayed invisible long enough to become #297. The typo
+      // is now surfaced by `ignoredLabels` and the `factory/label-ignored`
+      // mirror label, and the work order is still created either way.
       const result = project({
         issue: issue({
           labels: [label('needs:ful-streaming')],
