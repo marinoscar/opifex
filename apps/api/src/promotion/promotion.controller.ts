@@ -162,13 +162,22 @@ export class PromotionController {
       'that matters: nothing re-creates a suspended grant except a human tapping "always ' +
       'approve this class", so work of this class stops at the approval gate from this moment. ' +
       'Gated on `trust:revoke` rather than `trust:grant`, because narrowing authority must ' +
-      'never be blocked by the permission that widens it. THE RUNG IS WEAKER THAN THE ' +
-      'SUSPENSION, and the response says so: if the lifetime record still clears the promotion ' +
-      'bar, the next evaluation will put the class back on `promoted` with `changeReason: ' +
-      'promoted_on_evidence`, because nothing records a human hold-down. ' +
-      '`rungMayBeRestoredByLadder` reports that up front — SHOW IT. Re-promotion restores ' +
-      'eligibility only; the suspended grants stay suspended and nothing resumes running. ' +
-      'There is no matching promote endpoint and there will not be: VISION §7 makes promotion ' +
+      'never be blocked by the permission that widens it. THE RUNG ALSO HOLDS, for a stated ' +
+      'term: the demotion sets a hold and the ladder may not promote the class back until ' +
+      '`manualHoldUntil` — `thresholds.manualHoldDays` from now, the same 14 days a regression ' +
+      'is measured over. SHOW THAT DATE. It used to be the other way round: the next hourly ' +
+      'evaluation put the class straight back on `promoted` with `changeReason: ' +
+      'promoted_on_evidence`, and `rungMayBeRestoredByLadder` existed to warn about it. That ' +
+      'field is now false on every successful demotion, but it is still computed from the ' +
+      "ladder's own rules rather than hardcoded, so keep rendering the true branch. The hold " +
+      'EXPIRES on purpose — a permanent one would be a judgement made in an afternoon that ' +
+      'becomes permanent policy because nothing revisits it — and nothing lifts it early. ' +
+      'There is no lift endpoint and no promote endpoint, and an operator who changes their ' +
+      'mind needs neither: the rung is a measurement, while what makes a class run unattended ' +
+      'is a trust grant, which a NON-PROMOTED class can hold and which only a human tap ' +
+      'creates. Demoting the class again after the hold lapses places a fresh hold; silence ' +
+      'lets it lapse. Re-promotion, whenever it comes, restores eligibility only — the ' +
+      'suspended grants stay suspended and nothing resumes running. VISION §7 makes promotion ' +
       'something a class EARNS on evidence and demotion something that happens automatically ' +
       '"not as a judgment call", so the manual direction is available only where it narrows.',
   })

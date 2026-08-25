@@ -69,6 +69,14 @@ export const promotionThresholdsSchema = z.object({
   demotionRate: z.number(),
   demotionMinSample: z.number().int(),
   regressionWindowDays: z.number().int(),
+  /**
+   * How many days a HAND-DEMOTION holds a class off the promoted rung.
+   *
+   * Equal to `regressionWindowDays`, and not by coincidence: the operator
+   * demotes because they know something the record does not yet contain, and
+   * the regression window is exactly how long the record takes to contain it.
+   */
+  manualHoldDays: z.number().int(),
 });
 
 /** Where one class stands, and what it is waiting on. */
@@ -100,6 +108,17 @@ export const promotionStateSchema = z.object({
   changeReason: z.enum(changeReasons).nullable(),
   /** The sentence naming the numbers behind that change. */
   changeDetail: z.string().nullable(),
+  /**
+   * Who made that change, when a human made it. NULL for every automatic one.
+   *
+   * The null is meaningful rather than missing data: promotion on evidence,
+   * demotion on regression, demotion on ineligibility and the
+   * `observe -> measure` transition all happen with nobody deciding, and a
+   * client rendering "changed by: unknown" for those would be inventing an
+   * actor. `changeReason` says WHICH happened; this says WHO, only when there
+   * is a who.
+   */
+  changedById: z.string().nullable(),
 
   /**
    * The evidence FROZEN at the last rung change, exactly as it stood then.
@@ -134,6 +153,22 @@ export const promotionStateSchema = z.object({
    * can tell an operator.
    */
   wouldChange: z.enum(['promote', 'demote']).nullable(),
+
+  /**
+   * When a hand-demotion's hold over this class lifts.
+   *
+   * NULL means the class has never been demoted by hand. A FUTURE instant
+   * means a human demoted it and the ladder may not promote it back before
+   * then — `wouldChange` will be null and `requirement` will say so. A PAST
+   * instant means it was held and the hold has lapsed; it is never cleared,
+   * because "a human held this class down until the 8th" stays worth knowing
+   * after the ladder takes over again.
+   *
+   * SHOW IT while it is in the future. An expiring hold whose term is not
+   * visible is a demotion that quietly un-does itself on a timer, which is the
+   * failure this column exists to end.
+   */
+  manualHoldUntil: z.iso.datetime().nullable(),
 
   promotedAt: z.iso.datetime().nullable(),
   demotedAt: z.iso.datetime().nullable(),
@@ -208,8 +243,10 @@ export const demoteClassSchema = z
   .object({
     /**
      * Why. Optional, and worth writing: it is appended to `changeDetail`,
-     * which is the only record that this demotion was a human's and not the
-     * ladder's — `promotion_states` has no actor column.
+     * beside the numbers the ladder had at the time. WHO demoted the class is
+     * a column (`changedById`) and needs no note; WHY is the part only the
+     * operator knows, and it is the part that explains a demotion the evidence
+     * did not call for.
      */
     note: z.string().max(2000).optional(),
   })
@@ -231,16 +268,36 @@ export const manualDemotionResultSchema = z.object({
   /** Whether any transport accepted the notification. False is a real result. */
   notified: z.boolean(),
   /**
+   * When the ladder may promote this class again — `manualHoldDays` from now.
+   *
+   * THE TERM OF THE OPERATOR'S DECISION, and the thing to show them. The hold
+   * expires deliberately: a permanent one would be a judgement made in an
+   * afternoon that becomes permanent policy because nothing revisits it. It
+   * expires VISIBLY for the same reason — a hold whose end date were hidden
+   * would be a demotion that un-did itself on a timer.
+   *
+   * Nothing lifts it early, and there is no endpoint that does. An operator
+   * who changes their mind does not need one: the rung is a measurement, and
+   * what actually makes a class run unattended is a trust grant, which a
+   * non-promoted class can hold and which only a human tap creates. Demoting
+   * the class again after the hold lapses places a fresh one.
+   */
+  manualHoldUntil: z.iso.datetime(),
+  /**
    * Whether the next evaluation would put this class straight back on the
    * promoted rung.
    *
-   * TRUE is the COMMON case, not an edge one: a class demoted by hand while
-   * its lifetime record still clears the bar is re-promoted by the next hourly
-   * evaluation, with `changeReason: promoted_on_evidence`, because there is no
-   * column recording a human hold-down. The suspended grants stay suspended
-   * either way, so nothing resumes running — but the rung will read `promoted`
-   * again, and an operator not told this would reasonably conclude their
-   * demotion had been undone. SHOW IT.
+   * NOW FALSE, always, on a successful demotion — and that is the fix rather
+   * than the field going quiet. It used to be TRUE in the common case: a class
+   * demoted by hand while its lifetime record still cleared the bar was
+   * re-promoted within the hour with `changeReason: promoted_on_evidence`,
+   * because nothing recorded a human hold-down. `manualHoldUntil` is that
+   * record. The field is still COMPUTED from the ladder's own rules rather
+   * than hardcoded, so if the hold ever stopped working this would say true
+   * again instead of lying.
+   *
+   * Keep rendering it. A client that assumes false and drops the branch would
+   * show nothing on the day the guarantee broke.
    */
   rungMayBeRestoredByLadder: z.boolean(),
 });
