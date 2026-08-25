@@ -737,7 +737,7 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
 
     if (!result.ok) {
       this.logger.warn(
-        `Could not probe ${this.binary} --version; declaring zero capacity for ${this.key}`,
+        `Could not probe ${this.binary} --version; declaring ${this.key} unavailable`,
       );
       return null;
     }

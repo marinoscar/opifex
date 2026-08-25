@@ -24,11 +24,11 @@ import type { Runner, RunnerCapabilities } from './runner.types';
  * The row is built from a live `capabilities()` call at boot, not from a seed
  * file or a migration. That is the whole point: the manifest is OBSERVED — the
  * version is probed off the installed binary, and a binary that cannot be
- * probed declares `maxConcurrency: 0`. A registration written from a constant
- * would re-introduce exactly the aspirational manifest #61 spent three PRs
- * avoiding, and it would be wrong in the most expensive way: dispatch would
- * route real work on the strength of a file nobody had checked against the
- * machine.
+ * probed declares `available: false` and says why. A registration written from
+ * a constant would re-introduce exactly the aspirational manifest #61 spent
+ * three PRs avoiding, and it would be wrong in the most expensive way: dispatch
+ * would route real work on the strength of a file nobody had checked against
+ * the machine.
  *
  * Re-registering on every boot is what keeps that true across a CLI upgrade.
  *
@@ -104,7 +104,7 @@ export class RunnerRegistrationService implements OnModuleInit {
     } catch (error) {
       // Reaching here means the runner could not describe itself, which is a
       // different failure from the binary being missing — that one is already
-      // handled inside `capabilities()` and comes back as zero capacity.
+      // handled inside `capabilities()` and comes back as `available: false`.
       this.logger.error(
         `Could not read capabilities; leaving the fleet unchanged: ${asMessage(error)}`,
       );
