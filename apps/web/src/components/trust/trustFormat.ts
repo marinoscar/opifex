@@ -96,6 +96,57 @@ export function formatDuration(ms: number): string {
 }
 
 /**
+ * When a hand-demotion's hold lifts, as an absolute local instant (#244).
+ *
+ * ABSOLUTE, where a grant's expiry is relative, and the asymmetry is the same
+ * one `formatClockTime` makes: `describeExpiry` answers "is this still live?",
+ * which is a question about now, while a hold answers "when may the ladder
+ * promote this again?", which is a date an operator puts in their week. "In
+ * 14d" is also the one form that cannot be checked against the sentence the
+ * API prints beside it.
+ *
+ * The format matches `approvals/ifIgnored.ts`'s `formatDeadline`, because both
+ * are the same kind of fact — an instant something happens by itself unless a
+ * person acts — and two spellings of that on one cockpit is drift.
+ *
+ * An unparseable value is returned RAW rather than as "Invalid Date": the
+ * operator can still act on the string, and nobody can mistake it for a real
+ * instant.
+ */
+export function formatHoldEnd(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  return at.toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
+/**
+ * Does a manual hold still stand at `now`?
+ *
+ * `manualHoldUntil` is NEVER CLEARED once set, so a past instant is the normal
+ * resting state of any class that was ever hand-demoted — and a component
+ * treating non-null as "held" would show a standing hold over a class the
+ * ladder has had back for a month.
+ *
+ * Strictly in the future, matching `activeHold` in the API's promotion service
+ * exactly: a hold that ends at `now` has lapsed. `now` is a parameter for the
+ * usual reason — a function that reads its own clock cannot be tested — and
+ * callers pass the ladder's own `readAt`, so this agrees with the server's
+ * `requirement` sentence rather than with the browser's clock skew.
+ */
+export function isHoldStanding(
+  manualHoldUntil: string | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!manualHoldUntil) return false;
+  const until = new Date(manualHoldUntil);
+  if (Number.isNaN(until.getTime())) return false;
+  return until.getTime() > now.getTime();
+}
+
+/**
  * The one-line reason a grant is drawn as wanting attention, or null.
  *
  * **Both flags come from the server** (`nearExpiry`, `nearBudget`) and are not
