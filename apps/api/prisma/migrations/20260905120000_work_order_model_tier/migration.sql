@@ -1,0 +1,20 @@
+-- Work orders can now carry a model tier (#273).
+--
+-- `WorkOrderSpec.modelTier` has existed since #205 but the column never did,
+-- so nothing has ever routed on it -- `dispatch-policy.ts`'s `servesTier`
+-- opens `if (!modelTier) return true`, which is the branch always taken in
+-- production. This migration only adds the storage; wiring the projector and
+-- routing to populate and read it is separate work.
+--
+-- Nullable, and nullable is the meaning, not a gap to fill in later: null is
+-- exactly what an absent `modelTier` means on the wire today -- "the
+-- runner's own default" -- so every existing row is unaffected and stays
+-- correct with no backfill.
+--
+-- TEXT, not a Postgres enum, for the same reason `needs` on this table is a
+-- `String[]` rather than a Postgres array-of-enum: the closed union lives at
+-- the boundary (`WORK_ORDER_MODEL_TIER` in `work-order.schema.json`,
+-- ADR-0010), Postgres cannot express it, and widening the tier vocabulary
+-- later must not require a migration on a table that holds authorisation
+-- records.
+ALTER TABLE "work_orders" ADD COLUMN     "model_tier" TEXT;
