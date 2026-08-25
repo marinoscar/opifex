@@ -235,12 +235,12 @@ export function collapseObservations(
  * of a park is silence, not health. A served rate-limit line is the vendor
  * saying there is room, which is a different and stronger claim.
  *
- * NOT WIRED INTO DISPATCH, deliberately and for now. Two signals feeding one
- * field needs a stated precedence rule, and that rule belongs in
- * `DispatchService.loadPool` rather than here. Until it is written, this is
- * the shape a caller would use and nothing calls it — an unwired function is a
- * far smaller problem than two sources of truth disagreeing at 3am, which is
- * the failure `dispatch-policy.ts` names in the same breath.
+ * ONE WINDOW ONLY. A runner can have several live windows at once — a
+ * `five_hour` and a `weekly` are different rows with different reset instants
+ * — and resolving across them is {@link meterQuotaPosition}'s job. The
+ * precedence between this signal and the blocked-run one it is ranked against
+ * (#285) is stated and applied in `DispatchService`, which is where the clock
+ * and the other signal both already live.
  */
 export function quotaPositionFrom(
   window: {
@@ -266,4 +266,141 @@ export function quotaPositionFrom(
       `runner reported rate-limit status "${window.pressure}" for its ` +
       `${window.kind} window at ${window.lastObservedAt.toISOString()}`,
   };
+}
+
+/**
+ * How long a meter reading may keep asserting HEALTH after it was observed.
+ *
+ * ## Why health expires and exhaustion does not
+ *
+ * A reading is not a subscription — it is a sighting of one, at one instant.
+ * An `exhausted` reading carries its own expiry: the window's `resetsAt` is
+ * the vendor's own statement of when the claim stops being true, and
+ * `quotaPositionFrom` already drops a window that has rolled. So exhaustion
+ * needs no freshness rule; it is dated by construction, and applying one would
+ * discard a claim that is still true because nobody has restated it lately.
+ *
+ * `allowed` carries no such date. It says there was room at `lastObservedAt`
+ * and nothing whatever about now, and two things can spend the window in
+ * between. Opifex's own runs are the bounded one: their rate-limit lines
+ * arrive within a poll interval (15s, `runners/run-poller.service.ts`). The
+ * operator is the unbounded one — VISION §11 shares this subscription with
+ * their interactive use, which burns the same window and leaves no row
+ * anywhere in this system. An hour-old `allowed` is a claim about a window a
+ * co-tenant may have emptied since, with nothing here able to see that they
+ * did.
+ *
+ * Staleness is also not rare, because of where observations come from: they
+ * arrive only from polling a live run, so a reading FREEZES the moment its
+ * runner goes idle. An idle runner is precisely the one most likely to be
+ * sitting behind an operator's interactive session.
+ *
+ * ## Why fifteen minutes
+ *
+ * Long enough that ordinary quiet is not mistaken for staleness: the CLI emits
+ * rate-limit lines on its own cadence rather than on every poll (see
+ * `QuotaWindow.observations` in the schema), so a perfectly healthy run can go
+ * many polls without one, and a horizon of a minute or two would expire
+ * readings that are merely unremarkable.
+ *
+ * Short enough that it cannot span a window: `five_hour` is the shortest label
+ * the vendor uses, so a reading trusted at the very edge of this horizon still
+ * describes 95% of the same window.
+ *
+ * ## The cost of getting the number wrong is asymmetric, on purpose
+ *
+ * A stale reading is treated as NO news, never as bad news: the position
+ * disappears, the runner is UNKNOWN, and unknown routes freely (VISION §6). So
+ * a horizon set too SHORT costs a basis line that says less than it could,
+ * while one set too LONG lets a recorded dispatch decision claim present
+ * health on an hour-old sighting — and #64 requires that recorded line be
+ * reconstructible, which a stale claim quietly breaks. Erring short is the
+ * cheap direction.
+ */
+export const QUOTA_METER_HEALTH_HORIZON_MS = 15 * 60_000;
+
+/** One stored window, as routing reads it. A subset of the `quota_windows` row. */
+export interface MeterWindow {
+  kind: string;
+  resetsAt: Date;
+  pressure: QuotaPressure;
+  lastObservedAt: Date;
+}
+
+/**
+ * One runner's whole meter, collapsed to the single position routing consumes.
+ *
+ * ## Every live window binds, not just the newest one
+ *
+ * `QuotaService.readings()` keeps the newest live window per runner, which is
+ * the right answer for a panel showing "the current window". It is the wrong
+ * answer here, and the difference matters: a runner can hold a `five_hour` and
+ * a `weekly` row at the same time, and the weekly one almost always has the
+ * later `resetsAt`. Keeping only the newest would let an exhausted five-hour
+ * window be hidden behind a healthy weekly one — the fleet would dispatch into
+ * a wall that was recorded, observed, and then discarded by a tie-break.
+ *
+ * So: **any live window exhausted means the runner is exhausted**, because
+ * every one of them is a ceiling the vendor will enforce independently, and
+ * **`resumesAt` is the latest of the exhausted ones**, because the runner is
+ * not usable again until the last binding window has rolled. Reporting the
+ * earliest would promise a refill that the other limit will refuse.
+ *
+ * ## Health needs a fresh reading; exhaustion does not
+ *
+ * See {@link QUOTA_METER_HEALTH_HORIZON_MS}. A stale `allowed` or `warning` is
+ * dropped rather than downgraded — it is no news, so the runner falls back to
+ * whatever the other signal says, and to UNKNOWN if that says nothing either.
+ * `warning` is dropped on the same horizon for the same reason: it is a claim
+ * about pressure at an instant, and it does not park a runner in any case.
+ *
+ * Among fresh non-exhausted windows the WORST reading is reported (a `warning`
+ * beats an `allowed`), tie-broken by the most recent sighting. Neither changes
+ * routing today — the policy branches only on `exhausted` — but the basis is
+ * printed into the recorded decision, and "one of its windows was warning"
+ * is the more honest of two true sentences.
+ */
+export function meterQuotaPosition(
+  windows: readonly MeterWindow[],
+  now: Date,
+  horizonMs: number = QUOTA_METER_HEALTH_HORIZON_MS,
+): RunnerQuotaPosition | undefined {
+  // A window that has already rolled says nothing about the current one.
+  const live = windows.filter((window) => window.resetsAt > now);
+
+  const exhausted = live.filter((window) => window.pressure === 'exhausted');
+  if (exhausted.length > 0) {
+    const until = exhausted.reduce((a, b) => (a.resetsAt > b.resetsAt ? a : b));
+    const observedAt = exhausted.reduce((a, b) =>
+      a.lastObservedAt > b.lastObservedAt ? a : b,
+    ).lastObservedAt;
+    const kinds = [...new Set(exhausted.map((window) => window.kind))].sort();
+
+    return {
+      exhausted: true,
+      resumesAt: until.resetsAt.toISOString(),
+      basis:
+        `runner reported rate-limit status "exhausted" for its ` +
+        `${kinds.join(', ')} window${kinds.length > 1 ? 's' : ''} at ` +
+        observedAt.toISOString() +
+        (exhausted.length > 1
+          ? ', and the latest of them governs when it lifts'
+          : ''),
+    };
+  }
+
+  const fresh = live.filter(
+    (window) =>
+      window.pressure !== 'unknown' &&
+      now.getTime() - window.lastObservedAt.getTime() <= horizonMs,
+  );
+  if (fresh.length === 0) return undefined;
+
+  const worst = fresh.reduce((a, b) => {
+    if (worsePressure(a.pressure, b.pressure) !== a.pressure) return b;
+    if (worsePressure(b.pressure, a.pressure) !== b.pressure) return a;
+    return b.lastObservedAt > a.lastObservedAt ? b : a;
+  });
+
+  return quotaPositionFrom(worst, now);
 }
