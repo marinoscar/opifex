@@ -1,9 +1,12 @@
 import type { RunnerQuotaObservation } from '../runners/runner.types';
 import {
   collapseObservations,
+  meterQuotaPosition,
+  QUOTA_METER_HEALTH_HORIZON_MS,
   quotaPositionFrom,
   windowSpan,
   worsePressure,
+  type MeterWindow,
 } from './quota-window';
 
 const RESETS_AT = new Date('2026-08-25T15:00:00.000Z');
@@ -218,5 +221,218 @@ describe('quotaPositionFrom', () => {
         NOW,
       ),
     ).toBeUndefined();
+  });
+});
+
+/**
+ * One stored window, as {@link meterQuotaPosition} reads it.
+ *
+ * No such helper was left behind by the implementation — the spec's Prisma
+ * double needs a `MeterWindow`-shaped row too (see `dispatch.service.spec.ts`),
+ * and duplicating the literal in every test here is how a horizon boundary
+ * typo goes unnoticed.
+ */
+function meterWindow(overrides: Partial<MeterWindow> = {}): MeterWindow {
+  return {
+    kind: 'five_hour',
+    // Live by construction: one hour out, well past `NOW` below.
+    resetsAt: new Date('2026-08-25T13:00:00.000Z'),
+    pressure: 'allowed',
+    lastObservedAt: new Date('2026-08-25T12:00:00.000Z'),
+    ...overrides,
+  };
+}
+
+describe('meterQuotaPosition', () => {
+  const NOW = new Date('2026-08-25T12:00:00.000Z');
+
+  it('has no position for an empty meter', () => {
+    expect(meterQuotaPosition([], NOW)).toBeUndefined();
+  });
+
+  it('reports the meter healthy when its one window is fresh and allowed', () => {
+    const position = meterQuotaPosition(
+      [meterWindow({ pressure: 'allowed', lastObservedAt: NOW })],
+      NOW,
+    );
+
+    expect(position?.exhausted).toBe(false);
+  });
+
+  it('reports exhaustion for a single exhausted window', () => {
+    const position = meterQuotaPosition(
+      [meterWindow({ pressure: 'exhausted', lastObservedAt: NOW })],
+      NOW,
+    );
+
+    expect(position?.exhausted).toBe(true);
+  });
+
+  // Case 7 — the issue's own words: "a stale meter observation does not
+  // assert health".
+  it('drops a stale ALLOWED reading rather than trusting it, and does not report health', () => {
+    // Observed just past the horizon. Two things can have spent the window
+    // since: this runner going quiet, or VISION §11's interactive co-tenant —
+    // and nothing here can see which.
+    const staleAllowed = meterWindow({
+      pressure: 'allowed',
+      lastObservedAt: new Date(
+        NOW.getTime() - QUOTA_METER_HEALTH_HORIZON_MS - 1,
+      ),
+    });
+
+    expect(meterQuotaPosition([staleAllowed], NOW)).toBeUndefined();
+  });
+
+  it('an exhausted window still binds alongside an unrelated stale-allowed one', () => {
+    // A stale ALLOWED window is dropped entirely rather than downgraded, so
+    // it cannot cancel out an exhausted window that is genuinely live — the
+    // "worst reading among fresh windows" step in `meterQuotaPosition` never
+    // even sees it. The cross-function version of this claim — that a STALE
+    // meter reading must not silence a blocked run's own exhaustion — is
+    // `resolveQuotaPosition`'s to make, and is pinned in
+    // `dispatch.service.spec.ts`.
+    const position = meterQuotaPosition(
+      [
+        meterWindow({ kind: 'five_hour', pressure: 'exhausted' }),
+        meterWindow({
+          kind: 'weekly',
+          pressure: 'allowed',
+          resetsAt: new Date('2026-09-01T12:00:00.000Z'),
+          lastObservedAt: new Date(
+            NOW.getTime() - QUOTA_METER_HEALTH_HORIZON_MS - 1,
+          ),
+        }),
+      ],
+      NOW,
+    );
+
+    expect(position?.exhausted).toBe(true);
+  });
+
+  // Case 8 — the asymmetry `QUOTA_METER_HEALTH_HORIZON_MS`'s doc comment
+  // argues at length: exhaustion is dated by the window's own `resetsAt` and
+  // needs no freshness rule, while health does.
+  it('still parks on an EXHAUSTED reading no matter how long ago it was observed', () => {
+    const staleExhausted = meterWindow({
+      pressure: 'exhausted',
+      lastObservedAt: new Date('2026-08-25T00:00:00.000Z'), // 12 hours stale
+    });
+
+    const position = meterQuotaPosition([staleExhausted], NOW);
+
+    expect(position?.exhausted).toBe(true);
+  });
+
+  it('does NOT park on an exhausted reading once its own window has rolled', () => {
+    // The asymmetry is about the horizon, not about `resetsAt` — a rolled
+    // window says nothing about the current one, exhausted or not.
+    const rolled = meterWindow({
+      pressure: 'exhausted',
+      resetsAt: new Date('2026-08-25T11:00:00.000Z'), // already in the past
+      lastObservedAt: new Date('2026-08-25T10:00:00.000Z'),
+    });
+
+    expect(meterQuotaPosition([rolled], NOW)).toBeUndefined();
+  });
+
+  // Case 9 — THE case. `QuotaService.readings()` keeps only the newest live
+  // window per runner, which would hide an exhausted `five_hour` window
+  // behind a healthy `weekly` one (the weekly `resetsAt` is almost always
+  // later). `meterQuotaPosition` must bind on EVERY live window instead. If a
+  // future refactor folds `loadQuotaMeter` into `readings()`, this is the one
+  // test standing between that change and a runner being dispatched into an
+  // exhausted window it is still inside of.
+  it('an exhausted five_hour window binds even behind a healthy weekly one (guards against the readings() masking bug)', () => {
+    const position = meterQuotaPosition(
+      [
+        meterWindow({
+          kind: 'five_hour',
+          pressure: 'exhausted',
+          resetsAt: new Date('2026-08-25T13:00:00.000Z'),
+          lastObservedAt: NOW,
+        }),
+        meterWindow({
+          kind: 'weekly',
+          pressure: 'allowed',
+          resetsAt: new Date('2026-09-01T12:00:00.000Z'), // later — would win a "newest" tie-break
+          lastObservedAt: NOW,
+        }),
+      ],
+      NOW,
+    );
+
+    expect(position?.exhausted).toBe(true);
+    // The five-hour reset, not the weekly one — the runner is usable again
+    // when the binding window rolls, not when the unrelated healthy one does.
+    expect(position?.resumesAt).toBe('2026-08-25T13:00:00.000Z');
+  });
+
+  it('reports the LATER reset when more than one window is exhausted', () => {
+    // Not usable again until the last binding window has rolled — reporting
+    // the earliest would promise a refill the other limit still refuses.
+    const position = meterQuotaPosition(
+      [
+        meterWindow({
+          kind: 'five_hour',
+          pressure: 'exhausted',
+          resetsAt: new Date('2026-08-25T13:00:00.000Z'),
+        }),
+        meterWindow({
+          kind: 'weekly',
+          pressure: 'exhausted',
+          resetsAt: new Date('2026-09-01T12:00:00.000Z'),
+        }),
+      ],
+      NOW,
+    );
+
+    expect(position?.resumesAt).toBe('2026-09-01T12:00:00.000Z');
+  });
+
+  // Case 10.
+  it('reports the WORST fresh reading among non-exhausted windows: a warning over an allowed', () => {
+    const position = meterQuotaPosition(
+      [
+        meterWindow({
+          kind: 'five_hour',
+          pressure: 'warning',
+          lastObservedAt: NOW,
+        }),
+        meterWindow({
+          kind: 'weekly',
+          pressure: 'allowed',
+          resetsAt: new Date('2026-09-01T12:00:00.000Z'),
+          lastObservedAt: NOW,
+        }),
+      ],
+      NOW,
+    );
+
+    expect(position?.exhausted).toBe(false);
+    expect(position?.basis).toContain('warning');
+  });
+
+  // Case 11.
+  it('has no position for an unparseable reading, even if it is the only window', () => {
+    const position = meterQuotaPosition(
+      [meterWindow({ pressure: 'unknown', lastObservedAt: NOW })],
+      NOW,
+    );
+
+    expect(position).toBeUndefined();
+  });
+
+  it('drops a stale WARNING reading on the same horizon as allowed', () => {
+    // `warning` never parks on its own — it is a claim about pressure at an
+    // instant, same as `allowed`, so it earns no exception from the horizon.
+    const staleWarning = meterWindow({
+      pressure: 'warning',
+      lastObservedAt: new Date(
+        NOW.getTime() - QUOTA_METER_HEALTH_HORIZON_MS - 1,
+      ),
+    });
+
+    expect(meterQuotaPosition([staleWarning], NOW)).toBeUndefined();
   });
 });
