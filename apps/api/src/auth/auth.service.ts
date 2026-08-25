@@ -14,6 +14,10 @@ import { DatabaseSeedException } from '../common/exceptions/database-seed.except
 import { DEFAULT_ROLE } from '../common/constants/roles.constants';
 import { DEFAULT_USER_SETTINGS } from '../common/types/settings.types';
 import { GoogleProfile } from './strategies/google.strategy';
+import {
+  isGoogleOAuthConfigured,
+  readGoogleOAuthStatus,
+} from './google-oauth.config';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 import { TokenResponseDto } from './dto/auth-user.dto';
@@ -569,13 +573,11 @@ export class AuthService {
   async getEnabledProviders(): Promise<AuthProviderDto[]> {
     const providers: AuthProviderDto[] = [];
 
-    // Check if Google OAuth is configured
-    const googleClientId = this.configService.get<string>('google.clientId');
-    const googleClientSecret = this.configService.get<string>(
-      'google.clientSecret',
-    );
-
-    if (googleClientId && googleClientSecret) {
+    // Same rule, same call, as the one that decides whether the strategy is
+    // constructed at all (#138). This method was already written for the
+    // unconfigured case while `AuthModule` made that case a boot failure; the
+    // two agreeing by construction is what stops them drifting apart again.
+    if (isGoogleOAuthConfigured(readGoogleOAuthStatus(this.configService))) {
       providers.push({
         name: 'google',
         enabled: true,
