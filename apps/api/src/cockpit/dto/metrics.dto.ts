@@ -66,6 +66,21 @@ export const metricSampleSchema = z.object({
   /** Null means "not measured", NEVER "zero". */
   value: z.number().nullable(),
   /**
+   * How this number was computed, when it rests on a convention that could
+   * defensibly have gone the other way.
+   *
+   * Optional, and absent for most metrics — a basis on a number with no
+   * judgement behind it would be noise. `deadTimePerDay` carries one because
+   * it rests on three choices at once (#232): parked time counts as dead time,
+   * an interval spanning a day boundary is split across the days it occupies,
+   * and an interval still open is counted up to now rather than dropped.
+   *
+   * Stated here as well as in `schema.prisma` because a schema comment is
+   * invisible to somebody reading a dashboard tile, and a number that depends
+   * on three conventions and states none of them cannot be checked.
+   */
+  basis: z.string().optional(),
+  /**
    * The sparkline series, oldest first.
    *
    * Only buckets that HAD data appear. A metric cannot express a gap — the
