@@ -37,7 +37,7 @@ export type UserSettingsValue = {
    * Navigation chrome preferences. Absent means "use built-in defaults".
    */
   navigation?: NavigationValue;
-}
+};
 
 /**
  * System settings schema - stored in system_settings.value JSONB
@@ -52,7 +52,7 @@ export type SystemSettingsValue = {
   features: {
     [key: string]: boolean;
   };
-}
+};
 
 /**
  * Default user settings
