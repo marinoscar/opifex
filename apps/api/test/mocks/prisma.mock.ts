@@ -23,11 +23,40 @@ export const prismaMock = _prismaMock as any;
 export const mockPrisma = prismaMock;
 
 /**
+ * `verifyConnection()` lives on `PrismaService`, not `PrismaClient`, so it is
+ * not part of the type `mockDeep<PrismaClient>()` is built from. Left alone,
+ * jest-mock-extended's proxy auto-vivifies it on first access as a bare
+ * `jest.fn()` that resolves `undefined` — the database looks permanently
+ * healthy, and the ~20 existing `$queryRaw.mockResolvedValue` /
+ * `.mockRejectedValue` setups in the health specs are never consulted, because
+ * nothing routes through `$queryRaw` anymore.
+ *
+ * Give it a default implementation that makes the same round trip the real
+ * `PrismaService.verifyConnection()` makes (see prisma.service.ts), so the
+ * double behaves like the thing it doubles: every existing `$queryRaw` mock
+ * setup keeps controlling this call unchanged, and the fix lives in one place
+ * instead of at each of those ~20 call sites.
+ */
+function installVerifyConnectionDefault(): void {
+  prismaMock.verifyConnection = jest.fn(async () => {
+    await prismaMock.$queryRaw`SELECT 1`;
+  });
+}
+
+installVerifyConnectionDefault();
+
+/**
  * Reset all Prisma mocks
  * Call this in beforeEach() to ensure clean state
+ *
+ * `mockReset` clears any custom implementation set on `verifyConnection`
+ * (including the default above) along with everything else, so it must be
+ * re-installed after every reset or the first test after a reset would
+ * silently revert to the always-healthy behaviour described above.
  */
 export function resetPrismaMock(): void {
   mockReset(prismaMock);
+  installVerifyConnectionDefault();
 }
 
 /**

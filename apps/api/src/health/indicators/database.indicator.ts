@@ -18,8 +18,11 @@ export class DatabaseHealthIndicator extends HealthIndicator {
     const startTime = Date.now();
 
     try {
-      // Execute simple query to verify connection
-      await this.prisma.$queryRaw`SELECT 1`;
+      // One real round trip. Delegated to PrismaService rather than issuing
+      // `SELECT 1` here, so this probe and the boot-time check in
+      // `PrismaService.onModuleInit()` cannot drift apart about what
+      // "connected" means — the divergence #161 is a case of.
+      await this.prisma.verifyConnection();
 
       const responseTime = Date.now() - startTime;
 
