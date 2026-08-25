@@ -10,6 +10,7 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { DeadTimeService } from '../dead-time/dead-time.service';
 import { DispatchQueueService } from '../dispatch/dispatch-queue.service';
 import { EscalationsService } from '../escalations/escalations.service';
+import { GitHubWriteService } from '../github/write/github-write.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
 import { EscalationDispatcher } from '../notifications/escalation-dispatcher.service';
 import { tallyCoverage } from '../watchdog/check-coverage';
@@ -20,6 +21,7 @@ import {
 import type { ReconcileAction } from './diff/actions.types';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
 import { SpecFeedbackExecutor } from './execute/spec-feedback.executor';
+import { ReconcileLogService } from './log/reconcile-log.service';
 import { ReconcilerService } from './reconciler.service';
 import type { TickRecord } from './reconciler.types';
 import { RepositoriesService } from '../repositories/repositories.service';
@@ -58,6 +60,10 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     private readonly deadTime: DeadTimeService,
     private readonly escalations: EscalationsService,
     private readonly dispatcher: EscalationDispatcher,
+    // The two halves of #317's fix: the one place that knows how many writes
+    // left the process, and the log row they have to be written back onto.
+    private readonly writes: GitHubWriteService,
+    private readonly log: ReconcileLogService,
   ) {}
 
   onModuleInit(): void {
@@ -376,7 +382,70 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Write back what this tick actually did to GitHub (#317).
+   *
+   * The count is a DELTA over `GitHubWriteService`'s issued-writes counter,
+   * taken across the whole of `runOnce`, rather than a sum of what each
+   * executor returned. Both matter:
+   *
+   *  - **Delta, because the write service is the choke point.** A tick can
+   *    reach GitHub through four paths — mirror labels, spec-feedback
+   *    comments, the authorization record a dispatch posts, and the branch it
+   *    creates — and only the first two return a tally the task can see. Add
+   *    up what the executors report and the dispatch writes, the most
+   *    consequential the factory makes, are silently missing. That is #317's
+   *    own bug rebuilt one layer down, which is why it is not done that way.
+   *  - **Across the whole method, in a `finally`.** `runOnce` returns early on
+   *    a quiet tick, and a step that threw must not cost the count either. By
+   *    the time control leaves this method, whatever left for GitHub has left.
+   *
+   * The delta can attribute a concurrent write — one the cockpit or the
+   * supervisor made while the tick was in flight — to this tick. Accepted, and
+   * documented on `ReconcileLogService.recordWritesIssued`: the number's job
+   * is to catch a window that was meant to be read-only, so it is biased to
+   * over-report rather than to miss.
+   */
+  private async recordWritesIssued(
+    record: TickRecord | undefined,
+    issued: number,
+  ): Promise<void> {
+    // The row is created holding 0, so a tick that issued nothing is already
+    // correct on disk. During the observation week that is every tick, and
+    // this costs the loop nothing.
+    if (issued === 0) return;
+
+    if (!record?.id) {
+      this.logger.error(
+        `${issued} GitHub write(s) were issued on a tick with no log row to record them ` +
+          `against — the reconcile log understates this tick`,
+      );
+      return;
+    }
+
+    try {
+      await this.log.recordWritesIssued(record.id, issued);
+    } catch (error) {
+      // Independently caught, like every other outward step here — and this
+      // one runs in a `finally`, where an escaping rejection has no caller to
+      // propagate to and would take the process down under Node's default
+      // policy. The log service already swallows its own storage failures;
+      // this is the belt to that pair of braces.
+      this.logger.error(
+        `Recording ${issued} issued write(s) against tick ${record.id} threw: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   private async runOnce(): Promise<void> {
+    // Read before anything runs, and compared after everything has. See
+    // `recordWritesIssued` for why this is a delta over the write service
+    // rather than a sum of what the executors returned.
+    const writesBefore = this.writes.writesIssued;
+    let record: TickRecord | undefined;
+
     try {
       // Liveness FIRST, so the tick's projection sees the freshest run state.
       // Deriving it after would mean every conclusion is one tick stale — and
@@ -393,7 +462,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // COMPUTE, then APPLY — two steps, two components. This method is the
       // only place they meet, which is what keeps `ReconcilerService` unable
       // to act on its own conclusions.
-      const record = await this.reconciler.tick();
+      record = await this.reconciler.tick();
 
       // The watchdog's actions are computed alongside the reconciler's and,
       // in Phase 3, executed just as little. The mirror-label executor below
@@ -452,6 +521,14 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
           error instanceof Error ? error.message : String(error)
         }`,
         error instanceof Error ? error.stack : undefined,
+      );
+    } finally {
+      // In a `finally` so the two early returns above, and any path that
+      // threw, still record what went out. A write that happened and was not
+      // logged is the failure this whole field exists to make impossible.
+      await this.recordWritesIssued(
+        record,
+        this.writes.writesIssued - writesBefore,
       );
     }
   }

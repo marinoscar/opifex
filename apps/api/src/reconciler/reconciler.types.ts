@@ -24,6 +24,16 @@ export interface TickRejection extends RejectedIssue {
  * and "demonstrably" needs a number. #50 persists these; this is the shape.
  */
 export interface TickRecord {
+  /**
+   * The id of the log row this tick was written to, once it has been written.
+   *
+   * Stamped on by `ReconcilerService` after `ReconcileLogService.record`, so
+   * that `ReconcilerTask` can go back and record what the tick ACTUALLY
+   * executed — a number that does not exist yet when the row is created,
+   * because the executors have not run (#317). Undefined when the row could
+   * not be written at all; the log service swallows that failure on purpose.
+   */
+  id?: string;
   startedAt: Date;
   finishedAt: Date;
   durationMs: number;

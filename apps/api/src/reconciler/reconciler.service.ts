@@ -121,8 +121,15 @@ export class ReconcilerService {
    * a phantom reconciler bug in front of whoever reviews the week.
    */
   private async record(tick: TickRecord): Promise<TickRecord> {
-    await this.log.record(tick);
-    return tick;
+    const id = await this.log.record(tick);
+
+    // The row's id travels back out on the record so that `ReconcilerTask`
+    // can return to it and record what the tick actually EXECUTED (#317).
+    // That number cannot be produced here and must not be: this service has
+    // no write capability, which is the property the observation week rests
+    // on. It ends up on the record without ever passing through the component
+    // that computed it.
+    return id === null ? tick : { ...tick, id };
   }
 
   private async runTick(): Promise<TickRecord> {

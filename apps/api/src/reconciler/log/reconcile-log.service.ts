@@ -28,14 +28,20 @@ export class ReconcileLogService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Record one tick.
+   * Record one tick, and return the id of the row it went into.
    *
-   * Never throws. A tick that reconciled correctly but failed to write its log
-   * row must not be reported as a failed tick — that would corrupt the very
-   * record being kept, and turn a storage hiccup into a phantom reconciler
-   * bug for whoever reviews the week.
+   * The id is what lets `ReconcilerTask` come back and stamp on what the tick
+   * actually executed (#317): the row is created BEFORE the executors run,
+   * because a tick that never reaches them must still be logged, so the
+   * execution count cannot be known here.
+   *
+   * Never throws, and returns `null` when the write failed. A tick that
+   * reconciled correctly but failed to write its log row must not be reported
+   * as a failed tick — that would corrupt the very record being kept, and turn
+   * a storage hiccup into a phantom reconciler bug for whoever reviews the
+   * week.
    */
-  async record(record: TickRecord): Promise<void> {
+  async record(record: TickRecord): Promise<string | null> {
     // Every tick gets a row, including quiet ones: a log with gaps cannot be
     // reviewed, because a missing entry is indistinguishable from a tick that
     // never ran. Only the heavy payload is conditional.
@@ -43,7 +49,12 @@ export class ReconcileLogService {
       record.actions.length > 0 || record.failures.length > 0;
 
     try {
-      await this.prisma.reconcileTick.create({
+      const row = await this.prisma.reconcileTick.create({
+        // Only the id comes back. The row that just went in holds the whole
+        // projection and action list, and reading them straight back out to
+        // discard them would double the cost of the heaviest write the loop
+        // makes, every minute, forever.
+        select: { id: true },
         data: {
           startedAt: record.startedAt,
           finishedAt: record.finishedAt,
@@ -51,8 +62,17 @@ export class ReconcileLogService {
           outcome: record.outcome,
           repositoriesObserved: record.repositoriesObserved,
           actionsComputed: record.actions.length,
-          // Zero for the whole observation week. Recorded rather than assumed
-          // so "we were read-only" is checkable against the log.
+          // Zero because nothing has executed YET, not because nothing will.
+          //
+          // This row is written before `ReconcilerTask` runs the executors, so
+          // the real figure arrives later via `recordWritesIssued`. Until it
+          // does, the honest value is zero: no write has left the process on
+          // this tick's behalf at the moment the row is created.
+          //
+          // Read #317 before touching this line. It used to be a literal with
+          // a comment claiming "we were read-only is checkable against the
+          // log", which it was not — nothing anywhere wrote another value, so
+          // the observation week's one safety check could not fail.
           actionsExecuted: 0,
           allFromCache: record.allFromCache,
           rateLimitRemaining: record.rateLimitRemaining,
@@ -61,9 +81,56 @@ export class ReconcileLogService {
           actions: worthKeeping ? toJson(record.actions) : undefined,
         },
       });
+
+      return row.id;
     } catch (error) {
       this.logger.error(
         `Failed to record tick: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Stamp on how many GitHub writes the tick issued.
+   *
+   * **What the number means, exactly.** It is the count of write requests that
+   * got past `GITHUB_WRITES_ENABLED` and were handed to the HTTP layer while
+   * this tick was running — mirror labels, spec-feedback comments,
+   * authorization records and dispatch branch creation alike, since all of
+   * them route through the one write service. It counts writes that changed
+   * nothing and writes that threw, because both touched GitHub.
+   *
+   * **What it is not.** It is not a subset of `actionsComputed`: a
+   * spec-feedback comment and a dispatch branch are writes with no computed
+   * action behind them, so this figure can legitimately exceed that one. And
+   * it is a count of writes made during the tick's window rather than strictly
+   * by it, so a write made concurrently from elsewhere — the cockpit, the
+   * supervisor — lands on the tick that was in flight. That bias is toward
+   * over-reporting on purpose: this figure exists to catch a period that was
+   * supposed to be read-only, where a false alarm costs an investigation and a
+   * missed write costs the guarantee.
+   *
+   * Called only when the count is non-zero, so during an observation week —
+   * when the kill switch is off and nothing can be issued — the loop makes no
+   * second write at all.
+   *
+   * Never throws, for the same reason `record` does not.
+   */
+  async recordWritesIssued(tickId: string, writes: number): Promise<void> {
+    try {
+      await this.prisma.reconcileTick.update({
+        where: { id: tickId },
+        data: { actionsExecuted: writes },
+      });
+    } catch (error) {
+      // Loud, and worded for whoever finds it: the log now UNDER-REPORTS what
+      // happened, which is the one direction this record must not fail in.
+      this.logger.error(
+        `Tick ${tickId} issued ${writes} GitHub write(s) but the count could not be ` +
+          `recorded — the tick log understates this tick: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
       );
     }
   }
