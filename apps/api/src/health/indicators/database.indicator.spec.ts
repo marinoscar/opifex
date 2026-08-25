@@ -8,8 +8,12 @@ describe('DatabaseHealthIndicator', () => {
   let mockPrismaService: jest.Mocked<PrismaService>;
 
   beforeEach(async () => {
+    // Only `verifyConnection` is stubbed: the indicator no longer issues its
+    // own `SELECT 1`, it asks PrismaService — the single definition of
+    // "reachable" shared with the boot check (#161). That the helper runs a
+    // real query is asserted in prisma.service.spec.ts.
     mockPrismaService = {
-      $queryRaw: jest.fn(),
+      verifyConnection: jest.fn(),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -24,7 +28,7 @@ describe('DatabaseHealthIndicator', () => {
 
   describe('isHealthy', () => {
     it('should return "up" status when database connection succeeds', async () => {
-      mockPrismaService.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+      mockPrismaService.verifyConnection.mockResolvedValue(undefined);
 
       const result = await indicator.isHealthy('database');
 
@@ -34,14 +38,12 @@ describe('DatabaseHealthIndicator', () => {
           responseTime: expect.stringMatching(/^\d+ms$/),
         },
       });
-      expect(mockPrismaService.$queryRaw).toHaveBeenCalledWith(
-        expect.arrayContaining([expect.stringContaining('SELECT 1')]),
-      );
+      expect(mockPrismaService.verifyConnection).toHaveBeenCalledTimes(1);
     });
 
     it('should throw HealthCheckError when database connection fails', async () => {
       const error = new Error('Connection refused');
-      mockPrismaService.$queryRaw.mockRejectedValue(error);
+      mockPrismaService.verifyConnection.mockRejectedValue(error);
 
       await expect(indicator.isHealthy('database')).rejects.toThrow(
         HealthCheckError,
@@ -53,7 +55,7 @@ describe('DatabaseHealthIndicator', () => {
 
     it('should return "down" status in error result when connection fails', async () => {
       const error = new Error('Connection timeout');
-      mockPrismaService.$queryRaw.mockRejectedValue(error);
+      mockPrismaService.verifyConnection.mockRejectedValue(error);
 
       try {
         await indicator.isHealthy('database');
@@ -72,7 +74,7 @@ describe('DatabaseHealthIndicator', () => {
     });
 
     it('should include response time in healthy status', async () => {
-      mockPrismaService.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+      mockPrismaService.verifyConnection.mockResolvedValue(undefined);
 
       const result = await indicator.isHealthy('database');
 
@@ -87,7 +89,7 @@ describe('DatabaseHealthIndicator', () => {
 
     it('should include response time in error status', async () => {
       const error = new Error('Database error');
-      mockPrismaService.$queryRaw.mockRejectedValue(error);
+      mockPrismaService.verifyConnection.mockRejectedValue(error);
 
       try {
         await indicator.isHealthy('database');
@@ -102,7 +104,7 @@ describe('DatabaseHealthIndicator', () => {
     });
 
     it('should use correct key name provided in parameter', async () => {
-      mockPrismaService.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+      mockPrismaService.verifyConnection.mockResolvedValue(undefined);
 
       const result = await indicator.isHealthy('postgres');
 
@@ -111,7 +113,7 @@ describe('DatabaseHealthIndicator', () => {
     });
 
     it('should handle unknown error types', async () => {
-      mockPrismaService.$queryRaw.mockRejectedValue('String error');
+      mockPrismaService.verifyConnection.mockRejectedValue('String error');
 
       try {
         await indicator.isHealthy('database');
@@ -123,7 +125,7 @@ describe('DatabaseHealthIndicator', () => {
     });
 
     it('should handle null error', async () => {
-      mockPrismaService.$queryRaw.mockRejectedValue(null);
+      mockPrismaService.verifyConnection.mockRejectedValue(null);
 
       try {
         await indicator.isHealthy('database');
@@ -134,15 +136,15 @@ describe('DatabaseHealthIndicator', () => {
       }
     });
 
-    it('should execute database query with proper SQL', async () => {
-      mockPrismaService.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+    it('should verify the connection through PrismaService, not its own query', async () => {
+      mockPrismaService.verifyConnection.mockResolvedValue(undefined);
 
       await indicator.isHealthy('database');
 
-      // Verify the SQL query is correct
-      expect(mockPrismaService.$queryRaw).toHaveBeenCalledTimes(1);
-      const callArgs = mockPrismaService.$queryRaw.mock.calls[0][0];
-      expect(callArgs).toEqual(expect.arrayContaining([expect.any(String)]));
+      // Readiness and the boot log must agree about what "connected" means,
+      // so both go through the one helper rather than each running a query.
+      expect(mockPrismaService.verifyConnection).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.verifyConnection).toHaveBeenCalledWith();
     });
 
     it('should measure response time accurately', async () => {
@@ -155,10 +157,10 @@ describe('DatabaseHealthIndicator', () => {
       jest.useFakeTimers();
 
       try {
-        mockPrismaService.$queryRaw.mockImplementation(
+        mockPrismaService.verifyConnection.mockImplementation(
           (() =>
-            new Promise((resolve) => {
-              setTimeout(() => resolve([{ '?column?': 1 }]), 50);
+            new Promise<void>((resolve) => {
+              setTimeout(() => resolve(), 50);
             })) as any,
         );
 
