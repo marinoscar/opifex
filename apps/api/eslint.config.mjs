@@ -56,13 +56,24 @@ export default tseslint.config(
         },
       ],
 
-      // Off, not absent: there are ~30 pre-existing `any`s in src/, most of
-      // them around Prisma's JSON columns and decorator plumbing. Typing them
-      // is a change to runtime-adjacent code, which #30 explicitly does not
-      // want bundled with the linter that found them ("do not include
-      // unrelated refactors"). Tracked in #186 — turn this on with that
-      // work, not before, so it lands green.
+      // Off at the top level, on for `src/` in the block below. The files
+      // this leaves exempt are the ones outside both `src/` and the spec
+      // block: `prisma/seed.ts`, `scripts/`, `prisma.config.ts`.
       '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
+    // On for application code (#186). The ~30 `any`s #30 found here are all
+    // typed now: the Prisma JSON columns take `InputJsonValue`, the query
+    // builders take the generated `WhereInput`/`OrderByInput`, and the
+    // decorator and middleware plumbing takes the types it always had.
+    //
+    // This block MUST stay ABOVE the spec block below. ESLint flat config
+    // applies matching blocks in order, so a block placed after that one
+    // would silently take the spec exemption back.
+    files: ['src/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'error',
     },
   },
   {
@@ -75,7 +86,9 @@ export default tseslint.config(
   {
     // Specs assert against mocks and fixtures, where a deliberate `any` or a
     // non-null assertion is often the clearest statement of what is under
-    // test. `require()` appears here for a real reason too: re-requiring a
+    // test. That reason is durable and survives #186 turning the rule on for
+    // `src/`: this block comes after the `src/**/*.ts` block on purpose, so a
+    // `src/**/*.spec.ts` file matches both and the exemption wins. `require()` appears here for a real reason too: re-requiring a
     // module inside `jest.isolateModules` is how module-level side effects
     // get retested, and an ESM import cannot do it.
     files: ['**/*.spec.ts', 'test/**/*.ts'],
