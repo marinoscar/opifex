@@ -122,6 +122,23 @@ P1
       });
     });
 
+    it('writes the model tier the issue declared', async () => {
+      // The end of the chain #273 was missing: without this the column stays
+      // null, `rehydrateWorkOrder` rebuilds no tier, and `servesTier` takes
+      // its "no tier stated" branch forever.
+      await project([
+        issue({ labels: [label('feature'), label('tier:large')] }),
+      ]);
+
+      expect(create.mock.calls[0][0].data.modelTier).toBe('large');
+    });
+
+    it('writes null when the issue declared no tier', async () => {
+      // Null and absent mean the same thing here — the runner's own default.
+      await project();
+      expect(create.mock.calls[0][0].data.modelTier).toBeNull();
+    });
+
     it('pins the base commit the caller resolved', async () => {
       await project();
       expect(create.mock.calls[0][0].data.baseCommit).toBe(BASE);

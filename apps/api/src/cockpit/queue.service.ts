@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { DispatchService } from '../dispatch/dispatch.service';
 import type { DispatchDecision } from '../dispatch/dispatch-policy';
 import { PrismaService } from '../prisma/prisma.service';
-import type { RunnerNeed } from '../runners/runner.types';
+import type { ModelTier, RunnerNeed } from '../runners/runner.types';
 import {
   QUEUE_DEFAULT_LIMIT,
   type QueueEntry,
@@ -74,6 +74,7 @@ export class QueueService {
         baseCommit: true,
         attempt: true,
         needs: true,
+        modelTier: true,
         status: true,
         holdReason: true,
         queuedAt: true,
@@ -84,7 +85,7 @@ export class QueueService {
 
     if (rows.length === 0) return [];
 
-    const decisions = await this.decideOncePerNeedsSet(rows);
+    const decisions = await this.decideOncePerRoutingInput(rows);
 
     // Headroom is consumed as the list is walked: if the fleet can take two
     // runs, the first two queued work orders are `ready` and the third is
@@ -93,7 +94,7 @@ export class QueueService {
     const remaining = new Map<string, number>();
 
     return rows.map((row, index) => {
-      const decision = decisions.get(needsKey(row.needs));
+      const decision = decisions.get(routingKey(row));
       const { state, outOfHeadroom } = this.stateOf(
         row.status,
         decision,
@@ -135,7 +136,7 @@ export class QueueService {
   // -------------------------------------------------------------------------
 
   /**
-   * Ask the dispatch policy once per DISTINCT needs set on the page.
+   * Ask the dispatch policy once per DISTINCT ROUTING INPUT on the page.
    *
    * Routing depends on what a work order needs, so the answer genuinely
    * differs between a work order needing `own-infrastructure` and one needing
@@ -143,22 +144,43 @@ export class QueueService {
    * thing — and in practice almost every work order declares no needs at all,
    * so this is one call for a page of a hundred.
    *
+   * The key is needs AND model tier, because those are exactly the two inputs
+   * `decide` routes on (`identity` is only logged). Keyed on needs alone —
+   * which is how this was written, harmlessly, while nothing could carry a
+   * tier — two work orders with the same needs and different tiers would
+   * share one decision, and the operator would be told the wrong reason why
+   * one of them is not running. That is #19's honesty contract, not a
+   * cosmetic bug: a "waiting on" line that names the wrong constraint sends
+   * somebody to fix something that is not broken.
+   *
    * Deciding per row instead would be two database queries per row on a panel
    * that polls every thirty seconds, which is how a read model becomes the
    * most expensive thing in the system.
    */
-  private async decideOncePerNeedsSet(
-    rows: { needs: string[] }[],
+  private async decideOncePerRoutingInput(
+    rows: RoutingInput[],
   ): Promise<Map<string, DispatchDecision>> {
-    const distinct = new Map<string, RunnerNeed[]>();
+    const distinct = new Map<string, RoutingInput>();
     for (const row of rows) {
-      distinct.set(needsKey(row.needs), row.needs as RunnerNeed[]);
+      distinct.set(routingKey(row), row);
     }
 
     const decided = await Promise.all(
       [...distinct].map(
-        async ([key, needs]) =>
-          [key, await this.dispatch.decide(needs)] as const,
+        async ([key, row]) =>
+          [
+            key,
+            await this.dispatch.decide(
+              row.needs as RunnerNeed[],
+              undefined,
+              // A tier the column holds but this build does not understand is
+              // dropped HERE and only here: this is a read model, and refusing
+              // to render the queue over one bad row would hide the ninety-nine
+              // good ones. `rehydrateWorkOrder` still refuses to DISPATCH it,
+              // which is where refusing matters.
+              asModelTier(row.modelTier),
+            ),
+          ] as const,
       ),
     );
 
@@ -250,6 +272,21 @@ export class QueueService {
 }
 
 /** Order-insensitive key for a needs set, so `[a,b]` and `[b,a]` decide once. */
-function needsKey(needs: string[]): string {
-  return [...needs].sort().join(',');
+/** The two things `decide` actually routes on. */
+interface RoutingInput {
+  needs: string[];
+  modelTier: string | null;
+}
+
+function routingKey(row: RoutingInput): string {
+  // The tier is appended after a separator that cannot occur in a need or a
+  // tier, so `needs: ['a']` with tier `b` and `needs: ['a', 'b']` with no tier
+  // cannot collide onto one decision.
+  return `${[...row.needs].sort().join(',')}|${row.modelTier ?? ''}`;
+}
+
+function asModelTier(value: string | null): ModelTier | undefined {
+  return value === 'small' || value === 'standard' || value === 'large'
+    ? value
+    : undefined;
 }

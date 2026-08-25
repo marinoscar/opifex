@@ -5,7 +5,7 @@ import {
   type IssueTemplate,
 } from '../github/write/issue-templates';
 import { parseSections } from '../github/write/issue-conformance';
-import type { RunnerNeed } from '../runners/runner.types';
+import type { ModelTier, RunnerNeed } from '../runners/runner.types';
 import {
   generateWorkOrder,
   type GeneratedWorkOrder,
@@ -158,6 +158,7 @@ export function projectIssue(input: ProjectIssueInput): IssueProjectionResult {
       pathConstraints: readPathConstraints(sections),
       decisionRefs: readDecisionRefs(issue.body),
       needs: readNeeds(issue),
+      modelTier: readModelTier(issue),
     },
     baseCommit: input.baseCommit,
     attempt: input.attempt ?? 1,
@@ -276,6 +277,74 @@ function readNeeds(issue: NormalizedIssue): RunnerNeed[] {
     .filter((need): need is RunnerNeed => need !== undefined);
 
   return [...new Set(needs)];
+}
+
+/**
+ * Which class of model this work wants, from a label.
+ *
+ * ## Why a label, and not the other three candidates
+ *
+ * #273 left this open between a label, a field in the issue template, the
+ * spec-quality gate's judgement, and a per-repository operator setting.
+ *
+ * A label, for the same reason `needs:` is one directly above. VISION §7
+ * warns against putting a judgement in the hot path and §3.6 is explicit that
+ * a system whose safety depends on a model being right has no safety property
+ * at all — so the gate deciding the tier was never really available. A
+ * template field would put routing input inside prose that has to be parsed
+ * and can be edited into ambiguity; a per-repository setting cannot say that
+ * one issue in a repository is unusually small. A label is none of those: it
+ * is legible in the GitHub UI where the operator already is, it is set
+ * deliberately, and reading it is a set membership test.
+ *
+ * ## `tier:` and not `factory:tier-…`
+ *
+ * `factory:` is a closed vocabulary of three labels (`factory-labels.ts`), and
+ * a fourth would have to be understood by the mirror-label machinery and the
+ * unknown-input-label reporting. `needs:` already set the precedent that
+ * ROUTING input lives outside that namespace, and this is routing input.
+ *
+ * ## Two conflicting tier labels mean NO tier
+ *
+ * `tier:small` and `tier:large` on the same issue is not a declaration, it is
+ * a contradiction — almost always an operator who changed their mind and
+ * removed neither. The rule is that an ambiguous declaration is treated as no
+ * declaration: the work order carries no tier and gets the runner's own
+ * default, which is exactly what every issue gets today.
+ *
+ * The alternatives are worse in ways that are specific rather than
+ * aesthetic. **Picking the largest** spends more than anyone asked for, and
+ * VISION §3.5 gates on cost. **Picking the smallest** silently downgrades work
+ * that may have needed the reasoning, and — if the fleet has no `small`
+ * runner — parks the work order in the queue forever behind a constraint
+ * nobody chose. **Rejecting the issue** was the tempting one, because the
+ * spec-feedback path would tell the author; but that path dedupes on the
+ * BODY DIGEST, and a label conflict does not change the body, so a second
+ * mistaken label pair would be met with silence. Falling back to the default
+ * is the only rule that cannot stall work or spend money on a guess.
+ *
+ * An unrecognised tier (`tier:huge`) is ignored, matching `readNeeds`: a
+ * spelling mistake should not cost a work order.
+ */
+export const TIER_LABEL_PREFIX = 'tier:';
+
+const MODEL_TIER_BY_LABEL: Record<string, ModelTier> = {
+  'tier:small': 'small',
+  'tier:standard': 'standard',
+  'tier:large': 'large',
+};
+
+function readModelTier(issue: NormalizedIssue): ModelTier | undefined {
+  const declared = new Set(
+    issue.labels
+      .map((label) => MODEL_TIER_BY_LABEL[label.name.toLowerCase()])
+      .filter((tier): tier is ModelTier => tier !== undefined),
+  );
+
+  // Exactly one, or none. `tier:small` twice cannot happen on GitHub, but the
+  // Set makes that irrelevant rather than assumed.
+  if (declared.size !== 1) return undefined;
+  return [...declared][0];
 }
 
 function issueUrl(

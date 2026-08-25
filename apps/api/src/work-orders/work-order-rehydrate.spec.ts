@@ -6,6 +6,7 @@ import {
   type IssueProjection,
 } from './work-order-generator';
 import {
+  KNOWN_MODEL_TIERS,
   KNOWN_NEEDS,
   RehydrationError,
   rehydrateWorkOrder,
@@ -28,31 +29,52 @@ import {
  * field-by-field comparison and produce a different record.
  */
 describe('rehydrateWorkOrder', () => {
+  /**
+   * A work order with EVERY field set, optional ones included.
+   *
+   * `Required<>` is the point, not decoration. This fixture omitting
+   * `modelTier` is the whole reason #273 existed: the byte-identical test
+   * below claimed to prove the document survives the round trip while never
+   * exercising a field the round trip dropped. That is now the fourth time the
+   * same shape has hidden a bug in a week — `runner-registration`'s manifest
+   * fixture, `available` (#253), `modelTiers` (#265), and this.
+   *
+   * So the type does the remembering. A new optional field on
+   * `IssueProjection` or `GenerationInput` is a COMPILE ERROR here until this
+   * fixture sets it, which is the only version of "the fixture sets every
+   * optional field" that stays true after the person who wrote it moves on.
+   */
+  const EVERY_ISSUE_FIELD: Required<IssueProjection> = {
+    repository: { owner: 'marinoscar', name: 'opifex' },
+    issueNumber: 312,
+    title: 'Add a permit search prompt builder',
+    issueUrl: 'https://github.com/marinoscar/opifex/issues/312',
+    taskSpec: 'Add a permit search prompt builder to the chat surface.',
+    acceptanceCriteria: [
+      'Searching by address returns the matching permits',
+      'An empty result set renders the empty state',
+    ],
+    pathConstraints: ['apps/api/**'],
+    decisionRefs: ['ADR-0042'],
+    needs: ['full-streaming', 'own-infrastructure'],
+    modelTier: 'large',
+  };
+
+  const EVERY_GENERATION_FIELD: Required<Omit<GenerationInput, 'issue'>> = {
+    baseCommit: 'a3f91c2000000000000000000000000000000000',
+    attempt: 1,
+    budgetCeilingUsd: 5,
+    wallClockTimeoutMinutes: 30,
+  };
+
   /** The generator's own output, so nothing here is hand-assembled. */
   function generated(
     issue: Partial<IssueProjection> = {},
     input: Partial<GenerationInput> = {},
   ): GeneratedWorkOrder {
     const result = generateWorkOrder({
-      issue: {
-        repository: { owner: 'marinoscar', name: 'opifex' },
-        issueNumber: 312,
-        title: 'Add a permit search prompt builder',
-        issueUrl: 'https://github.com/marinoscar/opifex/issues/312',
-        taskSpec: 'Add a permit search prompt builder to the chat surface.',
-        acceptanceCriteria: [
-          'Searching by address returns the matching permits',
-          'An empty result set renders the empty state',
-        ],
-        pathConstraints: ['apps/api/**'],
-        decisionRefs: ['ADR-0042'],
-        needs: ['full-streaming', 'own-infrastructure'],
-        ...issue,
-      },
-      baseCommit: 'a3f91c2000000000000000000000000000000000',
-      attempt: 1,
-      budgetCeilingUsd: 5,
-      wallClockTimeoutMinutes: 30,
+      issue: { ...EVERY_ISSUE_FIELD, ...issue },
+      ...EVERY_GENERATION_FIELD,
       ...input,
     });
 
@@ -79,6 +101,8 @@ describe('rehydrateWorkOrder', () => {
       pathConstraints: from.pathConstraints,
       decisionRefs: from.decisionRefs,
       needs: from.needs,
+      // What the column holds: the tier, or null when none was asked for.
+      modelTier: from.modelTier ?? null,
       budgetCeilingUsd: from.budgetCeilingUsd,
       wallClockTimeoutMinutes: from.wallClockTimeoutMinutes,
       repository: { owner: from.repositoryOwner, name: from.repositoryName },
@@ -100,7 +124,12 @@ describe('rehydrateWorkOrder', () => {
       // The other shape a real row takes: no budget, no timeout, no ADRs, no
       // path constraints, no title.
       const original = generated(
-        { pathConstraints: [], decisionRefs: [], needs: [] },
+        {
+          pathConstraints: [],
+          decisionRefs: [],
+          needs: [],
+          modelTier: undefined,
+        },
         { budgetCeilingUsd: null, wallClockTimeoutMinutes: null },
       );
 
@@ -218,6 +247,50 @@ describe('rehydrateWorkOrder', () => {
           original.identity,
         );
       }
+    });
+  });
+
+  describe('the model tier', () => {
+    it.each(KNOWN_MODEL_TIERS)('round-trips %s', (tier) => {
+      const original = generated({ modelTier: tier });
+      expect(serializeWorkOrder(rehydrateWorkOrder(stored(original)))).toBe(
+        serializeWorkOrder(original),
+      );
+    });
+
+    it('rebuilds a null column as an absent field, not a null one', () => {
+      // The document omits an unstated tier. A present-but-null one would
+      // serialize as `"modelTier": null` — different bytes from the ones
+      // already committed to the branch, which is the whole property #63
+      // rests on.
+      const rebuilt = rehydrateWorkOrder(
+        stored(generated(), { modelTier: null }),
+      );
+
+      expect('modelTier' in rebuilt).toBe(false);
+    });
+
+    it('refuses a tier this build does not understand, rather than dropping it', () => {
+      // Dropping it would mean "the runner's own default", so a work order
+      // authorized for `large` would be routed to a small-only runner and
+      // silently get less model than it was authorized for. `servesTier`
+      // cannot catch that: by then the field is gone.
+      expect(() =>
+        rehydrateWorkOrder(stored(generated(), { modelTier: 'enormous' })),
+      ).toThrow(/enormous/);
+    });
+
+    it('names the row when it refuses a tier', () => {
+      const original = generated();
+      expect(() =>
+        rehydrateWorkOrder(stored(original, { modelTier: 'enormous' })),
+      ).toThrow(original.identity);
+    });
+
+    it('matches the contract is closed union', () => {
+      // Derived from work-order.schema.json rather than restated, so a tier
+      // the schema allows can never be one this build refuses.
+      expect([...KNOWN_MODEL_TIERS]).toEqual(['small', 'standard', 'large']);
     });
   });
 

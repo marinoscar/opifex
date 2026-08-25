@@ -4,7 +4,8 @@ import {
   type WorkOrderCoordinates,
 } from './work-order-identity';
 import type { GeneratedWorkOrder } from './work-order-generator';
-import type { RunnerNeed } from '../runners/runner.types';
+import type { ModelTier, RunnerNeed } from '../runners/runner.types';
+import { WORK_ORDER_MODEL_TIER } from '../contracts/generated';
 
 /**
  * A stored work order, back as the thing that was authorized.
@@ -47,6 +48,16 @@ export interface StoredWorkOrder {
   pathConstraints: string[];
   decisionRefs: string[];
   needs: string[];
+  /**
+   * The tier column, null when the work order never asked for one.
+   *
+   * Required-but-nullable rather than optional, deliberately: every caller
+   * builds this from a Prisma `select`, and an OPTIONAL field would let a
+   * select that forgot the column type-check while silently rebuilding the
+   * work order as though it had asked for nothing. That is the same shape as
+   * the bug this whole issue is about, one layer down.
+   */
+  modelTier: string | null;
   /** Prisma hands back a Decimal; the document wants a number or null. */
   budgetCeilingUsd: { toNumber(): number } | number | null;
   wallClockTimeoutMinutes: number | null;
@@ -73,6 +84,17 @@ export const KNOWN_NEEDS: readonly RunnerNeed[] = [
   'structured-rate-limits',
   'own-infrastructure',
 ];
+
+/**
+ * Every tier this build understands, from the contract rather than beside it.
+ *
+ * `KNOWN_NEEDS` above restates its vocabulary because `RunnerNeed` predates
+ * the generated contract; there is no reason to repeat that here. Deriving it
+ * from `work-order.schema.json` means widening the tier vocabulary is one edit
+ * to the schema, and a value this build cannot route can never be one the
+ * schema already allows.
+ */
+export const KNOWN_MODEL_TIERS: readonly ModelTier[] = WORK_ORDER_MODEL_TIER;
 
 export function rehydrateWorkOrder(row: StoredWorkOrder): GeneratedWorkOrder {
   const coordinates: WorkOrderCoordinates = {
@@ -135,6 +157,12 @@ export function rehydrateWorkOrder(row: StoredWorkOrder): GeneratedWorkOrder {
     budgetCeilingUsd: toNumberOrNull(row.budgetCeilingUsd),
     wallClockTimeoutMinutes: row.wallClockTimeoutMinutes,
     needs: readNeeds(row),
+    // Spread rather than assigned, so a null column rebuilds a work order with
+    // NO `modelTier` key at all. `toWorkOrderDocument` omits an absent tier and
+    // would emit `"modelTier": null` for a present-but-null one — a different
+    // document, and #63 rests on these bytes matching the ones already
+    // committed to the branch.
+    ...readModelTier(row),
   };
 }
 
@@ -160,6 +188,29 @@ function readNeeds(row: StoredWorkOrder): RunnerNeed[] {
   }
 
   return row.needs as RunnerNeed[];
+}
+
+/**
+ * The tier the row asked for, or nothing at all.
+ *
+ * Refused rather than dropped, for exactly the reason an unknown need is: a
+ * tier this build does not understand, quietly discarded, becomes "the
+ * runner's own default" — so a work order that asked for `large` would be
+ * routed to a runner serving only `small` and would silently get less model
+ * than it was authorized for. `servesTier` cannot catch that, because by then
+ * the field is gone.
+ */
+function readModelTier(row: StoredWorkOrder): { modelTier?: ModelTier } {
+  if (row.modelTier === null || row.modelTier === undefined) return {};
+
+  if (!(KNOWN_MODEL_TIERS as readonly string[]).includes(row.modelTier)) {
+    throw new RehydrationError(
+      `Work order ${row.identity} asks for model tier "${row.modelTier}", which this build ` +
+        `does not understand. Refusing to route it as though it had not asked.`,
+    );
+  }
+
+  return { modelTier: row.modelTier as ModelTier };
 }
 
 function toNumberOrNull(

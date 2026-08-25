@@ -367,5 +367,12 @@ function toSpec(workOrder: GeneratedWorkOrder, runId: string): WorkOrderSpec {
     budgetCeilingUsd: workOrder.budgetCeilingUsd,
     wallClockTimeoutMinutes: workOrder.wallClockTimeoutMinutes,
     needs: workOrder.needs,
+    // Carried across, not just routed on. Routing having chosen a runner that
+    // SERVES the tier is not the same as the runner knowing which tier to use:
+    // dropping it here would leave a `tier:small` work order running on the
+    // runner's default model, which is the spend the tier exists to avoid.
+    // Spread so an unstated tier stays an absent key rather than an explicit
+    // undefined the seam would have to interpret.
+    ...(workOrder.modelTier ? { modelTier: workOrder.modelTier } : {}),
   };
 }

@@ -606,6 +606,19 @@ model WorkOrder {
   /// must not require a migration on a table that holds authorisation records.
   needs String[] @default([])
 
+  /// Which class of model this work wants, so a small fix does not spend a
+  /// large model's quota (VISION §11: "scheduling and model tiering are
+  /// first-class concerns, not optimizations"). `WorkOrderSpec.modelTier`'s
+  /// mirror in the database - null means exactly what an absent field means
+  /// there: the runner's own default, not "unset".
+  ///
+  /// A free string, not a Postgres enum, for the same reason `needs` above is
+  /// one: the closed union lives at the boundary (`WORK_ORDER_MODEL_TIER` in
+  /// `work-order.schema.json`, ADR-0010), and Postgres cannot express it.
+  /// Widening the tier vocabulary later must not require a migration on a
+  /// table that holds authorisation records.
+  modelTier String? @map("model_tier")
+
   /// Resolved ceilings - the repository defaults are copied in at projection
   /// time rather than read through, so changing a repository's budget cannot
   /// retroactively change what an in-flight run was authorised to spend.
