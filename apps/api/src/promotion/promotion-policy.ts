@@ -105,6 +105,58 @@ export const DEMOTION_MIN_SAMPLE = 5;
 export const REGRESSION_WINDOW_DAYS = 14;
 
 /**
+ * How long a HAND-DEMOTION holds a class off the promoted rung (#244).
+ *
+ * ## Why there is a hold at all
+ *
+ * Rule 5 promotes any non-promoted class whose lifetime record clears the bar,
+ * and a hand-demotion leaves a class exactly there. Without a hold, the hourly
+ * evaluation saw a non-promoted class with the same good numbers and put it
+ * straight back — `promoted_on_evidence`, typically within the hour, as though
+ * the operator had never acted. The anti-oscillation guard in rule 5 does not
+ * cover this: it fires only when the class is currently FAILING the recent
+ * window, which is the case the ladder would have demoted on its own. An
+ * operator demoting a class with good numbers is acting on evidence the
+ * numbers do not yet show, so the guard never fires for exactly the demotion
+ * that needs it.
+ *
+ * ## Why it EXPIRES, and why at this number
+ *
+ * A permanent hold would be the failure VISION §7 rung 4 exists to eliminate,
+ * running in reverse: a judgement call made once, in an afternoon, that
+ * quietly becomes permanent policy because nobody ever revisits it. Nothing in
+ * the system would ever remember to lift it, and "demoted once in anger" would
+ * mean "off the ladder forever" — a class that could never be measured again,
+ * whatever it went on to do. `TrustGrant.expiresAt` makes the same argument in
+ * the other direction: a human's extension of trust gets a stated lifetime
+ * rather than a permanent one, because silence should not be able to widen or
+ * narrow authority forever.
+ *
+ * So it expires — and it is tied to `REGRESSION_WINDOW_DAYS` rather than being
+ * an independent number, so the two cannot drift apart. The tie is the whole
+ * argument. The operator demotes because they know something the record does
+ * not yet contain; the regression window is exactly how long it takes for the
+ * record to contain it. When the hold lifts, the class is re-judged on a
+ * recent window that no longer includes anything the operator was reacting to,
+ * and on evidence that has had a full window to show whether they were right.
+ * If they were, rule 3 (regression) or rule 5's guard demotes it or refuses to
+ * promote it, on the numbers, with no hold needed. If they were not, the class
+ * promotes — which is the correct outcome.
+ *
+ * ## The expiry is not silent, which is the objection worth answering
+ *
+ * "It re-promotes on a timer" is only a problem if nobody is told. Three
+ * things make sure somebody is: the demotion response reports the exact
+ * instant the hold lifts, every read of the ladder carries `manualHoldUntil`
+ * and this sentence, and the re-promotion itself sends a promotion
+ * notification like any other. What #244 is actually about is a re-promotion
+ * that happened within the hour, before the operator could observe anything at
+ * all. A stated, visible, fortnight-long term with a notification at the end
+ * of it is a different thing.
+ */
+export const MANUAL_HOLD_DAYS = REGRESSION_WINDOW_DAYS;
+
+/**
  * The "lifetime" window, in days, for the sources that only accept one.
  *
  * `ApprovalGateService.approvalRatesByClass` takes `sinceDays` and has no
@@ -230,10 +282,34 @@ export type LadderVerdict =
   | { action: 'hold'; detail: string };
 
 /**
+ * A hand-demotion's hold over a class, ALREADY RESOLVED to be standing.
+ *
+ * `evaluateLadder` is a pure function and stays one: it never asks what time
+ * it is, so it cannot decide whether a hold has expired. The caller does that
+ * — it holds the row and the clock — and passes either `null` ("no hold is in
+ * force") or this ("a hold is in force, and here is what to say about it").
+ * The same shape `decideDispatch` uses when it takes an already-resolved quota
+ * position rather than a clock: the impure decision is made once, at the edge,
+ * and the rule reads a settled fact.
+ *
+ * `heldUntil` is carried for the SENTENCE, not for a comparison. Nothing here
+ * compares it to anything; it is in the verdict text because an operator told
+ * "held" without being told "until when" has been told half of what happened,
+ * and the requirement sentence is the one place the policy layer explains
+ * itself.
+ */
+export interface ManualHold {
+  /** When the hold lifts. In the future by construction — see above. */
+  heldUntil: Date;
+  /** The user who placed it, or null if that account no longer exists. */
+  heldById: string | null;
+}
+
+/**
  * Whether the RECENT window says this class is currently failing.
  *
  * The demotion test, factored out because two rules need it and they must
- * agree exactly. Rule 3 uses it to take autonomy away; rule 4 uses it to
+ * agree exactly. Rule 3 uses it to take autonomy away; rule 5 uses it to
  * refuse to hand autonomy over to a class that would fail rule 3 an hour
  * later. If those two ever disagreed the ladder would oscillate, which is the
  * one failure mode the hysteresis band cannot fix on its own.
@@ -253,20 +329,40 @@ export function isRegressing(evidence: ClassEvidence): boolean {
 /**
  * Apply the rules, in order, first match wins.
  *
- * The order is load-bearing and is asserted by the spec, because two of the
- * five rules exist specifically to BEAT later ones:
+ * The order is load-bearing and is asserted by the spec, because three of the
+ * six rules exist specifically to BEAT later ones:
  *
  * 1. Ineligible beats everything, including a perfect record.
  * 2. Paused beats promotion AND regression-demotion, in both directions.
  * 3. Regression demotion, on the recent window.
- * 4. Promotion, on the lifetime window.
- * 5. Hold, saying what is missing.
+ * 4. A standing manual hold beats promotion — and NOTHING ELSE (#244).
+ * 5. Promotion, on the lifetime window.
+ * 6. Hold, saying what is missing.
+ *
+ * Rule 4 sits BELOW rule 3 rather than above it, and that placement is the
+ * whole safety argument for the hold. A hold is an operator asking the ladder
+ * not to WIDEN authority; it must never be able to stop the ladder narrowing
+ * it. Putting it under rules 1 and 3 makes "a held class still demotes on
+ * regression, and still demotes on ineligibility" true by the order of the
+ * function rather than by a condition someone has to remember to write —
+ * which matters because a hand-demotion leaves a class non-promoted, so those
+ * rules are unreachable for it anyway and the guarantee would otherwise rest
+ * on a coincidence a later refactor could remove without noticing.
  */
 export function evaluateLadder(
   current: PromotionRung,
   evidence: ClassEvidence,
   eligible: boolean,
   paused: boolean,
+  /**
+   * A hand-demotion's hold, if one is standing RIGHT NOW.
+   *
+   * Defaulted to `null` rather than made required so that every existing call
+   * keeps its meaning — "no hold" — instead of silently acquiring a different
+   * one. See `ManualHold` for why the caller, not this function, decides
+   * whether a hold has expired.
+   */
+  hold: ManualHold | null = null,
 ): LadderVerdict {
   // --- 1. Ineligible -------------------------------------------------------
   //
@@ -343,7 +439,53 @@ export function evaluateLadder(
     };
   }
 
-  // --- 4. Promotion --------------------------------------------------------
+  // --- 4. A standing manual hold -------------------------------------------
+  //
+  // #244. An operator demoted this class by hand, and the ladder may not undo
+  // that judgement while the hold stands. Without this the rung half of a
+  // hand-demotion lasted under an hour: rule 5 gates on "not currently
+  // promoted", which is precisely where a hand-demotion leaves a class, so the
+  // next tick re-promoted it on the unchanged lifetime record.
+  //
+  // Rule 5's anti-oscillation guard does not cover the case. That guard fires
+  // when the class is currently FAILING the recent window — the case the
+  // ladder would have demoted on its own. The operator this rule exists for
+  // has evidence the numbers do not yet show, which means the numbers are
+  // good, which means the guard never fires for exactly the demotion that
+  // needs it.
+  //
+  // It blocks PROMOTION and nothing else. Rules 1 and 3 are above it, so a
+  // held class that becomes ineligible is still demoted and a held class that
+  // is somehow promoted and regressing is still demoted. A hold narrows what
+  // the ladder may do; it can never widen it, and it can never stop it
+  // narrowing further.
+  //
+  // The detail leads with the hold because the hold is the operative fact —
+  // no amount of evidence promotes this class today — and then states the
+  // underlying position anyway, so an operator reading one sentence learns
+  // both why nothing is moving and where the class actually stands.
+  if (hold) {
+    return {
+      action: 'hold',
+      detail:
+        `"${evidence.actionClass}" was demoted BY HAND` +
+        (hold.heldById ? ` by user ${hold.heldById}` : '') +
+        `, and the ladder may not promote it back until ` +
+        `${hold.heldUntil.toISOString()}. The hold runs for ${MANUAL_HOLD_DAYS} days, ` +
+        `the same window a regression is measured over: an operator demotes a class ` +
+        `because they know something its record does not yet contain, and that is how ` +
+        `long the record takes to contain it. When the hold lifts the class is judged ` +
+        `again on the numbers, with no memory of this — so if the concern was real it ` +
+        `will show up as a regression by then, and if it was not the class promotes. ` +
+        `Demoting it again places a fresh hold; doing nothing lets this one lapse. ` +
+        `Note that the hold governs the RUNG only — the trust grants suspended by the ` +
+        `demotion stay suspended either way, and nothing recreates one but a human ` +
+        `tapping "always approve this class". Underlying position: ` +
+        holdDetail(current, evidence),
+    };
+  }
+
+  // --- 5. Promotion --------------------------------------------------------
   //
   // BOTH conditions, and neither substitutes for the other. #99: "Promotion
   // requires both a rate threshold and a minimum sample."
@@ -355,10 +497,10 @@ export function evaluateLadder(
   ) {
     // NEVER PROMOTE INTO AN IMMEDIATE DEMOTION.
     //
-    // Rules 3 and 4 read different windows, and without this guard that
+    // Rules 3 and 5 read different windows, and without this guard that
     // asymmetry becomes an infinite loop. Take a class with 400 approvals and
     // 10 rejections lifetime (97.6%) and 2 approvals and 8 rejections in the
-    // last fortnight (20%). Rule 4 promotes it on the lifetime rate; the next
+    // last fortnight (20%). Rule 5 promotes it on the lifetime rate; the next
     // hourly tick sees `promoted` plus a regressing window and rule 3 demotes
     // it; the tick after that promotes it again — forever, at one HIGH-priority
     // demotion notification an hour.
@@ -398,7 +540,7 @@ export function evaluateLadder(
     };
   }
 
-  // --- 5. Hold, saying what is missing -------------------------------------
+  // --- 6. Hold, saying what is missing -------------------------------------
   return { action: 'hold', detail: holdDetail(current, evidence) };
 }
 
