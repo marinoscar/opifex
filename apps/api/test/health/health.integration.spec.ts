@@ -6,12 +6,22 @@ import {
 } from '../helpers/test-app.helper';
 import { resetPrismaMock } from '../mocks/prisma.mock';
 import { setupBaseMocks } from '../fixtures/mock-setup.helper';
+import {
+  EXPECTED_PERMISSIONS,
+  SeedIntegrityService,
+} from '../../src/health/seed-integrity.service';
 
 describe('Health Endpoints (Integration)', () => {
   let context: TestContext;
 
   beforeAll(async () => {
     context = await createTestApp({ useMockDatabase: true });
+
+    // The seed check caches a successful result for a minute (see
+    // SeedIntegrityService). One app instance serves every test in this file,
+    // so without this the first request's verdict would answer all of them.
+    // Zero TTL makes each request re-read the doubled table.
+    (context.app.get(SeedIntegrityService) as any).checkTtlMs = 0;
   });
 
   afterAll(async () => {
@@ -21,7 +31,28 @@ describe('Health Endpoints (Integration)', () => {
   beforeEach(async () => {
     resetPrismaMock();
     setupBaseMocks();
+    // `setupBaseMocks` seeds a handful of fixture permissions, which the seed
+    // check would correctly read as a database missing most of what this build
+    // enforces. Every test below except the drift ones wants a deployment that
+    // was seeded properly.
+    seedAllPermissions();
   });
+
+  /** The permissions table as a correctly seeded deployment holds it. */
+  function seedAllPermissions(): void {
+    (context.prismaMock.permission.findMany as jest.Mock).mockResolvedValue(
+      EXPECTED_PERMISSIONS.map((name) => ({ name })),
+    );
+  }
+
+  /** The same table with `omit` never inserted — the #173 condition. */
+  function seedAllPermissionsExcept(omit: string): void {
+    (context.prismaMock.permission.findMany as jest.Mock).mockResolvedValue(
+      EXPECTED_PERMISSIONS.filter((name) => name !== omit).map((name) => ({
+        name,
+      })),
+    );
+  }
 
   describe('GET /api/health', () => {
     it('should return 200 with overall health status', async () => {
@@ -375,6 +406,66 @@ describe('Health Endpoints (Integration)', () => {
         message: expect.any(String),
         timestamp: expect.any(String),
         path: expect.any(String),
+      });
+    });
+  });
+
+  describe('Seed drift (#173)', () => {
+    it('reports the permission set on a readiness probe', async () => {
+      context.prismaMock.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+
+      const response = await request(context.app.getHttpServer())
+        .get('/api/health/ready')
+        .expect(200);
+
+      expect(response.body.data.info.seed).toMatchObject({
+        status: 'up',
+        checked: true,
+        expected: EXPECTED_PERMISSIONS.length,
+        missing: 0,
+      });
+    });
+
+    it('stays ready when a permission was never seeded, and says which', async () => {
+      // The condition that made every cockpit endpoint 403 while readiness
+      // answered ok. It must now be visible in the payload - and must still
+      // not take the API out of service, because the API is what serves the
+      // diagnosis and hosts the fix.
+      context.prismaMock.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+      seedAllPermissionsExcept('runs:read');
+
+      const response = await request(context.app.getHttpServer())
+        .get('/api/health/ready')
+        .expect(200);
+
+      expect(response.body.data.status).toBe('ok');
+      expect(response.body.data.info.seed.status).toBe('up');
+      expect(response.body.data.info.seed.missingPermissions).toEqual([
+        'runs:read',
+      ]);
+    });
+
+    it('fails the full health check when a permission was never seeded', async () => {
+      context.prismaMock.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+      seedAllPermissionsExcept('runs:read');
+
+      const response = await request(context.app.getHttpServer())
+        .get('/api/health')
+        .expect(503);
+
+      expect(response.body.statusCode).toBe(503);
+    });
+
+    it('passes the full health check on a correctly seeded database', async () => {
+      context.prismaMock.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+
+      const response = await request(context.app.getHttpServer())
+        .get('/api/health')
+        .expect(200);
+
+      expect(response.body.data.info.seed).toMatchObject({
+        status: 'up',
+        missing: 0,
       });
     });
   });

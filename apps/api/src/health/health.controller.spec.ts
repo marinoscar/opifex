@@ -2,11 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { HealthCheckService, HealthCheckResult } from '@nestjs/terminus';
 import { HealthController } from './health.controller';
 import { DatabaseHealthIndicator } from './indicators/database.indicator';
+import { SeedIntegrityIndicator } from './indicators/seed-integrity.indicator';
 
 describe('HealthController', () => {
   let controller: HealthController;
   let mockHealthCheckService: jest.Mocked<HealthCheckService>;
   let mockDatabaseIndicator: jest.Mocked<DatabaseHealthIndicator>;
+  let mockSeedIndicator: jest.Mocked<SeedIntegrityIndicator>;
 
   beforeEach(async () => {
     mockHealthCheckService = {
@@ -17,11 +19,20 @@ describe('HealthController', () => {
       isHealthy: jest.fn(),
     } as any;
 
+    // Two methods, deliberately: the readiness probe calls the one that never
+    // fails and the full check calls the one that does. Which endpoint calls
+    // which is asserted below.
+    mockSeedIndicator = {
+      report: jest.fn(),
+      isHealthy: jest.fn(),
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [HealthController],
       providers: [
         { provide: HealthCheckService, useValue: mockHealthCheckService },
         { provide: DatabaseHealthIndicator, useValue: mockDatabaseIndicator },
+        { provide: SeedIntegrityIndicator, useValue: mockSeedIndicator },
       ],
     }).compile();
 
@@ -68,6 +79,7 @@ describe('HealthController', () => {
       const result = await controller.readiness();
 
       expect(mockHealthCheckService.check).toHaveBeenCalledWith([
+        expect.any(Function),
         expect.any(Function),
       ]);
       expect(result).toMatchObject({
@@ -150,6 +162,28 @@ describe('HealthController', () => {
       const timestamp = new Date(result.timestamp);
       expect(timestamp.toISOString()).toBe(result.timestamp);
     });
+
+    it('asks the seed indicator to report, never to fail (#173)', async () => {
+      const mockResult: HealthCheckResult = {
+        status: 'ok',
+        info: {},
+        error: {},
+        details: {},
+      };
+
+      mockHealthCheckService.check.mockImplementation(async (indicators) => {
+        await Promise.all(indicators.map((indicator) => indicator()));
+        return mockResult;
+      });
+      mockSeedIndicator.report.mockResolvedValue({ seed: { status: 'up' } });
+
+      await controller.readiness();
+
+      // Seed drift must not take the API out of service: readiness reports it
+      // and stays up. See SeedIntegrityIndicator for the argument.
+      expect(mockSeedIndicator.report).toHaveBeenCalledWith('seed');
+      expect(mockSeedIndicator.isHealthy).not.toHaveBeenCalled();
+    });
   });
 
   describe('fullHealth', () => {
@@ -174,6 +208,7 @@ describe('HealthController', () => {
       const result = await controller.fullHealth();
 
       expect(mockHealthCheckService.check).toHaveBeenCalledWith([
+        expect.any(Function),
         expect.any(Function),
       ]);
       expect(result).toMatchObject({
@@ -284,6 +319,28 @@ describe('HealthController', () => {
         status: 'up',
         responseTime: '15ms',
       });
+    });
+
+    it('asks the seed indicator for the strict verdict, so drift is a 503 (#173)', async () => {
+      const mockResult: HealthCheckResult = {
+        status: 'ok',
+        info: {},
+        error: {},
+        details: {},
+      };
+
+      mockHealthCheckService.check.mockImplementation(async (indicators) => {
+        await Promise.all(indicators.map((indicator) => indicator()));
+        return mockResult;
+      });
+      mockSeedIndicator.isHealthy.mockResolvedValue({ seed: { status: 'up' } });
+
+      await controller.fullHealth();
+
+      // The check a redeploy verifies against: `curl -sf` must exit non-zero
+      // when the database is behind the code.
+      expect(mockSeedIndicator.isHealthy).toHaveBeenCalledWith('seed');
+      expect(mockSeedIndicator.report).not.toHaveBeenCalled();
     });
   });
 });
