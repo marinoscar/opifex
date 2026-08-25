@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
+import { DeadTimeService } from '../dead-time/dead-time.service';
 import { DispatchQueueService } from '../dispatch/dispatch-queue.service';
 import { EscalationsService } from '../escalations/escalations.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
@@ -56,6 +57,7 @@ describe('ReconcilerTask', () => {
   let execute: jest.Mock;
   let drain: jest.Mock;
   let listObserved: jest.Mock;
+  let recordDeadTime: jest.Mock;
   let task: ReconcilerTask;
 
   /** `runOnce` is private and is what the interval calls. */
@@ -84,6 +86,13 @@ describe('ReconcilerTask', () => {
       repositoriesDisabled: 0,
     });
     listObserved = jest.fn().mockResolvedValue([]);
+    recordDeadTime = jest.fn().mockResolvedValue({
+      opened: 0,
+      resumed: 0,
+      concluded: 0,
+      quarantined: 0,
+      open: 0,
+    });
 
     task = new ReconcilerTask(
       { get: () => undefined } as unknown as ConfigService,
@@ -114,8 +123,12 @@ describe('ReconcilerTask', () => {
           loopCheckUnavailable: 0,
           parkedRuns: 0,
           resumableRuns: 0,
+          deadObservations: [],
         }),
       } as unknown as WatchdogService,
+      {
+        record: recordDeadTime,
+      } as unknown as DeadTimeService,
       {
         raiseFrom: jest.fn().mockResolvedValue({ raised: 0, deduplicated: 0 }),
         resolveStale: jest.fn().mockResolvedValue(0),

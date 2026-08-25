@@ -20,6 +20,8 @@ describe('MetricsService', () => {
   let escalationFindMany: jest.Mock;
   let workOrderFindMany: jest.Mock;
   let runFindMany: jest.Mock;
+  let runCount: jest.Mock;
+  let deadIntervalFindMany: jest.Mock;
   let service: MetricsService;
 
   /** A merged pull request, as metrics 3 and 5 count it (#215). */
@@ -39,11 +41,16 @@ describe('MetricsService', () => {
     escalationFindMany = jest.fn().mockResolvedValue([]);
     workOrderFindMany = jest.fn().mockResolvedValue([]);
     runFindMany = jest.fn().mockResolvedValue([]);
+    // No runs and no intervals: nothing has been measured, which is what the
+    // honesty tests below assert produces null rather than zero.
+    runCount = jest.fn().mockResolvedValue(0);
+    deadIntervalFindMany = jest.fn().mockResolvedValue([]);
 
     service = new MetricsService({
       escalation: { findMany: escalationFindMany },
       workOrder: { findMany: workOrderFindMany },
-      run: { findMany: runFindMany },
+      run: { findMany: runFindMany, count: runCount },
+      deadInterval: { findMany: deadIntervalFindMany },
     } as unknown as PrismaService);
   });
 
@@ -146,12 +153,7 @@ describe('MetricsService', () => {
       }
     });
 
-    it.each([
-      'deadTimePerDay',
-      'firstPassAcceptance',
-      'costPerMergedPr',
-      'quotaBurn',
-    ] as const)(
+    it.each(['firstPassAcceptance', 'costPerMergedPr', 'quotaBurn'] as const)(
       'leaves %s unmeasured rather than approximating it',
       async (id) => {
         // Each of these could be faked from adjacent data — dead time from
@@ -169,6 +171,127 @@ describe('MetricsService', () => {
         expect(summary.metrics[id]).toEqual({ value: null, trend: [] });
       },
     );
+  });
+
+  describe('dead time per day (#232)', () => {
+    const HOUR = 60 * 60 * 1000;
+
+    /** An interval placed relative to now, since the window ends at now. */
+    function interval(
+      startHoursAgo: number,
+      endHoursAgo: number | null,
+      kind: 'stalled' | 'parked' = 'stalled',
+    ) {
+      const now = Date.now();
+      return {
+        kind,
+        startedAt: new Date(now - startHoursAgo * HOUR),
+        endedAt:
+          endHoursAgo === null ? null : new Date(now - endHoursAgo * HOUR),
+      };
+    }
+
+    it('is null when the ledger is empty AND nothing ran', async () => {
+      // A freshly deployed control plane. Zero here would put "the factory was
+      // perfect" on a dashboard on the strength of it never having run.
+      const summary = await service.summary(7);
+
+      expect(summary.metrics.deadTimePerDay).toEqual({
+        value: null,
+        trend: [],
+      });
+    });
+
+    it('is ZERO when runs executed and none was ever dead', async () => {
+      // The opposite claim, and a true one: no stall and no park is the
+      // metric's best possible value and has to be reportable.
+      runCount.mockResolvedValue(4);
+
+      const summary = await service.summary(7);
+
+      expect(summary.metrics.deadTimePerDay!.value).toBe(0);
+      expect(summary.metrics.deadTimePerDay!.trend).toHaveLength(7);
+    });
+
+    it('averages over the REQUESTED days, not the days that had a stall', async () => {
+      // 7 dead hours in a 7-day window is one hour a day, and would be seven
+      // times larger if the denominator were "days with data".
+      deadIntervalFindMany.mockResolvedValue([interval(10, 3)]);
+
+      const summary = await service.summary(7);
+
+      expect(summary.metrics.deadTimePerDay!.value).toBeCloseTo(1);
+    });
+
+    it('counts PARKED time, which is what VISION §10 defines the metric as', async () => {
+      deadIntervalFindMany.mockResolvedValue([interval(10, 3, 'parked')]);
+
+      const summary = await service.summary(7);
+
+      expect(summary.metrics.deadTimePerDay!.value).toBeCloseTo(1);
+      expect(summary.metrics.deadTimePerDay!.basis).toContain(
+        '1.0 h/day parked',
+      );
+      expect(summary.metrics.deadTimePerDay!.basis).toContain(
+        '0.0 h/day stalled',
+      );
+    });
+
+    /**
+     * The failure #232 names directly: a factory that is dead RIGHT NOW must
+     * not read as a healthy zero.
+     */
+    it('counts an OPEN interval, clipped at the end of the window', async () => {
+      deadIntervalFindMany.mockResolvedValue([interval(7, null)]);
+
+      const summary = await service.summary(7);
+
+      expect(summary.metrics.deadTimePerDay!.value).toBeCloseTo(1);
+      expect(summary.metrics.deadTimePerDay!.basis).toContain(
+        '1 of 1 interval(s) in the window are still open',
+      );
+    });
+
+    it('asks for intervals OVERLAPPING the window, not starting in it', async () => {
+      // Filtering on `startedAt >= from` would drop the longest stalls, which
+      // biases the metric downward exactly where it matters most.
+      await service.summary(7);
+
+      const where = deadIntervalFindMany.mock.calls[0][0].where;
+      expect(where.startedAt).not.toHaveProperty('gte');
+      expect(where.OR).toEqual([
+        { endedAt: null },
+        { endedAt: { gte: expect.any(Date) } },
+      ]);
+    });
+
+    it('states the conventions the number rests on', async () => {
+      deadIntervalFindMany.mockResolvedValue([interval(10, 3)]);
+
+      const summary = await service.summary(7);
+      const basis = summary.metrics.deadTimePerDay!.basis!;
+
+      expect(basis).toContain('rolling 24h day(s)');
+      expect(basis).toContain('split across the days they occupy');
+    });
+
+    /**
+     * Unlike every other metric here, the dead-time trend keeps its zero days.
+     * A day with no stall and no park genuinely had zero dead hours; dropping
+     * it would delete exactly the GOOD days from the sparkline.
+     */
+    it('keeps zero days in the trend rather than dropping them', async () => {
+      deadIntervalFindMany.mockResolvedValue([interval(10, 3)]);
+
+      const summary = await service.summary(7);
+      const trend = summary.metrics.deadTimePerDay!.trend;
+
+      expect(trend).toHaveLength(7);
+      expect(trend.filter((value) => value === 0).length).toBeGreaterThan(0);
+      // And the daily values average back to the reported figure.
+      const mean = trend.reduce((a, b) => a + b, 0) / trend.length;
+      expect(mean).toBeCloseTo(summary.metrics.deadTimePerDay!.value!);
+    });
   });
 
   describe('detection latency', () => {

@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
+import { DeadTimeService } from '../dead-time/dead-time.service';
 import { DispatchQueueService } from '../dispatch/dispatch-queue.service';
 import { EscalationsService } from '../escalations/escalations.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
@@ -54,6 +55,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     private readonly repositories: RepositoriesService,
     private readonly liveness: GitLivenessService,
     private readonly watchdog: WatchdogService,
+    private readonly deadTime: DeadTimeService,
     private readonly escalations: EscalationsService,
     private readonly dispatcher: EscalationDispatcher,
   ) {}
@@ -174,7 +176,41 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
         checkCoverage: tallyCoverage([]),
         parkedRuns: 0,
         resumableRuns: 0,
+        // Empty, for the same reason `judgedRunIds` is: a sweep that threw
+        // observed nothing. The ledger leaves every open interval open on an
+        // empty pass, which is the correct degradation — a watchdog failure
+        // must not close a stall by claiming it looked and found nothing.
+        deadObservations: [],
       };
+    }
+  }
+
+  /**
+   * Keep the dead-time ledger in step with what the sweep just saw (#232).
+   *
+   * On the same side of the compute/act line as `raiseEscalations`, and for
+   * the same reason: the watchdog decides what is true, the task writes it
+   * down. Independently caught, like every other step here — a ledger write
+   * that fails must not stop the escalation that tells a human, which is the
+   * one thing on this tick that matters more.
+   *
+   * Runs on EVERY tick including empty ones, because the ledger's closes are
+   * driven by absence: a run that recovered shows up as an observation that is
+   * no longer there, and a pass skipped for having nothing to add is exactly
+   * the pass that would have closed it.
+   */
+  private async recordDeadTime(watchdog: WatchdogSweepResult): Promise<void> {
+    try {
+      await this.deadTime.record(
+        watchdog.deadObservations,
+        watchdog.judgedRunIds,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Recording dead time failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -371,6 +407,13 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // observation week — the whole point of that week is being told what
       // the system would have done.
       await this.raiseEscalations(actions, watchdog.judgedRunIds);
+
+      // Alongside the escalations, from the same sweep result. The two record
+      // the same stall from opposite ends: an escalation measures how fast a
+      // human was told (metric 1), the ledger how long the factory was down
+      // (metric 2). Sharing a start instant is why they are written together
+      // and why they are not the same row.
+      await this.recordDeadTime(watchdog);
 
       // Unconditional, and before the early return below: the notification
       // queue is everything still `raised`, not what this pass produced. An

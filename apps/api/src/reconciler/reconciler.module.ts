@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { DeadTimeModule } from '../dead-time/dead-time.module';
 import { DispatchModule } from '../dispatch/dispatch.module';
 import { EscalationsModule } from '../escalations/escalations.module';
 import { GitHubReadModule } from '../github/read/github-read.module';
@@ -53,6 +54,10 @@ import { TickLeaseService } from './tick-lease.service';
     GitHubWriteModule,
     LivenessModule,
     WatchdogModule,
+    // The dead-time ledger (#232). A DATABASE write held by the TASK, not by
+    // `ReconcilerService` — the component that decides what is true still
+    // cannot record it, which is the same line the escalations sit on.
+    DeadTimeModule,
     RepositoriesModule,
     // Escalation records, written by the task and by nothing else in here.
     // `ReconcilerService` still cannot reach them, which keeps "decides" and

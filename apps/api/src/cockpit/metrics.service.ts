@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 
-import { PrismaService } from '../prisma/prisma.service';
+import {
+  deadTimeInWindow,
+  describeBasis,
+  type DeadIntervalSample,
+} from '../dead-time/dead-time';
 import { stats } from '../escalations/detection-latency';
+import { PrismaService } from '../prisma/prisma.service';
 import {
   METRICS_DEFAULT_DAYS,
   NOT_MEASURED,
@@ -12,12 +17,12 @@ import {
 /**
  * The six success metrics, and an honest account of which are measurable.
  *
- * ## Two of six, today
+ * ## Three of six, today
  *
  * | Metric | Today | Why |
  * |---|---|---|
  * | `detectionLatency` | **computed** | `Escalation.detectLatencyMs` (#59) |
- * | `deadTimePerDay` | null | nothing records how long a run SPENT stalled |
+ * | `deadTimePerDay` | **computed** | `dead_intervals` (#232) |
  * | `firstPassAcceptance` | null | merge state is not tracked anywhere |
  * | `attemptsPerWorkOrder` | **computed** | runs per work order that landed |
  * | `costPerMergedPr` | null | merge state is not tracked anywhere |
@@ -29,16 +34,18 @@ import {
  *
  * ## The temptation this deliberately refuses
  *
- * `deadTimePerDay` could be approximated as "sum over currently stalled runs
- * of (now − lastEventAt), divided by the window". That produces a plausible
- * number that answers a DIFFERENT question — dead time right now, not dead
- * time per day across the window — and a dashboard whose numbers answer
- * questions nobody asked is worse than one that says it does not know.
+ * `deadTimePerDay` used to be null here, and the refusal it recorded is worth
+ * keeping in view now that it computes: the metric could ALWAYS have been
+ * approximated as "sum over currently stalled runs of (now − lastEventAt),
+ * divided by the window". That produces a plausible number answering a
+ * DIFFERENT question — dead time right now, not dead time per day across the
+ * window. What changed is not that the approximation became acceptable; it is
+ * that #232 built the thing that was missing, so the real quantity exists.
  *
- * Same for `quotaBurn`: the GitHub rate limit is measured and could be divided
- * by its reset window, but VISION §11's shared quota is the agent
- * subscription, and labelling one "Quota burn" while measuring the other is
- * the same substitution wearing a better disguise.
+ * `quotaBurn` still refuses the same shape: the GitHub rate limit is measured
+ * and could be divided by its reset window, but VISION §11's shared quota is
+ * the agent subscription, and labelling one "Quota burn" while measuring the
+ * other is the same substitution wearing a better disguise.
  */
 @Injectable()
 export class MetricsService {
@@ -50,11 +57,13 @@ export class MetricsService {
 
     const [
       detectionLatency,
+      deadTimePerDay,
       attemptsPerWorkOrder,
       firstPassAcceptance,
       costPerMergedPr,
     ] = await Promise.all([
       this.detectionLatency(from, to, days),
+      this.deadTimePerDay(from, to, days),
       this.attemptsPerWorkOrder(from, to, days),
       this.firstPassAcceptance(from, to, days),
       this.costPerMergedPr(from, to, days),
@@ -67,14 +76,108 @@ export class MetricsService {
       window: { from: from.toISOString(), to: to.toISOString() },
       metrics: {
         detectionLatency,
-        // Not measured. See the table at the head of this file; each of these
-        // is a real absence rather than a zero waiting to be filled in.
-        deadTimePerDay: NOT_MEASURED,
+        deadTimePerDay,
         firstPassAcceptance,
         attemptsPerWorkOrder,
         costPerMergedPr,
+        // Not measured. See the table at the head of this file; this is a real
+        // absence rather than a zero waiting to be filled in.
         quotaBurn: NOT_MEASURED,
       },
+    };
+  }
+
+  /**
+   * Metric 2: hours parked or stalled, per day.
+   *
+   * VISION §10 states the definition and the cockpit tile already renders it:
+   * *"hours parked or stalled"*. Both, which settles the one judgement #232
+   * frames and does not answer.
+   *
+   * ## Parked time counts, and the argument runs the other way from instinct
+   *
+   * The instinct is that a run `blocked` on a rate limit with a dated resume is
+   * the system WORKING — #56 recovers those hours deliberately — so counting
+   * them would make a healthy factory on a rate-limited day look broken.
+   *
+   * It counts anyway:
+   *
+   *  1. VISION §10 defines the metric as *"hours parked or stalled"*, and this
+   *     file's whole ethic is refusing to ship a number under a label that
+   *     promises something else.
+   *  2. VISION §1's origin story is *"an agent hits a rate limit at 2pm. I find
+   *     out at 6pm. Four hours dead"* — parked hours, called dead. §4 repeats
+   *     it: an agent *"parked awaiting an answer while its operator sleeps is
+   *     exactly the dead time this project exists to eliminate."*
+   *  3. If parked time were free the metric would be gameable in the worst
+   *     direction: a factory that parked everything and shipped nothing would
+   *     score a perfect zero.
+   *
+   * What #56 actually recovers is not the park — it is the stretch that used to
+   * run from the reset time until a human noticed. That shows up here as parked
+   * intervals getting SHORTER, so counting them reports the improvement rather
+   * than hiding it. `basis` states the split so an operator can always see which
+   * half of a bad day was supervision and which was quota.
+   *
+   * ## Null when nothing was measured, and 0 when nothing was dead
+   *
+   * These are different claims and the distinction costs one indexed count. An
+   * empty ledger over a window in which runs actually EXECUTED means zero dead
+   * time, which is the metric's best possible value and must be reportable. An
+   * empty ledger over a window with no runs at all means nothing was measured —
+   * a freshly deployed control plane, or an idle week — and returns null.
+   *
+   * Reporting the second as 0 would put "the factory was perfect" on a
+   * dashboard on the strength of the factory never having run.
+   *
+   * ## The trend is FULL-LENGTH, unlike every other metric here
+   *
+   * `bucket()` below drops empty days because a metric like latency cannot
+   * express a gap: an empty day emitting 0 would claim instant detection. Dead
+   * time is the opposite — 0 is a real measurement, and a day with no stall and
+   * no park genuinely had zero dead hours. Dropping those days would delete
+   * exactly the good days from the sparkline and make a recovering factory look
+   * like it was always bad.
+   */
+  private async deadTimePerDay(
+    from: Date,
+    to: Date,
+    days: number,
+  ): Promise<MetricSample> {
+    // Every interval OVERLAPPING the window, not every interval starting in it.
+    // A stall that began before the window is still dead time inside it, and
+    // filtering on `startedAt >= from` would silently drop the longest ones —
+    // biasing the metric downward exactly where it matters most.
+    const rows = await this.prisma.deadInterval.findMany({
+      where: {
+        startedAt: { lte: to },
+        OR: [{ endedAt: null }, { endedAt: { gte: from } }],
+      },
+      select: { kind: true, startedAt: true, endedAt: true },
+    });
+
+    if (rows.length === 0) {
+      // Nothing was dead. Whether that is a measurement or an absence depends
+      // on whether anything RAN — see the doc comment above.
+      const runsInWindow = await this.prisma.run.count({
+        where: {
+          startedAt: { lte: to },
+          OR: [{ endedAt: null }, { endedAt: { gte: from } }],
+        },
+      });
+      if (runsInWindow === 0) return NOT_MEASURED;
+    }
+
+    const window = deadTimeInWindow(
+      rows as unknown as DeadIntervalSample[],
+      from,
+      days,
+    );
+
+    return {
+      value: window.hoursPerDay,
+      trend: window.perDayHours,
+      basis: describeBasis(window, days),
     };
   }
 
