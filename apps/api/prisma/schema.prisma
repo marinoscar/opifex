@@ -1765,9 +1765,21 @@ model ReconcileTick {
   /// How many actions the tick COMPUTED. During the observation week nothing
   /// executes them, which is why this is separate from any executed count.
   actionsComputed      Int @map("actions_computed")
-  /// How many were actually performed. Zero for the whole observation week,
-  /// and the column exists from the start so "we thought we were read-only"
-  /// is checkable against the log rather than against memory.
+  /// How many GitHub writes the tick ISSUED — requests that got past
+  /// `GITHUB_WRITES_ENABLED` and were handed to the HTTP layer. Counted in
+  /// `GitHubWriteService.guardedWrite`, the one place the kill switch is
+  /// checked, so it is closed over all four write paths (mirror labels, spec
+  /// feedback, authorization records, dispatch branch creation) rather than
+  /// only the paths that happen to return a tally — #317 was the earlier,
+  /// narrower version of this count missing the other two. Includes writes
+  /// that changed nothing and writes that threw, because both TOUCHED
+  /// GitHub. NOT a subset of `actionsComputed` above: the two are counted at
+  /// different layers, and a dispatch write has no computed action behind
+  /// it, so this can exceed that figure. Zero for the whole observation week
+  /// because the runbook keeps `GITHUB_WRITES_ENABLED` off throughout it
+  /// (docs/RUNBOOK-observation-week.md), not because of anything about the
+  /// week itself — the column exists from the start so "we thought we were
+  /// read-only" is checkable against the log rather than against memory.
   actionsExecuted      Int @default(0) @map("actions_executed")
 
   /// True when every GitHub read was answered from the ETag cache. The number
