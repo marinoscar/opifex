@@ -85,11 +85,19 @@ export class AuthController {
   @UseGuards(GoogleOAuthGuard)
   @ApiOperation({
     summary: 'Initiate Google OAuth',
-    description: 'Redirects to Google OAuth consent screen',
+    description:
+      'Redirects to the Google OAuth consent screen. Google login is ' +
+      'optional per deployment: when GOOGLE_CLIENT_ID and ' +
+      'GOOGLE_CLIENT_SECRET are unset this route answers 501 and ' +
+      'GET /auth/providers reports no providers.',
   })
   @ApiResponse({
     status: 302,
     description: 'Redirects to Google OAuth',
+  })
+  @ApiResponse({
+    status: 501,
+    description: 'Google login is not configured on this deployment',
   })
   async googleAuth() {
     // Guard handles the redirect to Google
@@ -105,11 +113,17 @@ export class AuthController {
   @ApiOperation({
     summary: 'Google OAuth callback',
     description:
-      'Handles the OAuth callback from Google and redirects to frontend with token',
+      'Handles the OAuth callback from Google and redirects to frontend ' +
+      'with token. Answers 501 when Google login is not configured on this ' +
+      'deployment, matching GET /auth/google.',
   })
   @ApiResponse({
     status: 302,
     description: 'Redirects to frontend with token in query params',
+  })
+  @ApiResponse({
+    status: 501,
+    description: 'Google login is not configured on this deployment',
   })
   async googleAuthCallback(
     @Req() req: FastifyRequest & { user?: GoogleProfile },
