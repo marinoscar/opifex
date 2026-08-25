@@ -22,14 +22,6 @@ export default function ActivateDevicePage() {
   // Pre-fill code from URL query parameter
   const codeFromUrl = searchParams.get('code') || '';
 
-  // Auto-verify if code is provided in URL
-  useEffect(() => {
-    if (codeFromUrl && state.step === 'input') {
-      handleVerifyCode(codeFromUrl);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const handleVerifyCode = async (code: string) => {
     setError(null);
     try {
@@ -49,6 +41,17 @@ export default function ActivateDevicePage() {
       }
     }
   };
+
+  // Auto-verify a code arriving in the URL, once, on mount. Declared after
+  // handleVerifyCode so the effect does not close over a binding that is
+  // still in its temporal dead zone at the point the effect is created
+  // (react-hooks/immutability).
+  useEffect(() => {
+    if (codeFromUrl && state.step === 'input') {
+      handleVerifyCode(codeFromUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleApprove = async () => {
     if (state.step !== 'review') return;

@@ -55,6 +55,10 @@ export default tseslint.config(
       // the memoization the compiler would keep. On, so it stays that way.
       'react-hooks/preserve-manual-memoization': 'error',
 
+      // One finding, in ActivateDevicePage: an effect that called a handler
+      // declared below it. Fixed by declaring the handler first (#185).
+      'react-hooks/immutability': 'error',
+
       // The automatic JSX runtime (React 19 + Vite) means importing React to
       // use JSX is exactly the unused import the rest of this config flags.
       'react/react-in-jsx-scope': 'off',
