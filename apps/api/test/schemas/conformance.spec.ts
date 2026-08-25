@@ -114,6 +114,7 @@ describe('contract conformance', () => {
       'streaming-fidelity-as-a-boolean.json': 'oneOf',
       'no-cost-reporting-without-saying-so.json': 'required',
       'zero-concurrency.json': 'minimum',
+      'unavailable-without-saying-why.json': 'required',
       'no-branch-patterns.json': 'minItems',
       'key-with-spaces.json': 'pattern',
     };
@@ -202,6 +203,47 @@ describe('contract conformance', () => {
       for (const field of ['streamingFidelity', 'rateLimitSignal']) {
         expect(validate({ ...manifest, [field]: true })).toBe(false);
       }
+    });
+
+    it('lets a runner declare itself unavailable, and makes it say why', () => {
+      // #253/#262: the honest version of "my binary is missing" had nowhere to
+      // live, so it was said as `maxConcurrency: 0`, which the schema refused
+      // — and the runner ended up unregistered rather than unavailable.
+      //
+      // The three assertions are one thought. Availability is expressible;
+      // it is not free, because "unavailable" with no reason leaves the
+      // operator exactly as stuck; and capacity is still capacity, so the old
+      // way of saying it stays invalid rather than becoming a second channel.
+      const validate = validatorFor('runner-capability');
+      const manifest = load(examplesIn('runner-capability')[0]);
+
+      expect(
+        validate({
+          ...manifest,
+          available: false,
+          unavailableReason: 'the CLI is not on this PATH',
+        }),
+      ).toBe(true);
+      expect(validate({ ...manifest, available: false })).toBe(false);
+      expect(validate({ ...manifest, maxConcurrency: 0 })).toBe(false);
+    });
+
+    it('reads an absent availability as available', () => {
+      // The additive default, and the reason this is a minor bump rather than
+      // a major one: every manifest written before the field existed is still
+      // valid AND still means what it meant. A schema cannot assert the second
+      // half — `servesTier`'s sibling `isAvailable` does — so what is pinned
+      // here is that the field is optional and that `true` is what the schema
+      // tells a reader to assume.
+      const validate = validatorFor('runner-capability');
+      const manifest = load(examplesIn('runner-capability')[0]);
+      const schema = JSON.parse(
+        readFileSync(join(SCHEMA_DIR, 'runner-capability.schema.json'), 'utf8'),
+      ) as { properties: { available: { default?: boolean } } };
+
+      expect('available' in manifest).toBe(false);
+      expect(validate(manifest)).toBe(true);
+      expect(schema.properties.available.default).toBe(true);
     });
 
     it('can express a preview tier, which routing refuses to lean on', () => {

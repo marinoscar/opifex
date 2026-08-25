@@ -54,7 +54,7 @@ export type RunnerCapabilityManifest = {
    */
   resumable: boolean;
   /**
-   * How many runs this runner will accept at once. VISION §11 notes automated runs compete with interactive use for one subscription quota, so this is the runner's own limit on how much of that quota it will take — not a performance hint. Routing enforces it (#64).
+   * How many runs this runner will accept at once. VISION §11 notes automated runs compete with interactive use for one subscription quota, so this is the runner's own limit on how much of that quota it will take — not a performance hint. Routing enforces it (#64). CAPACITY, NOT AVAILABILITY: this is what the runner can do when it can work at all, and it keeps its real number even while it cannot work — a runner whose binary has gone missing still has the two slots its operator configured, and will have them again the moment the binary comes back. A runner that cannot take work right now says so with `available: false`, which is a different fact on a different field (#253, #262). Zero is therefore still not a legal value here: it was once used to mean 'I exist but can take nothing', and that overloading is what `available` replaces.
    */
   maxConcurrency: number;
   /**
@@ -90,6 +90,14 @@ export type RunnerCapabilityManifest = {
     ...('small' | 'standard' | 'large')[],
   ];
   /**
+   * Whether the runner can take work RIGHT NOW. ABSENT MEANS TRUE, which is what keeps this additive in behaviour as well as in schema: every manifest written before this field existed goes on meaning exactly what it meant, and a runner that never has an outage never has to mention it. Declaring `false` is how a runner reports a condition it is IN rather than a limit it HAS — characteristically a binary that could not be probed, an unreachable endpoint, credentials that no longer work. It exists because the alternative was `maxConcurrency: 0`, which the schema refused, so the manifest failed validation and its runner was left UNREGISTERED — and an operator whose CLI was simply missing read 'no runners are registered' and went looking for a bug in registration (#253). Three fields, three meanings, deliberately not collapsed: `enabled` on the runner row is an operator's switch (a human turned this off), `available` is a health report (it cannot work now), `maxConcurrency` is capacity (how much it can do when it can). Each needs a different response, and a manifest that could only say one of them would say the wrong one.
+   */
+  available?: boolean;
+  /**
+   * Why the runner cannot take work, in one line an operator can act on. Prose, never parsed — a field routing branched on would be a capability in disguise, and the routing answer is already `available`. Required when `available` is false, on the same reasoning as `notes` under `reportsCost: false`: a runner that says it cannot work and will not say why leaves the operator exactly as stuck as one that said nothing, and 'unavailable' with no lead is where an afternoon goes.
+   */
+  unavailableReason?: string;
+  /**
    * Anything the operator should know that no field above captures. Prose, never parsed — a field the control plane branched on would be a capability in disguise.
    */
   notes?: string;
@@ -102,7 +110,7 @@ export type RunnerCapabilityManifest = {
 };
 
 /** The version a producer should write, from the schema's `default`. */
-export const RUNNER_CAPABILITY_SCHEMA_VERSION = '1.2.0';
+export const RUNNER_CAPABILITY_SCHEMA_VERSION = '1.3.0';
 
 /** Every value `executionLocus` may take. Closed — adding one is a major bump (ADR-0010). */
 export const RUNNER_CAPABILITY_EXECUTION_LOCUS = [

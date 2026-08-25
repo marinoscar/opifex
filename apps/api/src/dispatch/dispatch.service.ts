@@ -296,6 +296,21 @@ type CapabilityRow = Awaited<
  * A translation rather than a cast: the policy is written against
  * `RunnerCapabilities` from `runner.types.ts`, which restates its enums so it
  * stays a pure contract with no Prisma import. A spec pins the two together.
+ *
+ * ## Availability comes out of the verbatim manifest, not a column
+ *
+ * `available` (#253) has no column, and the manifest JSON is kept verbatim for
+ * exactly this: *"a field this schema does not model yet is not silently
+ * discarded."* Reading it here is what makes the round trip complete — a fact
+ * the runner declares, the registration writes down and routing never sees is
+ * the same as a fact nobody recorded, and this one decides whether work is
+ * routed at all.
+ *
+ * Read defensively, because the manifest is JSON the database will hand back
+ * as whatever was put in: anything that is not literally `false` leaves the
+ * runner available, which is the same absent-means-available default the
+ * schema states and `isAvailable` enforces. A parse slip must not ground the
+ * fleet.
  */
 function toCapabilities(
   runner: RunnerRow,
@@ -320,7 +335,40 @@ function toCapabilities(
     resumable: capability.resumable,
     maxConcurrency: capability.maxConcurrency,
     branchPatterns: capability.branchPatterns,
+    ...availabilityOf(capability.manifest),
     manifest: (capability.manifest ?? {}) as Record<string, unknown>,
+  };
+}
+
+/**
+ * The two availability fields, recovered from the stored manifest.
+ *
+ * Returns nothing at all for a runner that never mentioned its health, so the
+ * fields stay ABSENT rather than becoming an explicit `true` — the seam type
+ * says undefined means available, and writing the default in would make a
+ * manifest that said nothing indistinguishable from one that asserted it was
+ * fine.
+ */
+function availabilityOf(
+  manifest: CapabilityRow['manifest'],
+): Pick<RunnerCapabilities, 'available' | 'unavailableReason'> {
+  if (
+    typeof manifest !== 'object' ||
+    manifest === null ||
+    Array.isArray(manifest)
+  ) {
+    return {};
+  }
+
+  const declared = manifest as Record<string, unknown>;
+  if (declared.available !== false) return {};
+
+  return {
+    available: false,
+    unavailableReason:
+      typeof declared.unavailableReason === 'string'
+        ? declared.unavailableReason
+        : undefined,
   };
 }
 

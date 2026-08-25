@@ -247,7 +247,14 @@ export interface RunnerCapabilities {
    */
   resumable: boolean;
 
-  /** How many runs this runner will take at once. The concurrency gate (#64). */
+  /**
+   * How many runs this runner will take at once. The concurrency gate (#64).
+   *
+   * CAPACITY, NOT AVAILABILITY, and at least 1 by schema. A runner that cannot
+   * work right now keeps its real number here and says so with `available`
+   * instead (#253) — the slots exist and are momentarily unusable, which is a
+   * different fact from having none.
+   */
   maxConcurrency: number;
   /** Branch globs the runner is allowed to create, e.g. `factory/*`. */
   branchPatterns: string[];
@@ -260,6 +267,31 @@ export interface RunnerCapabilities {
    * for work it had been taking all along.
    */
   modelTiers?: ModelTier[];
+
+  /**
+   * Whether the runner can take work RIGHT NOW (#253).
+   *
+   * UNDEFINED MEANS AVAILABLE — the same additive default as `modelTiers`, so
+   * a manifest written before this field existed stays eligible for the work
+   * it had been taking. Read it through `isAvailable()` in the dispatch policy
+   * rather than testing it directly, because `!capabilities.available` reads
+   * an absent field as unavailable and would ground the whole fleet.
+   *
+   * Distinct from `RunnerPoolEntry.enabled` on purpose and permanently: that
+   * is an operator's switch, this is a health report. "A human turned this
+   * off" and "its binary is missing" need different responses, and a control
+   * plane that could only say one of them would say the wrong one.
+   */
+  available?: boolean;
+
+  /**
+   * Why it cannot take work, when it says it cannot. Printed, never parsed.
+   *
+   * The schema requires it whenever `available` is false: an unavailable
+   * runner with no stated reason leaves the operator exactly as stuck as one
+   * that said nothing at all.
+   */
+  unavailableReason?: string;
 
   /** The raw manifest, kept verbatim for the record. */
   manifest: Record<string, unknown>;

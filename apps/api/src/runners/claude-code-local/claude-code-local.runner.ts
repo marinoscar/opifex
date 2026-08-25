@@ -270,12 +270,15 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
   /**
    * What this runner can do — observed, not declared.
    *
-   * The version is read off the installed binary rather than hard-coded, and
-   * a binary that cannot be probed reports `maxConcurrency: 0`. That is not a
-   * decorative failure: zero headroom is already how the dispatch policy (#64)
-   * says "route nothing here", so a missing or broken CLI degrades into a
-   * queue with a reason instead of into a run that fails after being
-   * authorized. Nothing new had to be invented for it to be honest.
+   * The version is read off the installed binary rather than hard-coded, and a
+   * binary that cannot be probed reports `available: false` with the reason
+   * attached. It used to report `maxConcurrency: 0` instead, which was the
+   * wrong field: the runner still HAS the slots its operator configured and
+   * will have them again the moment the CLI comes back, so declaring no
+   * capacity described the wrong fact and — because the schema required at
+   * least one slot — got the whole manifest rejected and the runner left
+   * unregistered (#253, #262). Capacity is what it can do; availability is
+   * whether it can do anything right now.
    */
   async capabilities(): Promise<RunnerCapabilities> {
     const version = await this.probeVersion();
@@ -284,7 +287,16 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
       key: this.key,
       displayName: 'Claude Code (local)',
       version: version ?? 'unavailable',
-      schemaVersion: '1.0.0',
+
+      // 1.3.0 rather than 1.0.0, because this runner publishes `available`,
+      // which was added in 1.3.0 (#253). A document claiming conformance to a
+      // version that did not have one of the fields it uses is exactly the
+      // kind of misstatement the manifest exists to prevent — and a consumer
+      // pinned at 1.2.0 would reject it, which is the honest outcome and the
+      // one `speaksSchemaVersions` exists to let a producer avoid. This runner
+      // ships with Opifex and moves with it, which ADR-0010 names as the case
+      // where writing the schema's current version is correct.
+      schemaVersion: '1.3.0',
       invocationModel: 'process',
       executionLocus: 'own_infrastructure',
 
@@ -323,12 +335,26 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
       // uses it, and recovery stays abandon-and-re-run from the pinned base.
       resumable: false,
 
-      // A binary that could not be probed advertises no capacity. Zero
-      // headroom is already how the dispatch policy (#64) says "route nothing
-      // here", so a missing CLI degrades into a queue with a reason rather
-      // than a run that fails after being authorized.
-      maxConcurrency: version === null ? 0 : this.maxConcurrency,
+      // The real configured number, in every state. A binary that cannot be
+      // probed does not shrink this runner's capacity — the slots are still
+      // there and will be usable again the moment the CLI is — so reporting
+      // zero here would have been a claim about the wrong thing.
+      maxConcurrency: this.maxConcurrency,
       branchPatterns: ['factory/*'],
+
+      // Availability, which is the fact a failed probe is actually about.
+      // Spread conditionally so the key is ABSENT when the runner is fine:
+      // absent means available, and a manifest that mentions its health only
+      // when its health is worth mentioning is the one an operator can skim.
+      ...(version === null
+        ? {
+            available: false,
+            unavailableReason:
+              `\`${this.binary} --version\` could not be probed, so the CLI is not ` +
+              'reachable from this process. Install it or put it on this PATH; ' +
+              'dispatch will queue rather than route here until it is.',
+          }
+        : {}),
 
       manifest: {},
     };

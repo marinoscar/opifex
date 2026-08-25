@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.3.0",
+  "key": "claude-code-local",
+  "displayName": "Claude Code (local)",
+  "version": "unavailable",
+  "invocationModel": "process",
+  "executionLocus": "own_infrastructure",
+  "streamingFidelity": "full",
+  "rateLimitSignal": "structured",
+  "stabilityTier": "experimental",
+  "reportsCost": true,
+  "resumable": false,
+  "maxConcurrency": 2,
+  "branchPatterns": ["factory/*"],
+  "available": false,
+  "unavailableReason": "`claude --version` could not be probed: the CLI is not on this process PATH, so no run can be started until it is installed."
+}
