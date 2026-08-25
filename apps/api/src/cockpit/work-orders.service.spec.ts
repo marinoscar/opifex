@@ -63,6 +63,10 @@ describe('WorkOrdersService', () => {
       pathConstraints: w.pathConstraints,
       decisionRefs: w.decisionRefs,
       needs: w.needs,
+      // The column, as the select returns it. Null is the ordinary case and
+      // the fixture says so rather than omitting the field — an omitted
+      // optional in a fixture is exactly how #273 went unnoticed.
+      modelTier: (w.modelTier ?? null) as string | null,
       budgetCeilingUsd: w.budgetCeilingUsd,
       wallClockTimeoutMinutes: w.wallClockTimeoutMinutes,
       status: 'queued',
@@ -140,6 +144,37 @@ describe('WorkOrdersService', () => {
       await expect(service.findOne('anything')).rejects.toThrow(
         /wo_something-else_312_a3f91c2_a1/,
       );
+    });
+  });
+
+  describe('the model tier (#273)', () => {
+    it('renders in the document when the row carries one', async () => {
+      // Not colocated with the byte-identical test above on purpose: that
+      // test's default fixture has never carried a tier, which is the exact
+      // shape #273 hid in. This exercises the field the round trip above
+      // does not.
+      findFirst.mockResolvedValue(row({ modelTier: 'large' }));
+
+      const detail = await service.findOne('x');
+
+      const expected = serializeWorkOrder(generated({ modelTier: 'large' }));
+      expect(`${JSON.stringify(detail.document, null, 2)}\n`).toBe(expected);
+    });
+
+    it('omits the key entirely when the column is null', async () => {
+      const detail = await service.findOne(
+        '11111111-1111-1111-1111-111111111111',
+      );
+
+      expect('modelTier' in detail.document).toBe(false);
+    });
+
+    it('refuses a row whose stored tier this build does not understand', async () => {
+      // `rehydrateWorkOrder` refuses rather than drops it: silently dropping
+      // would render the document as though nothing had been asked for.
+      findFirst.mockResolvedValue(row({ modelTier: 'enormous' }));
+
+      await expect(service.findOne('anything')).rejects.toThrow(/enormous/);
     });
   });
 
