@@ -466,4 +466,80 @@ describeIfDb('actionsExecuted, persisted to a real database (#317)', () => {
 
     errorSpy.mockRestore();
   });
+
+  /**
+   * Case 5 (#320) — the point of the issue, proven against a real row: a
+   * mirror-label write that throws must leave `actions_executed` non-zero
+   * (the request was still handed to the HTTP layer — see
+   * `GitHubWriteService.guardedWrite`) AND `execution_failures` populated
+   * with what went wrong. Before this fix, the second half did not exist:
+   * `actionsExecuted` could say "3" with the failure recorded nowhere a
+   * database query could find it.
+   */
+  it('populates execution_failures alongside a non-zero actionsExecuted when a mirror-label write throws', async () => {
+    let capturedId: string | undefined;
+    const tick = jest.fn();
+    const http = {
+      request: jest.fn().mockRejectedValue(new Error('GitHub said 500')),
+    } as unknown as jest.Mocked<Pick<GitHubHttpService, 'request'>>;
+    const writes = new GitHubWriteService(
+      http as unknown as GitHubHttpService,
+      writeServiceConfig(true),
+    );
+    const log = trackingLog(new ReconcileLogService(prisma));
+    const executor = new MirrorLabelExecutor(writes);
+    const collaborators = noopCollaborators();
+
+    tick.mockImplementation(async () => {
+      const record = tickRecord({
+        actions: [addLabelAction('factory/dispatched')],
+      });
+      const id = await log.record(record);
+      capturedId = id ?? undefined;
+      return { ...record, id: capturedId };
+    });
+
+    const task = new ReconcilerTask(
+      { get: () => undefined } as unknown as ConfigService,
+      {
+        addInterval: jest.fn(),
+        doesExist: jest.fn(),
+        deleteInterval: jest.fn(),
+      } as unknown as SchedulerRegistry,
+      { tick } as unknown as ReconcilerService,
+      executor,
+      collaborators.specFeedback,
+      collaborators.dispatchQueue,
+      collaborators.repositories,
+      collaborators.liveness,
+      collaborators.watchdog,
+      collaborators.deadTime,
+      collaborators.escalations,
+      collaborators.dispatcher,
+      writes,
+      log,
+    );
+
+    await run(task);
+
+    expect(writes.writesIssued).toBe(1);
+    expect(capturedId).toBeDefined();
+
+    const row = await prisma.reconcileTick.findUniqueOrThrow({
+      where: { id: capturedId! },
+    });
+
+    // The two must agree: a write was attempted (non-zero) AND there is a
+    // populated record of what went wrong. Neither half alone is the fix.
+    expect(row.actionsExecuted).toBe(1);
+    expect(row.executionFailures).toEqual([
+      {
+        source: 'mirror-label',
+        actionType: 'add-mirror-label',
+        repository: 'acme/app',
+        issueNumber: 312,
+        reason: 'GitHub said 500',
+      },
+    ]);
+  });
 });
