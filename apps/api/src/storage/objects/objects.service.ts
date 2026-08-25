@@ -386,7 +386,7 @@ export class ObjectsService {
     };
 
     // Build orderBy clause
-    const orderBy: any = {};
+    const orderBy: Prisma.StorageObjectOrderByWithRelationInput = {};
     if (sortBy === 'createdAt') {
       orderBy.createdAt = sortOrder;
     } else if (sortBy === 'name') {

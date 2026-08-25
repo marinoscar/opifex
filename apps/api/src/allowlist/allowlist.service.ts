@@ -24,7 +24,7 @@ export class AllowlistService {
     const skip = (page - 1) * pageSize;
 
     // Build where clause
-    const where: any = {};
+    const where: Prisma.AllowedEmailWhereInput = {};
 
     if (search) {
       where.email = { contains: search, mode: 'insensitive' };
