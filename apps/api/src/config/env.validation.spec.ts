@@ -71,6 +71,11 @@ describe('validateEnv', () => {
       JWT_SECRET: validSecret,
       INITIAL_ADMIN_EMAIL: 'admin@example.com',
       NODE_ENV: 'production',
+      // Required since #299 because NODE_ENV is 'production' here. This case
+      // is about passthrough, not about the database rule — without it the
+      // fixture would fail for an unrelated reason and stop testing what it
+      // is named for.
+      POSTGRES_PASSWORD: 'a-real-password',
     });
 
     expect(result.INITIAL_ADMIN_EMAIL).toBe('admin@example.com');

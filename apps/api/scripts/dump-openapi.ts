@@ -42,6 +42,24 @@ import { randomBytes } from 'crypto';
 
 process.env.JWT_SECRET ??= randomBytes(32).toString('hex');
 
+// AND A DATABASE PASSWORD, for the same reason and by the same trap (#299).
+//
+// Since #299, `validateEnv` also refuses to build when `NODE_ENV=production`
+// and `POSTGRES_PASSWORD` is unset or still the shipped default — and this
+// script forces `NODE_ENV=production` twenty lines above, deliberately, so
+// that the dumped spec is the one a deployment publishes. That makes this the
+// ONLY script in the repository that meets the new check on a bare CI checkout
+// with no environment at all, and without this line the OpenAPI job would go
+// red on a credential it has no use for.
+//
+// Preview mode instantiates no providers, so `PrismaService` is never
+// constructed and nothing ever opens a connection: the value is never sent
+// anywhere. Random per run and never a literal, for the same reason as the
+// secret above — a value nobody can predict and that dies with the process
+// cannot become the credential some future change accidentally connects with.
+// `??=` so a real environment still wins.
+process.env.POSTGRES_PASSWORD ??= randomBytes(16).toString('hex');
+
 import { mkdirSync, writeFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { NestFactory } from '@nestjs/core';

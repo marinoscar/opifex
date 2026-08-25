@@ -38,6 +38,36 @@ import { z } from 'zod';
  * all: `/health/ready` says `ok`, the dashboards are green, and the only way
  * to discover it is for someone to try it. That asymmetry is the whole reason
  * to spend a startup failure here.
+ *
+ * WHY POSTGRES_PASSWORD IS ONLY REQUIRED IN PRODUCTION (#299)
+ * ---------------------------------------------------------------------------
+ * The second variable this file gates is deliberately gated more weakly than
+ * the first, and the asymmetry above is exactly why.
+ *
+ * `JWT_SECRET`'s fallback was an INBOUND verification key: a repo-public value
+ * meant anyone who read the repository could mint a token and be believed,
+ * silently, forever. `POSTGRES_PASSWORD`'s fallback is an OUTBOUND credential.
+ * A wrong value fails to connect immediately and never grants anyone access to
+ * us, so it is already self-announcing — it has the symptom #278's fallback
+ * lacked. That makes this hardening, not a vulnerability, and it does not earn
+ * the same unconditional startup failure.
+ *
+ * What it does earn is that a default password must never SHIP. So the rule is
+ * conditional on `NODE_ENV === 'production'`: `docker compose up` and a fresh
+ * laptop checkout stay frictionless, which is the only place the default ever
+ * earned its keep, while a production deployment cannot boot on a credential
+ * nobody chose. Requiring it unconditionally would be more consistent with
+ * #278 but charges every development path for a risk none of them carry;
+ * warning at boot instead is the weakest of the three, and a warning nobody
+ * reads is precisely how this survived long enough to be found by a sweep.
+ *
+ * KNOWN GAP, stated rather than papered over: a deployment that is production
+ * in every way that matters but does not set `NODE_ENV=production` — a staging
+ * host, a one-off container — is not covered. `NODE_ENV` is the only signal
+ * available here, and there is no second one to cross-check it against. The
+ * mitigation is that such a host still cannot connect unless its database
+ * genuinely accepts the default pair, which is a weakness at the database end
+ * that no application-side check can repair.
  */
 
 /**
@@ -58,6 +88,39 @@ const secret = (name: string) =>
     );
 
 /**
+ * The value `configuration.ts` and `prisma.service.ts` fall back to when
+ * `POSTGRES_PASSWORD` is unset, and the value `infra/compose/.env.example`
+ * ships. Named here so the production check below can reject it by identity
+ * rather than by a copy of the literal drifting out of step with theirs.
+ */
+export const DEFAULT_POSTGRES_PASSWORD = 'postgres';
+
+/**
+ * Applied to `POSTGRES_PASSWORD` only when `NODE_ENV === 'production'`.
+ *
+ * No length floor, unlike `secret()`: this is not a value we generate, it is
+ * one an existing database already has, and a minimum here would reject
+ * working deployments to express a preference we cannot act on anyway.
+ *
+ * The default value is rejected as well as the empty one, and that second
+ * check is the one that does the work. Requiring the variable to be *set*
+ * would be satisfied by the documented setup step — `cp .env.example .env`
+ * ships `POSTGRES_PASSWORD=postgres` — so a check for presence alone would
+ * let the exact credential this issue exists to stop through the front door
+ * while reporting success.
+ */
+const productionDatabasePassword = z
+  .string({ error: 'POSTGRES_PASSWORD is required when NODE_ENV=production' })
+  .min(1, 'POSTGRES_PASSWORD is required when NODE_ENV=production')
+  .refine((value) => value !== DEFAULT_POSTGRES_PASSWORD, {
+    error:
+      `POSTGRES_PASSWORD must not be the default value ` +
+      `'${DEFAULT_POSTGRES_PASSWORD}' in production ` +
+      `(infra/compose/.env.example ships it, so copying that file is not ` +
+      `choosing a password)`,
+  });
+
+/**
  * `.loose()` is load-bearing, not tidiness: whatever this function returns
  * REPLACES the environment `ConfigService` was built from (see
  * `ConfigModule.forRoot`, which calls `assignVariablesToProcess` on the
@@ -69,6 +132,12 @@ const secret = (name: string) =>
  * So: validate a little, pass through everything. Variables consumed via
  * `configuration.ts` are not repeated here; that file already documents each
  * one's default, and duplicating them would create two places to disagree.
+ *
+ * `POSTGRES_PASSWORD` is deliberately NOT a member of this object even though
+ * `validateEnv` checks it: its rule depends on `NODE_ENV`, which is a sibling
+ * key rather than something a field validator can see. It is checked
+ * separately below and reaches `ValidatedEnv` through this passthrough, the
+ * same way `INITIAL_ADMIN_EMAIL` does.
  */
 export const envSchema = z
   .object({
@@ -93,24 +162,63 @@ export const envSchema = z
 export type ValidatedEnv = z.infer<typeof envSchema>;
 
 /**
- * Throws on the first invalid environment, which fails the boot.
+ * The `POSTGRES_PASSWORD` rule, which cannot live in `envSchema` because it
+ * depends on a sibling key (#299).
+ *
+ * `NODE_ENV` is read off the object being validated rather than off
+ * `process.env`, and that is a correctness point, not a style one:
+ * `ConfigModule.forRoot` builds what it hands to `validate` as
+ * `{ ...dotEnvFileVars, ...process.env }`, so a `NODE_ENV` supplied by an
+ * `.env` file — which `process.env` would not yet show at this instant —
+ * is visible here. It also means a caller can exercise the production branch
+ * by passing an object, without mutating the process it runs in.
+ *
+ * Returns the problems rather than throwing so they can be reported alongside
+ * the schema's, keeping `validateEnv`'s promise to name everything at once.
+ */
+function productionOnlyProblems(config: Record<string, unknown>): string[] {
+  if (config.NODE_ENV !== 'production') {
+    return [];
+  }
+
+  const result = productionDatabasePassword.safeParse(config.POSTGRES_PASSWORD);
+
+  return result.success
+    ? []
+    : result.error.issues.map(
+        (issue) => `  - POSTGRES_PASSWORD: ${issue.message}`,
+      );
+}
+
+/**
+ * Throws on an invalid environment, which fails the boot.
  *
  * The message names every problem at once rather than the first: an operator
  * fixing a fresh deployment should not have to restart the container to find
- * out about the second missing variable.
+ * out about the second missing variable. That is why the production-only
+ * checks are collected into the same list as the schema's rather than run
+ * behind an early return — a deployment missing both `JWT_SECRET` and
+ * `POSTGRES_PASSWORD` is told about both on the first attempt.
  */
 export function validateEnv(config: Record<string, unknown>): ValidatedEnv {
   const result = envSchema.safeParse(config);
 
-  if (!result.success) {
-    const problems = result.error.issues
-      .map(
-        (issue) => `  - ${issue.path.join('.') || '(root)'}: ${issue.message}`,
-      )
-      .join('\n');
+  const problems: string[] = [
+    ...(result.success
+      ? []
+      : result.error.issues.map(
+          (issue) =>
+            `  - ${issue.path.join('.') || '(root)'}: ${issue.message}`,
+        )),
+    ...productionOnlyProblems(config),
+  ];
 
+  // The `!result.success` arm is what narrows `result` for the return below;
+  // it is never reachable on its own, since a failed parse always contributes
+  // at least one problem.
+  if (!result.success || problems.length > 0) {
     throw new Error(
-      `Invalid environment configuration:\n${problems}\n\n` +
+      `Invalid environment configuration:\n${problems.join('\n')}\n\n` +
         `The API refuses to start without these. See infra/compose/.env.example.`,
     );
   }
