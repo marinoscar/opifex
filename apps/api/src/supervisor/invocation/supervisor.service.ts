@@ -47,10 +47,27 @@ import {
  * writes a row, because #90 requires the log have no gaps: a missing entry is
  * indistinguishable from one that silently failed.
  *
- * **Yields quota.** Before doing any work it asks `assessQuota` whether
- * workers are already parked, and stands down if they are. That is VISION §7's
- * "a supervisor competing for the quota it is managing is a bad loop", made
- * into a branch.
+ * **Stands down when the work has stopped.** Before doing any work it asks
+ * `assessQuota` whether workers are already parked, and skips the tick if they
+ * are.
+ *
+ * This paragraph used to be headed "Yields quota" and cited VISION §7's "a
+ * supervisor competing for the quota it is managing is a bad loop". ADR-0015
+ * made that false: the supervisor calls a separately metered API key of its
+ * own, so an invocation competes with a worker for nothing and yields nothing
+ * by standing down. The withdrawn reason is recorded here rather than deleted
+ * because a comment that used to be true is worse than no comment at all — a
+ * reader who found the branch and the old justification together would take
+ * one as the explanation of the other. VISION §7 still carries the original
+ * sentence, and correcting a north-star document is not this file's call.
+ *
+ * What is true is a fact rather than a competition: a run parked on a rate
+ * limit is evidence that everything the supervisor exists to advise about has
+ * stopped moving, and a diagnosis nobody can act on will say the same thing
+ * once runs resume. Since ADR-0016 that is the gate's only arm — the live-run
+ * ceiling that sat beside it gated on a count that does not determine what a
+ * tick spends, since every proposer below runs exactly once per invocation
+ * regardless of how many runs are live.
  */
 @Injectable()
 export class SupervisorService {

@@ -39,9 +39,25 @@ export class RunDiagnosisProposer implements SupervisorProposer {
    * How many runs one invocation will diagnose.
    *
    * A ceiling rather than "all of them": a bad day produces dozens of failed
-   * runs, and an invocation that asks the model dozens of times spends the
-   * quota VISION §7 says the workers should get first. The snapshot already
-   * orders attention runs by longest silence, so the cap takes the worst.
+   * runs, and an invocation that asks the model dozens of times costs dozens
+   * of times as much.
+   *
+   * This used to say that spend came out of "the quota VISION §7 says the
+   * workers should get first". ADR-0015 made that false — the supervisor
+   * calls a separately metered credential of its own — so what an over-eager
+   * invocation burns is the supervisor's own budget in real money, not a
+   * worker's headroom. The cap is unchanged; only the reason for it is. The
+   * old one is kept beside the new one because a reader finding only the
+   * withdrawn justification would take it for the live one.
+   *
+   * Note what it counts. The cap is against `diagnosable(attentionRuns)` —
+   * runs stalled, blocked or quarantined — and not against the number of runs
+   * live. ADR-0016 turned on that distinction when it removed the live-run
+   * ceiling: this is the only bounded call count in an invocation, and it does
+   * not move with `runsRunning`.
+   *
+   * The snapshot already orders attention runs by longest silence, so the cap
+   * takes the worst.
    */
   static readonly MAX_PER_INVOCATION = 3;
 
