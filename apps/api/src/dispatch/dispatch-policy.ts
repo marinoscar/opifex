@@ -128,7 +128,22 @@ export type DispatchOutcome = 'dispatch' | 'queued';
  */
 export type QueueReason =
   | 'no-runners-registered'
+  // Split from an empty fleet (#296), because the two are opposite events
+  // wearing one name: nothing registered is a failure worth escalating
+  // (#162's case), while every runner disabled is a human's deliberate switch
+  // that must never page anyone. The reason sentence has always said which of
+  // the two it was; saying it only in prose left the CODE asserting something
+  // false, since a fleet of disabled runners is a fleet whose runners are
+  // registered.
+  | 'all-runners-disabled'
   | 'no-runner-has-the-capabilities'
+  // Distinct from having no capable runner at all: these runners CAN do this
+  // work, they just do not do it at the size asked for (#205). Distinct from
+  // capacity for the stronger reason — a full runner frees a slot on its own,
+  // while no amount of waiting adds a tier to a manifest, so the only fixes
+  // are to change the tier the work order asks for or to register a runner
+  // that serves it.
+  | 'no-runner-serves-the-model-tier'
   | 'capable-runners-are-at-capacity'
   // Distinct from being at capacity, because the two need different patience
   // and different fixes: a full runner frees a slot when one of ITS runs ends,
@@ -390,9 +405,12 @@ export function decideDispatch(
   const enabled = pool.filter((entry) => entry.enabled);
 
   if (enabled.length === 0) {
+    // One condition, asked once and answered in both the code and the
+    // sentence, so the two cannot come to disagree.
+    const nothingRegistered = pool.length === 0;
     return queued(
-      'no-runners-registered',
-      pool.length === 0
+      nothingRegistered ? 'no-runners-registered' : 'all-runners-disabled',
+      nothingRegistered
         ? 'No runners are registered.'
         : `All ${pool.length} registered runner(s) are disabled.`,
       pool.map((entry) => ({
@@ -454,6 +472,18 @@ export function decideDispatch(
     quotaExhaustedEntries.map((entry) => entry.capabilities.key),
   );
 
+  // The two refusals `diagnose` classifies on that cannot be read back off a
+  // verdict, recorded AT THE BRANCH THAT DECIDES THEM rather than re-derived
+  // afterwards. Both are invisible in `CandidateVerdict`: a runner refused for
+  // its tier has an empty `unmetNeeds` exactly like an eligible one, and the
+  // preview refusal is a fact about the FLEET that leaves no field behind at
+  // all. Recording them here rather than re-testing the conditions below
+  // keeps them in step with the branch order — a re-derivation would have to
+  // restate that a preview runner which is also out of quota reports quota,
+  // and would drift the first time the order changed.
+  const refusedForTier = new Set<string>();
+  const refusedAsLoadBearingPreview = new Set<string>();
+
   const candidates = enabled
     .map((entry) => {
       const unmet = unmetNeeds(input.needs, entry.capabilities);
@@ -474,6 +504,7 @@ export function decideDispatch(
         // Refused rather than dispatched-and-hoped: a runner that cannot serve
         // the tier would run the work at whatever size it does have, which is
         // the quota decision VISION §11 wants made deliberately.
+        refusedForTier.add(entry.capabilities.key);
         return verdict(
           entry,
           input.needs,
@@ -518,6 +549,7 @@ export function decideDispatch(
       if (isPreview(entry.capabilities) && !hasGaFallback(input.needs)) {
         // The one rejection that is about the FLEET rather than the runner.
         if (!limits.allowPreviewWithoutGaFallback) {
+          refusedAsLoadBearingPreview.add(entry.capabilities.key);
           return verdict(
             entry,
             input.needs,
@@ -562,7 +594,11 @@ export function decideDispatch(
 
   if (!chosen) {
     return queued(
-      diagnose(candidates, quotaExhaustedCapable),
+      diagnose(candidates, {
+        tier: refusedForTier,
+        loadBearingPreview: refusedAsLoadBearingPreview,
+        quotaExhausted: quotaExhaustedCapable,
+      }),
       explain(candidates, input.needs),
       candidates,
     );
@@ -661,27 +697,60 @@ function byPreference(a: CandidateVerdict, b: CandidateVerdict): number {
  * runner is out of quota until T" is the more serious of the two and the one
  * whose standing answer (register a second runner) an operator can act on.
  *
- * The exhausted set is passed in rather than recovered from the verdict text:
- * a `reason.includes(...)` on a sentence written for humans is a coupling that
- * breaks silently the first time the sentence is reworded.
+ * The tier refusal sits between the two structural failures rather than beside
+ * capacity, and the difference is the whole point: a runner refused for its
+ * tier meets every declared need, so classifying on `unmetNeeds` alone counted
+ * it as capable and reported the fleet as merely BUSY (#296). Waiting is then
+ * exactly the wrong response — the tier is not a queue that drains.
+ *
+ * Excluding those runners narrows every judgement below it too, which is the
+ * same correction applied further down: "all the capable runners are preview"
+ * and "a capable runner is out of quota" are both claims about the runners
+ * that could actually take THIS work order, and a runner that does not serve
+ * its tier is not one of them.
+ *
+ * Every set is passed in rather than recovered from the verdict text: a
+ * `reason.includes(...)` on a sentence written for humans is a coupling that
+ * breaks silently the first time the sentence is reworded. That rule was
+ * stated here and broken three lines below it until #296 — the preview branch
+ * matched on its own prose, so rewording one sentence would have stopped
+ * `only-preview-runners-and-no-ga-fallback` being reported, with every test
+ * that asserts the sentence still passing.
  */
 function diagnose(
   candidates: readonly CandidateVerdict[],
-  quotaExhaustedCapable: ReadonlySet<string>,
+  refused: {
+    /** Met every need, but does not serve the requested tier. */
+    tier: ReadonlySet<string>;
+    /** Preview, with no GA fallback and no acknowledgement. */
+    loadBearingPreview: ReadonlySet<string>;
+    /** Capable and observably out of quota. */
+    quotaExhausted: ReadonlySet<string>;
+  },
 ): QueueReason {
-  const capable = candidates.filter(
+  const meetsNeeds = candidates.filter(
     (candidate) => candidate.unmetNeeds.length === 0,
   );
 
-  if (capable.length === 0) return 'no-runner-has-the-capabilities';
+  if (meetsNeeds.length === 0) return 'no-runner-has-the-capabilities';
+
+  // Narrowed in that order so each answer is TRUE rather than merely ranked:
+  // with one runner short of a need and another short of the tier, "no runner
+  // has the capabilities" is a false sentence — one of them has them — while
+  // "none of the runners that can do this work serves the tier" is exact.
+  const capable = meetsNeeds.filter(
+    (candidate) => !refused.tier.has(candidate.runnerKey),
+  );
+
+  if (capable.length === 0) return 'no-runner-serves-the-model-tier';
   if (
     capable.every((candidate) =>
-      candidate.reason.includes('preview runner load-bearing'),
+      refused.loadBearingPreview.has(candidate.runnerKey),
     )
   ) {
     return 'only-preview-runners-and-no-ga-fallback';
   }
-  if (quotaExhaustedCapable.size > 0) return 'capable-runners-quota-exhausted';
+  if (refused.quotaExhausted.size > 0) return 'capable-runners-quota-exhausted';
   return 'capable-runners-are-at-capacity';
 }
 

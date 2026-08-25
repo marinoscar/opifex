@@ -186,6 +186,13 @@ describe('DispatchService', () => {
     it('drops a runner that registered no capability manifest', async () => {
       // There is nothing to match needs against. Defaulting one would route
       // real work on invented facts.
+      //
+      // `no-runners-registered` here is correct, not a case of #296's
+      // `all-runners-disabled` split: `loadPool` drops this row before the
+      // policy ever sees it, so `decideDispatch`'s pool really is empty —
+      // this is a row the DATABASE has, not a runner the POLICY's pool has.
+      // Do not "fix" this to `all-runners-disabled` without first checking
+      // whether `loadPool` still drops rows with no manifest.
       prisma.runner.findMany.mockResolvedValue([
         runnerRow({ capability: null }),
       ]);
