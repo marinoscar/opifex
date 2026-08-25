@@ -15,6 +15,7 @@ import type {
   RunHandle,
   Runner,
   RunnerCapabilities,
+  RunnerQuotaObservation,
   RunnerRunStatus,
   RunPollResult,
   WorkOrderSpec,
@@ -156,6 +157,7 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
       workspaceDir: workspace.dir,
       process: null as unknown as SupervisedProcess,
       pending: [],
+      pendingQuota: [],
       linesObserved: 0,
       lastOutputAt: null,
       settled: false,
@@ -234,7 +236,14 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
     }
 
     const events = run.pending.splice(0);
-    return { status: this.statusOf(run), events };
+    const quota = run.pendingQuota.splice(0);
+    // Spread conditionally: absent means UNKNOWN on this seam, and a runner
+    // that saw no window this tick has not observed that there is none.
+    return {
+      status: this.statusOf(run),
+      events,
+      ...(quota.length > 0 ? { quota } : {}),
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -464,6 +473,9 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
     for (const [identity, run] of this.runs) {
       if (run.finishedAt === null) continue;
       if (run.pending.length > 0) continue;
+      // Same reasoning one line up: an unpolled window sighting is the only
+      // record of a reset instant nothing else observed.
+      if (run.pendingQuota.length > 0) continue;
       if (run.finishedAt.getTime() > cutoff) continue;
       this.runs.delete(identity);
     }
@@ -510,6 +522,16 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
     switch (mapping.kind) {
       case 'event':
         run.pending.push(mapping.event);
+        // A `run.blocked` from a rate limit carries both facts at once: the
+        // run is parked, and the window it is parked on rolls at a known time.
+        if (mapping.quota) run.pendingQuota.push(mapping.quota);
+        return;
+
+      case 'quota':
+        // A window sighting with no event — the CLI reporting rate-limit
+        // status on a turn that was served. Recorded, not emitted: nothing
+        // happened to the RUN.
+        run.pendingQuota.push(mapping.quota);
         return;
 
       case 'result':
@@ -824,6 +846,15 @@ interface LocalRun {
   workspaceDir: string;
   process: SupervisedProcess;
   pending: RunEventPayload[];
+  /**
+   * Quota windows seen since the last poll (#231).
+   *
+   * Drained like `pending` rather than accumulated: the control plane collapses
+   * repeat sightings of one window into a single row with a count, so
+   * re-delivering is harmless but pointless, and holding them would grow with
+   * the run.
+   */
+  pendingQuota: RunnerQuotaObservation[];
   linesObserved: number;
   lastOutputAt: Date | null;
   settled: boolean;

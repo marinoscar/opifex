@@ -154,6 +154,18 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
           'dispatch policy, out of date by one poll interval.',
       },
       {
+        name: 'Quota',
+        description:
+          'The agent subscription’s rate-limit windows, and Opifex’s own consumption through ' +
+          'them (#231). Separate from Cockpit because it is a fact about the SUBSCRIPTION rather ' +
+          'than about a run: a window outlives every run that observed it. No burn fraction is ' +
+          'reported and `burnFraction` is permanently null — VISION §10’s metric 6 needs a ' +
+          'window capacity, no vendor publishes one, and the consumption that would be its ' +
+          'numerator is only Opifex’s share of a subscription VISION §11 shares with the ' +
+          'operator’s own interactive use. What is reported is first-hand: the vendor’s reset ' +
+          'instant and the vendor’s own ordinal pressure reading.',
+      },
+      {
         name: 'Supervisor',
         description:
           'The AI supervisor decision log (VISION §7), observe-only. Proposals the supervisor ' +

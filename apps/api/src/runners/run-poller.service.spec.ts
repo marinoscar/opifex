@@ -1,6 +1,7 @@
 import { EscalationsService } from '../escalations/escalations.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import type { QuotaService } from '../quota/quota.service';
 import {
   RunEventsService,
   type IngestResult,
@@ -37,6 +38,7 @@ describe('RunPollerService', () => {
   const RUN_ID = '3f1d9d3e-6b1a-4f8e-9c2a-8b5a4f0c1d22';
 
   let ingest: jest.Mock<Promise<IngestResult>, [string, unknown[]]>;
+  let recordQuota: jest.Mock;
   let findMany: jest.Mock;
   let updateMany: jest.Mock;
   let poller: RunPollerService;
@@ -107,9 +109,14 @@ describe('RunPollerService', () => {
     } as unknown as ConfigService;
 
     raiseFrom = jest.fn().mockResolvedValue({ raised: 1, deduplicated: 0 });
-    poller = new RunPollerService(prisma, runEvents, config, {
-      raiseFrom,
-    } as unknown as EscalationsService);
+    recordQuota = jest.fn().mockResolvedValue(1);
+    poller = new RunPollerService(
+      prisma,
+      runEvents,
+      config,
+      { raiseFrom } as unknown as EscalationsService,
+      { record: recordQuota } as unknown as QuotaService,
+    );
   });
 
   /** A runner whose poll result the test dictates outright. */
@@ -227,6 +234,61 @@ describe('RunPollerService', () => {
       await poller.tick();
 
       expect(updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('quota windows (#231)', () => {
+    const observation = {
+      runnerKey: 'claude-code-local',
+      kind: 'five_hour' as const,
+      resetsAt: new Date('2026-08-25T15:00:00.000Z'),
+      pressure: 'allowed' as const,
+      observedAt: new Date('2026-08-25T12:00:00.000Z'),
+    };
+
+    it('carries what a runner saw into the quota ledger', async () => {
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'running', events: [], quota: [observation] }),
+        handle(),
+      );
+
+      const result = await poller.tick();
+
+      expect(recordQuota).toHaveBeenCalledWith([observation]);
+      expect(result.quotaWindows).toBe(1);
+    });
+
+    it('records the window even for a run this process has lost', async () => {
+      // A window is a fact about the SUBSCRIPTION, not about the run — it
+      // stays true when the run it arrived with is gone, which is the same
+      // argument that puts ingestion before the `unknown` check.
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'unknown', events: [], quota: [observation] }),
+        handle(),
+      );
+
+      const result = await poller.tick();
+
+      expect(recordQuota).toHaveBeenCalledTimes(1);
+      expect(result.lost).toBe(1);
+    });
+
+    it('asks for nothing when a runner reported no window', async () => {
+      // The common case, and the one #231 must not disturb: a fleet whose
+      // runners say nothing about rate limits keeps working, with quota
+      // unknown throughout.
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'running', events: [] }),
+        handle(),
+      );
+
+      const result = await poller.tick();
+
+      expect(recordQuota).not.toHaveBeenCalled();
+      expect(result.quotaWindows).toBe(0);
     });
   });
 

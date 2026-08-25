@@ -159,10 +159,84 @@ describe('stream-json mapper', () => {
       // as a block would park a run that is working perfectly — and nothing
       // in the system notices a WRONGLY parked run, whereas a missed block
       // eventually surfaces as silence.
-      expect(map(RATE_LIMIT_ALLOWED_LINE)).toEqual({
-        kind: 'drop',
-        reason: 'rate limit status is allowed',
+      expect(map(RATE_LIMIT_ALLOWED_LINE).kind).not.toBe('event');
+    });
+
+    it('keeps the window off a served line instead of dropping it (#231)', () => {
+      // This used to be a `drop`, and dropping it meant the reset instant was
+      // only ever learnt by hitting the wall. A served line carries the same
+      // `resetsAt` a refused one does, which is the whole basis of #113's
+      // reset-window-aware scheduling.
+      const mapping = map(RATE_LIMIT_ALLOWED_LINE);
+      expect(mapping.kind).toBe('quota');
+      if (mapping.kind !== 'quota') throw new Error('expected a quota mapping');
+
+      expect(mapping.quota).toEqual({
+        runnerKey: CONTEXT.runnerKey,
+        kind: 'five_hour',
+        resetsAt: new Date(1787438400 * 1000),
+        pressure: 'allowed',
+        observedAt: CONTEXT.receivedAt,
       });
+    });
+
+    it('reads allowed_warning as pressure, which arrives before any park', () => {
+      // The only signal in the system that precedes exhaustion. #89's
+      // supervisor gate stands down on observed parks today; this is what
+      // could let it stand down earlier.
+      const warned = {
+        ...RATE_LIMIT_ALLOWED_LINE,
+        rate_limit_info: {
+          ...RATE_LIMIT_ALLOWED_LINE.rate_limit_info,
+          status: 'allowed_warning',
+        },
+      };
+      const mapping = map(warned);
+      if (mapping.kind !== 'quota') throw new Error('expected a quota mapping');
+      expect(mapping.quota.pressure).toBe('warning');
+    });
+
+    it('records an unrecognized status as unknown, keeping the window', () => {
+      // Version skew, not a stalled run — ADR-0006's posture. The reset
+      // instant on that line is as good as any other line's; only the
+      // pressure reading is lost.
+      const strange = {
+        ...RATE_LIMIT_ALLOWED_LINE,
+        rate_limit_info: {
+          ...RATE_LIMIT_ALLOWED_LINE.rate_limit_info,
+          status: 'throttled_soft',
+        },
+      };
+      const mapping = map(strange);
+      if (mapping.kind !== 'quota') throw new Error('expected a quota mapping');
+      expect(mapping.quota.pressure).toBe('unknown');
+    });
+
+    it('drops an undated served line, since a window has no other identity', () => {
+      // `resetsAt` IS the window's identity. Without one there is nothing for
+      // the sighting to be a sighting OF, and an invented instant would put a
+      // row in front of an operator naming a moment that means nothing.
+      const undated = {
+        ...RATE_LIMIT_ALLOWED_LINE,
+        rate_limit_info: {
+          ...RATE_LIMIT_ALLOWED_LINE.rate_limit_info,
+          resetsAt: 0,
+        },
+      };
+      expect(map(undated)).toEqual({
+        kind: 'drop',
+        reason: 'rate limit status is allowed and undated',
+      });
+    });
+
+    it('carries the window alongside the block on a refused line', () => {
+      // One line says both things at once: the run is parked, and the window
+      // it is parked on rolls at a known time. The event is about the RUN, the
+      // observation is about the SUBSCRIPTION, which outlives it.
+      const mapping = map(RATE_LIMIT_BLOCKED_LINE);
+      if (mapping.kind !== 'event') throw new Error('expected an event');
+      expect(mapping.quota?.pressure).toBe('exhausted');
+      expect(mapping.quota?.resetsAt).toEqual(new Date(1787438400 * 1000));
     });
 
     it('maps a real limit to blocked with a dated reset', () => {
