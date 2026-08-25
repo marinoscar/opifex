@@ -16,7 +16,11 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
+      # The changelog check at the end of this job walks base..head, so the
+      # shallow default clone is not enough — `base` would not exist locally.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -46,6 +50,33 @@ jobs:
       # a generated file are only one source of truth while something checks it.
       - name: Check generated contract types are current
         run: npm run contracts:check
+
+      # #312: CHANGELOG.md went ninety-four commits stale because the only
+      # thing holding the convention up was "remember to update it". This
+      # fails a pull request whose commits include a `feat` or a `fix` and
+      # whose diff does not touch CHANGELOG.md. There is no opt-out: the
+      # commit type IS the opt-out, since a change that warrants no changelog
+      # line is a `chore`, `refactor`, `test` or `docs` by definition. See the
+      # header of scripts/check-changelog.mjs.
+      #
+      # A step in this job rather than a new one, deliberately. A new job
+      # becomes a new required status check, which needs a branch-protection
+      # change to take effect — a step in a job that is already required takes
+      # effect on merge. `check:prisma-fields` in the Typecheck job below is
+      # the precedent. This lives in Lint because it needs neither a generated
+      # Prisma client nor a build, and it is the same documentation-hygiene
+      # family as `prettier --check`.
+      #
+      # Pull requests only. This workflow also runs on pushes to `main`, where
+      # there is no pull request, no base/head pair, and (since `main` is
+      # merge-commit-only) a first-parent walk that would see nothing but
+      # merges anyway.
+      - name: Check the changelog
+        if: github.event_name == 'pull_request'
+        run: >
+          node scripts/check-changelog.mjs
+          --base ${{ github.event.pull_request.base.sha }}
+          --head ${{ github.event.pull_request.head.sha }}
 
   openapi:
     name: OpenAPI
