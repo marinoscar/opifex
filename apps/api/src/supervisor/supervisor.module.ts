@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -6,7 +7,9 @@ import { DailyBriefService } from './brief/daily-brief.service';
 import { DailyBriefTask } from './brief/daily-brief.task';
 import { DecisionLogController } from './decision-log/decision-log.controller';
 import { DecisionLogService } from './decision-log/decision-log.service';
+import { createSupervisorModel } from './invocation/anthropic-supervisor-model';
 import { SupervisorService } from './invocation/supervisor.service';
+import { SUPERVISOR_MODEL } from './invocation/supervisor-model.port';
 import {
   SUPERVISOR_PROPOSERS,
   type SupervisorProposer,
@@ -50,6 +53,33 @@ import { TrustDigestSource } from './brief/trust-digest.source';
     TrustDigestSource,
     DailyBriefService,
     DailyBriefTask,
+    {
+      // The model adapter (ADR-0015, #230), or nothing.
+      //
+      // A factory rather than a class provider because the binding is
+      // CONDITIONAL: `createSupervisorModel` returns the Anthropic adapter
+      // when `SUPERVISOR_MODEL_API_KEY` is set and `undefined` when it is not.
+      // With `undefined`, `@Optional() @Inject(SUPERVISOR_MODEL)` in
+      // `SupervisorService` leaves `model` undefined and the existing
+      // `?? new UnavailableSupervisorModel()` fallback still wins — still
+      // refusing, still recording that refusal in the decision log. The
+      // unconfigured path is unchanged by design; a missing key must not crash
+      // the API at boot and must not quietly disable the supervisor either.
+      //
+      // Why the decision is made HERE, at instantiation, rather than by
+      // building the providers array conditionally at module-definition time:
+      // this decorator is evaluated while `app.module.ts` is being imported,
+      // which is before `ConfigModule.forRoot()` has loaded a `.env` file. A
+      // `process.env` read up there would be right in a container and wrong on
+      // a developer's machine.
+      //
+      // It binds one adapter, and nothing outside `invocation/` names a model
+      // provider — the seam stays vendor-neutral even though today there is
+      // exactly one vendor behind it.
+      provide: SUPERVISOR_MODEL,
+      inject: [ConfigService],
+      useFactory: createSupervisorModel,
+    },
     {
       // The proposer list, assembled here so the set is readable in one place
       // rather than discovered by scanning for a decorator. Every entry
