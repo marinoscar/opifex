@@ -124,6 +124,90 @@ describe('GitHubReadService', () => {
     });
   });
 
+  describe('ignoredLabels (#297)', () => {
+    it('classifies a genuinely bad routing label', async () => {
+      http.paginate.mockResolvedValue(
+        page([
+          rawIssue({ labels: [label('tier:small'), label('tier:large')] }),
+        ]),
+      );
+
+      const { issues } = await service.listIssues(REPO);
+
+      expect(issues[0].ignoredLabels).toEqual([
+        {
+          prefix: 'tier:',
+          kind: 'contradiction',
+          labels: ['tier:large', 'tier:small'],
+        },
+      ]);
+    });
+
+    it('is empty for a clean issue', async () => {
+      http.paginate.mockResolvedValue(
+        page([rawIssue({ labels: [label('bug'), label('factory:ready')] })]),
+      );
+
+      const { issues } = await service.listIssues(REPO);
+
+      expect(issues[0].ignoredLabels).toEqual([]);
+    });
+
+    it('does NOT classify its own factory/label-ignored mirror label as input', async () => {
+      // The VISION §3.3 loop guard: `ignoredLabels` must be computed from
+      // VISIBLE labels only. If a previous tick's `factory/label-ignored`
+      // mirror label were fed into `classifyIgnoredLabels` alongside the
+      // still-unfixed `tier:` pair, the finding must be exactly the one
+      // finding the tier pair produces on its own — not one that counts, or
+      // is shaped by, Opifex's own output label.
+      http.paginate.mockResolvedValue(
+        page([
+          rawIssue({
+            labels: [
+              label('tier:small'),
+              label('tier:large'),
+              label('factory/label-ignored'),
+            ],
+          }),
+        ]),
+      );
+
+      const withMirror = (await service.listIssues(REPO)).issues[0]
+        .ignoredLabels;
+
+      http.paginate.mockResolvedValue(
+        page([
+          rawIssue({ labels: [label('tier:small'), label('tier:large')] }),
+        ]),
+      );
+      const withoutMirror = (await service.listIssues(REPO)).issues[0]
+        .ignoredLabels;
+
+      expect(withMirror).toEqual(withoutMirror);
+      expect(withMirror).toEqual([
+        {
+          prefix: 'tier:',
+          kind: 'contradiction',
+          labels: ['tier:large', 'tier:small'],
+        },
+      ]);
+    });
+
+    it('is empty when the only label present is its own mirror label', async () => {
+      // A clean issue that has already been reported on and fixed still
+      // carries `factory/label-ignored` until the diff engine removes it.
+      // While it is present, it must never itself be classified as an
+      // ignored declaration — that would be Opifex reporting on itself.
+      http.paginate.mockResolvedValue(
+        page([rawIssue({ labels: [label('factory/label-ignored')] })]),
+      );
+
+      const { issues } = await service.listIssues(REPO);
+
+      expect(issues[0].ignoredLabels).toEqual([]);
+    });
+  });
+
   describe('listIssues', () => {
     it('excludes pull requests, which GitHub returns as issues', async () => {
       // The quirk that has bitten every integration written against this
