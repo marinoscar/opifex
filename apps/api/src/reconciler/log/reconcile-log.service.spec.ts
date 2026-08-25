@@ -219,6 +219,100 @@ describe('ReconcileLogService', () => {
     });
   });
 
+  /**
+   * #320, at the boundary the controller actually returns: `toResponse`
+   * (private, exercised only through `history`/`findById`) must carry
+   * `executionFailures` through untouched. `null` and `[]` are not
+   * interchangeable here either — a mapper that defaulted a missing/null
+   * column to `[]`, the way `projections`/`actions` legitimately do below,
+   * would destroy the exact distinction #320 exists to persist. Both
+   * `ReconcilerController` methods return these objects with no
+   * transformation of their own, so what reaches the HTTP body is exactly
+   * what is asserted here.
+   */
+  describe('executionFailures reaching the response (toResponse)', () => {
+    function dbRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'tick-uuid',
+        startedAt: new Date('2026-08-21T10:00:00Z'),
+        finishedAt: new Date('2026-08-21T10:00:01Z'),
+        durationMs: 1000,
+        outcome: 'completed',
+        repositoriesObserved: 1,
+        actionsComputed: 1,
+        actionsExecuted: 1,
+        allFromCache: false,
+        rateLimitRemaining: 4999,
+        failures: [],
+        executionFailures: null,
+        projections: null,
+        actions: null,
+        ...overrides,
+      };
+    }
+
+    it('history: passes a null executionFailures column through as null', async () => {
+      prisma.reconcileTick.findMany.mockResolvedValue([
+        dbRow({ executionFailures: null }),
+      ]);
+
+      const { items } = await service.history({ page: 1, pageSize: 25 });
+
+      expect(items[0]!.executionFailures).toBeNull();
+    });
+
+    it('history: passes an empty-array executionFailures column through as [], not null', async () => {
+      prisma.reconcileTick.findMany.mockResolvedValue([
+        dbRow({ executionFailures: [] }),
+      ]);
+
+      const { items } = await service.history({ page: 1, pageSize: 25 });
+
+      expect(items[0]!.executionFailures).toEqual([]);
+      expect(items[0]!.executionFailures).not.toBeNull();
+    });
+
+    it('history: passes a populated executionFailures column through untouched', async () => {
+      const populated = [
+        {
+          source: 'mirror-label',
+          actionType: 'add-mirror-label',
+          repository: 'acme/app',
+          issueNumber: 312,
+          reason: 'label action carried no label',
+        },
+      ];
+      prisma.reconcileTick.findMany.mockResolvedValue([
+        dbRow({ executionFailures: populated }),
+      ]);
+
+      const { items } = await service.history({ page: 1, pageSize: 25 });
+
+      expect(items[0]!.executionFailures).toEqual(populated);
+    });
+
+    it('findById: passes a null executionFailures column through as null', async () => {
+      prisma.reconcileTick.findUnique.mockResolvedValue(
+        dbRow({ executionFailures: null }),
+      );
+
+      const tick = await service.findById('tick-uuid');
+
+      expect(tick?.executionFailures).toBeNull();
+    });
+
+    it('findById: passes an empty-array executionFailures column through as [], not null', async () => {
+      prisma.reconcileTick.findUnique.mockResolvedValue(
+        dbRow({ executionFailures: [] }),
+      );
+
+      const tick = await service.findById('tick-uuid');
+
+      expect(tick?.executionFailures).toEqual([]);
+      expect(tick?.executionFailures).not.toBeNull();
+    });
+  });
+
   describe('history', () => {
     it('returns newest first', async () => {
       await service.history({ page: 1, pageSize: 25 });
