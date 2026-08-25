@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -37,25 +37,27 @@ export function ProfileSettings({
   const [customImageUrl, setCustomImageUrl] = useState(
     profile.customImageUrl || '',
   );
-  const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Reset form when profile changes
-  useEffect(() => {
+  // Reset the form when a fresh `profile` object arrives (a save landing, a
+  // refetch). Adjusted during render rather than in an effect, so the fields
+  // never paint the previous profile for a frame after the swap
+  // (react-hooks/set-state-in-effect).
+  const [seededFrom, setSeededFrom] = useState(profile);
+  if (profile !== seededFrom) {
+    setSeededFrom(profile);
     setDisplayName(profile.displayName || '');
     setUseProviderImage(profile.useProviderImage);
     setCustomImageUrl(profile.customImageUrl || '');
-    setHasChanges(false);
-  }, [profile]);
+  }
 
-  // Track changes
-  useEffect(() => {
-    const changed =
-      displayName !== (profile.displayName || '') ||
-      useProviderImage !== profile.useProviderImage ||
-      customImageUrl !== (profile.customImageUrl || '');
-    setHasChanges(changed);
-  }, [displayName, useProviderImage, customImageUrl, profile]);
+  // Derived, not stored: "the form differs from the saved profile" is a
+  // function of state React already has. Holding it in a fourth `useState`
+  // that an effect wrote meant the Save button was enabled one commit late.
+  const hasChanges =
+    displayName !== (profile.displayName || '') ||
+    useProviderImage !== profile.useProviderImage ||
+    customImageUrl !== (profile.customImageUrl || '');
 
   const handleSave = async () => {
     setIsSaving(true);

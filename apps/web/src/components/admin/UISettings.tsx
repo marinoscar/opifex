@@ -5,7 +5,7 @@ import {
   FormControlLabel,
   Button,
 } from '@mui/material';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 interface UISettingsProps {
   settings: {
@@ -21,9 +21,16 @@ export function UISettings({ settings, onSave, disabled }: UISettingsProps) {
   );
   const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
+  // Re-seed the draft when a fresh `settings` object arrives (a save landing,
+  // a refetch). Adjusted during render rather than in an effect: React
+  // re-renders with the new draft before committing, so the switch never
+  // paints the stale position for a frame, and there is no second commit.
+  // See "You might not need an Effect" — react-hooks/set-state-in-effect.
+  const [seededFrom, setSeededFrom] = useState(settings);
+  if (settings !== seededFrom) {
+    setSeededFrom(settings);
     setAllowThemeOverride(settings.allowUserThemeOverride);
-  }, [settings]);
+  }
 
   const hasChanges = allowThemeOverride !== settings.allowUserThemeOverride;
 

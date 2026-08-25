@@ -25,7 +25,7 @@
  * `min(1)`), so this is a second line, not the only one.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Alert,
   Button,
@@ -56,20 +56,30 @@ export function ManageRolesDialog({
   onClose,
   onSave,
 }: ManageRolesDialogProps) {
-  const [selected, setSelected] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   // Re-seed whenever a different user is opened. Keyed on the user ID (a
   // scalar), never on the user OBJECT: `useUsers` replaces every row object on
   // each refetch, and keying on identity would wipe an in-progress edit on the
   // next poll.
   const userId = user?.id ?? null;
   const rolesKey = user?.roles.join(',') ?? '';
-  useEffect(() => {
+  const seedKey = `${userId ?? ''}:${rolesKey}`;
+
+  const [selected, setSelected] = useState<string[]>(() =>
+    rolesKey ? rolesKey.split(',') : [],
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Adjusted during render rather than in an effect: the checkbox list is
+  // seeded from props, so an effect meant one commit showing the PREVIOUS
+  // user's roles before the right ones replaced them
+  // (react-hooks/set-state-in-effect).
+  const [seededFrom, setSeededFrom] = useState(seedKey);
+  if (seedKey !== seededFrom) {
+    setSeededFrom(seedKey);
     setSelected(rolesKey ? rolesKey.split(',') : []);
     setError(null);
-  }, [userId, rolesKey]);
+  }
 
   const toggle = (role: string) => {
     setSelected((current) =>

@@ -22,7 +22,7 @@
  * ignored and never clobbers in-flight typing.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { IconButton, InputAdornment, TextField } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
@@ -68,8 +68,17 @@ export function QuickSearchField<Row>({
   // identity changes every render. Reading it through a ref keeps it out of the
   // timer effect's deps — otherwise a parent re-render would restart the
   // debounce window and, under a busy parent, the term would never be emitted.
+  //
+  // Synced on COMMIT rather than during render (react-hooks/refs): a render
+  // React discards would otherwise publish its `onChange` to the timer that
+  // the render still on screen is about to fire. `useLayoutEffect` with no
+  // dependency array runs after every commit and before the passive effect
+  // that arms the timer, so the emission still uses the current render's
+  // callback.
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  useLayoutEffect(() => {
+    onChangeRef.current = onChange;
+  });
 
   // An externally-driven change (URL restore, programmatic clear) re-seeds the
   // input. The echo of our own emission does not.

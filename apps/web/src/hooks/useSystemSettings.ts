@@ -46,7 +46,15 @@ export function useSystemSettings(): UseSystemSettingsReturn {
     }
   }, [isMounted]);
 
+  // Load on mount. `fetchSettings` flips `isLoading` and clears `error` before
+  // its first `await`, which the rule reads as a synchronous setState in an
+  // effect. On mount both writes are no-ops — `isLoading` already starts
+  // `true` and `error` already `null` — so there is no cascading render to
+  // remove, while deferring them past the await would delay the spinner on
+  // every manual refetch instead. The fix this rule really wants is a
+  // fetch-on-render data layer, which is not something a hook can adopt alone.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount, see above
     fetchSettings();
   }, [fetchSettings]);
 

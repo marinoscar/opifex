@@ -17,12 +17,16 @@ import globals from 'globals';
  * `eslint-plugin-react-hooks` v7 ships the React Compiler rule family
  * (`set-state-in-effect`, `refs`, `immutability`,
  * `preserve-manual-memoization`) in its recommended set, and those found 18
- * genuine issues here. Every one of them is a behavioural refactor of a
- * component, not a lint fix, so enabling them now would mean either a red
- * build or a large unreviewed change riding along with a tooling PR. They are
- * tracked in #185, which also asks whether any of the set-state-in-effect
- * findings explains #169. `rules-of-hooks` and `exhaustive-deps` — the classic
- * contract, and the two that catch real bugs cheaply — are on and blocking.
+ * genuine issues here. Every one of them was a behavioural refactor of a
+ * component, not a lint fix, so enabling them all at once would have meant
+ * either a red build or a large unreviewed change riding along with a tooling
+ * PR. #185 turned them on one at a time, smallest blast radius first, each
+ * with its findings cleared in the same commit; all four are now on.
+ *
+ * The rest of that recommended set (`static-components`, `use-memo`,
+ * `purity`, `set-state-in-render`, `globals`, `error-boundaries`, …) is still
+ * unnamed here and therefore off, which is why the rules stay listed one by
+ * one rather than spread from the preset.
  */
 export default tseslint.config(
   {
@@ -48,6 +52,28 @@ export default tseslint.config(
 
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'error',
+
+      // React Compiler family (#185), enabled one rule at a time.
+      // Zero findings in the app: the memoization we write by hand is already
+      // the memoization the compiler would keep. On, so it stays that way.
+      'react-hooks/preserve-manual-memoization': 'error',
+
+      // One finding, in ActivateDevicePage: an effect that called a handler
+      // declared below it. Fixed by declaring the handler first (#185).
+      'react-hooks/immutability': 'error',
+
+      // Five findings, all the same shape: a "latest value" ref assigned
+      // during render. Each now syncs in a layout effect instead, so a render
+      // React discards cannot publish its props to the tree that stayed on
+      // screen (#185).
+      'react-hooks/refs': 'error',
+
+      // Thirteen findings. Seven were state derived from props through an
+      // effect and are now adjusted during render; six are "fetch on mount",
+      // where the fetch clears its own error state before its first await —
+      // those carry an inline suppression with the reason at the call site
+      // (#185).
+      'react-hooks/set-state-in-effect': 'error',
 
       // The automatic JSX runtime (React 19 + Vite) means importing React to
       // use JSX is exactly the unused import the rest of this config flags.
