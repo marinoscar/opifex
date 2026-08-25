@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 
 import { HardSpendCeilingService } from '../budget/hard-spend-ceiling';
@@ -305,7 +306,15 @@ export interface DispatchWorkOrderInput {
  * from anything. The park did not happen; it has no length. See the
  * `AvoidedPark` model comment in `schema.prisma`.
  */
-function avoidedParkRow(decision: DispatchDecision, occurredAt: Date) {
+// Annotated, and that annotation is load-bearing. Prisma's `data:` slot is a
+// generic inference target, so nothing inside it is excess-property-checked
+// (#159) — a typo here would compile and then be REJECTED at runtime by the
+// whole `run.create`. A concrete return type is a non-generic position, which
+// is where TypeScript does check.
+function avoidedParkRow(
+  decision: DispatchDecision,
+  occurredAt: Date,
+): Pick<Prisma.RunUncheckedCreateInput, 'avoidedPark'> {
   const park = decision.avoidedPark;
   if (!park) return {};
 

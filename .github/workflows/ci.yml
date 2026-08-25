@@ -101,6 +101,14 @@ jobs:
       - name: Typecheck api
         run: npm -w apps/api run typecheck
 
+      # `tsc` cannot see inside a Prisma `data:`/`where:` literal — it is a
+      # generic inference target, so an invented field name compiles and is
+      # then rejected at runtime with `Unknown argument` (#159). This checks
+      # every such literal against the generated input types. It runs here
+      # because this job already has the generated client.
+      - name: Check Prisma field names
+        run: npm -w apps/api run check:prisma-fields
+
   test-api:
     name: Test API
     runs-on: ubuntu-latest

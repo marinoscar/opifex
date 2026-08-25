@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { toNumberOrNull } from '../common/decimal';
 import { PrismaService } from '../prisma/prisma.service';
@@ -188,11 +189,17 @@ export class RunEventsService {
    * that is already instrumented has the real parent context, and overwriting
    * it would sever its spans from ours.
    */
+  /**
+   * The return type is annotated on purpose. `createMany`'s `data:` is a
+   * generic inference target, so its contents are not excess-property-checked
+   * (#159); a concrete return type is a non-generic position, and there the
+   * compiler does check every key against the model.
+   */
   private toRow(
     runId: string,
     event: RunEventPayload,
     workOrderIdentity: string,
-  ) {
+  ): Prisma.RunEventCreateManyInput {
     const toolSignature = event.tool
       ? `${event.tool.name}:${event.tool.signature}`
       : null;
