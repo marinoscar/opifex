@@ -2,6 +2,7 @@ import {
   INPUT_LABELS,
   MIRROR_LABELS,
 } from '../../github/labels/factory-labels';
+import { describeIgnoredLabels } from '../../github/labels/ignored-labels';
 import type { NormalizedIssue } from '../../github/read/github-read.types';
 import {
   assertNoMirrorLabelsObserved,
@@ -25,6 +26,7 @@ function issue(overrides: Partial<NormalizedIssue> = {}): NormalizedIssue {
     labels: [],
     inputLabels: [],
     unknownInputLabels: [],
+    ignoredLabels: [],
     observedMirrorLabels: [],
     isPullRequest: false,
     url: 'https://github.com/acme/app/issues/312',
@@ -769,6 +771,86 @@ describe('projectDesiredState', () => {
       );
 
       expect(withMirror).toEqual(withoutMirror);
+    });
+  });
+
+  describe('ignored labels are reported, orthogonally (#297)', () => {
+    // A finding `classifyIgnoredLabels` would produce for a contradictory
+    // `tier:` pair. Built directly rather than through the classifier, since
+    // this suite is about what the PROJECTION does with a finding, not about
+    // classification itself (that is `ignored-labels.spec.ts`).
+    const TIER_CONTRADICTION = [
+      {
+        prefix: 'tier:' as const,
+        kind: 'contradiction' as const,
+        labels: ['tier:large', 'tier:small'],
+      },
+    ];
+
+    it('appends factory/label-ignored without altering a dispatch intent', () => {
+      const result = project(
+        observed({
+          issues: [
+            issue({
+              inputLabels: [INPUT_LABELS.READY],
+              ignoredLabels: TIER_CONTRADICTION,
+            }),
+          ],
+        }),
+      );
+
+      expect(result.intent).toBe('dispatch');
+      expect(result.desiredMirrorLabels.sort()).toEqual(
+        [MIRROR_LABELS.DISPATCHED, MIRROR_LABELS.LABEL_IGNORED].sort(),
+      );
+    });
+
+    it('appends it to a hold, which otherwise desires no mirror labels at all', () => {
+      // Proof that the append is unconditional rather than piggy-backing on
+      // an intent branch that already produces a mirror label: HOLD's own
+      // branch desires none, so the only way `LABEL_IGNORED` gets here is the
+      // separate `reportIgnoredLabels` step running after it.
+      const result = project(
+        observed({
+          issues: [
+            issue({
+              inputLabels: [INPUT_LABELS.HOLD],
+              ignoredLabels: TIER_CONTRADICTION,
+            }),
+          ],
+        }),
+      );
+
+      expect(result.intent).toBe('hold');
+      expect(result.desiredMirrorLabels).toEqual([MIRROR_LABELS.LABEL_IGNORED]);
+    });
+
+    it('carries the finding in the reason', () => {
+      const result = project(
+        observed({
+          issues: [
+            issue({
+              inputLabels: [INPUT_LABELS.READY],
+              ignoredLabels: TIER_CONTRADICTION,
+            }),
+          ],
+        }),
+      );
+
+      expect(result.reason).toContain(
+        describeIgnoredLabels(TIER_CONTRADICTION),
+      );
+    });
+
+    it('leaves reason and desiredMirrorLabels untouched for a clean issue', () => {
+      const clean = project(
+        observed({
+          issues: [issue({ inputLabels: [INPUT_LABELS.READY] })],
+        }),
+      );
+
+      expect(clean.desiredMirrorLabels).toEqual([MIRROR_LABELS.DISPATCHED]);
+      expect(clean.reason).not.toContain('ignored labels:');
     });
   });
 

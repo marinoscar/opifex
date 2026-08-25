@@ -304,6 +304,7 @@ describe('ReconcilerService', () => {
             labels: [],
             inputLabels: ['factory:ready'],
             unknownInputLabels: [],
+            ignoredLabels: [],
             isPullRequest: false,
             url: 'u',
             createdAt: new Date(),
@@ -340,6 +341,7 @@ describe('ReconcilerService', () => {
             labels: [],
             inputLabels: ['factory:clear-quarantine'],
             unknownInputLabels: [],
+            ignoredLabels: [],
             isPullRequest: false,
             url: 'u',
             createdAt: new Date(),
@@ -387,6 +389,7 @@ describe('ReconcilerService', () => {
             labels: [],
             inputLabels: [],
             unknownInputLabels: [],
+            ignoredLabels: [],
             // A stale mirror label, which is a state that DOES produce an
             // action even with no input labels set.
             observedMirrorLabels: ['factory/dispatched'],
@@ -511,6 +514,7 @@ describe('ReconcilerService', () => {
       labels: [],
       inputLabels: ['factory:ready'],
       unknownInputLabels: [],
+      ignoredLabels: [],
       observedMirrorLabels: [],
     };
 

@@ -44,6 +44,7 @@ function ghIssue(number: number, inputLabels: string[]) {
     })),
     inputLabels,
     unknownInputLabels: [],
+    ignoredLabels: [],
     observedMirrorLabels: [],
     isPullRequest: false,
     url: `https://github.com/acme/app/issues/${number}`,

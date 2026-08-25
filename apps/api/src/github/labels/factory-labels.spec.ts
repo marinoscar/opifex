@@ -39,10 +39,16 @@ describe('factory labels', () => {
     ]);
   });
 
-  it('recognises exactly the four mirror labels', () => {
+  it('recognises exactly the five mirror labels', () => {
+    // Four report what the factory is DOING and are mutually exclusive;
+    // `factory/label-ignored` (#297) reports something about the INPUT and can
+    // accompany any of them. Pinned rather than derived, because the point of
+    // the list is that a fifth could not be added quietly — and the fifth was
+    // added on purpose, with `.github/labels.yml` updated in the same change.
     expect([...ALL_MIRROR_LABELS].sort()).toEqual([
       'factory/blocked',
       'factory/dispatched',
+      'factory/label-ignored',
       'factory/quarantine',
       'factory/review',
     ]);

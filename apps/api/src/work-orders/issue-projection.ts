@@ -1,4 +1,8 @@
 import { INPUT_LABELS } from '../github/labels/factory-labels';
+import {
+  MODEL_TIER_BY_LABEL,
+  NEEDS_BY_LABEL,
+} from '../github/labels/ignored-labels';
 import type { NormalizedIssue } from '../github/read/github-read.types';
 import {
   ISSUE_TEMPLATES,
@@ -258,18 +262,14 @@ function readDecisionRefs(body: string): string[] {
  * would put a model in the one place the design says never to.
  *
  * An unrecognised `needs:` label is IGNORED here rather than rejected —
- * `NormalizedIssue.unknownInputLabels` already surfaces typos, and failing to
- * create a work order because of a label the author mistyped would be a
- * disproportionate response to a spelling mistake.
+ * failing to create a work order because of a label the author mistyped would
+ * be a disproportionate response to a spelling mistake. Ignored is no longer
+ * SILENT, though: the read boundary classifies the same label as an
+ * `IgnoredLabel` and the reconciler puts `factory/label-ignored` on the issue
+ * (#297). The vocabulary lives in `ignored-labels.ts` so that the classifier
+ * and this reader cannot disagree about what counts as recognised.
  */
-export const NEEDS_LABEL_PREFIX = 'needs:';
-
-const NEEDS_BY_LABEL: Record<string, RunnerNeed> = {
-  'needs:full-streaming': 'full-streaming',
-  'needs:cost-reporting': 'cost-reporting',
-  'needs:structured-rate-limits': 'structured-rate-limits',
-  'needs:own-infrastructure': 'own-infrastructure',
-};
+export { NEEDS_LABEL_PREFIX } from '../github/labels/ignored-labels';
 
 function readNeeds(issue: NormalizedIssue): RunnerNeed[] {
   const needs = issue.labels
@@ -325,14 +325,18 @@ function readNeeds(issue: NormalizedIssue): RunnerNeed[] {
  *
  * An unrecognised tier (`tier:huge`) is ignored, matching `readNeeds`: a
  * spelling mistake should not cost a work order.
+ *
+ * ## #297: the silence, not the rule
+ *
+ * Both the typo and the contradiction are now REPORTED, through the
+ * `factory/label-ignored` mirror label. Nothing above changes — the work order
+ * still carries no tier and still gets the runner's default — but the operator
+ * who believed they set a tier can now see that they did not. The mirror
+ * channel was chosen over a comment precisely because of the argument in the
+ * paragraph above: the spec-feedback path dedupes on the body digest, and a
+ * label is state rather than an event, so it has no such trap.
  */
-export const TIER_LABEL_PREFIX = 'tier:';
-
-const MODEL_TIER_BY_LABEL: Record<string, ModelTier> = {
-  'tier:small': 'small',
-  'tier:standard': 'standard',
-  'tier:large': 'large',
-};
+export { TIER_LABEL_PREFIX } from '../github/labels/ignored-labels';
 
 function readModelTier(issue: NormalizedIssue): ModelTier | undefined {
   const declared = new Set(

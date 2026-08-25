@@ -21,6 +21,7 @@ function issue(overrides: Partial<NormalizedIssue> = {}): NormalizedIssue {
     labels: [],
     inputLabels: [],
     unknownInputLabels: [],
+    ignoredLabels: [],
     observedMirrorLabels: [],
     isPullRequest: false,
     url: 'https://github.com/acme/app/issues/312',
@@ -292,6 +293,102 @@ describe('computeActions', () => {
       );
 
       expect(actions).toEqual([]);
+    });
+  });
+
+  describe('the label-ignored round trip has no dedupe key (#297)', () => {
+    // The design has none: the projection recomputes `ignoredLabels` from
+    // the issue's current labels every tick, and the diff engine's ordinary
+    // add-what's-missing / remove-what's-stale rule does the rest. This
+    // property — an issue's OWN label state IS the dedupe — is what would
+    // break first if anyone bolted a "have we already reported this" flag
+    // onto the projection: dedupe state and observed reality would then be
+    // two separate things that can disagree.
+    const TIER_CONTRADICTION = [
+      {
+        prefix: 'tier:' as const,
+        kind: 'contradiction' as const,
+        labels: ['tier:large', 'tier:small'],
+      },
+    ];
+
+    it('a bad label with no report yet produces an add', () => {
+      const actions = actionsFor(
+        observed({
+          issues: [issue({ ignoredLabels: TIER_CONTRADICTION })],
+        }),
+      );
+
+      expect(actions.find((a) => a.type === 'add-mirror-label')?.label).toBe(
+        MIRROR_LABELS.LABEL_IGNORED,
+      );
+    });
+
+    it('correcting the label produces a remove of the stale report', () => {
+      // The operator fixed the labels: GitHub no longer reports the
+      // contradiction, so `ignoredLabels` is empty this tick. The mirror
+      // label from the PREVIOUS tick is still sitting on the issue.
+      const actions = actionsFor(
+        observed({
+          issues: [
+            issue({
+              ignoredLabels: [],
+              observedMirrorLabels: [MIRROR_LABELS.LABEL_IGNORED],
+            }),
+          ],
+        }),
+      );
+
+      expect(actions.find((a) => a.type === 'remove-mirror-label')?.label).toBe(
+        MIRROR_LABELS.LABEL_IGNORED,
+      );
+    });
+
+    it('steady state — the bad label persists and is already reported — produces no action', () => {
+      // This is the case a dedupe key would get wrong in the OTHER
+      // direction: a naive "only report once" flag would see the report is
+      // already recorded and stop desiring the label, which the diff engine
+      // would then read as "no longer wanted" and REMOVE — deleting the
+      // report while the operator's mistake is still sitting right there.
+      const actions = actionsFor(
+        observed({
+          issues: [
+            issue({
+              ignoredLabels: TIER_CONTRADICTION,
+              observedMirrorLabels: [MIRROR_LABELS.LABEL_IGNORED],
+            }),
+          ],
+        }),
+      );
+
+      expect(actions).toEqual([]);
+    });
+
+    it('making the same mistake again after a fix reports it again', () => {
+      // No table row survives the fix, so there is nothing to consult that
+      // would remember "already told them" — the label state is fixed,
+      // observed clean, then breaks again, and each tick answers only from
+      // what is on the issue right now.
+      const fixed = actionsFor(
+        observed({
+          issues: [
+            issue({
+              ignoredLabels: [],
+              observedMirrorLabels: [MIRROR_LABELS.LABEL_IGNORED],
+            }),
+          ],
+        }),
+      );
+      expect(types(fixed)).toEqual(['remove-mirror-label']);
+
+      const brokenAgain = actionsFor(
+        observed({
+          issues: [issue({ ignoredLabels: TIER_CONTRADICTION })],
+        }),
+      );
+      expect(
+        brokenAgain.find((a) => a.type === 'add-mirror-label')?.label,
+      ).toBe(MIRROR_LABELS.LABEL_IGNORED);
     });
   });
 
