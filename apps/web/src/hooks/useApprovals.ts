@@ -59,6 +59,9 @@ export function useApprovalQueue(
 
   return usePolledResource<ApprovalListItem[]>({
     fetcher,
+    // The status filter lives here: without it, picking `parked` would leave
+    // the pending rows on screen until the next 30s tick (#246).
+    fetcherKey: [status, repositoryId],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     enabled: true,
   });
@@ -75,6 +78,10 @@ export function useApproval(
 
   return usePolledResource<ApprovalDetail>({
     fetcher,
+    // No route carries a `key`, so a detail -> detail navigation re-renders
+    // rather than remounting. Without the id here, that would show the old
+    // approval under the new URL.
+    fetcherKey: [id],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     // An id that has not arrived yet must not fire a request for `/approvals/`.
     enabled: Boolean(id),

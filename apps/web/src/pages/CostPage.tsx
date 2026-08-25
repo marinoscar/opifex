@@ -71,6 +71,8 @@ export default function CostPage() {
   );
   const { data, error } = usePolledResource<CostSummary>({
     fetcher,
+    // The window selector: changing it must re-read, not wait out the tick.
+    fetcherKey: [days],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     enabled: true,
   });

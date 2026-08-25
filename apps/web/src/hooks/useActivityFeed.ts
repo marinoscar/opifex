@@ -46,6 +46,7 @@ export function useActivityFeed(
 
   const resource = usePolledResource<RunEvent[]>({
     fetcher,
+    fetcherKey: [limit],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     enabled: endpoint.available,
   });

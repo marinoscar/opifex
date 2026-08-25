@@ -50,6 +50,7 @@ export function useRunsNeedingAttention(
 
   const resource = usePolledResource<RunSummary[]>({
     fetcher,
+    fetcherKey: [limit],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     enabled: endpoint.available,
     // The default array test is exactly right here, and the resulting `empty`

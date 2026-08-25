@@ -25,6 +25,8 @@ export function useRun(id: string): UsePolledResourceResult<RunDetail> {
 
   return usePolledResource<RunDetail>({
     fetcher,
+    // No route carries a `key`, so run -> run is a re-render, not a remount.
+    fetcherKey: [id],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     // An id that has not arrived yet must not fire a request for `/runs/`.
     enabled: Boolean(id),
@@ -43,6 +45,7 @@ export function useRunEvents(
 
   return usePolledResource<RunEventsPage>({
     fetcher,
+    fetcherKey: [id, page, pageSize],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     enabled: Boolean(id),
   });
