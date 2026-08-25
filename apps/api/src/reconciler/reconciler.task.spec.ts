@@ -4,12 +4,14 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { DeadTimeService } from '../dead-time/dead-time.service';
 import { DispatchQueueService } from '../dispatch/dispatch-queue.service';
 import { EscalationsService } from '../escalations/escalations.service';
+import { GitHubWriteService } from '../github/write/github-write.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
 import { EscalationDispatcher } from '../notifications/escalation-dispatcher.service';
 import { RepositoriesService } from '../repositories/repositories.service';
 import { WatchdogService } from '../watchdog/watchdog.service';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
 import { SpecFeedbackExecutor } from './execute/spec-feedback.executor';
+import { ReconcileLogService } from './log/reconcile-log.service';
 import { ReconcilerService } from './reconciler.service';
 import { ReconcilerTask } from './reconciler.task';
 import type { TickRecord, TickRejection } from './reconciler.types';
@@ -36,6 +38,7 @@ describe('ReconcilerTask', () => {
 
   function tickRecord(overrides: Partial<TickRecord> = {}): TickRecord {
     return {
+      id: 'tick-uuid',
       startedAt: new Date('2026-08-23T02:00:00Z'),
       finishedAt: new Date('2026-08-23T02:00:01Z'),
       durationMs: 1000,
@@ -58,6 +61,9 @@ describe('ReconcilerTask', () => {
   let drain: jest.Mock;
   let listObserved: jest.Mock;
   let recordDeadTime: jest.Mock;
+  let recordWritesIssued: jest.Mock;
+  /** Stands in for the write service's monotonic issued-writes counter. */
+  let writesIssued: number;
   let task: ReconcilerTask;
 
   /** `runOnce` is private and is what the interval calls. */
@@ -93,6 +99,8 @@ describe('ReconcilerTask', () => {
       quarantined: 0,
       open: 0,
     });
+    recordWritesIssued = jest.fn().mockResolvedValue(undefined);
+    writesIssued = 0;
 
     task = new ReconcilerTask(
       { get: () => undefined } as unknown as ConfigService,
@@ -143,6 +151,12 @@ describe('ReconcilerTask', () => {
           abandoned: 0,
         }),
       } as unknown as EscalationDispatcher,
+      {
+        get writesIssued() {
+          return writesIssued;
+        },
+      } as unknown as GitHubWriteService,
+      { recordWritesIssued } as unknown as ReconcileLogService,
     );
   });
 
@@ -239,6 +253,111 @@ describe('ReconcilerTask', () => {
 
       expect(report).toHaveBeenCalled();
       expect(execute).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * #317: `actionsExecuted` was a literal `0`, so the observation week's one
+   * safety check — "it must be 0 on every tick, all week" — could not fail.
+   *
+   * What is worth pinning here is that the figure comes from the WRITE
+   * SERVICE and not from the executors. A sum of what the executors return
+   * counts mirror labels and spec-feedback comments and silently misses the
+   * authorization record and branch a dispatch writes, which is the same bug
+   * one layer down.
+   */
+  describe('recording what the tick executed', () => {
+    it('records nothing when no write left the process', async () => {
+      // The observation-week case, which is every tick of it: the kill switch
+      // is off, so the counter never moves and the row's opening 0 is already
+      // right. No second database write at all.
+      await run();
+
+      expect(recordWritesIssued).not.toHaveBeenCalled();
+    });
+
+    it('records the delta over the write service, against the tick row', async () => {
+      execute.mockImplementation(async () => {
+        writesIssued += 2;
+        return { executed: 2, noops: 0, suppressed: 0, failures: [] };
+      });
+      listObserved.mockResolvedValue([
+        { owner: 'acme', name: 'app', mirrorLabelsEnabled: true },
+      ]);
+      tick.mockResolvedValue(
+        tickRecord({
+          actions: [
+            {
+              type: 'add-mirror-label',
+              repository: 'acme/app',
+              issueNumber: 312,
+            },
+          ] as unknown as TickRecord['actions'],
+        }),
+      );
+
+      await run();
+
+      expect(recordWritesIssued).toHaveBeenCalledWith('tick-uuid', 2);
+    });
+
+    it('counts writes made by DISPATCH, which returns no tally of its own', async () => {
+      // The reason this is a delta over the choke point rather than a sum of
+      // executor return values. A dispatch posts an authorization record and
+      // creates a branch; nothing hands those counts back to the task.
+      drain.mockImplementation(async () => {
+        writesIssued += 2;
+        return {
+          dispatched: 1,
+          stillQueued: 0,
+          observed: 0,
+          failed: 0,
+          unrebuildable: 0,
+          repositoriesDisabled: 0,
+        };
+      });
+
+      await run();
+
+      expect(recordWritesIssued).toHaveBeenCalledWith('tick-uuid', 2);
+    });
+
+    it('records the writes even when the tick returned early', async () => {
+      // A quiet tick returns before the label executor. Writes issued by
+      // dispatch or spec feedback happened anyway, and must still be logged.
+      tick.mockResolvedValue(tickRecord({ actions: [] }));
+      drain.mockImplementation(async () => {
+        writesIssued += 1;
+        return {
+          dispatched: 1,
+          stillQueued: 0,
+          observed: 0,
+          failed: 0,
+          unrebuildable: 0,
+          repositoriesDisabled: 0,
+        };
+      });
+
+      await run();
+
+      expect(recordWritesIssued).toHaveBeenCalledWith('tick-uuid', 1);
+    });
+
+    it('does not stop the tick when recording the count throws', async () => {
+      drain.mockImplementation(async () => {
+        writesIssued += 1;
+        return {
+          dispatched: 1,
+          stillQueued: 0,
+          observed: 0,
+          failed: 0,
+          unrebuildable: 0,
+          repositoriesDisabled: 0,
+        };
+      });
+      recordWritesIssued.mockRejectedValue(new Error('disk full'));
+
+      await expect(run()).resolves.toBeUndefined();
     });
   });
 });

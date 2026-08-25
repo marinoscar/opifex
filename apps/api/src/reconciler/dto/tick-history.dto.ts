@@ -26,7 +26,16 @@ export const tickRecordSchema = z.object({
   outcome: z.string(),
   repositoriesObserved: z.number().int(),
   actionsComputed: z.number().int(),
-  /** Zero for the whole observation week, by design (VISION §12). */
+  /**
+   * GitHub writes this tick issued — everything that got past
+   * `GITHUB_WRITES_ENABLED` and was sent, whether it changed anything, found
+   * the state already correct, or failed.
+   *
+   * Zero for the whole observation week because the kill switch is off, and
+   * that is the point: a non-zero value there means something is enabled that
+   * should not be. NOT a subset of `actionsComputed` — a spec-feedback comment
+   * and a dispatch branch are writes with no computed action behind them.
+   */
   actionsExecuted: z.number().int(),
   allFromCache: z.boolean(),
   rateLimitRemaining: z.number().int().nullable(),

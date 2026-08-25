@@ -42,7 +42,8 @@ describe('ReconcileLogService', () => {
   beforeEach(() => {
     prisma = {
       reconcileTick: {
-        create: jest.fn().mockResolvedValue({}),
+        create: jest.fn().mockResolvedValue({ id: 'tick-uuid' }),
+        update: jest.fn().mockResolvedValue({}),
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue(null),
         count: jest.fn().mockResolvedValue(0),
@@ -111,13 +112,18 @@ describe('ReconcileLogService', () => {
       expect(data.failures).toEqual([]);
     });
 
-    it('records actionsExecuted as 0, rather than leaving it implied', async () => {
-      // So "we were read-only for a week" is checkable against the log rather
-      // than against memory.
+    it('opens the row at 0 writes, because none have been issued yet', async () => {
+      // Not a claim that none will be: the row is created BEFORE the task runs
+      // the executors, so zero is what is true at this instant. The real
+      // figure is stamped on afterwards by `recordWritesIssued` (#317).
       await service.record(tick({ actions: [ACTION] }));
 
       const [{ data }] = prisma.reconcileTick.create.mock.calls[0];
       expect(data.actionsExecuted).toBe(0);
+    });
+
+    it('returns the row id, so the task can come back and record the writes', async () => {
+      await expect(service.record(tick())).resolves.toBe('tick-uuid');
     });
 
     it('serialises Dates inside the payload into readable ISO strings', async () => {
@@ -133,7 +139,28 @@ describe('ReconcileLogService', () => {
       // of whoever reviews the week.
       prisma.reconcileTick.create.mockRejectedValue(new Error('disk full'));
 
-      await expect(service.record(tick())).resolves.toBeUndefined();
+      await expect(service.record(tick())).resolves.toBeNull();
+    });
+  });
+
+  describe('recordWritesIssued', () => {
+    it('writes the count onto the tick the writes belong to', async () => {
+      await service.recordWritesIssued('tick-uuid', 3);
+
+      expect(prisma.reconcileTick.update).toHaveBeenCalledWith({
+        where: { id: 'tick-uuid' },
+        data: { actionsExecuted: 3 },
+      });
+    });
+
+    it('does NOT throw when the update fails', async () => {
+      // Same reason `record` does not: a storage failure must not be reported
+      // as a reconciler fault. It is logged as an under-report instead.
+      prisma.reconcileTick.update.mockRejectedValue(new Error('disk full'));
+
+      await expect(
+        service.recordWritesIssued('tick-uuid', 3),
+      ).resolves.toBeUndefined();
     });
   });
 

@@ -38,9 +38,14 @@ export class ReconcilerController {
   @ApiOperation({
     summary: 'List reconciler ticks, newest first',
     description:
-      'The reconciliation log. During the VISION §12 observation week this is the record of what ' +
-      'the reconciler WOULD have done — actionsExecuted is 0 throughout. Use actionsOnly=true to ' +
-      'skip the quiet ticks, which are the great majority.',
+      'The reconciliation log. actionsExecuted counts the GitHub writes a tick issued — mirror ' +
+      'labels, spec-feedback comments, authorization records, dispatch branches — including ' +
+      'writes that changed nothing and writes that failed, since both reached GitHub. It is 0 ' +
+      'whenever GITHUB_WRITES_ENABLED is off, which is the whole of the VISION §12 observation ' +
+      'week: there this log is the record of what the reconciler WOULD have done, and a non-zero ' +
+      'value means something is enabled that should not be. It is not a subset of ' +
+      'actionsComputed. Use actionsOnly=true to skip the quiet ticks, which are the great ' +
+      'majority.',
   })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
