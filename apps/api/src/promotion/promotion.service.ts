@@ -29,10 +29,12 @@ import {
   DEMOTION_RATE,
   LADDER_CLASSES,
   LIFETIME_WINDOW_DAYS,
+  MANUAL_HOLD_DAYS,
   MIN_SAMPLE,
   PROMOTION_RATE,
   REGRESSION_WINDOW_DAYS,
   type ClassEvidence,
+  type ManualHold,
   emptyEvidence,
   evaluateLadder,
   pct,
@@ -80,7 +82,17 @@ export interface PromotionStateView {
   changedAt: string;
   changeReason: PromotionChangeReason | null;
   changeDetail: string | null;
+  /**
+   * Who made the last rung change, when a human made it. Null for every
+   * automatic one — see the column doc on `PromotionState.changedById`.
+   */
+  changedById: string | null;
   evidence: ClassEvidence | null;
+  /**
+   * When a hand-demotion's hold lifts (#244). Null if the class has never been
+   * held; a PAST instant if it was held and the hold has lapsed.
+   */
+  manualHoldUntil: string | null;
   promotedAt: string | null;
   demotedAt: string | null;
   demotionCount: number;
@@ -107,6 +119,13 @@ export const LADDER_THRESHOLDS = Object.freeze({
   demotionMinSample: DEMOTION_MIN_SAMPLE,
   /** The window `recent*` counts are measured over. */
   regressionWindowDays: REGRESSION_WINDOW_DAYS,
+  /**
+   * How long a hand-demotion holds a class off the promoted rung (#244).
+   *
+   * Equal to `regressionWindowDays` by construction rather than by
+   * coincidence — see `MANUAL_HOLD_DAYS`.
+   */
+  manualHoldDays: MANUAL_HOLD_DAYS,
 });
 
 /** A ladder state with the live evidence and the policy layer's sentence. */
@@ -157,14 +176,30 @@ export interface ManualDemotionResult {
   /** Whether any transport accepted the notification. False is a real outcome. */
   notified: boolean;
   /**
+   * When the hold on this class lifts, and the ladder may promote it again
+   * (#244).
+   *
+   * Always `now + MANUAL_HOLD_DAYS` on a successful demotion. It is here
+   * because an expiring hold that did not state its term would be the
+   * "silently re-promotes on a timer" failure wearing a different hat: the
+   * operator must be able to see how long their judgement stands.
+   */
+  manualHoldUntil: string;
+  /**
    * Whether the next evaluation would put the class straight back on the
    * promoted rung, because its lifetime record still clears the bar.
    *
-   * TRUE is the common case for a class demoted while its numbers are good.
-   * The suspended grants stay suspended either way, so nothing resumes running
-   * — but the rung will read `promoted` again, and an operator not told that
-   * would reasonably conclude the demotion had been undone or had never
-   * worked.
+   * NOW ALWAYS FALSE on a successful demotion, and that is the fix (#244)
+   * rather than the field becoming decorative. It used to be TRUE in the
+   * common case — a class demoted while its numbers were good was re-promoted
+   * within the hour, because nothing recorded a human hold-down — and #101's
+   * UI existed to warn about it. `manualHoldUntil` is that record, so the
+   * ladder no longer can, and this field stops being a standing caveat and
+   * starts being an answer.
+   *
+   * It is still COMPUTED, from `evaluateLadder` with the freshly placed hold,
+   * rather than hardcoded to false. The day someone changes the rule order and
+   * the hold stops blocking promotion, this reports it instead of lying.
    */
   rungMayBeRestoredByLadder: boolean;
 }
@@ -371,7 +406,14 @@ export class PromotionService {
       const current: PromotionRung = existing?.rung ?? 'observe';
       const eligible = isAutonomyEligible(item.actionClass);
 
-      const verdict = evaluateLadder(current, item, eligible, paused);
+      // The one impure part of the decision, made HERE and passed in settled.
+      // `evaluateLadder` has no clock and must not grow one; whether a hold
+      // has lapsed is a question about `now`, so it is answered at the edge —
+      // the same split `decideDispatch` makes with an already-resolved quota
+      // position.
+      const hold = activeHold(existing, now);
+
+      const verdict = evaluateLadder(current, item, eligible, paused, hold);
 
       const promoted =
         verdict.action === 'promote'
@@ -595,7 +637,7 @@ export class PromotionService {
       readAt: now.toISOString(),
       thresholds: LADDER_THRESHOLDS,
       states: states.map((state) =>
-        this.withRequirement(state, byClass.get(state.actionClass)),
+        this.withRequirement(state, byClass.get(state.actionClass), now),
       ),
     };
   }
@@ -639,6 +681,7 @@ export class PromotionService {
     return this.withRequirement(
       state,
       evidence.find((item) => item.actionClass === actionClass),
+      now,
     );
   }
 
@@ -657,6 +700,7 @@ export class PromotionService {
   private withRequirement(
     state: PromotionStateView,
     live: ClassEvidence | undefined,
+    now: Date,
   ): PromotionLadderStateView {
     // A class with no evidence entry at all — possible only for a row whose
     // class has left the registry between the two reads. Zeros, not a throw:
@@ -671,6 +715,19 @@ export class PromotionService {
       state.eligible,
       // Never the real pause. See `ladder`.
       false,
+      // The REAL hold, unlike the pause, and resolved against the same `now`
+      // the snapshot is stamped with. A read that ignored it would tell an
+      // operator `wouldChange: 'promote'` about a class the next evaluation
+      // will not promote — which is the #244 warning inverted into a lie.
+      activeHold(
+        {
+          manualHoldUntil: state.manualHoldUntil
+            ? new Date(state.manualHoldUntil)
+            : null,
+          changedById: state.changedById,
+        },
+        now,
+      ),
     );
 
     return {
@@ -720,16 +777,49 @@ export class PromotionService {
    * human tapping "always approve this class" can. That is the part that stops
    * unattended execution and it does not expire.
    *
-   * The RUNG is weaker, and callers must be told so rather than left to
-   * discover it. `evaluateLadder` rule 4 promotes any non-promoted class whose
-   * lifetime record still clears the bar, so a class demoted by hand while its
-   * numbers are good is re-promoted by the next hourly evaluation — back to
-   * `promoted`, with `changeReason: promoted_on_evidence`, as though the
-   * operator had never acted. There is no column recording a human hold-down,
-   * so this cannot be suppressed here without inventing state; the honest
-   * response is to REPORT it, which is what `rungMayBeRestoredByLadder` is
-   * for. Re-promotion restores ELIGIBILITY only — the suspended grants stay
-   * suspended, so nothing resumes running.
+   * ## The rung now holds too, for a stated fortnight (#244)
+   *
+   * It used to not. `evaluateLadder`'s promotion rule gates on "not currently
+   * promoted", which is exactly where a hand-demotion leaves a class, so the
+   * next hourly evaluation put it straight back with `changeReason:
+   * promoted_on_evidence` — as though the operator had never acted, typically
+   * within the hour. `rungMayBeRestoredByLadder` reported that honestly, and
+   * #101 surfaced the warning, but telling an operator the button half-worked
+   * is a mitigation rather than a fix: it teaches them the control is
+   * decorative.
+   *
+   * `manualHoldUntil` is the missing state. It is set to `now +
+   * MANUAL_HOLD_DAYS`, and while it stands the ladder may not promote the
+   * class.
+   *
+   * ## Why the hold EXPIRES, and how it is undone before then
+   *
+   * The full argument is on `MANUAL_HOLD_DAYS`; the short version is that a
+   * permanent hold is VISION §7 rung 4's failure running backwards — a
+   * judgement call made in one afternoon that becomes permanent policy because
+   * nothing ever revisits it. The term is the regression window, so the class
+   * is re-judged on evidence that no longer contains whatever the operator was
+   * reacting to; if they were right it is now a visible regression and the
+   * ladder demotes on the numbers, and if they were wrong the class promotes,
+   * which is correct. Demoting again places a fresh hold. Silence lets this
+   * one lapse — the mirror of VISION §8's "renewal is one tap; silence
+   * revokes".
+   *
+   * There is deliberately NO "lift the hold" endpoint, and the reason is that
+   * it would buy the operator nothing they cannot already have. The rung is a
+   * MEASUREMENT, not a capability: what actually makes a class run unattended
+   * is a trust grant, and a grant comes from a human tapping "always approve
+   * this class", not from the ladder — a non-promoted class can hold one (see
+   * the 409 below). So an operator who changes their mind two days later mints
+   * a grant, which restores the thing that matters, carries VISION §8's four
+   * attributes, and records a human extending trust. Lifting the hold would
+   * only relabel the rung twelve days early, and an endpoint that turns "the
+   * ladder may promote this now" into a button is a promote endpoint in
+   * everything but name — the judgement call `PromotionController` explains at
+   * length why this module does not have.
+   *
+   * Re-promotion, whenever it comes, restores ELIGIBILITY only. The suspended
+   * grants stay suspended and nothing resumes running.
    */
   async demoteManually(
     actionClass: string,
@@ -770,11 +860,17 @@ export class PromotionService {
         (item) => item.actionClass === actionClass,
       ) ?? emptyEvidence(actionClass);
 
-    // The actor's id travels in the sentence because `promotion_states` has no
-    // actor column. That is a real gap in VISION §5's provenance graph and is
-    // named here rather than papered over: prose is not an edge, and the day
-    // someone wants "which demotions were human" as a query this will have to
-    // become a column.
+    // The hold, decided here and nowhere else. `MANUAL_HOLD_DAYS` owns the
+    // number; the database has no default for it, so there is exactly one
+    // place the term can be read or changed.
+    const manualHoldUntil = new Date(
+      now.getTime() + MANUAL_HOLD_DAYS * 24 * 60 * 60 * 1000,
+    );
+
+    // The actor is now a COLUMN (`changedById`, #244), and this sentence is
+    // the human-readable rendering of it rather than the record itself. It
+    // used to be the record, which was the gap: VISION §5's provenance graph
+    // cannot answer "which demotions were a human's" from a substring.
     const detail =
       `Demoted by hand at ${now.toISOString()} by user ${actorUserId}, ` +
       'not by the ladder. The record was ' +
@@ -783,7 +879,11 @@ export class PromotionService {
       `in the last ${REGRESSION_WINDOW_DAYS} days (${pct(evidence.recentRate)}) — ` +
       'which is to say the ladder itself had not concluded anything was ' +
       'wrong.' +
-      (note ? ` Reason given: ${note}` : ' No reason was given.');
+      (note ? ` Reason given: ${note}` : ' No reason was given.') +
+      ` The ladder may not promote this class back until ` +
+      `${manualHoldUntil.toISOString()} (${MANUAL_HOLD_DAYS} days, the regression ` +
+      'window), after which it is judged on the numbers again; demoting it ' +
+      'again places a fresh hold.';
 
     await this.persist(
       evidence,
@@ -792,6 +892,7 @@ export class PromotionService {
       detail,
       now,
       existing,
+      { changedById: actorUserId, manualHoldUntil },
     );
 
     const grantsSuspended = await this.suspendGrantsFor(
@@ -813,21 +914,26 @@ export class PromotionService {
         `${grantsSuspended} active grant(s) suspended. ${detail}`,
     );
 
-    // Asked of the POST-demotion rung, so it answers the question the operator
-    // actually has: given where this class now stands, will the next
-    // evaluation put it back? Computed by the policy layer, not by a copy of
-    // rule 4 living here.
+    // Asked of the POST-demotion rung AND the hold just placed, so it answers
+    // the question the operator actually has: given where this class now
+    // stands, will the next evaluation put it back? Computed by the policy
+    // layer, not by a copy of the promotion rule living here — which is what
+    // makes it a check on the fix rather than a restatement of it. It should
+    // now be false, and if a later refactor drops rule 4 it will say true
+    // again instead of quietly lying.
     const next = evaluateLadder(
       rungFor(false, evidence),
       evidence,
       isAutonomyEligible(actionClass),
       false,
+      activeHold({ manualHoldUntil, changedById: actorUserId }, now),
     );
 
     return {
       state: await this.ladderStateFor(actionClass, now),
       grantsSuspended,
       notified,
+      manualHoldUntil: manualHoldUntil.toISOString(),
       rungMayBeRestoredByLadder: next.action === 'promote',
     };
   }
@@ -843,6 +949,11 @@ export class PromotionService {
     detail: string,
     now: Date,
     existing: { demotionCount: number } | undefined,
+    /**
+     * The human behind this rung change, and the hold they placed. Both absent
+     * for every automatic transition (#244).
+     */
+    human: { changedById: string; manualHoldUntil: Date } | null = null,
   ): Promise<void> {
     const demoting = reason !== null && reason.startsWith('demoted');
     const promoting = reason === 'promoted_on_evidence';
@@ -852,6 +963,16 @@ export class PromotionService {
       changedAt: now,
       changeReason: reason,
       changeDetail: detail,
+      // Written on EVERY change, null included. Leaving it out on the
+      // automatic ones would let a demoter's id survive as the actor of the
+      // re-promotion that eventually overrides them — an edge in the
+      // provenance graph pointing at a person who did not make that decision,
+      // which is worse than the prose it replaced.
+      changedById: human?.changedById ?? null,
+      // Only ever SET, never cleared. A lapsed hold's timestamp is the record
+      // that a human held this class down and until when; blanking it on
+      // re-promotion would erase the demotion's only durable trace on the row.
+      ...(human ? { manualHoldUntil: human.manualHoldUntil } : {}),
       // Frozen here and never recomputed. #99 requires promotion and demotion
       // to "state their evidence", and evidence refreshed on read describes a
       // different factory from the one the decision was made in — the same
@@ -1001,7 +1122,11 @@ export class PromotionService {
       ifIgnored:
         'Nothing gets worse — this is the safe direction. Work of this class queues for ' +
         'your approval instead of proceeding on its own, so the cost of ignoring this is ' +
-        'delay, not damage. The class re-promotes on its own once its record recovers.',
+        'delay, not damage. ' +
+        (reason === 'demoted_manually'
+          ? `The ladder may not promote it back for ${MANUAL_HOLD_DAYS} days; after that ` +
+            'it is judged on the numbers again, and demoting it again places a fresh hold.'
+          : 'The class re-promotes on its own once its record recovers.'),
       url: this.deepLink(),
       kind: 'demotion',
       raisedAt: now.toISOString(),
@@ -1089,10 +1214,34 @@ export interface PromotionStateRow {
   changedAt: Date;
   changeReason: PromotionChangeReason | null;
   changeDetail: string | null;
+  changedById?: string | null;
   evidenceJson: unknown;
+  manualHoldUntil?: Date | null;
   promotedAt: Date | null;
   demotedAt: Date | null;
   demotionCount: number;
+}
+
+/**
+ * The one place the clock decides whether a hold still stands.
+ *
+ * Strictly in the future: a `manualHoldUntil` equal to `now` has lapsed. The
+ * column is never cleared, so a past value is the normal resting state of a
+ * class that was once held — "held down by a human until the 8th" stays true
+ * and readable long after the ladder has taken over again, which is the whole
+ * reason the expiry is a timestamp rather than a flag somebody has to unset.
+ *
+ * `changedById` is the actor: while a hold stands nothing writes a rung
+ * change (rule 4 returns a hold, and the target rung equals the current one),
+ * so the last rung change is the hand-demotion that placed it.
+ */
+export function activeHold(
+  row: Pick<PromotionStateRow, 'manualHoldUntil' | 'changedById'> | undefined,
+  now: Date,
+): ManualHold | null {
+  const until = row?.manualHoldUntil ?? null;
+  if (!until || until.getTime() <= now.getTime()) return null;
+  return { heldUntil: until, heldById: row?.changedById ?? null };
 }
 
 function toView(row: PromotionStateRow): PromotionStateView {
@@ -1103,11 +1252,13 @@ function toView(row: PromotionStateRow): PromotionStateView {
     changedAt: row.changedAt.toISOString(),
     changeReason: row.changeReason,
     changeDetail: row.changeDetail,
+    changedById: row.changedById ?? null,
     // Cast rather than re-validated. It is our own frozen write, and a
     // validator here would be a second definition of `ClassEvidence` that
     // could reject a historical row written before a field was added — which
     // would lose the evidence the row exists to preserve.
     evidence: (row.evidenceJson as ClassEvidence | null) ?? null,
+    manualHoldUntil: row.manualHoldUntil?.toISOString() ?? null,
     promotedAt: row.promotedAt?.toISOString() ?? null,
     demotedAt: row.demotedAt?.toISOString() ?? null,
     demotionCount: row.demotionCount,
@@ -1127,7 +1278,9 @@ function defaultView(actionClass: string): PromotionStateView {
     changeDetail:
       'The promotion ladder has not evaluated this class yet. No evidence, no rung ' +
       'change, nothing promoted.',
+    changedById: null,
     evidence: null,
+    manualHoldUntil: null,
     promotedAt: null,
     demotedAt: null,
     demotionCount: 0,
@@ -1145,6 +1298,7 @@ function message(error: unknown): string {
 export {
   DEMOTION_MIN_SAMPLE,
   DEMOTION_RATE,
+  MANUAL_HOLD_DAYS,
   MIN_SAMPLE,
   PROMOTION_RATE,
   REGRESSION_WINDOW_DAYS,

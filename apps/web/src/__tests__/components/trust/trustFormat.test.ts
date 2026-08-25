@@ -9,8 +9,10 @@ import {
   formatApprovalRate,
   formatDuration,
   formatFailureRate,
+  formatHoldEnd,
   formatPercent,
   formatUsd,
+  isHoldStanding,
   needsAttention,
 } from '../../../components/trust/trustFormat';
 import type { TrustGrant } from '../../../types/trust';
@@ -208,5 +210,62 @@ describe('formatPercent and formatUsd', () => {
     expect(formatUsd(25)).toBe('$25.00');
     expect(formatUsd(0)).toBe('$0.00');
     expect(formatUsd(2.5)).toBe('$2.50');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The manual-demotion hold (#244)
+// ---------------------------------------------------------------------------
+
+describe('formatHoldEnd', () => {
+  it('renders an ABSOLUTE instant, not a countdown', () => {
+    const iso = '2026-09-06T10:30:00.000Z';
+    // Locale-dependent by design, so the assertion is about SHAPE: the date
+    // this class comes back is something an operator puts in their week, and
+    // "in 14d" — the reflex, and what `describeExpiry` correctly does for a
+    // grant — cannot be checked against the instant the API states beside it.
+    const text = formatHoldEnd(iso);
+
+    expect(text).not.toMatch(/Invalid Date/);
+    expect(text).not.toMatch(/^in /);
+    expect(text).not.toMatch(/ago/);
+    expect(text).toContain('2026');
+    expect(text).toBe(
+      new Date(iso).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }),
+    );
+  });
+
+  it('returns an unparseable value RAW rather than "Invalid Date"', () => {
+    // The operator can still act on the string, and nobody can mistake it for
+    // a real instant.
+    expect(formatHoldEnd('not-a-date')).toBe('not-a-date');
+  });
+});
+
+describe('isHoldStanding', () => {
+  const now = new Date('2026-09-01T00:00:00.000Z');
+
+  it('is true only while the end date is still ahead', () => {
+    expect(isHoldStanding('2026-09-06T00:00:00.000Z', now)).toBe(true);
+  });
+
+  it('is false once the hold has lapsed, because the column is never cleared', () => {
+    // A PAST `manualHoldUntil` is the ordinary resting state of any class that
+    // was ever hand-demoted. Treating non-null as "held" would put a standing
+    // hold on a class the ladder has had back for a month.
+    expect(isHoldStanding('2026-08-01T00:00:00.000Z', now)).toBe(false);
+  });
+
+  it('treats an end date of exactly now as lapsed, matching the API', () => {
+    expect(isHoldStanding(now.toISOString(), now)).toBe(false);
+  });
+
+  it('is false for a class that was never held, or for a broken value', () => {
+    expect(isHoldStanding(null, now)).toBe(false);
+    expect(isHoldStanding(undefined, now)).toBe(false);
+    expect(isHoldStanding('not-a-date', now)).toBe(false);
   });
 });

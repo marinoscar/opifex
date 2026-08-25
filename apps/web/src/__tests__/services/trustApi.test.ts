@@ -216,6 +216,7 @@ describe('the promotion endpoints', () => {
             demotionRate: 0.5,
             demotionMinSample: 5,
             regressionWindowDays: 14,
+            manualHoldDays: 14,
           },
           states: [],
         }),
@@ -255,7 +256,8 @@ describe('the promotion endpoints', () => {
             state: {},
             grantsSuspended: 0,
             notified: false,
-            rungMayBeRestoredByLadder: true,
+            manualHoldUntil: '2026-09-06T10:00:00.000Z',
+            rungMayBeRestoredByLadder: false,
           });
         },
       ),

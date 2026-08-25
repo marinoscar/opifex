@@ -8,6 +8,7 @@
  */
 
 import { Alert, AlertTitle, Box } from '@mui/material';
+import { formatHoldEnd } from './trustFormat';
 import type {
   ClassDemotionOutcome,
   GrantRevocationOutcome,
@@ -81,15 +82,21 @@ export function DemotionOutcomeBanner({
   if (!outcome) return null;
 
   if (outcome.kind === 'demoted') {
-    const { grantsSuspended, notified, rungMayBeRestoredByLadder, state } =
-      outcome.result;
+    const {
+      grantsSuspended,
+      manualHoldUntil,
+      notified,
+      rungMayBeRestoredByLadder,
+      state,
+    } = outcome.result;
 
     return (
       <Alert
-        // `warning` rather than `success` WHEN the rung may come back, because
-        // the headline is then a caveat rather than a completion. The
-        // suspension succeeded either way; what differs is whether the screen
-        // is about to contradict itself an hour from now.
+        // `success` now that the demotion has a term, and `warning` only in
+        // the case that would mean the term is not being honoured. This used
+        // to be a warning in the COMMON case, because the rung came back
+        // within the hour; a completion with a stated end date is a different
+        // sentence from a caveat, and it should not be dressed as one.
         severity={rungMayBeRestoredByLadder ? 'warning' : 'success'}
         sx={{ mb: 2 }}
         data-testid="demotion-outcome"
@@ -102,17 +109,37 @@ export function DemotionOutcomeBanner({
         </AlertTitle>
         The suspension is durable: nothing re-creates a suspended grant, so
         nothing resumes running on its own.
+        {/* THE TERM. The instant comes from the server, which resolved it —
+            it is never recomputed here from `manualHoldDays` and a browser
+            clock. The end date is stated rather than left implicit because a
+            hold whose term is invisible is a demotion that un-does itself on
+            a timer, which is exactly what #244 was about. */}
+        <Box
+          component="span"
+          sx={{ display: 'block', mt: 1, fontWeight: 600 }}
+          data-testid="manual-hold"
+        >
+          The rung is held until {formatHoldEnd(manualHoldUntil)}. The ladder
+          may not promote this class back before then, whatever its record says.
+        </Box>
+        <Box component="span" sx={{ display: 'block', mt: 1 }}>
+          When the hold lifts, the class is judged again on the numbers — by
+          then measured over a window that no longer contains what you were
+          reacting to. Nothing lifts it early and there is no control that does:
+          the rung is a measurement, and what makes a class run unattended is a
+          trust grant, which only a person creates.
+        </Box>
         {rungMayBeRestoredByLadder && (
           <Box
             component="span"
             sx={{ display: 'block', mt: 1, fontWeight: 600 }}
             data-testid="rung-may-be-restored"
           >
-            The RUNG may not stick. This class&rsquo;s record still clears the
-            bar, so the next hourly evaluation is likely to put it back on the
-            promoted rung. That does not un-suspend the grants — but the rung
-            will read &ldquo;Promoted&rdquo; again, and that is the ladder, not
-            your demotion being undone.
+            But the API says the RUNG may not stick: the next evaluation would
+            put this class back on the promoted rung despite the hold. That is
+            the hold failing, not the ordinary case — the field is computed from
+            the ladder&rsquo;s own rules, so it is reporting a real finding. The
+            suspended grants stay suspended either way. Please report it.
           </Box>
         )}
         {!notified && (

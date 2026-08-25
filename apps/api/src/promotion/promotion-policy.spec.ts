@@ -1,10 +1,12 @@
 import {
   DEMOTION_MIN_SAMPLE,
   DEMOTION_RATE,
+  MANUAL_HOLD_DAYS,
   MIN_SAMPLE,
   PROMOTION_RATE,
   REGRESSION_WINDOW_DAYS,
   type ClassEvidence,
+  type ManualHold,
   emptyEvidence,
   evaluateLadder,
   expectedPromotionOrder,
@@ -68,6 +70,25 @@ describe('promotion policy thresholds', () => {
     // Asymmetric costs, asymmetric evidence. Wrongly demoting costs a
     // re-promotion; wrongly staying promoted costs unsupervised action.
     expect(DEMOTION_MIN_SAMPLE).toBeLessThan(MIN_SAMPLE);
+  });
+
+  it('ties the manual hold to the regression window rather than picking a number', () => {
+    // #244. The tie IS the argument: an operator demotes because they know
+    // something the record does not yet contain, and the regression window is
+    // exactly how long the record takes to contain it. Two independent
+    // constants would let someone tune the window and leave the hold behind,
+    // and the hold would then lift on evidence that still included whatever
+    // the operator was reacting to.
+    expect(MANUAL_HOLD_DAYS).toBe(REGRESSION_WINDOW_DAYS);
+  });
+
+  it('keeps the manual hold finite', () => {
+    // A permanent hold is VISION §7 rung 4's failure in reverse: a judgement
+    // call made once that quietly becomes permanent policy because nobody
+    // revisits it. "Demoted once in anger" must not mean "off the ladder
+    // forever".
+    expect(MANUAL_HOLD_DAYS).toBeGreaterThan(0);
+    expect(Number.isFinite(MANUAL_HOLD_DAYS)).toBe(true);
   });
 
   it('keeps PROMOTION_RATE below 1, so a shortfall is always finite', () => {
@@ -475,6 +496,155 @@ describe('promotionOrderAnomaly', () => {
       'issue-shaping',
       'quarantine-decision',
     ]);
+  });
+});
+
+describe('evaluateLadder: rule 4, a standing manual hold (#244)', () => {
+  /**
+   * The exact evidence the ladder would promote on. That is the point: #244 is
+   * about the operator who demotes a class whose NUMBERS ARE GOOD, because
+   * they know something the record does not yet contain. A class the ladder
+   * would refuse anyway needs no hold.
+   */
+  const promotable = evidence({
+    approved: 500,
+    rejected: 10,
+    recentApproved: 100,
+    recentRejected: 2,
+  });
+
+  const hold: ManualHold = {
+    heldUntil: new Date('2026-09-08T10:00:00.000Z'),
+    heldById: 'admin-9',
+  };
+
+  it('refuses to promote a hand-demoted class on the same evidence that would otherwise promote it', () => {
+    // The bug, stated twice: without the hold this evidence promotes.
+    expect(evaluateLadder('measure', promotable, true, false).action).toBe(
+      'promote',
+    );
+    // With it, it does not. The hourly evaluation can no longer undo an
+    // operator's judgement inside the hour.
+    expect(
+      evaluateLadder('measure', promotable, true, false, hold),
+    ).toMatchObject({ action: 'hold' });
+  });
+
+  it('is what blocks rule 5 specifically, not some other rule declining', () => {
+    // #244's acceptance criterion: "a test asserts the ladder's own rule 5 is
+    // what the hold blocks, so a later refactor of evaluateLadder cannot
+    // silently drop it". Rule 5 is the promotion rule, and the only thing
+    // differing between these two calls is the hold — same rung, same
+    // evidence, same eligibility, same pause.
+    const withoutHold = evaluateLadder(
+      'measure',
+      promotable,
+      true,
+      false,
+      null,
+    );
+    const withHold = evaluateLadder('measure', promotable, true, false, hold);
+
+    expect(withoutHold.action).toBe('promote');
+    expect(withHold.action).toBe('hold');
+  });
+
+  it('says WHEN the hold lifts, not merely that one exists', () => {
+    // An operator told "held" without being told "until when" has been told
+    // half of what happened — and an expiring hold that does not state its
+    // term is exactly the "silently re-promotes on a timer" the fix must not
+    // be.
+    const verdict = evaluateLadder('measure', promotable, true, false, hold);
+
+    expect(verdict).toMatchObject({ action: 'hold' });
+    if (verdict.action !== 'hold') throw new Error('expected a hold');
+    expect(verdict.detail).toContain('2026-09-08T10:00:00.000Z');
+    expect(verdict.detail).toContain(String(MANUAL_HOLD_DAYS));
+  });
+
+  it('names the human who placed the hold when there is one', () => {
+    const verdict = evaluateLadder('measure', promotable, true, false, hold);
+    if (verdict.action !== 'hold') throw new Error('expected a hold');
+    expect(verdict.detail).toContain('admin-9');
+
+    // Null when the account is gone. The hold still stands — it was placed by
+    // a human, and a deleted account does not retract a judgement — so the
+    // sentence simply stops naming one rather than inventing "unknown user".
+    const orphaned = evaluateLadder('measure', promotable, true, false, {
+      ...hold,
+      heldById: null,
+    });
+    expect(orphaned.action).toBe('hold');
+  });
+
+  it('still explains where the class actually stands underneath the hold', () => {
+    const short = evidence({ approved: 5, rejected: 0 });
+    const verdict = evaluateLadder('measure', short, true, false, hold);
+    if (verdict.action !== 'hold') throw new Error('expected a hold');
+
+    // Both facts: nothing moves because a human is holding it, AND the class
+    // is nowhere near the bar anyway. Suppressing the second would make the
+    // hold look like the only obstacle.
+    expect(verdict.detail).toContain(holdDetail('measure', short));
+  });
+
+  it('still DEMOTES a held class on regression — the hold never blocks narrowing', () => {
+    // Rule 3 is above rule 4 deliberately. A hold is an operator asking the
+    // ladder not to widen authority; it must never be able to stop the ladder
+    // narrowing it. This is the defensive case — a hand-demotion leaves a
+    // class non-promoted, so it should not normally be both promoted and held
+    // — and the assertion is what stops a later refactor moving the hold above
+    // the demotion rule.
+    const regressed = evidence({
+      approved: 400,
+      rejected: 10,
+      recentApproved: 2,
+      recentRejected: 8,
+    });
+
+    expect(
+      evaluateLadder('promoted', regressed, true, false, hold),
+    ).toMatchObject({ action: 'demote', reason: 'demoted_on_regression' });
+  });
+
+  it('still DEMOTES a held class that has become ineligible', () => {
+    // Rule 1 is above rule 4 for the same reason. Ineligibility is a
+    // declaration about what may ever run unattended, and an operator's hold
+    // is not a reason to leave an ineligible class standing on the promoted
+    // rung.
+    expect(
+      evaluateLadder('promoted', promotable, false, false, hold),
+    ).toMatchObject({ action: 'demote', reason: 'demoted_ineligible' });
+  });
+
+  it('does not stop a class that was never hand-demoted from promoting', () => {
+    // The regression guard for the whole feature: the ladder still works.
+    // `null` is what an unheld class passes, and it is the default, so every
+    // pre-existing call site keeps its meaning.
+    expect(
+      evaluateLadder('measure', promotable, true, false, null),
+    ).toMatchObject({ action: 'promote' });
+    expect(evaluateLadder('measure', promotable, true, false)).toMatchObject({
+      action: 'promote',
+    });
+  });
+
+  it("promotes once the hold has lapsed — expiry is the CALLER's decision", () => {
+    // `evaluateLadder` is pure and never asks what time it is, so a lapsed
+    // hold reaches it as `null`. The expiry decision lives at the edge, with
+    // the clock, exactly as the quota position does for `decideDispatch`.
+    expect(
+      evaluateLadder('measure', promotable, true, false, null).action,
+    ).toBe('promote');
+  });
+
+  it('leaves a paused ladder saying it is paused, not that a hold stands', () => {
+    // Rule 2 is above rule 4. While the ladder is paused NOTHING moves, and
+    // telling an operator "held by hand until the 8th" would imply something
+    // would happen on the 8th when in fact nothing will happen at all.
+    const verdict = evaluateLadder('measure', promotable, true, true, hold);
+    if (verdict.action !== 'hold') throw new Error('expected a hold');
+    expect(verdict.detail).toContain('paused');
   });
 });
 

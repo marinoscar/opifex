@@ -43,6 +43,7 @@ model User {
   trustGrantsGranted          TrustGrant[]          @relation("TrustGrantsGranted")
   trustGrantsRevoked          TrustGrant[]          @relation("TrustGrantsRevoked")
   approvalRequestsDecided     ApprovalRequest[]     @relation("ApprovalRequestsDecided")
+  promotionStatesChanged      PromotionState[]      @relation("PromotionStateChangedBy")
 
   @@map("users")
 }
@@ -2363,6 +2364,48 @@ model PromotionState {
   /// The `ClassEvidence` the decision was made from, frozen. See above.
   evidenceJson Json? @map("evidence_json")
 
+  /// Who made the last rung change, when a human made it (#244).
+  ///
+  /// Null for every AUTOMATIC transition, and that null is meaningful in
+  /// exactly the way `TrustGrant.revokedById`'s is: promotion on evidence,
+  /// demotion on regression, demotion on ineligibility and the
+  /// `observe -> measure` transition all happen with nobody deciding, and a
+  /// column that named an actor for those would be inventing one.
+  /// `changeReason` says WHICH of them happened; this says WHO, only when
+  /// there is a who.
+  ///
+  /// It exists because the actor used to live only in the `changeDetail`
+  /// sentence, and prose is not an edge - VISION §5's provenance graph cannot
+  /// be queried for "which demotions were a human's" if the answer is a
+  /// substring. `SetNull` rather than `Restrict`, matching
+  /// `TrustGrant.revokedById`: the rung change is already over and the record
+  /// surviving the account is enough.
+  changedById String? @map("changed_by_id") @db.Uuid
+
+  /// When a HAND-DEMOTION's hold over this class lifts (#244).
+  ///
+  /// The rung half of a manual demotion used to be undone within the hour: the
+  /// ladder's promotion rule re-promotes any non-promoted class whose lifetime
+  /// record clears the bar, and nothing recorded that a human had held it
+  /// down. This is that record, and `evaluateLadder` refuses to promote while
+  /// it stands.
+  ///
+  /// An INSTANT, not a flag, and the instant is always in the future when the
+  /// hold is live. A boolean would need a second column to say when it lifts,
+  /// and an operator who cannot see when their demotion stops holding has been
+  /// told half of what happened.
+  ///
+  /// NULL means "never held by hand". A value in the PAST means "was held, and
+  /// the hold has lapsed" - it is not cleared on expiry, because "this class
+  /// was held down by a human until the 8th" is a fact worth keeping once the
+  /// ladder takes over again.
+  ///
+  /// The term is `MANUAL_HOLD_DAYS` (14 days, tied to
+  /// `REGRESSION_WINDOW_DAYS`), decided in `promotion-policy.ts`. It is not a
+  /// default here: the policy owns the number, and a database default would be
+  /// a second copy of it that could disagree.
+  manualHoldUntil DateTime? @map("manual_hold_until") @db.Timestamptz
+
   /// When this class was MOST RECENTLY promoted, and most recently demoted.
   /// Both retained after a demotion: "promoted for six weeks, then demoted
   /// yesterday" and "promoted and demoted within a day" are different facts
@@ -2383,9 +2426,14 @@ model PromotionState {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
+  // Relations
+  changedBy User? @relation("PromotionStateChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+
   /// #101's read: "what is promoted right now". Small table, but the index is
   /// what makes the cockpit query a lookup rather than a scan that grows with
   /// the taxonomy.
   @@index([rung])
+  /// "What did this user demote" - the query `changedById` exists for.
+  @@index([changedById])
   @@map("promotion_states")
 }

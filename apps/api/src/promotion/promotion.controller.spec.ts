@@ -48,7 +48,9 @@ interface StoredState {
   changedAt: Date;
   changeReason: string | null;
   changeDetail: string | null;
+  changedById: string | null;
   evidenceJson: unknown;
+  manualHoldUntil: Date | null;
   promotedAt: Date | null;
   demotedAt: Date | null;
   demotionCount: number;
@@ -65,7 +67,9 @@ function storedState(
     changedAt: new Date('2026-08-01T00:00:00.000Z'),
     changeReason: rung === 'promoted' ? 'promoted_on_evidence' : null,
     changeDetail: null,
+    changedById: null,
     evidenceJson: null,
+    manualHoldUntil: null,
     promotedAt:
       rung === 'promoted' ? new Date('2026-08-01T00:00:00.000Z') : null,
     demotedAt: null,
@@ -482,29 +486,53 @@ describe('PromotionController (#101)', () => {
       const stored = rows.get(CLASS)!;
       expect(stored.rung).toBe('measure');
       expect(stored.changeReason).toBe('demoted_manually');
-      // The actor travels in prose because `promotion_states` has no actor
-      // column. That is a gap in the provenance graph, named rather than
-      // hidden — see `demoteManually`.
+      // The actor is a COLUMN now (#244). It used to live only in the prose,
+      // which meant "which demotions were a human's" was a substring search
+      // rather than a query — a hole in VISION §5's provenance graph.
+      expect(stored.changedById).toBe('admin-9');
+      // The sentence still names them, because it is what a human reads, but
+      // it is now a rendering of the column rather than the record itself.
       expect(stored.changeDetail).toContain('admin-9');
       expect(stored.changeDetail).toContain('Bad diffs');
       expect(stored.demotionCount).toBe(1);
       expect(result.state.rung).toBe('measure');
+      expect(result.state.changedById).toBe('admin-9');
     });
 
-    it('warns that the ladder will restore the rung when the record still clears the bar', async () => {
+    it('does NOT warn that the ladder will restore the rung — the hold stands (#244)', async () => {
       const { controller } = promoted();
 
       const result = await controller.demote(CLASS, {} as never, 'admin-9');
 
-      // The COMMON case, not an edge one. Nothing records a human hold-down,
-      // so the next evaluation re-promotes on the lifetime record — while the
-      // suspended grants stay suspended, so nothing resumes running. An
-      // operator not told this would conclude the demotion had failed.
-      expect(result.rungMayBeRestoredByLadder).toBe(true);
+      // This used to be TRUE, and it was the bug: the next hourly evaluation
+      // re-promoted the class on its unchanged lifetime record, as though the
+      // operator had never acted. `manualHoldUntil` is the state that stops
+      // it, so the field becomes an ANSWER rather than a standing caveat.
+      //
+      // Still computed from `evaluateLadder` rather than hardcoded, so a
+      // refactor that dropped the hold would make this true again instead of
+      // silently lying.
+      expect(result.rungMayBeRestoredByLadder).toBe(false);
       expect(result.grantsSuspended).toBe(2);
     });
 
-    it('does not warn when the record no longer supports promotion', async () => {
+    it('reports the term of the hold, because an expiring hold must state its end', async () => {
+      const { controller, rows } = promoted();
+
+      const result = await controller.demote(CLASS, {} as never, 'admin-9');
+
+      // A hold that expired without saying when would be the "silently
+      // re-promotes on a timer" failure wearing a different hat.
+      const until = new Date(result.manualHoldUntil);
+      expect(Number.isNaN(until.getTime())).toBe(false);
+      expect(until.getTime()).toBeGreaterThan(Date.now());
+      expect(rows.get(CLASS)!.manualHoldUntil).toEqual(until);
+      // The same instant reaches the state view, so a client that re-reads the
+      // ladder sees the hold rather than only the demotion response.
+      expect(result.state.manualHoldUntil).toBe(result.manualHoldUntil);
+    });
+
+    it('is false for a record that would not have supported promotion either', async () => {
       const { controller } = build({
         states: [storedState(CLASS, 'promoted')],
         proposalsLifetime: [proposalRate(CLASS, 10, 10)],

@@ -31,9 +31,19 @@
  * A 0% approval rate claims humans refuse this class every single time they
  * see it. An `observe` class is DEFINED by having no sample, so this is the
  * ordinary state rather than an edge case.
+ *
+ * ## A standing manual hold is shown on the class, with its end date (#244)
+ *
+ * A hand-demotion holds the rung for a stated term, and the operator who
+ * placed it is not the only person who reads this screen — nor the same person
+ * a fortnight later. `manualHoldUntil` is compared against the ladder's own
+ * `readAt` rather than the browser clock, so the chip cannot contradict the
+ * `requirement` sentence printed below it, and it is never treated as a flag:
+ * the column is never cleared, so a PAST instant is the ordinary resting state
+ * of any class that was ever demoted by hand.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Alert,
   AlertTitle,
@@ -50,7 +60,12 @@ import {
 import { useTheme } from '@mui/material/styles';
 import { PromotionRungChip } from './PromotionRungChip';
 import { DemoteClassDialog } from './DemoteClassDialog';
-import { formatApprovalRate, formatPercent } from './trustFormat';
+import {
+  formatApprovalRate,
+  formatHoldEnd,
+  formatPercent,
+  isHoldStanding,
+} from './trustFormat';
 import { statusTokens } from '../../theme/tokens';
 import { formatRelativeTime } from '../../utils/time';
 import type {
@@ -76,6 +91,17 @@ export function PromotionLadderPanel({
   demotingClass,
   onDemote,
 }: PromotionLadderPanelProps) {
+  // The instant the server assembled this ladder, which is the instant its
+  // `requirement` sentences and `wouldChange` forecasts were computed at. A
+  // hold judged against `Date.now()` instead could disagree with the sentence
+  // rendered directly beneath it over clock skew alone. An unparseable
+  // `readAt` falls back to now rather than to "no hold": showing nothing would
+  // be the one failure mode this panel exists to prevent.
+  const asOf = useMemo(() => {
+    const at = new Date(ladder.readAt);
+    return Number.isNaN(at.getTime()) ? new Date() : at;
+  }, [ladder.readAt]);
+
   return (
     <Box>
       <LadderSwitchBanner ladder={ladder} />
@@ -93,6 +119,8 @@ export function PromotionLadderPanel({
               key={state.actionClass}
               state={state}
               ladderEnabled={ladder.enabled}
+              thresholds={ladder.thresholds}
+              asOf={asOf}
               canDemote={canDemote}
               isDemoting={demotingClass === state.actionClass}
               onDemote={onDemote}
@@ -171,7 +199,9 @@ function ThresholdSummary({ thresholds }: { thresholds: PromotionThresholds }) {
       at least {thresholds.minSample} human decisions; demote below{' '}
       {formatPercent(thresholds.demotionRate)} over at least{' '}
       {thresholds.demotionMinSample} in the last{' '}
-      {thresholds.regressionWindowDays} days.
+      {thresholds.regressionWindowDays} days. A hand-demotion holds the rung for{' '}
+      {thresholds.manualHoldDays} days, after which the ladder judges the class
+      again on its evidence.
     </Typography>
   );
 }
@@ -179,12 +209,17 @@ function ThresholdSummary({ thresholds }: { thresholds: PromotionThresholds }) {
 function PromotionStateCard({
   state,
   ladderEnabled,
+  thresholds,
+  asOf,
   canDemote,
   isDemoting,
   onDemote,
 }: {
   state: PromotionState;
   ladderEnabled: boolean;
+  thresholds: PromotionThresholds;
+  /** The ladder's `readAt`. What a hold's end date is judged against. */
+  asOf: Date;
   canDemote: boolean;
   isDemoting: boolean;
   onDemote: (actionClass: string, note?: string) => void;
@@ -192,6 +227,7 @@ function PromotionStateCard({
   const [confirming, setConfirming] = useState(false);
   const title = state.actionClassTitle ?? state.actionClass;
   const evidence = state.currentEvidence;
+  const held = isHoldStanding(state.manualHoldUntil, asOf);
 
   return (
     <Card data-testid="promotion-state" data-action-class={state.actionClass}>
@@ -219,6 +255,26 @@ function PromotionStateCard({
                 variant="outlined"
                 label={`Demoted ${state.demotionCount}${state.demotionCount === 1 ? ' time' : ' times'}`}
                 data-testid="demotion-count"
+              />
+            </Tooltip>
+          )}
+          {/* A STANDING hold, with the date it lifts. An operator looking at
+              the ladder a week later should not have to remember that they
+              demoted this, and the class is otherwise indistinguishable from
+              one the ladder itself put on `measure`. Shown only while the hold
+              stands: `manualHoldUntil` is never cleared, so a lapsed hold
+              would otherwise sit on the class forever. */}
+          {held && state.manualHoldUntil !== null && (
+            <Tooltip
+              title="A person demoted this class by hand. The ladder may not promote it back until the hold lifts; the trust grants it suspended stay suspended either way."
+              enterTouchDelay={0}
+            >
+              <Chip
+                size="small"
+                color="warning"
+                variant="outlined"
+                label={`Held until ${formatHoldEnd(state.manualHoldUntil)}`}
+                data-testid="manual-hold"
               />
             </Tooltip>
           )}
@@ -271,6 +327,7 @@ function PromotionStateCard({
             <Divider sx={{ my: 2 }} />
             <DemoteAction
               canDemote={canDemote}
+              manualHoldDays={thresholds.manualHoldDays}
               isDemoting={isDemoting}
               onOpen={() => setConfirming(true)}
             />
@@ -281,6 +338,7 @@ function PromotionStateCard({
       <DemoteClassDialog
         open={confirming}
         className={title}
+        manualHoldDays={thresholds.manualHoldDays}
         isDemoting={isDemoting}
         onCancel={() => setConfirming(false)}
         onConfirm={(note) => {
@@ -405,10 +463,12 @@ function WouldChangeLine({
 
 function DemoteAction({
   canDemote,
+  manualHoldDays,
   isDemoting,
   onOpen,
 }: {
   canDemote: boolean;
+  manualHoldDays: number;
   isDemoting: boolean;
   onOpen: () => void;
 }) {
@@ -450,7 +510,8 @@ function DemoteAction({
         sx={{ display: 'block', mt: 1 }}
       >
         Suspends every active trust grant for this class. The suspension is
-        durable; the rung may be restored by the next evaluation.
+        durable; the rung is held for {manualHoldDays} days, after which the
+        ladder judges the class again on its evidence.
       </Typography>
     </Box>
   );

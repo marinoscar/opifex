@@ -10,7 +10,7 @@ import type { PrismaService } from '../prisma/prisma.service';
 import type { DecisionLogService } from '../supervisor/decision-log/decision-log.service';
 import type { ActionClassApprovalRate } from '../supervisor/decision-log/decision-log.types';
 import type { TrustGrantService } from '../trust/trust-grant.service';
-import { REGRESSION_WINDOW_DAYS } from './promotion-policy';
+import { MANUAL_HOLD_DAYS, REGRESSION_WINDOW_DAYS } from './promotion-policy';
 import { PromotionService } from './promotion.service';
 
 const NOW = new Date('2026-08-24T12:00:00.000Z');
@@ -63,7 +63,9 @@ interface StoredState {
   changedAt: Date;
   changeReason: string | null;
   changeDetail: string | null;
+  changedById: string | null;
   evidenceJson: unknown;
+  manualHoldUntil: Date | null;
   promotedAt: Date | null;
   demotedAt: Date | null;
   demotionCount: number;
@@ -80,7 +82,9 @@ function storedState(
     changedAt: new Date('2026-08-01T00:00:00.000Z'),
     changeReason: rung === 'promoted' ? 'promoted_on_evidence' : null,
     changeDetail: null,
+    changedById: null,
     evidenceJson: null,
+    manualHoldUntil: null,
     promotedAt:
       rung === 'promoted' ? new Date('2026-08-01T00:00:00.000Z') : null,
     demotedAt: null,
@@ -667,6 +671,294 @@ describe('PromotionService.evaluate: the observe -> measure transition', () => {
     expect(
       result.holds.find((h) => h.actionClass === 'issue-shaping'),
     ).toMatchObject({ rung: 'observe' });
+  });
+});
+
+/**
+ * #244: a hand-demotion used to be undone by the ladder inside the hour.
+ *
+ * Every test here drives the REAL loop — `demoteManually`, then `evaluate` —
+ * over a store that actually stores. The bug was never visible in one call: it
+ * lived in what the SECOND one saw.
+ */
+describe('PromotionService: the manual demotion hold (#244)', () => {
+  const HOLD_MS = MANUAL_HOLD_DAYS * 24 * 60 * 60 * 1000;
+
+  /**
+   * A record the ladder WOULD promote on, and the whole point of the issue.
+   * The operator demoting this class knows something the numbers do not yet
+   * show; if the numbers already showed it, the anti-oscillation guard would
+   * have refused the promotion on its own and no hold would be needed.
+   */
+  const goodNumbers = {
+    proposalsLifetime: [proposalRate('re-dispatch', 27, 1)],
+    proposalsRecent: [proposalRate('re-dispatch', 9, 0)],
+  };
+
+  it('does NOT re-promote a hand-demoted class on the next evaluation', async () => {
+    const harness = build({
+      ...goodNumbers,
+      states: [storedState('re-dispatch', 'promoted')],
+    });
+
+    await harness.service.demoteManually('re-dispatch', 'admin-9', null, NOW);
+
+    // One hour later — the actual cadence of `PromotionTask`, and the window
+    // in which this used to be undone.
+    const later = new Date(NOW.getTime() + 60 * 60 * 1000);
+    const result = await harness.service.evaluate(later);
+
+    expect(
+      result.changes.find((c) => c.actionClass === 're-dispatch'),
+    ).toBeUndefined();
+
+    const row = harness.store.rows.get('re-dispatch');
+    expect(row?.rung).toBe('measure');
+    expect(row?.changeReason).toBe('demoted_manually');
+  });
+
+  it('stays demoted for the whole term, not just the first tick', async () => {
+    const harness = build({
+      ...goodNumbers,
+      states: [storedState('re-dispatch', 'promoted')],
+    });
+    await harness.service.demoteManually('re-dispatch', 'admin-9', null, NOW);
+
+    // A day short of the term. 336 hourly evaluations have run by now.
+    const nearlyUp = new Date(NOW.getTime() + HOLD_MS - 24 * 60 * 60 * 1000);
+    await harness.service.evaluate(nearlyUp);
+
+    expect(harness.store.rows.get('re-dispatch')?.rung).toBe('measure');
+  });
+
+  it('STILL PROMOTES a class that was never hand-demoted, on the same evidence', async () => {
+    // The control. A fix that stopped the ladder promoting anything would pass
+    // every other test in this block.
+    const harness = build(goodNumbers);
+    const result = await harness.service.evaluate(NOW);
+
+    expect(
+      result.changes.find((c) => c.actionClass === 're-dispatch'),
+    ).toMatchObject({ to: 'promoted', reason: 'promoted_on_evidence' });
+  });
+
+  it('promotes again once the hold has LAPSED, and says so out loud', async () => {
+    const harness = build({
+      ...goodNumbers,
+      states: [storedState('re-dispatch', 'promoted')],
+    });
+    await harness.service.demoteManually('re-dispatch', 'admin-9', null, NOW);
+
+    // A second past the term. The hold expires deliberately: a permanent one
+    // would be a judgement made in an afternoon that becomes permanent policy
+    // because nothing revisits it.
+    const after = new Date(NOW.getTime() + HOLD_MS + 1000);
+    const result = await harness.service.evaluate(after);
+
+    expect(
+      result.changes.find((c) => c.actionClass === 're-dispatch'),
+    ).toMatchObject({ to: 'promoted', reason: 'promoted_on_evidence' });
+
+    // NOT SILENT. "It re-promotes on a timer" is only a failure if nobody is
+    // told, and a promotion notification is sent exactly as for any other.
+    const promotion = harness
+      .payloads()
+      .find((p) => p.title.startsWith('Promoted:'));
+    expect(promotion?.title).toContain('re-dispatch');
+  });
+
+  it('does not clear the hold timestamp when the class is re-promoted', async () => {
+    // "A human held this class down until the 8th" stays true after the ladder
+    // takes over again, and it is the demotion's only durable trace on the row
+    // once the rung has moved back.
+    const harness = build({
+      ...goodNumbers,
+      states: [storedState('re-dispatch', 'promoted')],
+    });
+    await harness.service.demoteManually('re-dispatch', 'admin-9', null, NOW);
+    await harness.service.evaluate(new Date(NOW.getTime() + HOLD_MS + 1000));
+
+    const row = harness.store.rows.get('re-dispatch');
+    expect(row?.rung).toBe('promoted');
+    expect(row?.manualHoldUntil).toEqual(new Date(NOW.getTime() + HOLD_MS));
+  });
+
+  it('re-demoting after the lapse places a FRESH hold', async () => {
+    // How an operator whose concern outlives the window re-asserts it. The
+    // mirror of VISION §8's "renewal is one tap; silence revokes": here
+    // silence lets the hold lapse and action renews it.
+    const harness = build({
+      ...goodNumbers,
+      states: [storedState('re-dispatch', 'promoted')],
+    });
+    await harness.service.demoteManually('re-dispatch', 'admin-9', null, NOW);
+
+    const after = new Date(NOW.getTime() + HOLD_MS + 1000);
+    await harness.service.evaluate(after);
+    const second = await harness.service.demoteManually(
+      're-dispatch',
+      'admin-9',
+      null,
+      after,
+    );
+
+    expect(second.manualHoldUntil).toBe(
+      new Date(after.getTime() + HOLD_MS).toISOString(),
+    );
+    expect(harness.store.rows.get('re-dispatch')?.demotionCount).toBe(2);
+  });
+
+  it('STILL DEMOTES ON REGRESSION while a hold stands', async () => {
+    // A hold asks the ladder not to WIDEN authority. It must never stop the
+    // ladder narrowing it. This is the defensive shape — a hand-demotion
+    // leaves a class non-promoted, so a promoted-and-held row should not occur
+    // — and the assertion is what stops a refactor moving the hold above the
+    // regression rule.
+    const harness = build({
+      proposalsLifetime: [proposalRate('re-dispatch', 400, 10)],
+      proposalsRecent: [proposalRate('re-dispatch', 2, 8)],
+      states: [
+        storedState('re-dispatch', 'promoted', {
+          manualHoldUntil: new Date(NOW.getTime() + HOLD_MS),
+          changedById: 'admin-9',
+        }),
+      ],
+      activeGrants: [{ id: 'g1' }],
+    });
+
+    const result = await harness.service.evaluate(NOW);
+
+    expect(
+      result.changes.find((c) => c.actionClass === 're-dispatch'),
+    ).toMatchObject({ to: 'measure', reason: 'demoted_on_regression' });
+    expect(harness.suspend).toHaveBeenCalled();
+  });
+
+  it('records the actor as a COLUMN, not only as prose', async () => {
+    // The second hole #244 names. `trust_grants.revoked_by_id` is a column
+    // precisely because a provenance edge that lives only in a sentence cannot
+    // be queried, and VISION §5 says holes in the graph are not detectable
+    // after the fact.
+    const harness = build({
+      ...goodNumbers,
+      states: [storedState('re-dispatch', 'promoted')],
+    });
+    await harness.service.demoteManually('re-dispatch', 'admin-9', null, NOW);
+
+    const row = harness.store.rows.get('re-dispatch');
+    expect(row?.changedById).toBe('admin-9');
+    expect(row?.manualHoldUntil).toEqual(new Date(NOW.getTime() + HOLD_MS));
+
+    // Readable from the read model too, or the column is a write-only edge.
+    const view = await harness.service.stateFor('re-dispatch');
+    expect(view.changedById).toBe('admin-9');
+    expect(view.manualHoldUntil).toBe(
+      new Date(NOW.getTime() + HOLD_MS).toISOString(),
+    );
+  });
+
+  it('leaves changedById NULL on every automatic transition', async () => {
+    // The null is meaningful, not missing data: promotion on evidence and
+    // demotion on regression happen with nobody deciding.
+    const harness = build(goodNumbers);
+    await harness.service.evaluate(NOW);
+
+    expect(harness.store.rows.get('re-dispatch')?.changedById).toBeNull();
+  });
+
+  it('clears changedById when the ladder overrides a human, rather than leaving them named', async () => {
+    // An edge pointing at a person who did not make the decision would be
+    // worse than the prose it replaced.
+    const harness = build({
+      ...goodNumbers,
+      states: [storedState('re-dispatch', 'promoted')],
+    });
+    await harness.service.demoteManually('re-dispatch', 'admin-9', null, NOW);
+    await harness.service.evaluate(new Date(NOW.getTime() + HOLD_MS + 1000));
+
+    const row = harness.store.rows.get('re-dispatch');
+    expect(row?.changeReason).toBe('promoted_on_evidence');
+    expect(row?.changedById).toBeNull();
+  });
+
+  it('reports rungMayBeRestoredByLadder as FALSE, and says when the hold lifts', async () => {
+    // The field stops being a standing caveat and becomes an answer. It is
+    // still computed from `evaluateLadder`, so it would report `true` again if
+    // the hold ever stopped working.
+    const harness = build({
+      ...goodNumbers,
+      states: [storedState('re-dispatch', 'promoted')],
+    });
+
+    const result = await harness.service.demoteManually(
+      're-dispatch',
+      'admin-9',
+      null,
+      NOW,
+    );
+
+    expect(result.rungMayBeRestoredByLadder).toBe(false);
+    expect(result.manualHoldUntil).toBe(
+      new Date(NOW.getTime() + HOLD_MS).toISOString(),
+    );
+    // The rung change is still real, and so is the durable half.
+    expect(result.state.rung).toBe('measure');
+  });
+
+  it('tells the read model to forecast no promotion, and explains why', async () => {
+    const harness = build({
+      ...goodNumbers,
+      states: [storedState('re-dispatch', 'promoted')],
+    });
+    await harness.service.demoteManually('re-dispatch', 'admin-9', null, NOW);
+
+    const later = new Date(NOW.getTime() + 60 * 60 * 1000);
+    const view = await harness.service.ladderStateFor('re-dispatch', later);
+
+    // A forecast that ignored the hold would be the #244 warning inverted into
+    // a lie: "this will promote" about a class the ladder will not promote.
+    expect(view.wouldChange).toBeNull();
+    expect(view.requirement).toContain('BY HAND');
+    expect(view.requirement).toContain(
+      new Date(NOW.getTime() + HOLD_MS).toISOString(),
+    );
+  });
+
+  it('still suspends grants and still counts the demotion', async () => {
+    // The half that already worked must keep working. The grant suspension is
+    // the safety-relevant effect; the hold is about the rung.
+    const harness = build({
+      ...goodNumbers,
+      states: [storedState('re-dispatch', 'promoted')],
+      activeGrants: [{ id: 'g1' }, { id: 'g2' }],
+    });
+
+    const result = await harness.service.demoteManually(
+      're-dispatch',
+      'admin-9',
+      null,
+      NOW,
+    );
+
+    expect(result.grantsSuspended).toBe(2);
+    expect(harness.store.rows.get('re-dispatch')?.demotionCount).toBe(1);
+  });
+
+  it('tells the operator in the notification that the hold is finite', async () => {
+    const harness = build({
+      ...goodNumbers,
+      states: [storedState('re-dispatch', 'promoted')],
+    });
+    await harness.service.demoteManually('re-dispatch', 'admin-9', null, NOW);
+
+    const payload = harness
+      .payloads()
+      .find((p) => p.title.startsWith('Demoted:'));
+    expect(payload?.priority).toBe('high');
+    expect(payload?.ifIgnored).toContain(`${MANUAL_HOLD_DAYS} days`);
+    expect(payload?.why).toContain(
+      new Date(NOW.getTime() + HOLD_MS).toISOString(),
+    );
   });
 });
 

@@ -228,6 +228,17 @@ export interface PromotionThresholds {
   demotionRate: number;
   demotionMinSample: number;
   regressionWindowDays: number;
+  /**
+   * How many days a HAND-DEMOTION holds a class off the promoted rung.
+   *
+   * Equal to `regressionWindowDays` server-side, and not by coincidence: the
+   * operator demotes because they know something the record does not yet
+   * contain, and the regression window is how long the record takes to contain
+   * it. Read it from here — never written down as `14` in this app, because a
+   * client-side copy is how a dialog ends up promising a term the API stopped
+   * honouring.
+   */
+  manualHoldDays: number;
 }
 
 export interface PromotionState {
@@ -241,6 +252,16 @@ export interface PromotionState {
   changedAt: string;
   changeReason: PromotionChangeReason | null;
   changeDetail: string | null;
+  /**
+   * Who made that change, when a human made it. NULL for every automatic one.
+   *
+   * The null is meaningful rather than missing data — promotion on evidence,
+   * demotion on regression and the `observe -> measure` transition all happen
+   * with nobody deciding — so a screen rendering "changed by: unknown" for
+   * those would be inventing an actor. `changeReason` says WHICH happened;
+   * this says WHO, only when there is a who.
+   */
+  changedById: string | null;
 
   /**
    * Evidence FROZEN at the last rung change. Never refreshed — evidence that
@@ -258,6 +279,21 @@ export interface PromotionState {
    * is switched off is the single most important thing this endpoint says.
    */
   wouldChange: 'promote' | 'demote' | null;
+
+  /**
+   * Until when a HAND-DEMOTION holds this class off the promoted rung (#244).
+   *
+   * NULL means it was never demoted by hand. A FUTURE instant means a human
+   * demoted it and the ladder may not promote it back before then. A PAST
+   * instant means the hold has lapsed and the ladder has the class again — the
+   * value is never cleared, because "a human held this down until the 8th"
+   * stays worth knowing afterwards, so a component MUST compare it against the
+   * clock rather than treat non-null as "held".
+   *
+   * SHOW IT while it stands. A hold whose term is invisible is a demotion that
+   * quietly un-does itself on a timer, which is the failure it exists to end.
+   */
+  manualHoldUntil: string | null;
 
   promotedAt: string | null;
   demotedAt: string | null;
@@ -294,10 +330,23 @@ export interface ManualDemotionResult {
   /** Whether any transport accepted the notification. False is a real result. */
   notified: boolean;
   /**
+   * When the ladder may promote this class again — `manualHoldDays` from now,
+   * resolved by the SERVER.
+   *
+   * The term of the operator's decision, and the thing to show them. Render
+   * this instant; never re-derive it here from `manualHoldDays` and a browser
+   * clock, which would state a date the server does not hold to.
+   */
+  manualHoldUntil: string;
+  /**
    * Whether the next evaluation would put the class straight back on the
-   * promoted rung. TRUE is the COMMON case, and it must be shown: the
-   * suspended grants stay suspended, but the rung will read `promoted` again,
-   * and an operator not told this concludes the button did nothing.
+   * promoted rung.
+   *
+   * FALSE on every successful demotion now that a hold is recorded (#244) —
+   * but still COMPUTED from the ladder's own rules rather than asserted, so it
+   * reads true again if the hold ever stops working instead of lying. Keep
+   * rendering it: a client that assumed false and dropped the branch would
+   * show nothing on the day the guarantee broke.
    */
   rungMayBeRestoredByLadder: boolean;
 }
