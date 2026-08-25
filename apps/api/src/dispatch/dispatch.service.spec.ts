@@ -1,10 +1,12 @@
 import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../prisma/prisma.service';
+import type { RunnerCapabilities } from '../runners/runner.types';
 import {
   DispatchService,
   OCCUPYING_STATUSES,
   QUOTA_BLOCK_REASONS,
+  toCapabilities,
 } from './dispatch.service';
 
 function runnerRow(overrides: Record<string, unknown> = {}) {
@@ -459,6 +461,244 @@ describe('DispatchService', () => {
         'quota-exhausted',
         'rate-limit',
       ]);
+    });
+  });
+
+  describe('model tiers (#265)', () => {
+    // The tier a runner serves has no column. It lives in the verbatim
+    // manifest, and until #265 nothing read it back out — so `servesTier` saw
+    // `undefined` for every runner in the fleet, took its "serves any tier"
+    // default every time, and the refusal below could not fire in production
+    // however well `dispatch-policy.spec.ts` covered it.
+
+    function withManifest(manifest: unknown) {
+      prisma.runner.findMany.mockResolvedValue([
+        runnerRow({
+          key: 'small-only',
+          capability: { ...runnerRow().capability, manifest },
+        }),
+      ]);
+    }
+
+    it('refuses a runner that cannot serve the tier the work order asked for', async () => {
+      // THE test. Everything else here is a boundary on it.
+      withManifest({ modelTiers: ['small'] });
+
+      const decision = await service.decide([], 'wo_x', 'large');
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.candidates[0].eligible).toBe(false);
+      expect(decision.candidates[0].reason).toContain(
+        "serves model tier(s) small and this work order asked for 'large'",
+      );
+    });
+
+    it('routes work of a tier the runner does declare', async () => {
+      withManifest({ modelTiers: ['small', 'large'] });
+
+      const decision = await service.decide([], 'wo_x', 'large');
+
+      expect(decision).toMatchObject({
+        outcome: 'dispatch',
+        runnerKey: 'small-only',
+      });
+    });
+
+    it('leaves the tiers absent when the manifest never mentions them', async () => {
+      // Every manifest written before 1.2.0. Absent means ANY, which is what
+      // keeps the field additive in behaviour as well as in schema: writing a
+      // default list in would make silence indistinguishable from a claim.
+      withManifest({});
+
+      const decision = await service.decide([], 'wo_x', 'large');
+
+      expect(decision.outcome).toBe('dispatch');
+    });
+
+    it.each([
+      ['a bare string', 'large'],
+      ['an empty list, which the schema forbids', []],
+      ['a tier this build does not know', ['small', 'huge']],
+      ['an object', { tier: 'small' }],
+      ['numbers', [1, 2]],
+      ['an explicit null', null],
+    ])('does not let %s change routing', async (_case, modelTiers) => {
+      // A malformed value is treated as ABSENT, never repaired. Filtering
+      // `['small', 'huge']` down to `['small']` would invent a restriction the
+      // runner never declared and refuse work it can do; keeping the unknown
+      // string would let a value nothing understands decide a route. Absent
+      // restores the documented default and changes nothing.
+      withManifest({ modelTiers });
+
+      expect((await service.decide([], 'wo_x', 'large')).outcome).toBe(
+        'dispatch',
+      );
+    });
+
+    it('says out loud that it discarded a declaration', async () => {
+      // The fallback is not free: the runner is now being sent work it may
+      // have been trying to refuse, and the only other symptom is a dispatch
+      // that looks entirely ordinary.
+      withManifest({ modelTiers: ['small', 'huge'] });
+      const warn = jest.spyOn(service['logger'], 'warn');
+
+      await service.decide([], 'wo_x', 'large');
+
+      expect(
+        warn.mock.calls.some(
+          ([line]) =>
+            String(line).includes('small-only') &&
+            String(line).includes('modelTiers'),
+        ),
+      ).toBe(true);
+    });
+  });
+
+  describe('the projection into the seam type', () => {
+    // #265 was not a missing line, it was a missing test. `servesTier` was
+    // right and covered, the stored manifest was right, and the ONE step
+    // between them — this projection — was covered for the fields somebody
+    // remembered. `available` (#253) escaped the same way and had its round
+    // trip added by hand.
+    //
+    // So the map below is keyed by `keyof RunnerCapabilities`, and that is the
+    // load-bearing part: a field added to the seam type and not described here
+    // fails to compile, and one described here but left out of the projection
+    // fails the assertion. Neither can be forgotten quietly.
+
+    type Projected<K extends keyof RunnerCapabilities> =
+      | {
+          /** Which part of the stored row the value has to survive. */
+          from: 'runner' | 'column' | 'manifest';
+          /** The value as the database holds it. */
+          stored: unknown;
+          /** What a faithful projection must produce. */
+          expected: RunnerCapabilities[K];
+        }
+      // The manifest column itself, kept whole. Its expectation is the
+      // document assembled below rather than a literal, so a new
+      // manifest-sourced field cannot make this entry stale.
+      | { from: 'verbatim' };
+
+    const ROUND_TRIP: {
+      [K in keyof RunnerCapabilities]-?: Projected<K>;
+    } = {
+      key: { from: 'runner', stored: 'projected', expected: 'projected' },
+      displayName: {
+        from: 'runner',
+        stored: 'Projected Runner',
+        expected: 'Projected Runner',
+      },
+      version: { from: 'runner', stored: '9.9.9', expected: '9.9.9' },
+
+      schemaVersion: { from: 'column', stored: '1.3.0', expected: '1.3.0' },
+      invocationModel: {
+        from: 'column',
+        stored: 'http_api',
+        expected: 'http_api',
+      },
+      executionLocus: {
+        from: 'column',
+        stored: 'vendor_cloud',
+        expected: 'vendor_cloud',
+      },
+      streamingFidelity: {
+        from: 'column',
+        stored: 'partial',
+        expected: 'partial',
+      },
+      rateLimitSignal: {
+        from: 'column',
+        stored: 'heuristic',
+        expected: 'heuristic',
+      },
+      stabilityTier: { from: 'column', stored: 'beta', expected: 'beta' },
+      reportsCost: { from: 'column', stored: false, expected: false },
+      resumable: { from: 'column', stored: true, expected: true },
+      maxConcurrency: { from: 'column', stored: 7, expected: 7 },
+      branchPatterns: {
+        from: 'column',
+        stored: ['projected/*'],
+        expected: ['projected/*'],
+      },
+
+      // The two with no column. Both decide whether work is routed at all,
+      // and both reach routing only because something reads them back out.
+      modelTiers: {
+        from: 'manifest',
+        stored: ['small', 'large'],
+        expected: ['small', 'large'],
+      },
+      available: { from: 'manifest', stored: false, expected: false },
+      unavailableReason: {
+        from: 'manifest',
+        stored: 'the CLI could not be probed',
+        expected: 'the CLI could not be probed',
+      },
+
+      manifest: { from: 'verbatim' },
+    };
+
+    /** The stored row, assembled from the map rather than written twice. */
+    function stored() {
+      const runner: Record<string, unknown> = {};
+      const capability: Record<string, unknown> = {};
+      const manifest: Record<string, unknown> = {
+        // A field nothing models, to prove the column is kept whole and not
+        // rebuilt from the fields this projection happens to know about.
+        vendor: { anything: 'kept verbatim' },
+      };
+
+      for (const [field, spec] of Object.entries(ROUND_TRIP)) {
+        if (spec.from === 'runner') runner[field] = spec.stored;
+        if (spec.from === 'column') capability[field] = spec.stored;
+        if (spec.from === 'manifest') manifest[field] = spec.stored;
+      }
+      capability.manifest = manifest;
+
+      return { runner, capability, manifest };
+    }
+
+    function project(): RunnerCapabilities {
+      const row = stored();
+      return toCapabilities(
+        row.runner as Parameters<typeof toCapabilities>[0],
+        row.capability as Parameters<typeof toCapabilities>[1],
+        { warn: jest.fn() },
+      );
+    }
+
+    it.each(Object.keys(ROUND_TRIP))(
+      'carries %s from the stored row into the seam type',
+      (field) => {
+        const key = field as keyof RunnerCapabilities;
+        const spec = ROUND_TRIP[key];
+        const expected =
+          spec.from === 'verbatim' ? stored().manifest : spec.expected;
+
+        // Wrapped in an object so a failure names the field rather than
+        // reporting a bare value that could belong to any of them.
+        expect({ [key]: project()[key] }).toEqual({ [key]: expected });
+      },
+    );
+
+    it('produces no field the seam type does not describe', () => {
+      // The other direction: an invented field would be one the policy could
+      // start reading without anything here having agreed to it.
+      expect(Object.keys(project()).sort()).toEqual(
+        Object.keys(ROUND_TRIP).sort(),
+      );
+    });
+
+    it('does not alias the verbatim manifest into the routing input', () => {
+      // `manifest` is handed out whole for the record. A `modelTiers` that
+      // pointed at the same array would let a consumer mutating one change a
+      // routing decision made from the other.
+      const capabilities = project();
+
+      expect(capabilities.modelTiers).not.toBe(
+        (capabilities.manifest as { modelTiers: unknown }).modelTiers,
+      );
     });
   });
 });
