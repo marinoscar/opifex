@@ -1,4 +1,9 @@
-import { quotaSummarySchema, quotaWindowReadingSchema } from './quota.dto';
+import {
+  quotaPositionSchema,
+  quotaRunnerReadingSchema,
+  quotaSummarySchema,
+  quotaWindowReadingSchema,
+} from './quota.dto';
 
 /**
  * The schema is the contract the cockpit reads, so the refusals worth having
@@ -66,6 +71,118 @@ describe('quotaWindowReadingSchema', () => {
         pressure: 'allowed_warning',
       }),
     ).toThrow();
+  });
+});
+
+describe('quotaPositionSchema', () => {
+  const position = {
+    exhausted: true,
+    resumesAt: '2026-08-25T15:00:00.000Z',
+    basis:
+      'runner reported rate-limit status "exhausted" for its five_hour window',
+  };
+
+  it('accepts a fully-stated position', () => {
+    expect(quotaPositionSchema.parse(position)).toEqual(position);
+  });
+
+  it('accepts a null resumesAt for a position that could not be dated', () => {
+    expect(
+      quotaPositionSchema.parse({ ...position, resumesAt: null }).resumesAt,
+    ).toBeNull();
+  });
+
+  it('refuses a position missing resumesAt outright, rather than defaulting it', () => {
+    // `resumesAt` is required, not optional-with-a-default: a caller that
+    // forgot the field must not silently get `null`, since `null` is itself
+    // a meaningful claim here (UNKNOWN, not "resumes now").
+    const { resumesAt: _resumesAt, ...withoutResumesAt } = position;
+
+    expect(() => quotaPositionSchema.parse(withoutResumesAt)).toThrow();
+  });
+
+  it('refuses a position missing exhausted', () => {
+    const { exhausted: _exhausted, ...withoutExhausted } = position;
+
+    expect(() => quotaPositionSchema.parse(withoutExhausted)).toThrow();
+  });
+});
+
+describe('quotaRunnerReadingSchema', () => {
+  const windowReading = {
+    windowKind: 'five_hour',
+    resetsAt: '2026-08-25T15:00:00.000Z',
+    startedAt: '2026-08-25T10:00:00.000Z',
+    startedAtBasis: 'vendor-window-length',
+    partialWindow: false,
+    pressure: 'allowed',
+    peakPressure: 'allowed',
+    lastObservedAt: '2026-08-25T11:55:00.000Z',
+    observations: 3,
+    opifexConsumption: {
+      runs: 1,
+      runsWithoutCost: 0,
+      reportedUsd: 1.5,
+      tokensInput: 500,
+      tokensOutput: 100,
+    },
+    burnFraction: null,
+    basis: 'Opifex’s own runs against the vendor’s "five_hour" window.',
+  };
+
+  it('parses position: null — UNKNOWN, not healthy (#301)', () => {
+    // Null is the honest answer when every live window reads `unknown`, or
+    // the only non-exhausted readings are staler than the meter's health
+    // horizon. It must not be confused with an absent field or a healthy
+    // position by the type that carries it.
+    const parsed = quotaRunnerReadingSchema.parse({
+      runnerKey: 'claude-code-local',
+      position: null,
+      windows: [windowReading],
+    });
+
+    expect(parsed.position).toBeNull();
+    expect(parsed.windows).toHaveLength(1);
+  });
+
+  it('accepts a runner whose position binds, carrying both halves', () => {
+    const parsed = quotaRunnerReadingSchema.parse({
+      runnerKey: 'claude-code-local',
+      position: {
+        exhausted: true,
+        resumesAt: '2026-08-25T15:00:00.000Z',
+        basis: 'runner reported rate-limit status "exhausted"',
+      },
+      windows: [windowReading],
+    });
+
+    expect(parsed.position?.exhausted).toBe(true);
+  });
+
+  it('refuses a position missing resumesAt, even nested under a runner', () => {
+    // The same refusal as `quotaPositionSchema`'s own test, pinned again at
+    // the shape a client actually receives — this is the object #301's
+    // acceptance criterion is about, not the bare schema in isolation.
+    expect(() =>
+      quotaRunnerReadingSchema.parse({
+        runnerKey: 'claude-code-local',
+        position: {
+          exhausted: true,
+          basis: 'runner reported rate-limit status "exhausted"',
+        },
+        windows: [windowReading],
+      }),
+    ).toThrow();
+  });
+
+  it('accepts a runner with no windows at all', () => {
+    expect(
+      quotaRunnerReadingSchema.parse({
+        runnerKey: 'claude-code-local',
+        position: null,
+        windows: [],
+      }).windows,
+    ).toEqual([]);
   });
 });
 
