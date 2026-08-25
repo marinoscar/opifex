@@ -24,7 +24,7 @@
  *     one timer swaps for an event subscription in an afternoon; a query cache
  *     with its own invalidation model does not.
  *
- * ## The five behaviours that are load-bearing, and all tested
+ * ## The six behaviours that are load-bearing, and all tested
  *
  *  1. **`enabled: false` fires no request at all.** This is how "there is no
  *     endpoint yet" is expressed. `state: 'unwired'` is STRUCTURAL — it comes
@@ -50,6 +50,14 @@
  *     requests that then all resolve at once, oldest last. A manual
  *     `refresh()` is the one thing allowed to supersede an in-flight poll, and
  *     it aborts it rather than racing it.
+ *  6. **A change of `fetcherKey` re-reads NOW** (#246). The fetcher lives in a
+ *     ref so an inline arrow function does not rebuild the timer every render
+ *     — but that same ref means a new fetcher, built from a new filter, would
+ *     otherwise sit unused until the next tick. So callers declare what their
+ *     fetcher reads and the hook re-reads when that changes, superseding the
+ *     in-flight request rather than racing it. The key is REQUIRED: a resource
+ *     that genuinely reads one fixed thing says so with `[]`, which is a claim
+ *     a reviewer can check, unlike an omission.
  *
  * Every `setState` past an `await` is guarded with `useIsMounted()` — the
  * house rule from `useUsers.ts`.
@@ -81,6 +89,20 @@ export interface UsePolledResourceOptions<T> {
    * restart the timer on every render.
    */
   fetcher: (signal: AbortSignal) => Promise<T>;
+  /**
+   * Everything the fetcher reads that can change — filters, pagination, the
+   * `:id` from the route. Compared shallowly, exactly like a `useEffect`
+   * dependency array, so an inline `[status, page]` is the intended shape.
+   *
+   * When it changes the hook re-reads IMMEDIATELY, aborting whatever is in
+   * flight so the superseded response cannot land after the fresh one. When it
+   * does not change, nothing happens: this is the only signal the hook has that
+   * a new `fetcher` identity means new DATA rather than a new render.
+   *
+   * Required, and deliberately so — the whole of #246 was one caller who did
+   * not have to say. `[]` is the right answer for a resource with no inputs.
+   */
+  fetcherKey: readonly unknown[];
   /** Base interval. Backoff multiplies this; it is never the ceiling. */
   intervalMs: number;
   /** `false` => zero requests, ever, and `state` stays `'unwired'`. */
@@ -128,6 +150,17 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
 
+/**
+ * `useEffect`-style shallow comparison of two dependency arrays.
+ *
+ * Shallow and not by identity: callers pass an inline `[status, page]`, which
+ * is a new array every render. Comparing identity would refetch on every
+ * render — the exact failure mode #246 rejects by name.
+ */
+function keysEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((value, i) => Object.is(value, b[i]));
+}
+
 /** The default emptiness test: only an array can be empty without being absent. */
 function defaultIsEmpty(data: unknown): boolean {
   return Array.isArray(data) && data.length === 0;
@@ -135,6 +168,7 @@ function defaultIsEmpty(data: unknown): boolean {
 
 export function usePolledResource<T>({
   fetcher,
+  fetcherKey,
   intervalMs,
   enabled,
   isEmpty,
@@ -215,6 +249,37 @@ export function usePolledResource<T>({
     if (!enabled) return;
     await run({ manual: true });
   }, [enabled, run]);
+
+  /**
+   * The key as of the last read we either issued or deliberately skipped.
+   *
+   * A ref rather than state: this drives an effect, never a render, and making
+   * it state would add a render to every filter change for no visible gain.
+   */
+  const fetcherKeyRef = useRef(fetcherKey);
+
+  // Behaviour 6 (#246). No dependency array, because the dependency IS the
+  // caller's array and it must be compared shallowly rather than by identity —
+  // React's own comparison would fire on every render for an inline `[status]`.
+  //
+  // Declared BEFORE the polling effect on purpose: when a key change lands in
+  // the same commit as a session start (enabled flipping true, or the tab
+  // coming back), this effect runs first, and the polling effect's immediate
+  // fetch is then dropped by single-flight instead of aborting and re-issuing
+  // the request this one just started.
+  useEffect(() => {
+    if (keysEqual(fetcherKeyRef.current, fetcherKey)) return;
+    fetcherKeyRef.current = fetcherKey;
+    // While disabled or hidden there is nothing to supersede and nothing on
+    // screen to correct: the session start will read the new key when it
+    // resumes, so firing here would only buy a second request.
+    if (!enabled || !isVisible) return;
+    // `manual: true` because a filter change IS the operator asking for data
+    // now. It aborts the in-flight request rather than racing it, so the old
+    // filter's response cannot land after the new one's and put the wrong rows
+    // under the new heading.
+    void run({ manual: true });
+  });
 
   // Visibility, as state rather than as a ref, because the polling effect
   // below has to re-run when it flips.

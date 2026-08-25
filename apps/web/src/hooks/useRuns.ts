@@ -28,8 +28,10 @@ export function useRuns(
 ): UsePolledResourceResult<RunsPage> {
   const { page, pageSize, status, sort, direction } = params;
 
-  // Depends on every parameter, so changing a filter refetches rather than
-  // re-rendering the previous page's rows under a new heading.
+  // Every parameter appears twice on purpose: in the fetcher's dependencies,
+  // so the closure reads current values, and in `fetcherKey` below, which is
+  // what actually makes a change REFETCH. Until #246 only the first half was
+  // here, and clicking "next page" issued no request for up to 30 seconds.
   const fetcher = useCallback(
     (signal: AbortSignal) =>
       getRuns({ page, pageSize, status, sort, direction }, signal),
@@ -38,6 +40,7 @@ export function useRuns(
 
   return usePolledResource<RunsPage>({
     fetcher,
+    fetcherKey: [page, pageSize, status, sort, direction],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     enabled: true,
   });

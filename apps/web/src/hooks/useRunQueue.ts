@@ -37,6 +37,7 @@ export function useRunQueue(
 
   const resource = usePolledResource<QueueEntry[]>({
     fetcher,
+    fetcherKey: [limit],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     enabled: endpoint.available,
   });

@@ -20,7 +20,7 @@
  * built yet", and there is nothing to express.
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import { COCKPIT_POLL_INTERVAL_MS } from '../config/cockpitApi';
 import {
   getPromotionLadder,
@@ -64,41 +64,16 @@ export function useTrustGrants(
     [repositoryId, actionClass, status, includeEnded],
   );
 
-  const grants = usePolledResource<TrustGrantListItem[]>({
+  // The filters go in `fetcherKey`, so changing one re-reads immediately
+  // rather than leaving the old rows under a control that says it changed
+  // something. This used to be a local `useRefetchOnChange` workaround here —
+  // #246 moved it into the hook, where every other filtered screen gets it too.
+  return usePolledResource<TrustGrantListItem[]>({
     fetcher,
+    fetcherKey: [repositoryId, actionClass, status, includeEnded],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     enabled: true,
   });
-
-  // `usePolledResource` holds its fetcher in a ref on purpose — a caller's
-  // inline arrow function is a new identity every render, and depending on it
-  // would rebuild the timer before it ever ticked. The cost is that a NEW
-  // fetcher does not by itself trigger a read, so a filter change would
-  // otherwise leave the old rows on screen until the next 30s tick, under a
-  // control that says it changed something. `refresh()` is the supported way
-  // to say "now": it supersedes the in-flight request rather than racing it.
-  useRefetchOnChange(
-    `${repositoryId ?? ''}|${actionClass ?? ''}|${status ?? ''}|${includeEnded ? '1' : '0'}`,
-    grants.refresh,
-  );
-
-  return grants;
-}
-
-/**
- * Re-read whenever `key` changes, skipping the first render.
- *
- * The skip matters: `usePolledResource` already fetches immediately on mount,
- * and firing here as well would double every page load.
- */
-function useRefetchOnChange(key: string, refresh: () => Promise<void>): void {
-  const previous = useRef(key);
-
-  useEffect(() => {
-    if (previous.current === key) return;
-    previous.current = key;
-    void refresh();
-  }, [key, refresh]);
 }
 
 /** One grant, with its registry entry and both halves of its renewal chain. */
@@ -112,6 +87,9 @@ export function useTrustGrant(
 
   return usePolledResource<TrustGrantDetail>({
     fetcher,
+    // No route carries a `key`, so grant -> grant is a re-render, not a
+    // remount.
+    fetcherKey: [id],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     // An id that has not arrived yet must not fire a request for
     // `/trust/grants/`.
@@ -136,6 +114,8 @@ export function usePromotionLadder(): UsePolledResourceResult<PromotionLadder> {
 
   return usePolledResource<PromotionLadder>({
     fetcher,
+    // Nothing to key on: the ladder takes no parameters.
+    fetcherKey: [],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     enabled: true,
   });

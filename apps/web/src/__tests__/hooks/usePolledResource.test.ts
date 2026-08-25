@@ -55,6 +55,7 @@ function deferredFetcher() {
 
   return {
     fetcher,
+    fetcherKey: [],
     signals,
     resolve: (value: string[]) => resolve(value),
     reject: (error: Error) => reject(error),
@@ -95,6 +96,7 @@ describe('usePolledResource', () => {
       const { result } = renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: false,
         }),
@@ -116,6 +118,7 @@ describe('usePolledResource', () => {
       const { result } = renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: false,
         }),
@@ -136,6 +139,7 @@ describe('usePolledResource', () => {
         ({ enabled }: { enabled: boolean }) =>
           usePolledResource<string[]>({
             fetcher,
+            fetcherKey: [],
             intervalMs: INTERVAL,
             enabled,
           }),
@@ -161,6 +165,7 @@ describe('usePolledResource', () => {
       const { result } = renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
         }),
@@ -185,6 +190,7 @@ describe('usePolledResource', () => {
       const { result } = renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
         }),
@@ -206,6 +212,7 @@ describe('usePolledResource', () => {
       const { result } = renderHookWithProviders(() =>
         usePolledResource<{ items: string[] }>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
           isEmpty: (data) => data.items.length === 0,
@@ -222,6 +229,7 @@ describe('usePolledResource', () => {
       const { result } = renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
         }),
@@ -244,6 +252,7 @@ describe('usePolledResource', () => {
       renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
         }),
@@ -276,6 +285,7 @@ describe('usePolledResource', () => {
       renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
         }),
@@ -306,6 +316,7 @@ describe('usePolledResource', () => {
       const { unmount } = renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
         }),
@@ -325,6 +336,7 @@ describe('usePolledResource', () => {
       const { result } = renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
         }),
@@ -356,6 +368,7 @@ describe('usePolledResource', () => {
       const { result } = renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
         }),
@@ -386,6 +399,7 @@ describe('usePolledResource', () => {
       renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
         }),
@@ -420,6 +434,7 @@ describe('usePolledResource', () => {
       renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
         }),
@@ -444,6 +459,7 @@ describe('usePolledResource', () => {
       const { result } = renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
         }),
@@ -492,6 +508,7 @@ describe('usePolledResource', () => {
           // A base interval large enough that two failures already exceed the
           // cap, so the assertion is about the cap and not about the maths.
           fetcher,
+          fetcherKey: [],
           intervalMs: MAX_POLL_BACKOFF_MS,
           enabled: true,
         }),
@@ -521,6 +538,7 @@ describe('usePolledResource', () => {
       const { result } = renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
         }),
@@ -548,6 +566,7 @@ describe('usePolledResource', () => {
       const { result } = renderHookWithProviders(() =>
         usePolledResource<string[]>({
           fetcher,
+          fetcherKey: [],
           intervalMs: INTERVAL,
           enabled: true,
         }),
@@ -587,7 +606,12 @@ describe('usePolledResource', () => {
     it('has a live request in flight after the double-invoke', async () => {
       const { fetcher, signals } = deferredFetcher();
 
-      renderStrict<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true });
+      renderStrict<string[]>({
+        fetcher,
+        fetcherKey: [],
+        intervalMs: INTERVAL,
+        enabled: true,
+      });
 
       // The assertion that fails without the fix: not "a request was made"
       // (one was, and it was killed), but "a request is ALIVE". Every signal
@@ -602,6 +626,7 @@ describe('usePolledResource', () => {
 
       const { result } = renderStrict<string[]>({
         fetcher,
+        fetcherKey: [],
         intervalMs: INTERVAL,
         enabled: true,
       });
@@ -618,7 +643,12 @@ describe('usePolledResource', () => {
     it('still fires exactly one request per session, not one per invoke', async () => {
       const fetcher = vi.fn().mockResolvedValue(['run-1']);
 
-      renderStrict<string[]>({ fetcher, intervalMs: INTERVAL, enabled: true });
+      renderStrict<string[]>({
+        fetcher,
+        fetcherKey: [],
+        intervalMs: INTERVAL,
+        enabled: true,
+      });
       await flush();
 
       // Re-arming must not turn into re-fetching. The first mount's request is
@@ -642,6 +672,7 @@ describe('usePolledResource', () => {
 
       const { result } = renderStrict<string[]>({
         fetcher,
+        fetcherKey: [],
         intervalMs: INTERVAL,
         enabled: true,
       });

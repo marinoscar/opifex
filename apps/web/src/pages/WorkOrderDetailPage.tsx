@@ -72,6 +72,7 @@ export default function WorkOrderDetailPage() {
   );
   const { data, error } = usePolledResource<WorkOrderDetail>({
     fetcher,
+    fetcherKey: [idOrIdentity],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     enabled: Boolean(idOrIdentity),
   });

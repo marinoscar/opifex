@@ -38,6 +38,8 @@ export function useCockpitMetrics(): UseCockpitMetricsResult {
 
   const resource = usePolledResource<MetricsSummary>({
     fetcher,
+    // Nothing to key on: the summary takes no parameters.
+    fetcherKey: [],
     intervalMs: COCKPIT_POLL_INTERVAL_MS,
     enabled: endpoint.available,
     // No `isEmpty`. A metrics summary is never "empty" — it is six readings,

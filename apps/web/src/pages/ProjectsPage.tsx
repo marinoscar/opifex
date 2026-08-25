@@ -59,6 +59,7 @@ export default function ProjectsPage() {
   const { data, state, error, isRefreshing } =
     usePolledResource<RepositoriesPage>({
       fetcher,
+      fetcherKey: [page, pageSize, observeEnabled, dispatchEnabled],
       intervalMs: COCKPIT_POLL_INTERVAL_MS,
       enabled: true,
     });
