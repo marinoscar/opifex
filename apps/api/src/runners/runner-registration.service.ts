@@ -39,6 +39,26 @@ import type { Runner, RunnerCapabilities } from './runner.types';
  * without losing its history."* It also gives dispatch a better answer — "the
  * only runner is disabled" is actionable, "no runner is registered" sends an
  * operator looking for a bug in registration.
+ *
+ * ## Nor is registered-but-unavailable, which is a third thing (#253)
+ *
+ * The design above was true and unreachable. A probe failure used to be said
+ * as `maxConcurrency: 0`; the schema required at least one slot, so the
+ * manifest failed the boundary check below and the runner was left
+ * unregistered — the precise outcome this comment says the design exists to
+ * avoid, reported to the operator as an empty fleet. Schema 1.3.0 gives the
+ * fact its own field, `available`, and the runner keeps its real capacity, so
+ * the manifest validates and the branch below reports the health problem for
+ * the first time. It had been dead code since it was written.
+ *
+ * Three states, three signals, none of them collapsed: `enabled: false` is an
+ * operator's switch, `available: false` is a health report, `maxConcurrency`
+ * is capacity. They are logged as separate lines that can both appear — the
+ * dev deployment is regularly both — and dispatch names them differently too.
+ *
+ * None of this weakens the boundary. A manifest that is genuinely malformed
+ * still keeps its runner out of the fleet; what changed is that being unable
+ * to work stopped counting as being malformed.
  */
 @Injectable()
 export class RunnerRegistrationService implements OnModuleInit {
@@ -123,17 +143,34 @@ export class RunnerRegistrationService implements OnModuleInit {
     // same visible symptom — work orders queueing forever — and an operator
     // scanning for why deserves to find the reason without turning up the log
     // level.
+    //
+    // Two conditions, two lines, and deliberately not one `else if` chain.
+    // `enabled: false` is a decision a human made and `available: false` is a
+    // condition the machine is in; they take opposite responses — flip a flag
+    // back, or fix what the runner's own reason names — and they are very
+    // often BOTH true at once, which is exactly the case the chain used to
+    // hide. The dev deployment defaults the flag off AND has no `claude` on
+    // its PATH, so reporting only the flag would send an operator to fix it
+    // and leave them waiting on a runner that still could not take the work.
     if (!enabled) {
       this.logger.warn(
-        `Registered ${capabilities.key}@${capabilities.version} as DISABLED; ` +
-          'set CLAUDE_CODE_LOCAL_ENABLED=true to let dispatch route to it',
+        `Registered ${capabilities.key}@${capabilities.version} as DISABLED by ` +
+          'configuration; set CLAUDE_CODE_LOCAL_ENABLED=true to let dispatch route to it',
       );
-    } else if (capabilities.maxConcurrency === 0) {
+    }
+
+    // `=== false` rather than `!capabilities.available`: absent means
+    // available, and a falsy test would report every healthy runner as broken.
+    if (capabilities.available === false) {
       this.logger.warn(
-        `Registered ${capabilities.key} with zero capacity — its binary could not be ` +
-          'probed, so dispatch will queue rather than route to it',
+        `Registered ${capabilities.key} as UNAVAILABLE: it can take no work right now, ` +
+          `and says why — ${capabilities.unavailableReason ?? 'no reason given'} ` +
+          `Its ${capabilities.maxConcurrency} slot(s) are intact and nothing has been ` +
+          'switched off; dispatch will queue rather than route to it until this clears.',
       );
-    } else {
+    }
+
+    if (enabled && capabilities.available !== false) {
       this.logger.log(
         `Registered ${capabilities.key}@${capabilities.version}, ` +
           `${capabilities.maxConcurrency} slot(s), ${capabilities.streamingFidelity} streaming`,

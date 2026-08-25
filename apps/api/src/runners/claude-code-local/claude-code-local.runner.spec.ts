@@ -647,18 +647,46 @@ describe('ClaudeCodeLocalRunner', () => {
       expect(capabilities.executionLocus).toBe('own_infrastructure');
     }, 30_000);
 
-    it('declares zero capacity when the binary cannot be probed', async () => {
-      // Zero headroom is already how the dispatch policy says "route nothing
-      // here", so a missing CLI degrades into a queue with a reason rather
-      // than into a run that fails after being authorized.
+    it('declares itself unavailable when the binary cannot be probed', async () => {
+      // A missing CLI degrades into a queue with a reason rather than into a
+      // run that fails after being authorized. It used to say this as
+      // `maxConcurrency: 0`, which was the wrong field twice over: the schema
+      // rejected it, so the runner ended up unregistered rather than
+      // unavailable (#253), and the claim was false anyway — the slots exist
+      // and will be usable the moment the CLI is.
       const runner = build({
         'runners.claudeCodeLocal.binary': join(binDir, 'absent'),
       });
 
       const capabilities = await runner.capabilities();
 
-      expect(capabilities.maxConcurrency).toBe(0);
+      expect(capabilities.available).toBe(false);
+      expect(capabilities.unavailableReason).toContain('could not be probed');
+      expect(capabilities.maxConcurrency).toBe(2);
       expect(capabilities.version).toBe('unavailable');
+      // And the published document says the same, because a fact that reaches
+      // the typed field and not the manifest reaches nothing that validates.
+      expect(capabilities.manifest).toMatchObject({
+        available: false,
+        maxConcurrency: 2,
+      });
+    }, 30_000);
+
+    it('says nothing about availability when the binary is fine', async () => {
+      // ABSENT MEANS AVAILABLE, so a healthy runner does not mention its
+      // health — and must not, or every consumer reading the manifest learns
+      // to expect a field that a runner written before 1.3.0 never sends.
+      const binary = await fakeClaude(
+        'healthy',
+        'echo "2.1.240 (Claude Code)"; exit 0',
+      );
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const capabilities = await runner.capabilities();
+
+      expect(capabilities.available).toBeUndefined();
+      expect('available' in capabilities.manifest).toBe(false);
+      expect('unavailableReason' in capabilities.manifest).toBe(false);
     }, 30_000);
 
     it('declares the fidelity the mapper actually delivers', async () => {
