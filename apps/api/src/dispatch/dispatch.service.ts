@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { RUNNER_CAPABILITY_MODEL_TIERS } from '../contracts/generated';
 import { PrismaService } from '../prisma/prisma.service';
+import { meterQuotaPosition, type MeterWindow } from '../quota/quota-window';
 import type { BlockedReason } from '../run-events/run-event.types';
 import type {
   ModelTier,
@@ -59,6 +60,9 @@ const QUOTA_BLOCK_REASONS: readonly BlockedReason[] = [
 @Injectable()
 export class DispatchService {
   private readonly logger = new Logger(DispatchService.name);
+
+  /** runnerKey → the disagreement this process has already reported. */
+  private readonly reportedDisagreements = new Map<string, string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -131,7 +135,7 @@ export class DispatchService {
    * how a tick that should be arithmetic becomes an N+1.
    */
   private async loadPool(now: Date): Promise<RunnerPoolEntry[]> {
-    const [runners, loads, blocked] = await Promise.all([
+    const [runners, loads, blocked, meter] = await Promise.all([
       this.prisma.runner.findMany({
         include: { capability: true },
         orderBy: { key: 'asc' },
@@ -142,12 +146,14 @@ export class DispatchService {
         _count: { _all: true },
       }),
       this.loadQuotaBlocks(),
+      this.loadQuotaMeter(now),
     ]);
 
     const liveByRunner = new Map(
       loads.map((row) => [row.runnerKey, row._count._all]),
     );
-    const quotaByRunner = quotaPositions(blocked, now);
+    const derivedByRunner = quotaPositions(blocked, now);
+    const meterByRunner = meterPositions(meter, now);
 
     return (
       runners
@@ -165,9 +171,13 @@ export class DispatchService {
           enabled: runner.enabled,
           liveRuns: liveByRunner.get(runner.key) ?? 0,
           capabilities: toCapabilities(runner, runner.capability!, this.logger),
-          // Undefined for a runner with no observed block, which the policy
-          // reads as UNKNOWN and routes to freely.
-          quota: quotaByRunner.get(runner.key),
+          // Undefined for a runner NEITHER signal has anything to say about,
+          // which the policy reads as UNKNOWN and routes to freely.
+          quota: this.resolveQuota(
+            runner.key,
+            derivedByRunner.get(runner.key),
+            meterByRunner.get(runner.key),
+          ),
         }))
     );
   }
@@ -204,6 +214,72 @@ export class DispatchService {
     });
   }
 
+  /**
+   * Every window the fleet's runners have observed that has not yet rolled.
+   *
+   * ## Deliberately not `QuotaService.readings()`
+   *
+   * That method keeps the NEWEST live window per runner, which is right for a
+   * panel showing "the current window" and wrong here — a `weekly` row almost
+   * always has a later reset than a `five_hour` one, so keeping the newest
+   * would hide an exhausted five-hour window behind a healthy weekly one. Any
+   * live window can bind, so routing loads them all and
+   * {@link meterQuotaPosition} collapses them. It also does no consumption
+   * aggregation at all: `readings()` runs three aggregate queries per runner
+   * to sum spend through a window, which is a read model's budget and not the
+   * dispatch path's.
+   *
+   * Read straight from Prisma, alongside `loadQuotaBlocks`, so the whole pool
+   * still loads in one `Promise.all` and dispatch gains no injected dependency
+   * for a single indexed `findMany`.
+   */
+  private async loadQuotaMeter(now: Date): Promise<MeterWindowRow[]> {
+    return this.prisma.quotaWindow.findMany({
+      where: { resetsAt: { gt: now } },
+      select: {
+        runnerKey: true,
+        kind: true,
+        resetsAt: true,
+        pressure: true,
+        lastObservedAt: true,
+      },
+    });
+  }
+
+  /**
+   * The single position for one runner, and the record when the two disagree.
+   *
+   * The resolution itself is {@link resolveQuotaPosition}, which is pure. This
+   * wrapper exists for the log line, and for one thing the pure function
+   * cannot do: say it only once. `decide()` is called hypothetically by
+   * `cockpit/queue.service.ts` on every queue poll, so warning per resolution
+   * would print the same sentence twice a minute for as long as a five-hour
+   * window lasts. Keyed on the resolved basis per runner, in memory, on the
+   * same principle as `RunPollerService.deadlineEnforced` — it is a fact about
+   * what THIS process has already said, not about the runner — and bounded by
+   * the fleet size rather than by time.
+   */
+  private resolveQuota(
+    runnerKey: string,
+    derived: RunnerQuotaPosition | undefined,
+    meter: RunnerQuotaPosition | undefined,
+  ): RunnerQuotaPosition | undefined {
+    const resolved = resolveQuotaPosition(derived, meter);
+
+    if (derived && meter && derived.exhausted !== meter.exhausted) {
+      if (this.reportedDisagreements.get(runnerKey) !== resolved?.basis) {
+        this.reportedDisagreements.set(runnerKey, resolved?.basis ?? '');
+        this.logger.warn(
+          `Quota signals disagree for ${runnerKey}; taking the exhausted reading: ${resolved?.basis}`,
+        );
+      }
+    } else {
+      this.reportedDisagreements.delete(runnerKey);
+    }
+
+    return resolved;
+  }
+
   private async countLiveRuns(): Promise<number> {
     return this.prisma.run.count({
       where: { status: { in: OCCUPYING_STATUSES as unknown as never } },
@@ -216,6 +292,9 @@ interface BlockedRunRow {
   resumesAt: Date | null;
   events: { blockedReason: string | null; blockedUntil: Date | null }[];
 }
+
+/** A `quota_windows` row as this file reads it. `pressure` arrives as its enum. */
+type MeterWindowRow = MeterWindow & { runnerKey: string };
 
 /**
  * Turn blocked runs into one quota position per runner, resolved against now.
@@ -288,6 +367,184 @@ function quotaPositions(
       },
     ]),
   );
+}
+
+/**
+ * The meter's windows, collapsed to one position per runner.
+ *
+ * The per-runner resolution — every live window binds, the latest exhausted
+ * one dates the refill, a stale reading asserts no health — lives in
+ * `quota/quota-window.ts` with the rest of the quota arithmetic. This is only
+ * the grouping.
+ */
+function meterPositions(
+  windows: readonly MeterWindowRow[],
+  now: Date,
+): Map<string, RunnerQuotaPosition> {
+  const byRunner = new Map<string, MeterWindowRow[]>();
+  for (const window of windows) {
+    const seen = byRunner.get(window.runnerKey);
+    if (seen) seen.push(window);
+    else byRunner.set(window.runnerKey, [window]);
+  }
+
+  const positions = new Map<string, RunnerQuotaPosition>();
+  for (const [runnerKey, runnerWindows] of byRunner) {
+    const position = meterQuotaPosition(runnerWindows, now);
+    if (position) positions.set(runnerKey, position);
+  }
+
+  return positions;
+}
+
+/**
+ * The ONE quota position, resolved from the two signals that can produce one.
+ *
+ * ## Two producers, one field (#285)
+ *
+ * - **Blocked runs** (#105), `quotaPositions` above: runs sitting `blocked` on
+ *   a dated rate-limit reason. Lagging and one-directional — it speaks only
+ *   after a run has already hit the wall, and it can never assert health,
+ *   because the absence of a park is silence rather than evidence. Every
+ *   position it produces is `exhausted: true`; that is the only claim it can
+ *   make.
+ * - **The runner's meter** (#231), `quota/quota-window.ts`: vendor rate-limit
+ *   lines observed while the runner was still serving. It arrives EARLIER —
+ *   before anything has parked — and it is the only signal that can say
+ *   `allowed` positively. It is also only as fresh as the last poll of a live
+ *   run, which is why health expires and exhaustion does not — see
+ *   `QUOTA_METER_HEALTH_HORIZON_MS`, which has already been applied by the
+ *   time a position reaches this function.
+ *
+ * `decideDispatch` must never learn there are two. It is pure and clock-free
+ * by construction, every time comparison the decision rests on already happens
+ * in this file, and a second source reconciled inside the policy would be the
+ * same reconciliation in the one place that cannot own a clock to do it with.
+ *
+ * ## The rule: exhaustion wins, from either source. Health needs agreement.
+ *
+ * Stated as three cases, in order:
+ *
+ *  1. **Either source says exhausted → exhausted.** When BOTH do, `resumesAt`
+ *     is the later of the two dates, for the reason `quotaPositions` above
+ *     already takes the later of its own two. When only one does, it is that
+ *     source's date and not the later one — the other's `resumesAt` dates a
+ *     window that is not binding, and a healthy weekly window resetting on
+ *     Sunday must not postpone a five-hour refill due in an hour.
+ *  2. **Neither says exhausted, and the meter is fresh → healthy**, with the
+ *     meter's basis. The derived signal has no vote here: it does not have one
+ *     to cast.
+ *  3. **Nothing left → undefined**, which routing reads as UNKNOWN and routes
+ *     to freely. VISION §6: unknown is not zero. A runner that has never
+ *     parked and never emitted a rate-limit line is fully usable, and a runner
+ *     whose only reading has gone stale is back to being exactly that.
+ *
+ * ## Why exhaustion wins, rather than the fresher reading
+ *
+ * The costs are asymmetric. Believing a false `exhausted` delays work by the
+ * length of the false claim. Believing a false `healthy` dispatches into a
+ * wall: it spends a slot, spends an attempt, and produces the park anyway —
+ * later, and after paying for it. That park is the exact dead time #105 exists
+ * to remove, so the signal that predicts it is the one to trust when they
+ * conflict.
+ *
+ * What makes that safe rather than merely timid is that the false-exhausted
+ * case is BOUNDED, and bounded by the sources themselves. Both self-expire
+ * against a date rather than against a restatement: `quotaPositions` drops a
+ * block whose dates have passed, and `quotaPositionFrom` drops a window that
+ * has rolled. Neither can hold a runner out of service indefinitely, and no
+ * human has to notice. The worst case is the narrow one — the meter has seen a
+ * new window open while a blocked run is still waiting out #56's jitter — and
+ * that tail is capped at `MAX_JITTER_MS`, ten minutes.
+ *
+ * That narrow case is also the one where preferring exhaustion is not just
+ * cheap but RIGHT, which is what carries `quotaPositions`'s own "later of the
+ * two dates wins ... erring towards patience" across to a second signal. The
+ * jitter exists (#56) to stop every run parked by one window resuming into the
+ * same instant and re-exhausting it. A fresh meter reading releasing the
+ * runner early would put NEW work into precisely the instant that jitter was
+ * holding open, which is the thundering herd arriving through the front door.
+ *
+ * ## The disagreement worth naming is only one of the two
+ *
+ * Meter-exhausted with the blocked signal silent is not a disagreement at all:
+ * silence is not a health claim, so the meter simply speaks, and that case is
+ * the whole point of wiring it — a park avoided before the first run hits the
+ * wall. The real disagreement is the other one: a blocked run says exhausted
+ * while a fresh meter reading says allowed. It need not be staleness — VISION
+ * §11's interactive co-tenant can empty the window between the vendor's line
+ * and the block, in which case both readings were true when taken.
+ *
+ * So it is RECORDED rather than resolved away. `basis` names both sources and
+ * says they disagreed, because that string is printed into the routing reason
+ * and persisted with an avoided park (#264), and #64 requires a decision be
+ * reconstructible from that line alone. No new table: the disagreement is an
+ * annotation on a decision, not a fact with a life of its own.
+ *
+ * Pure and clock-free, like the policy it feeds. Everything time-dependent —
+ * has the block lifted, has the window rolled, is the reading fresh — has
+ * already been settled by the two callers above against the one `now`.
+ */
+export function resolveQuotaPosition(
+  derived: RunnerQuotaPosition | undefined,
+  meter: RunnerQuotaPosition | undefined,
+): RunnerQuotaPosition | undefined {
+  // Every basis is prefixed with the source that produced it, including the
+  // single-source cases. #285 requires `basis` to NAME the source, and a
+  // string that names it only when there was a second one to distinguish it
+  // from is a record that reads differently depending on facts it does not
+  // contain.
+  if (!derived) return meter ? sourced('meter', meter) : undefined;
+  if (!meter) return sourced('blocked runs', derived);
+
+  if (derived.exhausted && meter.exhausted) {
+    return {
+      exhausted: true,
+      resumesAt: laterOf(derived.resumesAt, meter.resumesAt),
+      basis:
+        `blocked runs and the runner's own meter agree — ` +
+        `blocked runs: ${derived.basis}; meter: ${meter.basis}`,
+    };
+  }
+
+  if (derived.exhausted !== meter.exhausted) {
+    const exhausted = derived.exhausted ? derived : meter;
+    return {
+      exhausted: true,
+      resumesAt: exhausted.resumesAt,
+      basis:
+        `blocked runs and the runner's own meter DISAGREE, and the exhausted ` +
+        `reading is taken — blocked runs: ${derived.basis}; meter: ${meter.basis}`,
+    };
+  }
+
+  // Both say healthy. Only the meter can say it, so only the meter's sentence
+  // is worth printing; the derived signal being absent of a block is the
+  // silence it always is.
+  return sourced('meter', meter);
+}
+
+/** The same position, with its producer named in the basis. */
+function sourced(
+  source: 'meter' | 'blocked runs',
+  position: RunnerQuotaPosition,
+): RunnerQuotaPosition {
+  return { ...position, basis: `${source}: ${position.basis}` };
+}
+
+/**
+ * The later of two ISO instants, either of which may be missing.
+ *
+ * Compared as strings, which is exact rather than approximate here: both are
+ * `Date.prototype.toISOString()` output, so both are fixed-width UTC and
+ * lexicographic order IS chronological order. Kept that way so the one place
+ * that holds a date as a string for the policy's sake does not quietly rebuild
+ * a `Date` to compare it.
+ */
+function laterOf(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return a > b ? a : b;
 }
 
 type RunnerRow = Awaited<

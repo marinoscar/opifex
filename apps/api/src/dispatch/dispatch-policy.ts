@@ -33,13 +33,19 @@ import type {
  *
  * ## It is binary and dated, not a percentage
  *
- * There is no quota meter to read (#231 is unbuilt, and inventing a second one
- * here would guarantee drift). What Opifex genuinely observes is first-hand and
- * already recorded: runs of this runner sitting `blocked` on a rate-limit
- * reason with a reset time still in the future. That supports exactly one
- * claim — *this runner is out of quota until T* — and no fraction of headroom
- * is derivable from it. When #231 lands it can populate this same shape with a
- * better basis, and the routing rule below does not change.
+ * Both things Opifex observes are first-hand and already recorded: runs of
+ * this runner sitting `blocked` on a rate-limit reason with a reset time still
+ * in the future (#105), and vendor rate-limit lines the runner emitted while
+ * still serving (#231). Each supports exactly one claim — *this runner is out
+ * of quota until T*, or *it had room at time U* — and no fraction of headroom
+ * is derivable from either, because no vendor publishes a capacity to divide
+ * by (see `quota/quota-window.ts`).
+ *
+ * There are now two producers and this is still ONE field, which held: #231
+ * populated this same shape with a better basis, #285 stated the precedence
+ * between them in `DispatchService`, and the routing rule below did not
+ * change. It still reads one already-resolved fact and does not know, or need
+ * to know, which source produced it — `basis` says so for the record.
  *
  * ## Absent means UNKNOWN, and unknown is usable
  *
@@ -73,7 +79,11 @@ export interface RunnerPoolEntry {
   /** Runs currently occupying this runner's concurrency. */
   liveRuns: number;
   /**
-   * Its quota position (#105), or undefined when nothing is known.
+   * Its quota position, or undefined when NEITHER source knows anything.
+   *
+   * Resolved before it gets here, from the blocked-run signal (#105) and the
+   * runner's own meter (#231), by the precedence rule #285 states in
+   * `DispatchService`. Undefined is UNKNOWN and routes freely.
    *
    * Note this is NOT how Opifex limits its share of a shared subscription.
    * VISION §11 notes automated runs compete with the operator's own
