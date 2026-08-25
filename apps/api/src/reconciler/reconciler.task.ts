@@ -19,14 +19,39 @@ import {
   type WatchdogSweepResult,
 } from '../watchdog/watchdog.service';
 import type { ReconcileAction } from './diff/actions.types';
+import {
+  fromMirrorLabels,
+  fromSpecFeedback,
+} from './execute/execution-failures';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
 import { SpecFeedbackExecutor } from './execute/spec-feedback.executor';
 import { ReconcileLogService } from './log/reconcile-log.service';
 import { ReconcilerService } from './reconciler.service';
-import type { TickRecord } from './reconciler.types';
+import type { TickExecutionFailure, TickRecord } from './reconciler.types';
 import { RepositoriesService } from '../repositories/repositories.service';
 
 const INTERVAL_NAME = 'reconciler-tick';
+
+/**
+ * What this tick's acting phase has established so far (#320).
+ *
+ * Accumulated as a local of `runOnce` and threaded through the steps that can
+ * act, rather than held on the instance: `setInterval` does not await, so two
+ * `runOnce` calls can overlap when one runs long, and instance state would
+ * cross-contaminate their records.
+ *
+ * `ran` is what separates a null `executionFailures` from an empty one, and it
+ * is set only when an executor RETURNS. An executor that threw outright — a
+ * bug, since both catch per-item — leaves it false, so the column stays null
+ * rather than saying `[]`: null reads as "nothing acted", which an operator
+ * can see is inconsistent with a non-zero `actionsExecuted`, whereas `[]`
+ * would read as a clean bill of health nobody issued.
+ */
+interface ActingPhase {
+  /** True once either executor has returned an outcome this tick. */
+  ran: boolean;
+  failures: TickExecutionFailure[];
+}
 
 /**
  * Drives {@link ReconcilerService.tick} on a schedule.
@@ -331,11 +356,19 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
    * Folding it in behind that early return would mean the one repository with
    * nothing else happening is the one whose authors never hear back.
    */
-  private async reportSpecRejections(record: TickRecord): Promise<void> {
+  private async reportSpecRejections(
+    record: TickRecord,
+    acting: ActingPhase,
+  ): Promise<void> {
     if (record.rejections.length === 0) return;
 
     try {
       const outcome = await this.specFeedback.report(record.rejections);
+      // The executor returned, so this tick's acting phase has an answer —
+      // even if every rejection was suppressed and nothing was posted. See
+      // `ActingPhase`.
+      acting.ran = true;
+      acting.failures.push(...fromSpecFeedback(outcome));
       if (outcome.failures.length > 0) {
         this.logger.error(
           `Spec feedback: ${outcome.failures.length} comment(s) could not be posted — ` +
@@ -383,7 +416,8 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Write back what this tick actually did to GitHub (#317).
+   * Write back what this tick actually did to GitHub (#317), and what went
+   * wrong doing it (#320).
    *
    * The count is a DELTA over `GitHubWriteService`'s issued-writes counter,
    * taken across the whole of `runOnce`, rather than a sum of what each
@@ -402,29 +436,51 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
    *
    * The delta can attribute a concurrent write — one the cockpit or the
    * supervisor made while the tick was in flight — to this tick. Accepted, and
-   * documented on `ReconcileLogService.recordWritesIssued`: the number's job
+   * documented on `ReconcileLogService.recordExecution`: the number's job
    * is to catch a window that was meant to be read-only, so it is biased to
    * over-report rather than to miss.
+   *
+   * The failures go the OPPOSITE way — they are exactly what the executors
+   * returned, and nothing else. The write service counts requests and cannot
+   * say which one failed or on whose behalf; the executors can. And dispatch's
+   * own write failures deliberately do not appear here: they are recorded on
+   * the RUN, which is the row dispatch already has to fail onto.
    */
-  private async recordWritesIssued(
+  private async recordExecution(
     record: TickRecord | undefined,
     issued: number,
+    acting: ActingPhase,
   ): Promise<void> {
-    // The row is created holding 0, so a tick that issued nothing is already
-    // correct on disk. During the observation week that is every tick, and
-    // this costs the loop nothing.
-    if (issued === 0) return;
+    // The row is created holding 0 and a null failure list, so a tick where
+    // nothing was issued and no executor ran is already correct on disk.
+    // During an observation week with nothing to report that is every tick,
+    // and this costs the loop nothing.
+    if (issued === 0 && !acting.ran) return;
 
     if (!record?.id) {
       this.logger.error(
-        `${issued} GitHub write(s) were issued on a tick with no log row to record them ` +
-          `against — the reconcile log understates this tick`,
+        `${issued} GitHub write(s) were issued and ${acting.failures.length} execution ` +
+          `failure(s) reported on a tick with no log row to record them against — the ` +
+          `reconcile log understates this tick` +
+          (acting.failures.length > 0
+            ? `: ${acting.failures
+                .map(
+                  (failure) =>
+                    `${failure.repository}#${failure.issueNumber} (${failure.actionType}): ${failure.reason}`,
+                )
+                .join('; ')}`
+            : ''),
       );
       return;
     }
 
     try {
-      await this.log.recordWritesIssued(record.id, issued);
+      await this.log.recordExecution(record.id, {
+        writesIssued: issued,
+        // Null, not `[]`, when no executor ran: the distinction is the field's
+        // only way to separate "acted, nothing failed" from "never acted".
+        executionFailures: acting.ran ? acting.failures : null,
+      });
     } catch (error) {
       // Independently caught, like every other outward step here — and this
       // one runs in a `finally`, where an escaping rejection has no caller to
@@ -432,19 +488,23 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // policy. The log service already swallows its own storage failures;
       // this is the belt to that pair of braces.
       this.logger.error(
-        `Recording ${issued} issued write(s) against tick ${record.id} threw: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Recording ${issued} issued write(s) and ${acting.failures.length} execution ` +
+          `failure(s) against tick ${record.id} threw: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
       );
     }
   }
 
   private async runOnce(): Promise<void> {
     // Read before anything runs, and compared after everything has. See
-    // `recordWritesIssued` for why this is a delta over the write service
+    // `recordExecution` for why this is a delta over the write service
     // rather than a sum of what the executors returned.
     const writesBefore = this.writes.writesIssued;
     let record: TickRecord | undefined;
+    // Threaded through the acting steps below and read in the `finally`. See
+    // `ActingPhase` for why it is a local and not a field.
+    const acting: ActingPhase = { ran: false, failures: [] };
 
     try {
       // Liveness FIRST, so the tick's projection sees the freshest run state.
@@ -494,7 +554,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // it never became a work order — so gating this on the action list
       // would silence feedback in exactly the repository where nothing else
       // is happening.
-      await this.reportSpecRejections(record);
+      await this.reportSpecRejections(record, acting);
 
       // Also before the early return, and for the same reason: a queued work
       // order produces no action, so gating this on the action list would
@@ -514,7 +574,12 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // observation week this is every tick.
       if (enabledFor.size === 0) return;
 
-      await this.executor.execute(actions, enabledFor);
+      const outcome = await this.executor.execute(actions, enabledFor);
+      // Set after the call returns, for the same reason spec feedback does:
+      // an executor that threw outright has established nothing, and `[]`
+      // would say it ran clean.
+      acting.ran = true;
+      acting.failures.push(...fromMirrorLabels(outcome));
     } catch (error) {
       this.logger.error(
         `Reconciler tick threw, which tick() is supposed to prevent: ${
@@ -526,9 +591,10 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // In a `finally` so the two early returns above, and any path that
       // threw, still record what went out. A write that happened and was not
       // logged is the failure this whole field exists to make impossible.
-      await this.recordWritesIssued(
+      await this.recordExecution(
         record,
         this.writes.writesIssued - writesBefore,
+        acting,
       );
     }
   }

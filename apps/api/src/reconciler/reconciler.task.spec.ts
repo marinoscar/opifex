@@ -61,7 +61,7 @@ describe('ReconcilerTask', () => {
   let drain: jest.Mock;
   let listObserved: jest.Mock;
   let recordDeadTime: jest.Mock;
-  let recordWritesIssued: jest.Mock;
+  let recordExecution: jest.Mock;
   /** Stands in for the write service's monotonic issued-writes counter. */
   let writesIssued: number;
   let task: ReconcilerTask;
@@ -99,7 +99,7 @@ describe('ReconcilerTask', () => {
       quarantined: 0,
       open: 0,
     });
-    recordWritesIssued = jest.fn().mockResolvedValue(undefined);
+    recordExecution = jest.fn().mockResolvedValue(undefined);
     writesIssued = 0;
 
     task = new ReconcilerTask(
@@ -156,7 +156,7 @@ describe('ReconcilerTask', () => {
           return writesIssued;
         },
       } as unknown as GitHubWriteService,
-      { recordWritesIssued } as unknown as ReconcileLogService,
+      { recordExecution } as unknown as ReconcileLogService,
     );
   });
 
@@ -273,7 +273,7 @@ describe('ReconcilerTask', () => {
       // right. No second database write at all.
       await run();
 
-      expect(recordWritesIssued).not.toHaveBeenCalled();
+      expect(recordExecution).not.toHaveBeenCalled();
     });
 
     it('records the delta over the write service, against the tick row', async () => {
@@ -298,7 +298,10 @@ describe('ReconcilerTask', () => {
 
       await run();
 
-      expect(recordWritesIssued).toHaveBeenCalledWith('tick-uuid', 2);
+      expect(recordExecution).toHaveBeenCalledWith(
+        'tick-uuid',
+        expect.objectContaining({ writesIssued: 2 }),
+      );
     });
 
     it('counts writes made by DISPATCH, which returns no tally of its own', async () => {
@@ -319,7 +322,10 @@ describe('ReconcilerTask', () => {
 
       await run();
 
-      expect(recordWritesIssued).toHaveBeenCalledWith('tick-uuid', 2);
+      expect(recordExecution).toHaveBeenCalledWith(
+        'tick-uuid',
+        expect.objectContaining({ writesIssued: 2 }),
+      );
     });
 
     it('records the writes even when the tick returned early', async () => {
@@ -340,7 +346,10 @@ describe('ReconcilerTask', () => {
 
       await run();
 
-      expect(recordWritesIssued).toHaveBeenCalledWith('tick-uuid', 1);
+      expect(recordExecution).toHaveBeenCalledWith(
+        'tick-uuid',
+        expect.objectContaining({ writesIssued: 1 }),
+      );
     });
 
     it('does not stop the tick when recording the count throws', async () => {
@@ -355,7 +364,7 @@ describe('ReconcilerTask', () => {
           repositoriesDisabled: 0,
         };
       });
-      recordWritesIssued.mockRejectedValue(new Error('disk full'));
+      recordExecution.mockRejectedValue(new Error('disk full'));
 
       await expect(run()).resolves.toBeUndefined();
     });

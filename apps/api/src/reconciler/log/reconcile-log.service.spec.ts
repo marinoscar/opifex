@@ -115,7 +115,7 @@ describe('ReconcileLogService', () => {
     it('opens the row at 0 writes, because none have been issued yet', async () => {
       // Not a claim that none will be: the row is created BEFORE the task runs
       // the executors, so zero is what is true at this instant. The real
-      // figure is stamped on afterwards by `recordWritesIssued` (#317).
+      // figure is stamped on afterwards by `recordExecution` (#317).
       await service.record(tick({ actions: [ACTION] }));
 
       const [{ data }] = prisma.reconcileTick.create.mock.calls[0];
@@ -143,13 +143,65 @@ describe('ReconcileLogService', () => {
     });
   });
 
-  describe('recordWritesIssued', () => {
+  describe('recordExecution', () => {
     it('writes the count onto the tick the writes belong to', async () => {
-      await service.recordWritesIssued('tick-uuid', 3);
+      await service.recordExecution('tick-uuid', {
+        writesIssued: 3,
+        executionFailures: null,
+      });
 
       expect(prisma.reconcileTick.update).toHaveBeenCalledWith({
         where: { id: 'tick-uuid' },
+        // No `executionFailures` key at all: null from the caller means no
+        // acting-phase executor ran, and the column is already null (#320).
         data: { actionsExecuted: 3 },
+      });
+    });
+
+    it('records an EMPTY failure list, which is not the same as none', async () => {
+      // `[]` says the acting phase ran and found nothing wrong. Leaving the
+      // column null would say it never ran, which is the signal #320 exists
+      // to keep.
+      await service.recordExecution('tick-uuid', {
+        writesIssued: 2,
+        executionFailures: [],
+      });
+
+      expect(prisma.reconcileTick.update).toHaveBeenCalledWith({
+        where: { id: 'tick-uuid' },
+        data: { actionsExecuted: 2, executionFailures: [] },
+      });
+    });
+
+    it('records the failures alongside the count, in one update', async () => {
+      await service.recordExecution('tick-uuid', {
+        writesIssued: 2,
+        executionFailures: [
+          {
+            source: 'mirror-label',
+            actionType: 'add-mirror-label',
+            repository: 'acme/app',
+            issueNumber: 312,
+            reason: 'GitHub said 403',
+          },
+        ],
+      });
+
+      expect(prisma.reconcileTick.update).toHaveBeenCalledTimes(1);
+      expect(prisma.reconcileTick.update).toHaveBeenCalledWith({
+        where: { id: 'tick-uuid' },
+        data: {
+          actionsExecuted: 2,
+          executionFailures: [
+            {
+              source: 'mirror-label',
+              actionType: 'add-mirror-label',
+              repository: 'acme/app',
+              issueNumber: 312,
+              reason: 'GitHub said 403',
+            },
+          ],
+        },
       });
     });
 
@@ -159,7 +211,10 @@ describe('ReconcileLogService', () => {
       prisma.reconcileTick.update.mockRejectedValue(new Error('disk full'));
 
       await expect(
-        service.recordWritesIssued('tick-uuid', 3),
+        service.recordExecution('tick-uuid', {
+          writesIssued: 3,
+          executionFailures: [],
+        }),
       ).resolves.toBeUndefined();
     });
   });

@@ -453,13 +453,13 @@ describeIfDb('actionsExecuted, persisted to a real database (#317)', () => {
     );
 
     const { task, writes, log } = buildTask({ writesEnabled: true, tick });
-    const recordWritesIssuedSpy = jest.spyOn(log, 'recordWritesIssued');
+    const recordExecutionSpy = jest.spyOn(log, 'recordExecution');
 
     await expect(run(task)).resolves.toBeUndefined();
 
     expect(writes.writesIssued).toBe(1);
     // Never called: there is no row id to call it with.
-    expect(recordWritesIssuedSpy).not.toHaveBeenCalled();
+    expect(recordExecutionSpy).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringMatching(/no log row.*understates this tick/),
     );
