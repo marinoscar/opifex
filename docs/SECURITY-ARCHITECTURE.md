@@ -96,7 +96,7 @@ sequenceDiagram
 **Token Signing:**
 
 - Algorithm: HS256 (HMAC with SHA-256)
-- Secret: `JWT_SECRET` environment variable (minimum 32 characters)
+- Secret: `JWT_SECRET` environment variable. **Required and enforced at boot** (#278) — the API refuses to start without one of at least 32 characters; see [§10 Configuration Reference](#environment-secrets) for the full startup-failure behavior.
 - Signature validates token integrity and authenticity
 
 **Token Validation Process:**
@@ -1304,13 +1304,28 @@ app.enableCors({
 
 **Critical Secrets (Must Protect):**
 
-| Variable               | Purpose               | Security Requirement               |
-| ---------------------- | --------------------- | ---------------------------------- |
-| `JWT_SECRET`           | Signs JWT tokens      | Min 32 chars, random, never commit |
-| `COOKIE_SECRET`        | Signs session cookies | Min 32 chars, random, never commit |
-| `GOOGLE_CLIENT_SECRET` | OAuth with Google     | From Google Console, never commit  |
-| `DATABASE_URL`         | Database connection   | Contains credentials, never commit |
-| `POSTGRES_PASSWORD`    | Database password     | Strong password, never commit      |
+| Variable               | Purpose               | Security Requirement                                                                          |
+| ---------------------- | --------------------- | --------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`           | Signs JWT tokens      | **Required, enforced at boot**: min 32 chars, random, never commit                            |
+| `COOKIE_SECRET`        | Signs session cookies | Optional (falls back to `JWT_SECRET`); if set, **enforced at boot** to the same 32-char floor |
+| `GOOGLE_CLIENT_SECRET` | OAuth with Google     | From Google Console, never commit                                                             |
+| `DATABASE_URL`         | Database connection   | Contains credentials, never commit                                                            |
+| `POSTGRES_PASSWORD`    | Database password     | Strong password, never commit                                                                 |
+
+`JWT_SECRET` and `COOKIE_SECRET` are validated by `apps/api/src/config/env.validation.ts`
+(#278) before the application boots. A missing or short value throws at
+startup, the process exits, and the error names every invalid variable at
+once rather than stopping at the first — a fresh deployment does not need a
+second restart to discover the second problem. This is a deliberate
+departure from how this codebase treats other missing configuration: a
+missing Google OAuth client (#138) or an unreachable database (#161) leave
+the API up so it can report the problem through `/auth/providers` or
+`/health/ready`. A missing or too-short `JWT_SECRET` gets no such grace,
+because every authorization decision the process makes with it is void —
+there is nothing left that is safe to serve by staying up.
+
+`openssl rand -base64 32` produces 44 characters, comfortably over the
+32-character floor.
 
 **Generate Secrets:**
 
@@ -1380,6 +1395,11 @@ cp .env.example .env
 ### Environment Variables
 
 **Authentication & JWT:**
+
+`JWT_SECRET` is not optional and has no default — the API refuses to start
+without one of at least 32 characters (#278). `COOKIE_SECRET` is optional
+(cookies fall back to `JWT_SECRET` when it is unset) but is held to the same
+32-character floor whenever it is set.
 
 ```bash
 # JWT Configuration

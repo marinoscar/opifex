@@ -511,7 +511,8 @@ Note: `DATABASE_URL` is constructed automatically from these variables at runtim
 
 **Authentication:**
 
-- `JWT_SECRET` - JWT signing secret (min 32 chars)
+- `JWT_SECRET` - JWT signing secret. **Required and enforced at boot** (#278): the API refuses to start without one of at least 32 characters, and the startup failure names every invalid variable at once rather than stopping at the first. `openssl rand -base64 32` produces 44 characters, comfortably over the floor. See `apps/api/src/config/env.validation.ts` for why this one variable is a hard startup failure when a missing database (#161) or missing Google credentials (#138) deliberately are not: without a signing secret every authorization decision the process makes is void, so there is nothing left that is safe to serve by staying up.
+- `COOKIE_SECRET` - Optional; `main.ts` signs cookies with `COOKIE_SECRET || JWT_SECRET`. When set, it must clear the same 32-character floor as `JWT_SECRET` or the API refuses to start.
 - `JWT_ACCESS_TTL_MINUTES` - Access token TTL (default: 15)
 - `JWT_REFRESH_TTL_DAYS` - Refresh token TTL (default: 14)
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` - Google OAuth credentials
