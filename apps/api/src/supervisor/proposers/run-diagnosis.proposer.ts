@@ -70,8 +70,11 @@ export class RunDiagnosisProposer implements SupervisorProposer {
 
     const drafts: ProposalDraft[] = [];
     for (const run of candidates) {
-      // Sequential rather than concurrent: parallel calls would spike the
-      // shared quota in exactly the burst the gate stands down to avoid.
+      // Sequential rather than concurrent. Since ADR-0015 the spike would
+      // land on the supervisor's own metered key rather than the workers'
+      // quota, but it is still a burst against one rate limit, and a proposer
+      // that fires n concurrent calls to diagnose n stalled runs is the shape
+      // most likely to be throttled exactly when it has the most to say.
       const response = await context.model.ask({
         snapshot: context.snapshot,
         instruction: diagnosisInstruction(run),

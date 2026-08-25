@@ -154,12 +154,54 @@ export default () => {
     //
     // DEFAULTS OFF, and compared against 'true' so unset, misspelled and empty
     // all mean off — the same rule every other switch here follows. This one
-    // matters for a specific reason: the supervisor consumes the same
-    // subscription the workers do (VISION §7), so a deployment that has not
+    // matters for a specific reason: since ADR-0015 the supervisor spends real
+    // money on a metered API key of its own, so a deployment that has not
     // decided to run one must not start spending on it because a default said
     // yes.
     supervisor: {
       enabled: process.env.SUPERVISOR_ENABLED === 'true',
+
+      // The model adapter (ADR-0015, #230).
+      //
+      // A separately metered Anthropic API credential — NOT the agent
+      // subscription `claude-code-local` authenticates with. That separation
+      // is the point: a supervisor invocation no longer competes with a worker
+      // for anything the worker needs, and the cost recorded against an
+      // invocation is genuinely additive rather than a slice of the same pie.
+      //
+      // No default key and no throw when it is absent. An unset key means no
+      // adapter is bound at all, `SupervisorService` falls back to
+      // `UnavailableSupervisorModel`, and every invocation records that
+      // refusal in the decision log where it is visible.
+      model: {
+        apiKey: process.env.SUPERVISOR_MODEL_API_KEY,
+
+        // Sent verbatim as the request's `model` field and recorded verbatim
+        // against the invocation. Deliberately a literal catalogue entry
+        // rather than a `ModelTier`: there is one adapter and one vendor here,
+        // so a tier would only add indirection in front of the same string —
+        // and a tier in the log would say what was ASKED for, where the
+        // literal name says which model actually answered (#89, ADR-0015).
+        name: process.env.SUPERVISOR_MODEL_NAME,
+
+        // Override point for tests and proxies, mirroring github.apiBaseUrl.
+        baseUrl:
+          process.env.SUPERVISOR_MODEL_BASE_URL || 'https://api.anthropic.com',
+
+        // Handed to AbortSignal.timeout. Generous next to GitHub's 15s: this
+        // is a model generating tokens, not an API returning a row.
+        timeoutMs: parseInt(
+          process.env.SUPERVISOR_MODEL_TIMEOUT_MS || '60000',
+          10,
+        ),
+
+        // Anthropic requires max_tokens on every request. Used only when the
+        // proposer does not set its own ceiling.
+        defaultMaxTokens: parseInt(
+          process.env.SUPERVISOR_MODEL_DEFAULT_MAX_TOKENS || '1024',
+          10,
+        ),
+      },
 
       // Whether a disabled supervisor still writes a `skipped_disabled` row
       // each hour. Off by default: the decision log must have no gaps while
@@ -170,10 +212,12 @@ export default () => {
 
       // Stand down while any run is parked on a rate limit.
       //
-      // DEFAULTS ON, and it is the one supervisor switch that does. VISION §7:
-      // "a supervisor competing for the quota it is managing is a bad loop."
-      // A parked worker is the clearest evidence available that the shared
-      // budget is already exhausted, and respecting it costs nothing. Note the
+      // DEFAULTS ON, and it is the one supervisor switch that does. The reason
+      // is no longer the one this comment used to give -- since ADR-0015 the
+      // supervisor spends its own budget and competes with no worker for
+      // quota. What survives is that a parked worker is evidence that
+      // everything the supervisor exists to advise about has stopped moving,
+      // and diagnosis nobody can act on is worth waiting on. Note the
       // comparison is !== 'false', because this default is ON.
       standDownWhenBlocked:
         process.env.SUPERVISOR_STAND_DOWN_WHEN_BLOCKED !== 'false',
