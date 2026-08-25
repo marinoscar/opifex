@@ -39,9 +39,10 @@
  */
 
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { commitsBetween } from './lib/git-range.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -314,34 +315,6 @@ export function checkAdrDiscussionIssues(dir = join(REPO_ROOT, 'docs/adr')) {
     }
   }
   return problems;
-}
-
-function commitsBetween(base, head) {
-  const RECORD = '';
-  const FIELD = '';
-  const raw = execFileSync(
-    'git',
-    [
-      'log',
-      `--format=%H${FIELD}%P${FIELD}%s${FIELD}%B${RECORD}`,
-      `${base}..${head}`,
-    ],
-    { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 },
-  );
-
-  return raw
-    .split(RECORD)
-    .map((r) => r.trim())
-    .filter(Boolean)
-    .map((record) => {
-      const [sha, parents, subject, message] = record.split(FIELD);
-      return {
-        sha,
-        parents: parents.trim().split(/\s+/).filter(Boolean),
-        subject,
-        message,
-      };
-    });
 }
 
 function parseArgs(argv) {

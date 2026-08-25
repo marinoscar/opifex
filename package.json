@@ -20,6 +20,7 @@
     "format:check": "prettier --check .",
     "contracts:generate": "node scripts/generate-contract-types.mjs",
     "contracts:check": "node scripts/generate-contract-types.mjs --check",
+    "changelog:check": "node scripts/check-changelog.mjs",
     "openapi:dump": "npm run openapi:dump --workspace=api -- ../../openapi.json",
     "openapi:lint": "spectral lint openapi.json --ruleset .spectral.yaml --fail-severity=error"
   },

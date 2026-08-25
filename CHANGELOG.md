@@ -5,13 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**Convention:** every pull request that ships a `feat` or `fix` (per this
-repository's commit-type vocabulary) adds its own bullet under `[Unreleased]`,
-grouped by the `VISION.MD` §12 phase it belongs to, as part of that PR — not
-retroactively. `chore`, `docs`, `refactor`, and `test`-only changes are
-exempt. This is a norm recorded here, not yet a CI gate; see the project
-board / issue tracker for whether a `check-changelog`-style enforcement (on
-the model of `scripts/check-provenance.mjs`) has since been built.
+**Convention, enforced by CI:** every pull request that ships a `feat` or
+`fix` (per this repository's commit-type vocabulary) adds its own bullet under
+`[Unreleased]`, grouped by the `VISION.MD` §12 phase it belongs to, as part of
+that PR — not retroactively. `chore`, `docs`, `refactor`, and `test`-only
+changes are exempt.
+
+`scripts/check-changelog.mjs` fails a pull request whose commits include a
+`feat` or a `fix` and whose diff does not touch this file; it runs as a step in
+CI's `Lint` job (#312). There is no opt-out, because the commit type is the
+opt-out — a change that genuinely warrants no changelog line is a `chore`, a
+`refactor`, a `test` or a `docs` change, and the vocabulary already says so.
+
+What the gate checks is that this file appears in the diff, and nothing more.
+Whether the bullet says anything useful is not mechanisable and is left to
+review: **the check enforces the habit, review enforces the content.**
 
 ## [Unreleased]
 
@@ -25,8 +33,9 @@ the model of `scripts/check-provenance.mjs`) has since been built.
 
 #### Phase 0 — Conventions
 
-- **CI**: GitHub Actions pipeline (`.github/workflows/ci.yml`) with `provenance`, `lint`, `typecheck`, `test-api`, `test-web`, and `build` jobs, running on pull requests and pushes to `main`. `provenance` is pull-request-only, since a push to `main` has no PR body to carry a closing keyword.
+- **CI**: GitHub Actions pipeline (`.github/workflows/ci.yml`) with `lint`, `typecheck`, `test-api`, `test-web`, and `build` jobs, running on pull requests and pushes to `main`. The provenance check lives in its own workflow (`.github/workflows/provenance.yml`, #179) so that editing a pull request body re-runs it without re-running the whole pipeline; it is pull-request-only, since a push to `main` has no PR body to carry a closing keyword.
 - **Provenance enforcement**: `scripts/check-provenance.mjs` fails a pull request whose body carries no closing keyword, whose commits are missing a required trailer, or that names a decision resolving to no file under `docs/adr/`. Its patterns are read out of `docs/PROVENANCE.md` at run time so the check and the specification cannot drift.
+- **Changelog enforcement**: `scripts/check-changelog.mjs` fails a pull request whose commits include a `feat` or a `fix` and whose diff does not touch `CHANGELOG.md`, wired as a step in CI's `Lint` job. It walks the branch's own first-parent line, so a merge of `main` carrying somebody else's `feat` does not fire it. The check verifies only that the file is in the diff — the content is review's job (#312).
 - **Architecture decision records**: `docs/adr/` with a template, an index, and the numbering, lifecycle and supersession conventions (`docs/adr/README.md`); recorded as ADR-0009. Every ADR names its discussion issue, and CI enforces it.
 - **Linting and formatting**: ESLint (flat config) and Prettier across both workspaces, replacing the `echo 'No linter configured'` stubs. `npm run lint` and `npm run format:check` are real and CI blocks on both.
 - **Dependency updates**: Dependabot configuration (`.github/dependabot.yml`) for weekly npm updates across the root, `apps/api`, and `apps/web` workspaces, plus weekly GitHub Actions updates.
