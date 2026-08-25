@@ -7,6 +7,7 @@ import {
   isUnknownInputLabel,
   type InputLabel,
 } from '../labels/factory-labels';
+import { classifyIgnoredLabels } from '../labels/ignored-labels';
 import type {
   NormalizedCheck,
   NormalizedComment,
@@ -358,6 +359,10 @@ export function toNormalizedIssue(raw: RawIssue): NormalizedIssue {
       .map((l) => l.name)
       .filter((name): name is InputLabel => isInputLabel(name)),
     unknownInputLabels: visible.map((l) => l.name).filter(isUnknownInputLabel),
+    // Classified from the VISIBLE labels only. Passing `all` would let a
+    // `factory/` label Opifex wrote be classified as human input, which is
+    // the feedback loop VISION §3.3 exists to prevent.
+    ignoredLabels: classifyIgnoredLabels(visible.map((l) => l.name)),
     // Kept OUT of `labels` and surfaced separately: the diff engine needs to
     // know what is currently written in order to avoid redundant writes and
     // to remove stale labels, while the projection must never see them. See

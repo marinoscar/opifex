@@ -21,6 +21,7 @@ function issue(overrides: Partial<NormalizedIssue> = {}): NormalizedIssue {
     labels: [],
     inputLabels: [],
     unknownInputLabels: [],
+    ignoredLabels: [],
     observedMirrorLabels: [],
     isPullRequest: false,
     url: 'https://github.com/acme/app/issues/312',

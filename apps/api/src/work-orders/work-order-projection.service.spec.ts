@@ -61,6 +61,7 @@ P1
       labels: [label('feature')],
       inputLabels: [INPUT_LABELS.READY],
       unknownInputLabels: [],
+      ignoredLabels: [],
       ...overrides,
     } as NormalizedIssue;
   }

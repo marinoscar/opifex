@@ -1,4 +1,5 @@
 import type { InputLabel } from '../labels/factory-labels';
+import type { IgnoredLabel } from '../labels/ignored-labels';
 
 /**
  * The normalized shapes every consumer of GitHub reads.
@@ -50,10 +51,48 @@ export interface NormalizedIssue {
   /** The subset of `labels` that are recognised input labels. */
   inputLabels: InputLabel[];
   /**
-   * `factory:` labels Opifex does not understand — a typo, surfaced rather
-   * than dropped, so an operator who mistyped `factory:hold` finds out.
+   * `factory:` labels Opifex does not understand — and ONLY `factory:` ones.
+   *
+   * The prefix restriction is load-bearing and was once misread as a general
+   * typo channel: `readNeeds` justified ignoring a misspelled `needs:` label
+   * on the grounds that this field surfaced it, which it never did. That is
+   * how #297's failure went unnoticed — a comment asserted coverage that the
+   * code did not provide, and a reader checking stopped there.
+   *
+   * `ignoredLabels` below is the general channel, and the one that is
+   * actually reported back to a human. This field remains as the narrow,
+   * `factory:`-specific answer its consumers ask for.
    */
   unknownInputLabels: string[];
+  /**
+   * Every routing label the factory will NOT act on, and why (#297).
+   *
+   * ## Why this exists alongside `unknownInputLabels`
+   *
+   * `unknownInputLabels` answers one narrow question — which `factory:`
+   * labels are typos — and answers it as bare strings. Routing input arrives
+   * through two further families (`needs:` #64, `tier:` #273) that fail in a
+   * way strings cannot express: two contradictory `tier:` labels are both
+   * perfectly valid names, and the problem is the pair. So this carries the
+   * FAMILY, the KIND of failure and the offending names, and covers all three
+   * prefixes including `factory:`.
+   *
+   * ## Classified here, reported by the projection
+   *
+   * The same shape `unknownInputLabels` already takes: the read boundary
+   * classifies, `NormalizedIssue` carries the finding as data, and a consumer
+   * decides what to do about it. Classification is a pure function of the
+   * label names — no I/O — so nothing about the boundary's contract changes.
+   *
+   * `desired-state.ts` turns a non-empty list into the
+   * `factory/label-ignored` mirror label. Reporting through a LABEL rather
+   * than a comment is deliberate and argued in `ignored-labels.ts`: the
+   * spec-feedback path dedupes on the body digest, and a label change does
+   * not change the body.
+   *
+   * Empty in the overwhelmingly common case.
+   */
+  ignoredLabels: IgnoredLabel[];
   /**
    * `factory/*` labels currently on the issue — FOR THE DIFF ENGINE ONLY.
    *
