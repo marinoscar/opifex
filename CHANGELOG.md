@@ -88,6 +88,7 @@ The action-class taxonomy is now a single registry every proposer and grant read
 - The frontend now refetches when a filter changes instead of waiting for the next poll interval (#246, #256).
 - Dispatch policy now carries a work order's model tier into its routing decision, with the projection under test (#265, #272).
 - An ignored `needs:`/`tier:` routing label is now reported instead of silently swallowed (#297, #305).
+- The reconcile log's `actionsExecuted` is now counted rather than hardcoded to `0`, which is what makes the observation week's daily check — _"it must be `0` on every tick, all week"_ — able to fail at all. It counts the GitHub writes a tick issued, measured at `GitHubWriteService`, the one place every write must pass through: mirror labels, spec-feedback comments, and the authorization record and branch a dispatch creates all land in it, including writes that changed nothing and writes that failed, since both reached GitHub. It stays `0` for as long as `GITHUB_WRITES_ENABLED` is off, so a non-zero value on a tick means something is enabled that should not be. Note that it is **not** a subset of `actionsComputed`: a spec-feedback comment and a dispatch branch are writes with no computed action behind them (#317).
 
 ### Changed
 
