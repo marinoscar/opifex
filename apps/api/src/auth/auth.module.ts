@@ -22,10 +22,19 @@ import { SettingsModule } from '../settings/settings.module';
     PassportModule.register({ defaultStrategy: 'jwt' }),
 
     // JWT configuration
+    //
+    // `getOrThrow`, not `get` (#278). `get<string>` types the result as
+    // `string` while it can be `undefined`, which is how the signing and
+    // verifying halves of this system came to disagree about the secret at
+    // all: this side quietly produced `undefined` and threw
+    // `secretOrPrivateKey must have a value` on every login, while
+    // `jwt.strategy.ts` fell back to a literal and kept verifying. Both sides
+    // now read the value the same way, and the boot check in
+    // config/env.validation.ts means neither should ever reach it unset.
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('jwt.secret'),
+        secret: config.getOrThrow<string>('jwt.secret'),
         signOptions: {
           expiresIn: `${config.get<number>('jwt.accessTtlMinutes', 15)}m`,
         },

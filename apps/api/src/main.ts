@@ -29,7 +29,15 @@ async function bootstrap() {
     new FastifyAdapter({ logger: true }),
   );
 
-  // Register cookie plugin
+  // Register cookie plugin.
+  //
+  // The `||` here is a choice between two OPERATOR-SUPPLIED secrets, not a
+  // hardcoded fallback of the kind #278 removed from `jwt.strategy.ts`: a
+  // deployment that sets its own COOKIE_SECRET gets key separation, and one
+  // that does not reuses a secret that `validateEnv` has already proved is
+  // present and long enough. Neither branch can be a value this repository
+  // knows. Reached only after `NestFactory.create` above, so that validation
+  // has already run by the time this line executes.
   await app.register(fastifyCookie, {
     secret: process.env.COOKIE_SECRET || process.env.JWT_SECRET,
   });

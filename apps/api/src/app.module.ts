@@ -44,6 +44,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 
 import configuration from './config/configuration';
+import { validateEnv } from './config/env.validation';
 
 @Module({
   imports: [
@@ -60,6 +61,13 @@ import configuration from './config/configuration';
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
+      // Refuses the boot when a secret the whole authorization model rests on
+      // is missing or too weak (#278). `validate` rather than
+      // `validationSchema` because the latter wants a Joi-shaped object and
+      // this repository validates with zod; see config/env.validation.ts for
+      // why THIS failure is fatal when #138's and #161's deliberately were
+      // not.
+      validate: validateEnv,
     }),
 
     // Scheduling (must be at root level for NestJS 11)

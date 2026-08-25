@@ -22,6 +22,26 @@
 
 process.env.NODE_ENV = 'production';
 
+// A DOCUMENT GENERATOR, NOT A SERVER (#278).
+//
+// Since #278, `ConfigModule.forRoot({ validate })` refuses to build without a
+// JWT_SECRET of at least 32 characters, and that check runs when `AppModule`
+// is imported — which is why this assignment has to be here, above the
+// imports, alongside the NODE_ENV one, rather than inside `main()`.
+//
+// CI runs this on a bare checkout with no environment at all, so without this
+// the OpenAPI job would fail on a secret it has no use for: preview mode
+// instantiates no providers, so no strategy is constructed, no token is ever
+// signed or verified, and nothing listens on a port.
+//
+// RANDOM PER RUN, and never a literal, which is the whole distinction from the
+// `'fallback-secret'` this issue removed. A value nobody can predict and that
+// dies with the process cannot be forged against even if some future change
+// did make this script serve traffic. `??=` so a real environment still wins.
+import { randomBytes } from 'crypto';
+
+process.env.JWT_SECRET ??= randomBytes(32).toString('hex');
+
 import { mkdirSync, writeFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { NestFactory } from '@nestjs/core';

@@ -19,6 +19,22 @@ export interface JwtPayload {
  *
  * Validates JWT tokens and attaches user information to the request.
  * Tokens are extracted from the Authorization header as Bearer tokens.
+ *
+ * NO FALLBACK SECRET (#278). This line used to read
+ * `configService.get('jwt.secret') || 'fallback-secret'`, and with JWT_SECRET
+ * unset that string — public in this repository — was the key every access
+ * token was verified against. Confirmed behaviourally before the fix: the app
+ * booted clean, `@nestjs/jwt` threw `secretOrPrivateKey must have a value` on
+ * every real login, and a token minted with the literal `fallback-secret`
+ * returned 200 from `GET /auth/me` with full roles and permissions. Exactly
+ * inverted: nobody legitimate could get in, anybody who had read this file
+ * could.
+ *
+ * The secret is now guaranteed present by `validateEnv` at boot
+ * (config/env.validation.ts), so there is nothing left to fall back to.
+ * `getOrThrow` rather than `get` anyway: it is a second, independent guard at
+ * strategy construction, so if that boot check is ever loosened this fails
+ * the boot instead of silently reintroducing an unverifiable key.
  */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -29,7 +45,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('jwt.secret') || 'fallback-secret',
+      secretOrKey: configService.getOrThrow<string>('jwt.secret'),
     });
   }
 
