@@ -104,9 +104,15 @@ export class DispatchService {
 
     // Logged as its own line, with a fixed prefix, because this is the
     // countable event behind #105 (VISION §10's metric 2): one occurrence
-    // means quota exhaustion moved work instead of parking it. The arithmetic
-    // that turns these into dead time per day belongs to #232 and is not
-    // built — this records the event, and claims nothing more.
+    // means quota exhaustion moved work instead of parking it.
+    //
+    // The log line is no longer the record. #264 persists the event as an
+    // `avoided_parks` row — but deliberately NOT here, because this method is
+    // also called hypothetically by `cockpit/queue.service.ts` on every queue
+    // poll, and writing from a read model would count dashboard traffic as
+    // avoided parks. `run-executor.service.ts` writes it, where a dispatch has
+    // actually happened. The line stays because a scroll-back is still the
+    // fastest way to see routing working in the moment.
     if (decision.avoidedQuotaPark) {
       this.logger.log(
         `Quota-aware routing avoided a park for ${identity ?? 'a work order'}: ` +

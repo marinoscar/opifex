@@ -67,6 +67,7 @@ describe('RunExecutorService', () => {
     reason: 'Dispatch to claude-code-local',
     candidates: [],
     avoidedQuotaPark: false,
+    avoidedPark: null,
   };
 
   const QUEUED: DispatchDecision = {
@@ -76,6 +77,7 @@ describe('RunExecutorService', () => {
     reason: 'Everything is full',
     candidates: [],
     avoidedQuotaPark: false,
+    avoidedPark: null,
   };
 
   let decide: jest.Mock;
@@ -247,6 +249,133 @@ describe('RunExecutorService', () => {
         where: { id: WORK_ORDER_ID },
         data: { status: 'dispatched' },
       });
+    });
+
+    it('writes no avoided park when routing avoided none', async () => {
+      // The single-runner fleet's permanent answer. A row here would be a
+      // fabricated event, and the count is only worth anything if it counts
+      // nothing when nothing happened.
+      await dispatch();
+
+      expect(runCreate.mock.calls[0][0].data.avoidedPark).toBeUndefined();
+    });
+  });
+
+  describe('persisting the avoided park (#264)', () => {
+    // The two-runner fixture #105's own tests use, because the real fleet
+    // cannot produce one: there is exactly ONE registered runner, and
+    // #102/#103's cloud runner is blocked on the vendor CLI. So this reports
+    // zero in production, and that zero is the "before" half of VISION §10's
+    // metric 2 — which is why it is built now rather than then.
+    const AVOIDED: DispatchDecision = {
+      ...DISPATCHABLE,
+      avoidedQuotaPark: true,
+      avoidedPark: {
+        chosenRunnerKey: 'claude-code-local',
+        exhausted: [
+          {
+            runnerKey: 'claude-code-cloud',
+            resumesAt: '2026-08-23T18:00:00.000Z',
+            basis:
+              "1 run(s) on this runner are blocked on 'rate-limit' with a reset time",
+          },
+        ],
+      },
+    };
+
+    beforeEach(() => {
+      executor = build();
+      decide.mockResolvedValue(AVOIDED);
+    });
+
+    it('persists the event instead of only logging it', async () => {
+      // #105's boolean died with the in-memory decision and "counting these
+      // over time" meant grepping container logs. This is the fix.
+      await dispatch();
+
+      expect(runCreate.mock.calls[0][0].data.avoidedPark).toMatchObject({
+        create: expect.objectContaining({
+          chosenRunnerKey: 'claude-code-local',
+          exhaustedRunnerKeys: ['claude-code-cloud'],
+        }),
+      });
+    });
+
+    it('keeps the runner that was spent and when its window rolls', async () => {
+      // What makes the count explainable: "work moved off claude-code-cloud
+      // while it was rate-limited" is a sentence an operator can act on.
+      // Recorded to EXPLAIN, never to subtract — see the model comment.
+      await dispatch();
+
+      const created = runCreate.mock.calls[0][0].data.avoidedPark.create;
+      expect(created.resumesAt).toEqual(new Date('2026-08-23T18:00:00.000Z'));
+      expect(created.basis[0]).toContain('claude-code-cloud');
+      expect(created.basis[0]).toContain('rate-limit');
+    });
+
+    it('stores no duration, because the park never happened', async () => {
+      // The one thing #264 exists to prevent. There is no interval to measure;
+      // hours would have to be estimated from `resumesAt`, and an estimate
+      // under a measurement's label is what `metrics.service.ts` refuses.
+      await dispatch();
+
+      const created = runCreate.mock.calls[0][0].data.avoidedPark.create;
+      for (const key of Object.keys(created)) {
+        expect(key).not.toMatch(
+          /hours|duration|ms$|seconds|minutes|avoidedMs/i,
+        );
+      }
+    });
+
+    it('writes it in the SAME statement as the run', async () => {
+      // A second create could fail on its own and leave a dispatched run whose
+      // avoided park was silently lost — an undercount with no symptom, which
+      // is the failure a metric can least afford.
+      await dispatch();
+
+      expect(runCreate).toHaveBeenCalledTimes(1);
+      expect(runCreate.mock.calls[0][0].data.id).toBe(
+        submit.mock.calls[0][0].runId,
+      );
+    });
+
+    it('takes the SOONEST reset when several runners are spent', async () => {
+      decide.mockResolvedValue({
+        ...AVOIDED,
+        avoidedPark: {
+          chosenRunnerKey: 'claude-code-local',
+          exhausted: [
+            {
+              runnerKey: 'a',
+              resumesAt: '2026-08-23T20:00:00.000Z',
+              basis: 'blocked',
+            },
+            {
+              runnerKey: 'b',
+              resumesAt: '2026-08-23T18:00:00.000Z',
+              basis: 'blocked',
+            },
+          ],
+        },
+      });
+
+      await dispatch();
+
+      const created = runCreate.mock.calls[0][0].data.avoidedPark.create;
+      expect(created.resumesAt).toEqual(new Date('2026-08-23T18:00:00.000Z'));
+      expect(created.exhaustedRunnerKeys).toEqual(['a', 'b']);
+    });
+
+    it('records nothing when the work never dispatched', async () => {
+      // Observation mode runs the whole decision and none of the consequences.
+      // A park cannot have been avoided by a dispatch that did not happen.
+      executor = build(false);
+      decide.mockResolvedValue(AVOIDED);
+
+      const result = await dispatch();
+
+      expect(result.outcome).toBe('observed');
+      expect(runCreate).not.toHaveBeenCalled();
     });
   });
 
