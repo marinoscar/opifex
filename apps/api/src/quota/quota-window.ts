@@ -92,12 +92,14 @@ export interface WindowSpan {
   startedAt: Date;
   startedAtBasis: WindowStartBasis;
   /**
-   * True when the span starts at a sighting rather than at the real boundary.
+   * True when the span starts at a sighting rather than at a real boundary.
    *
    * Consumption over a partial span is a FLOOR for the window, not a total —
    * whatever ran before the first sighting is inside the window and outside
    * the sum. Surfaced rather than smoothed over, for the same reason
-   * `SpendTally.unboundedRuns` is.
+   * `SpendTally.unboundedRuns` is. False whenever the vendor's own label named
+   * the length; see `windowSpan` for why a late first sighting does not make
+   * such a window partial.
    */
   partial: boolean;
 }
@@ -105,12 +107,20 @@ export interface WindowSpan {
 /**
  * The span to sum consumption over, for one window.
  *
- * `firstObservedAt` is the floor in both branches, not only in the fallback: a
- * `weekly` window first seen an hour ago has a derived start six days before
- * Opifex was watching, and summing from there would be summing over a period
- * it cannot claim to have covered. Taking the later of the two keeps the span
- * to what was actually observed — and flags it partial, so the number is read
- * as the floor it is.
+ * ## A known length is NOT partial, even though the first sighting is late
+ *
+ * The instinct is that a five-hour window first seen at 10:30 can only be
+ * summed from 10:30, because that is when Opifex started looking. It is wrong,
+ * and the reason is where the consumption actually comes from: `run_events`,
+ * which are persisted as they arrive whether or not any rate-limit line has
+ * been seen. A run that spent money at 10:15 has its rows regardless. So when
+ * the vendor's label names the length, the derived start is both correct and
+ * complete for Opifex's own consumption, and clipping it to the first sighting
+ * would UNDERSTATE the window while looking precise.
+ *
+ * The unknown-label case is genuinely partial, and for a different reason:
+ * nothing says where that window began, so the span starts where the looking
+ * did and whatever ran before it is inside the window and outside the sum.
  */
 export function windowSpan(window: {
   kind: string;
@@ -126,19 +136,10 @@ export function windowSpan(window: {
     };
   }
 
-  const derived = new Date(window.resetsAt.getTime() - length);
-  if (derived >= window.firstObservedAt) {
-    return {
-      startedAt: derived,
-      startedAtBasis: 'vendor-window-length',
-      partial: false,
-    };
-  }
-
   return {
-    startedAt: window.firstObservedAt,
-    startedAtBasis: 'first-observation',
-    partial: true,
+    startedAt: new Date(window.resetsAt.getTime() - length),
+    startedAtBasis: 'vendor-window-length',
+    partial: false,
   };
 }
 

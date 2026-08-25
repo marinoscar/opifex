@@ -237,6 +237,61 @@ describe('RunPollerService', () => {
     });
   });
 
+  describe('quota windows (#231)', () => {
+    const observation = {
+      runnerKey: 'claude-code-local',
+      kind: 'five_hour' as const,
+      resetsAt: new Date('2026-08-25T15:00:00.000Z'),
+      pressure: 'allowed' as const,
+      observedAt: new Date('2026-08-25T12:00:00.000Z'),
+    };
+
+    it('carries what a runner saw into the quota ledger', async () => {
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'running', events: [], quota: [observation] }),
+        handle(),
+      );
+
+      const result = await poller.tick();
+
+      expect(recordQuota).toHaveBeenCalledWith([observation]);
+      expect(result.quotaWindows).toBe(1);
+    });
+
+    it('records the window even for a run this process has lost', async () => {
+      // A window is a fact about the SUBSCRIPTION, not about the run — it
+      // stays true when the run it arrived with is gone, which is the same
+      // argument that puts ingestion before the `unknown` check.
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'unknown', events: [], quota: [observation] }),
+        handle(),
+      );
+
+      const result = await poller.tick();
+
+      expect(recordQuota).toHaveBeenCalledTimes(1);
+      expect(result.lost).toBe(1);
+    });
+
+    it('asks for nothing when a runner reported no window', async () => {
+      // The common case, and the one #231 must not disturb: a fleet whose
+      // runners say nothing about rate limits keeps working, with quota
+      // unknown throughout.
+      poller.track(
+        RUN_ID,
+        stubRunner({ status: 'running', events: [] }),
+        handle(),
+      );
+
+      const result = await poller.tick();
+
+      expect(recordQuota).not.toHaveBeenCalled();
+      expect(result.quotaWindows).toBe(0);
+    });
+  });
+
   describe('a handle this process no longer holds', () => {
     it('ingests the final events BEFORE giving up on the run', async () => {
       // A runner that lost the run may still hand back its last events on the

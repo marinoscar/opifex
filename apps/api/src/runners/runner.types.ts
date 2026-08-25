@@ -199,9 +199,9 @@ export interface RunPollResult {
    * Quota windows the runner saw while producing those events (#231).
    *
    * Optional, and absent means UNKNOWN rather than "no quota consumed" — the
-   * same rule `reportsCost` follows. A runner whose vendor says nothing about
-   * rate limits (`rateLimitSignal: 'none'`) omits this forever, and every
-   * consumer must keep working with a fleet that never populates it.
+   * same rule `reportsCost` follows. A runner declaring a rate-limit signal of
+   * `none` omits this forever, and every consumer must keep working with a
+   * fleet that never populates it.
    *
    * Not an event, deliberately. The six normalized types are closed and a
    * seventh is a major schema bump (ADR-0010); a quota window is also not a
