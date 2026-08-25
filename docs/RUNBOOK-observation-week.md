@@ -135,6 +135,94 @@ This is operator setup, not factory behaviour, so it is deliberately outside
 `GITHUB_WRITES_ENABLED`. Gating it on that switch would mean the observation
 week could not be set up without turning on the writes it exists to withhold.
 
+### `needs:*` and `tier:*`: routing labels, not part of this taxonomy
+
+Two more label families change what happens once a work order exists:
+`needs:*` (#64) and `tier:*` (#273). Unlike `factory:*` / `factory/*` above,
+**neither is declared in `.github/labels.yml`**, so `sync-labels.mjs` will not
+create them — an operator has to add them to the repository by hand before
+applying one to an issue. They are also read independently of the
+`factory:` input-label machinery: a `needs:` or `tier:` label never appears in
+an issue's `inputLabels`, and a misspelled one never appears in
+`unknownInputLabels` either, because that list only tracks the `factory:`
+prefix. The reasoning below is transcribed from the `readNeeds` and
+`readModelTier` doc comments in
+`apps/api/src/work-orders/issue-projection.ts`.
+
+**`needs:*` — what the work requires of a runner, matched against advertised
+capabilities (#64):**
+
+- `needs:full-streaming` — the run must be observable per tool call; loop
+  detection (#55) needs it.
+- `needs:cost-reporting` — the runner must report cost, or budget enforcement
+  is meaningless.
+- `needs:structured-rate-limits` — the runner must report rate limits
+  structurally, so a parked run can carry a dated resume.
+- `needs:own-infrastructure` — the work must not leave the operator's own
+  infrastructure.
+
+An issue may carry any combination of these four; each one is additive and
+narrows the set of eligible runners to those advertising it. None is implied
+by another.
+
+**`tier:*` — the class of model the work order asks for, a size rather than a
+vendor name (#273):**
+
+- `tier:small` — mechanical acceptance criteria, no real reasoning needed.
+- `tier:standard` — the default weight of reasoning.
+- `tier:large` — the work needs real reasoning.
+
+A label was chosen over a template field, a spec-quality judgement, or a
+per-repository setting because it is legible where the operator already is,
+set deliberately, and read as a set-membership test — the same reasoning
+`needs:` already established, and putting a judgement about model size in the
+hot path is exactly what VISION §3.6 warns against.
+
+How `readModelTier` resolves the label set on an issue:
+
+- **No recognised `tier:` label** — the work order carries no tier and the
+  runner supplies its own default. That is what every issue gets today, since
+  no repository yet applies these labels.
+- **Exactly one recognised `tier:` label** — that tier is used.
+- **Two or more recognised `tier:` labels on the same issue** (e.g.
+  `tier:small` and `tier:large` together) — treated as **no tier at all**, the
+  same outcome as none being present. Not largest-wins, not smallest-wins:
+  - picking the largest spends more than anyone asked for, and VISION §3.5
+    gates on cost;
+  - picking the smallest silently downgrades work that may have needed the
+    reasoning, or — if the fleet has no matching runner — parks the work order
+    behind a constraint nobody chose;
+  - rejecting the issue was the tempting third option, because the
+    spec-feedback path would tell the author, but that path dedupes on the
+    issue body's digest, and a label conflict never changes the body — so a
+    second mistaken label pair would be met with silence, same as the first.
+  - Falling back to the default is the only rule that cannot stall work or
+    spend money on a guess.
+
+**An unrecognised value in either family is ignored — silently, today.** A
+typo (`needs:telemetry`, `tier:huge`) does not count toward the label's
+effect, is not surfaced in `unknownInputLabels` (that field is `factory:`-only,
+see above), and produces no warning or record anywhere the operator can see.
+#297 is open to give this a signal; until it lands, a misspelled `needs:` or
+`tier:` label reads as "not requested," indistinguishable from an issue where
+the operator never intended to set one.
+
+**Do not confuse either family with `factory:*` or `factory/*`:**
+
+- `factory:*` (`factory:ready`, `factory:hold`, `factory:clear-quarantine`) is
+  a **closed vocabulary of three human intents** the reconciler obeys. It
+  decides whether a work order is created or held at all — nothing about what
+  the work needs once it exists.
+- `needs:*` and `tier:*` are **routing input** read while a work order is
+  generated. They decide which runner and which model class handle the work,
+  never whether it happens.
+- `factory/*` **mirror** labels (`factory/dispatched`, `factory/blocked`,
+  `factory/review`, `factory/quarantine`) are written **by** Opifex for
+  visibility only — `.github/labels.yml`'s own description text says so for
+  each one — and must never be hand-edited. Treating a mirror label as
+  something to set, the way `needs:`/`tier:`/`factory:` are set, is the
+  specific mix-up this section exists to head off.
+
 ---
 
 ## 4. Register a repository
