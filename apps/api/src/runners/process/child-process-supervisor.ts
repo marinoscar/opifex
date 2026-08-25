@@ -140,10 +140,81 @@ export class SupervisedProcess {
     child.stderr?.setEncoding('utf8');
     child.stderr?.on('data', (chunk: string) => this.consumeStderr(chunk));
 
+    this.guardOutputStream('stdout', child.stdout);
+    this.guardOutputStream('stderr', child.stderr);
+    this.guardStdin();
+
     // A child whose stdin we never write to would otherwise sit waiting for
     // input that is never coming, which looks exactly like a stalled run.
     if (request.stdin !== undefined) child.stdin?.end(request.stdin);
     else child.stdin?.end();
+  }
+
+  /**
+   * A stdin the child stopped reading must not become an uncaught exception.
+   *
+   * The prompt is unbounded prose (`claude-code-invocation.ts`), so it does
+   * not always fit the pipe buffer and flush in one go. If the child exits, is
+   * killed, or simply closes its own stdin while the rest is still in flight,
+   * the write fails with `EPIPE` — and a Node stream with no `error` listener
+   * re-emits that as an UNCAUGHT EXCEPTION. In this process that is not a
+   * failed run, it is a dead control plane: the supervisor, the watchdog and
+   * the escalation path all go with it, which is the one failure ADR 0006
+   * chose the subprocess boundary to prevent.
+   *
+   * `EPIPE` is deliberately swallowed rather than settled. A child that will
+   * not read its input is a child that failed, and that failure is already
+   * observable where every other one is — its exit code. Settling here instead
+   * would RACE `close` and, being first, win: the outcome would become a
+   * synthetic stdin error in place of the real exit code, and the run would
+   * lose its last stdout line, because {@link flushPartialLine} runs in the
+   * `close` handler. A process that writes its result and exits immediately is
+   * exactly the shape that trips this, so that loss would fall on the runs it
+   * matters most for. Deferring costs a few milliseconds and keeps the rule
+   * `claude-code-local.runner.ts` states: the supervisor's outcome is the
+   * fact; the output stream is a report.
+   *
+   * Deferring is also the only correct answer for a child that closes stdin
+   * and keeps working — perfectly healthy, and settling on its `EPIPE` would
+   * declare a live run over. And `kill()` produces `EPIPE` on any run whose
+   * prompt was still draining, so reporting it would put a warning in the log
+   * for every ordinary cancellation.
+   *
+   * Anything OTHER than `EPIPE` on this stream is a genuine surprise with no
+   * such story, so it is reported. Not fatal either way — surviving the child
+   * is the whole job.
+   */
+  private guardStdin(): void {
+    this.child.stdin?.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === 'EPIPE') return;
+      this.report(error);
+    });
+  }
+
+  /**
+   * The same gap as {@link guardStdin}, on the streams we only read.
+   *
+   * #249 was about stdin, but the missing listener is a property of the
+   * stream and not of the direction: `stdout` and `stderr` carry `data`
+   * handlers and no `error` handler, so a read failure on either pipe — an
+   * `EIO` against a group that has just been `SIGKILL`ed, a reset descriptor —
+   * would take the process down by the identical route. Far rarer than the
+   * stdin race, and guarded anyway, because the cost of being wrong about how
+   * rare it is falls on the one component that is supposed to still be alive
+   * to report it.
+   *
+   * Reported, never settled. `close` still fires with the real exit status,
+   * and a truncated output stream is a note on the run rather than the run's
+   * outcome — the same rule the runner states: the supervisor's outcome is
+   * the fact, the output stream is a report.
+   */
+  private guardOutputStream(
+    name: 'stdout' | 'stderr',
+    stream: NodeJS.ReadableStream | null,
+  ): void {
+    stream?.on('error', (error: Error) => {
+      this.report(new Error(`${name} failed: ${error.message}`));
+    });
   }
 
   /** True until the child has exited, failed to spawn, or been reaped. */

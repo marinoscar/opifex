@@ -76,6 +76,30 @@ describe('ClaudeCodeLocalRunner', () => {
     return path;
   }
 
+  /**
+   * A stand-in for `claude` that never reads its stdin.
+   *
+   * Deliberately WITHOUT {@link fakeClaude}'s `cat` drain. That drain is a
+   * workaround, not a property of the CLI: the real one can exit before the
+   * prompt is written — a rejected flag after a version bump, a failed auth,
+   * an OOM kill — and #249 is that doing so used to raise an uncaught `EPIPE`
+   * in the API. Every fixture here having quietly drained stdin is why the
+   * suite never noticed. This one refuses to, so the fix has something to
+   * hold up.
+   */
+  async function fakeClaudeThatIgnoresStdin(
+    name: string,
+    body: string,
+  ): Promise<string> {
+    const path = join(binDir, name);
+    await writeFile(
+      path,
+      ['#!/bin/sh', `pwd > "${binDir}/${name}.cwd"`, body, ''].join('\n'),
+      { mode: 0o755 },
+    );
+    return path;
+  }
+
   function build(
     overrides: Record<string, unknown> = {},
   ): ClaudeCodeLocalRunner {
@@ -437,6 +461,47 @@ describe('ClaudeCodeLocalRunner', () => {
       expect(failed?.failure?.reason).toContain('exit 1');
       expect(failed?.failure?.reason).toContain('could not authenticate');
       expect(failed?.failure?.retryable).toBe(true);
+    }, 30_000);
+
+    it('survives a child that exits before reading the prompt', async () => {
+      // #249. A child that will not read its input is a child that failed,
+      // and the failed write is a symptom of that — not an event of its own,
+      // and certainly not grounds for an uncaught exception that would take
+      // the supervisor and the watchdog down with the run.
+      const binary = await fakeClaudeThatIgnoresStdin(
+        'deaf',
+        'echo "error: unknown option --verbose" >&2; exit 1',
+      );
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const uncaught: Error[] = [];
+      const capture = (error: Error) => uncaught.push(error);
+      process.prependListener('uncaughtException', capture);
+
+      try {
+        // Comfortably past the ~64KB pipe buffer, so the prompt cannot be
+        // absorbed in one write and the race is reached every time.
+        const handle = await runner.submit(
+          workOrder({
+            taskSpec:
+              'Add a health endpoint that reports the build sha. ' +
+              'Explain your reasoning at length. '.repeat(20_000),
+          }),
+        );
+        const { status, events } = await drainUntilTerminal(runner, handle);
+
+        // The exit code is the fact, exactly as for any other failure.
+        expect(status).toBe('failed');
+        const failed = events.find((event) => event.type === 'run.failed');
+        expect(failed?.failure?.reason).toContain('exit 1');
+        expect(failed?.failure?.reason).toContain('unknown option');
+
+        // And the control plane is still standing.
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(uncaught).toEqual([]);
+      } finally {
+        process.removeListener('uncaughtException', capture);
+      }
     }, 30_000);
 
     it('trusts the exit code over anything the run said about itself', async () => {

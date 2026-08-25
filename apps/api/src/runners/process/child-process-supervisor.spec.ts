@@ -1,13 +1,16 @@
+import { type ChildProcess } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 
 import {
   ChildProcessSupervisor,
   DEFAULT_KILL_GRACE_MS,
   KILL_VERIFY_DELAY_MS,
   STDERR_TAIL_BYTES,
-  type SupervisedProcess,
+  SupervisedProcess,
 } from './child-process-supervisor';
 
 /**
@@ -229,6 +232,124 @@ describe('ChildProcessSupervisor', () => {
       await expect(proc.waitForExit()).resolves.toMatchObject({ exitCode: 0 });
     });
 
+    /**
+     * #249: an early-exiting child must not take the API with it.
+     *
+     * The prompt is unbounded prose, so it does not always fit the ~64KB pipe
+     * buffer. When it does not, the write is still in flight after the child
+     * has gone, and without an `error` listener Node re-emits the `EPIPE` as
+     * an UNCAUGHT EXCEPTION — which in this process means the supervisor, the
+     * watchdog and the escalation path die together.
+     *
+     * Both existing fixtures for this runner drain stdin (`cat > …`), which is
+     * why the suite never caught it. This one deliberately does not.
+     */
+    it('survives a child that exits without ever reading its stdin', async () => {
+      // Ours goes first so an unhandled EPIPE is recorded here rather than
+      // only killing the run. Listening also suppresses the crash, so the
+      // assertion below is what makes the regression visible.
+      const uncaught: Error[] = [];
+      const capture = (error: Error) => uncaught.push(error);
+      process.prependListener('uncaughtException', capture);
+
+      try {
+        const lines: string[] = [];
+        const reported: Error[] = [];
+        const proc = start({
+          command: NODE,
+          // `node -e` never reads stdin, and this one exits at once: the
+          // shape of a CLI rejecting a flag or failing to authenticate.
+          args: ['-e', 'process.stdout.write("{\\"type\\":\\"result\\"}\\n")'],
+          cwd,
+          // Comfortably over the pipe buffer, so the write cannot be
+          // swallowed whole and the race is deterministic rather than lucky.
+          stdin: 'x'.repeat(1024 * 1024),
+          onLine: (line) => lines.push(line),
+          onError: (error) => reported.push(error),
+        });
+
+        // The exit code is the fact. EPIPE is a symptom of it, so the outcome
+        // is the child's own, not a synthetic stdin failure.
+        await expect(proc.waitForExit()).resolves.toEqual({
+          kind: 'exited',
+          exitCode: 0,
+          signal: null,
+        });
+        // And the run keeps its output: settling on the EPIPE would have won
+        // the race against `close`, where the final line is flushed.
+        expect(lines).toEqual(['{"type":"result"}']);
+        // An ordinary early exit, so nothing to warn an operator about.
+        expect(reported).toEqual([]);
+
+        // The EPIPE can land a tick after the child is reaped.
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(uncaught).toEqual([]);
+      } finally {
+        process.removeListener('uncaughtException', capture);
+      }
+    });
+
+    it('survives stdin dying under a child that is still running', async () => {
+      // The other half of #249, and the reason EPIPE must not settle: a child
+      // may close its stdin and work for hours. Treating the failed write as
+      // the end of the run would declare a healthy run over.
+      const uncaught: Error[] = [];
+      const capture = (error: Error) => uncaught.push(error);
+      process.prependListener('uncaughtException', capture);
+
+      try {
+        const lines: string[] = [];
+        const proc = start({
+          command: NODE,
+          args: [
+            '-e',
+            'process.stdin.destroy();' +
+              'setTimeout(()=>{process.stdout.write("still here\\n")},150)',
+          ],
+          cwd,
+          stdin: 'x'.repeat(1024 * 1024),
+          onLine: (line) => lines.push(line),
+        });
+
+        await expect(proc.waitForExit()).resolves.toMatchObject({
+          kind: 'exited',
+          exitCode: 0,
+        });
+        expect(lines).toEqual(['still here']);
+        expect(uncaught).toEqual([]);
+      } finally {
+        process.removeListener('uncaughtException', capture);
+      }
+    });
+
+    it('reports a stdin error that is not the ordinary EPIPE race', () => {
+      // EPIPE has a story — the child stopped reading — and its own outcome
+      // arriving right behind it. Anything else on this stream has neither,
+      // so it must not vanish. Driven through a fake child because a real
+      // EIO on a pipe cannot be provoked from a test.
+      const stdin = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        pid: 4242,
+        stdin,
+        stdout: null,
+        stderr: null,
+      }) as unknown as ChildProcess;
+
+      const reported: Error[] = [];
+      new SupervisedProcess(child, {
+        command: NODE,
+        args: [],
+        cwd,
+        onError: (error) => reported.push(error),
+      });
+
+      const failure: NodeJS.ErrnoException = new Error('read EIO');
+      failure.code = 'EIO';
+      stdin.emit('error', failure);
+
+      expect(reported).toEqual([failure]);
+    });
+
     it('runs in the requested cwd', async () => {
       const lines: string[] = [];
       const proc = start({
@@ -292,6 +413,41 @@ describe('ChildProcessSupervisor', () => {
       await proc.waitForExit();
       expect(proc.stderr().length).toBeLessThanOrEqual(STDERR_TAIL_BYTES);
       expect(proc.stderr().endsWith('TAIL')).toBe(true);
+    });
+
+    it('reports a read failure on an output stream rather than dying of it', () => {
+      // #249 again, in the direction it was not filed for: `stdout` and
+      // `stderr` carry data handlers and no error handler, so a read failure
+      // on either pipe reaches the process by the identical route. Reported
+      // rather than settled — `close` still brings the real exit status, and
+      // truncated output is a note on the run, not its outcome.
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        pid: 4243,
+        stdin: new PassThrough(),
+        stdout,
+        stderr,
+      }) as unknown as ChildProcess;
+
+      const reported: Error[] = [];
+      const proc = new SupervisedProcess(child, {
+        command: NODE,
+        args: [],
+        cwd,
+        onError: (error) => reported.push(error),
+      });
+
+      stdout.emit('error', new Error('read EIO'));
+      stderr.emit('error', new Error('connection reset'));
+
+      expect(reported.map((error) => error.message)).toEqual([
+        'stdout failed: read EIO',
+        'stderr failed: connection reset',
+      ]);
+      // Still running, as far as the supervisor is concerned: only the child
+      // itself ends the run.
+      expect(proc.isAlive()).toBe(true);
     });
   });
 
