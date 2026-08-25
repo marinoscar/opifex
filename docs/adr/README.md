@@ -30,6 +30,7 @@ one.
 | [0013](0013-never-trustable-effects.md)             | Never-trustable is a list of effects, checked at the execution boundary                   | Proposed | [#233](https://github.com/marinoscar/opifex/issues/233) |
 | [0014](0014-approval-timeout-precedence.md)         | Approval timeouts resolve by a total order, and the grant is what delivers autonomy       | Proposed | [#234](https://github.com/marinoscar/opifex/issues/234) |
 | [0015](0015-supervisor-model-http-client.md)        | Call the supervisor's model with the platform `fetch`, on a budget of its own             | Proposed | [#230](https://github.com/marinoscar/opifex/issues/230) |
+| [0016](0016-supervisor-live-run-ceiling.md)         | The live-run ceiling is removed; the quota gate keeps only the parked-run signal          | Proposed | [#260](https://github.com/marinoscar/opifex/issues/260) |
 
 `0000-template.md` is the template. It is not a decision and never becomes one;
 see [Numbering](#numbering) for what that means for `Decision: ADR-0000`.
