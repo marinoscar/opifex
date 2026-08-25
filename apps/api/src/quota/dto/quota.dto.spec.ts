@@ -1,12 +1,11 @@
-import { quotaReadingSchema, quotaSummarySchema } from './quota.dto';
+import { quotaSummarySchema, quotaWindowReadingSchema } from './quota.dto';
 
 /**
  * The schema is the contract the cockpit reads, so the refusals worth having
  * are the ones a well-meaning change would quietly undo.
  */
-describe('quotaReadingSchema', () => {
+describe('quotaWindowReadingSchema', () => {
   const reading = {
-    runnerKey: 'claude-code-local',
     windowKind: 'five_hour',
     resetsAt: '2026-08-25T15:00:00.000Z',
     startedAt: '2026-08-25T10:00:00.000Z',
@@ -28,7 +27,7 @@ describe('quotaReadingSchema', () => {
   };
 
   it('accepts a reading with everything measured', () => {
-    expect(quotaReadingSchema.parse(reading)).toMatchObject({
+    expect(quotaWindowReadingSchema.parse(reading)).toMatchObject({
       pressure: 'allowed',
       burnFraction: null,
     });
@@ -39,12 +38,12 @@ describe('quotaReadingSchema', () => {
     // ratio has to come through here and argue with `quota-window.ts` first,
     // rather than widening a number field nobody re-reads.
     expect(() =>
-      quotaReadingSchema.parse({ ...reading, burnFraction: 0.62 }),
+      quotaWindowReadingSchema.parse({ ...reading, burnFraction: 0.62 }),
     ).toThrow();
   });
 
   it('keeps an unreported cost as null rather than coercing it to zero', () => {
-    const parsed = quotaReadingSchema.parse({
+    const parsed = quotaWindowReadingSchema.parse({
       ...reading,
       opifexConsumption: {
         ...reading.opifexConsumption,
@@ -62,7 +61,10 @@ describe('quotaReadingSchema', () => {
     // and an unrecognized vendor status becomes `unknown` there. A raw vendor
     // word reaching this far means that normalization was bypassed.
     expect(() =>
-      quotaReadingSchema.parse({ ...reading, pressure: 'allowed_warning' }),
+      quotaWindowReadingSchema.parse({
+        ...reading,
+        pressure: 'allowed_warning',
+      }),
     ).toThrow();
   });
 });
