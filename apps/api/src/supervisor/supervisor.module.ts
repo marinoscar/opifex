@@ -14,6 +14,7 @@ import {
   SUPERVISOR_PROPOSERS,
   type SupervisorProposer,
 } from './invocation/supervisor-proposer.port';
+import { RetiredSupervisorConfigService } from './retired-config';
 import { DecompositionProposer } from './proposers/decomposition.proposer';
 import { IssueShapingProposer } from './proposers/issue-shaping.proposer';
 import { SpecQualityProposer } from './proposers/spec-quality.proposer';
@@ -42,6 +43,12 @@ import { TrustDigestSource } from './brief/trust-digest.source';
   imports: [PrismaModule, NotificationsModule],
   controllers: [DecisionLogController],
   providers: [
+    // Instantiated for its constructor alone: it warns at boot about
+    // supervisor settings that were retired and are still exported somewhere
+    // (ADR-0016). Nothing injects it, and nothing should -- it holds no state
+    // and answers no question. It lives here rather than in `app.module.ts`
+    // because the settings it speaks for are this module's.
+    RetiredSupervisorConfigService,
     SnapshotService,
     DecisionLogService,
     SupervisorService,

@@ -228,7 +228,9 @@ export default () => {
       // proposer runs once per tick regardless -- so the ceiling gated on a
       // number that was never evidence of the thing it claimed to bound. It is
       // named here rather than silently absent so a reader who finds the
-      // variable in an old `.env` can trace where it went.
+      // variable in an old `.env` can trace where it went, and
+      // `RetiredSupervisorConfigService` warns at boot if one still exports
+      // it -- a supplied value that silently does nothing is its own failure.
     },
 
     // The promotion ladder (epic #22, #99), VISION §7 "Earned autonomy".
