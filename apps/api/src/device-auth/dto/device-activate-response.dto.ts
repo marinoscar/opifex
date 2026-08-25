@@ -21,7 +21,7 @@ export class DeviceActivateResponseDto {
     description: 'Client information for the device (if code is valid)',
     required: false,
   })
-  clientInfo?: Record<string, any>;
+  clientInfo?: Record<string, unknown>;
 
   @ApiProperty({
     description: 'Expiration timestamp (if code is valid)',

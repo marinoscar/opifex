@@ -7,14 +7,17 @@ const tracer = trace.getTracer('opifex-api');
  */
 export function Trace(spanName?: string) {
   return function (
-    target: any,
+    // The decorated method's host: a prototype for instance methods, a
+    // constructor for static ones. `object` is all this needs — it reads
+    // `constructor.name` and nothing else.
+    target: object,
     propertyKey: string,
     descriptor: PropertyDescriptor,
   ) {
     const originalMethod = descriptor.value;
     const name = spanName || `${target.constructor.name}.${propertyKey}`;
 
-    descriptor.value = async function (...args: any[]) {
+    descriptor.value = async function (...args: unknown[]) {
       return tracer.startActiveSpan(
         name,
         { kind: SpanKind.INTERNAL },

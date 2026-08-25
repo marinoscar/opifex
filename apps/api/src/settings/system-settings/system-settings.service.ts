@@ -176,19 +176,28 @@ export class SystemSettingsService {
   }
 
   /**
-   * Get a specific setting value
+   * Get a specific setting value by dotted path.
+   *
+   * `T` is the caller's claim about what lives at `path`, and nothing verifies
+   * it — a dotted string cannot be checked against the settings shape. The
+   * walk itself is now typed, though: each step narrows to a JSON object
+   * before indexing, so a path that runs off the end of the tree (or through a
+   * scalar) returns `undefined` rather than throwing (#186).
    */
   async getSettingValue<T>(path: string): Promise<T | undefined> {
     const settings = await this.getSettings();
     const parts = path.split('.');
 
-    let value: any = settings;
+    let value: unknown = settings;
     for (const part of parts) {
-      value = value?.[part];
+      if (typeof value !== 'object' || value === null) {
+        return undefined;
+      }
+      value = (value as Record<string, unknown>)[part];
       if (value === undefined) break;
     }
 
-    return value as T;
+    return value as T | undefined;
   }
 
   /**
