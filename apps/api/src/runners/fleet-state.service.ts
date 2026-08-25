@@ -145,13 +145,22 @@ export type FleetReport =
 /**
  * Whether routing has nothing at all to route to.
  *
- * Deliberately NOT "every runner is disabled". Those two states share one
- * `QueueReason` today (`no-runners-registered`, separated only by the prose of
- * the reason sentence), and collapsing them here would escalate an operator's
- * own decision back at them — which is how an alarm gets ignored. Reading
- * cardinality straight off the fleet keeps them apart structurally, with no
- * sentence to parse: a disabled runner has a row, so the fleet is not empty,
- * so nothing fires.
+ * Deliberately NOT "every runner is disabled". Collapsing them here would
+ * escalate an operator's own decision back at them — which is how an alarm
+ * gets ignored. Reading cardinality straight off the fleet keeps them apart
+ * structurally, with no sentence to parse: a disabled runner has a row, so the
+ * fleet is not empty, so nothing fires.
+ *
+ * `QueueReason` now separates the two as well: #296 split the value
+ * `all-runners-disabled` out of `no-runners-registered`. This still does not
+ * read it, for two structural reasons rather than stylistic ones. A dispatch
+ * decision only exists once there is a work order to decide about, so an empty
+ * fleet with an empty queue would raise nothing; and the pool that decision
+ * saw is the ROUTABLE one — a runner registered with no capability manifest is
+ * dropped by `DispatchService.loadPool`, so the policy would call that fleet
+ * unregistered while the `runners` table plainly has a row. `registered`,
+ * `routable` and `enabled` are three numbers, and only this service can see
+ * all three.
  */
 export function hasEmptyFleet(report: FleetReport): boolean {
   return report.checked && report.routable === 0;
