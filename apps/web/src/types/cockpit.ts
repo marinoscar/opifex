@@ -314,7 +314,17 @@ export interface QueueEntry {
   position: number;
   /** ISO-8601. */
   enqueuedAt: string;
-  /** What must clear first, in one line. Null when nothing blocks it. */
+  /**
+   * A COMPLETE SENTENCE explaining why this entry has not been dispatched, or
+   * null when nothing blocks it.
+   *
+   * Not a noun phrase. The API returns the dispatch policy's own `reason`
+   * verbatim — #64 requires a decision be reconstructible from that line alone
+   * — so it arrives already capitalised and already self-explanatory, and it
+   * must be rendered as-is. Prefixing it with a label produced "Waiting on
+   * Waiting for a free slot on…" (#170); describing this field as a phrase is
+   * what invited the prefix in the first place.
+   */
   waitingOn: string | null;
 }
 
