@@ -18,9 +18,20 @@ describe('JwtStrategy', () => {
         JwtStrategy,
         { provide: AuthService, useValue: mockAuthService },
         {
+          // `getOrThrow`, because that is what the strategy calls since #278
+          // removed its `|| 'fallback-secret'`. The old fixture stubbed only
+          // `get`, and the value it returned was 28 characters despite its
+          // name — below the floor `validateEnv` now enforces, so it is
+          // lengthened here too rather than left as a fixture that would fail
+          // the real check.
           provide: ConfigService,
           useValue: {
-            get: jest.fn().mockReturnValue('test-jwt-secret-min-32-chars'),
+            get: jest
+              .fn()
+              .mockReturnValue('test-jwt-secret-of-min-32-characters'),
+            getOrThrow: jest
+              .fn()
+              .mockReturnValue('test-jwt-secret-of-min-32-characters'),
           },
         },
       ],
