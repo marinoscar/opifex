@@ -39,6 +39,7 @@ function view(
     grantId: null,
     createdGrantId: null,
     escalationId: null,
+    escalationMissing: false,
     createdAt: NOW.toISOString(),
     updatedAt: NOW.toISOString(),
     ...overrides,

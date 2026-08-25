@@ -188,6 +188,47 @@ export interface SweepTimeoutsResult {
   raced: number;
 }
 
+/**
+ * What one escalation backfill pass did (#237).
+ *
+ * Separate from `SweepTimeoutsResult` rather than folded into it, matching the
+ * separation of the two passes themselves: one resolves requests by the clock,
+ * the other tells a human about requests no clock will ever resolve. A single
+ * result type would invite a single method.
+ */
+export interface BackfillParkedResult {
+  /** Parked rows with no escalation, inside the retry window. */
+  examined: number;
+  /** A missing escalation was raised and linked. The repair. */
+  raised: number;
+  /**
+   * An escalation already existed and only the LINK was missing.
+   *
+   * The number that proves the dedupe is doing something: each of these is an
+   * operator who was NOT paged a second time about a question they had
+   * already been told about.
+   */
+  linked: number;
+  /**
+   * The row stopped being a parked, un-escalated request mid-pass.
+   *
+   * Normal, and usually a human deciding it at the same moment. Counted apart
+   * from `raised` because nothing was repaired.
+   */
+  raced: number;
+  /** The retry failed again. The next tick tries the same rows. */
+  failed: number;
+  /**
+   * Parked rows with no escalation OLDER than the retry window.
+   *
+   * Never touched, and reported on every pass. This is the honest terminal
+   * state, the same shape #136's `MAX_DELIVERY_ATTEMPTS` produces: nothing
+   * further is attempted, and the count is the system saying so rather than
+   * falling quiet and looking healthy.
+   */
+  abandoned: number;
+}
+
 /** Filters for the human-facing queue. */
 export interface ListPendingQuery {
   repositoryId?: string;
@@ -301,6 +342,22 @@ export interface ApprovalRequestView {
   /** The grant BORN from the decision on this. A different edge. */
   createdGrantId: string | null;
   escalationId: string | null;
+  /**
+   * True when this is a parked request with no escalation (#237).
+   *
+   * DERIVED, not stored: `status === 'parked' && escalationId === null`. It is
+   * on the view because a log line is not a surface — an operator cannot query
+   * one — and this is the state in which the approval is missing from the
+   * escalation list, which is where "what is waiting on me" is normally read.
+   *
+   * It does NOT mean nobody was told. `ApprovalGateService.gate` pushes the
+   * approval to the operator's devices whether or not the escalation lands, so
+   * the phone rang. What is missing is the escalation record, its delivery
+   * receipt and #136's redelivery retries. Within
+   * `PARKED_BACKFILL_WINDOW_HOURS` the backfill is still trying; after it,
+   * this flag is the permanent record that it never landed.
+   */
+  escalationMissing: boolean;
 
   createdAt: string;
   updatedAt: string;
