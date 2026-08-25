@@ -36,6 +36,11 @@ describe('Health Endpoints (Integration)', () => {
     // enforces. Every test below except the drift ones wants a deployment that
     // was seeded properly.
     seedAllPermissions();
+    // Same shape for the fleet check (#277). Without it `runner.findMany`
+    // auto-vivifies to a `jest.fn()` resolving `undefined` — the trap
+    // `prisma.mock.ts` already documents for `verifyConnection` — and the
+    // full health check would go 503 on an "empty" fleet in every test here.
+    registerFleet();
   });
 
   /** The permissions table as a correctly seeded deployment holds it. */
@@ -43,6 +48,32 @@ describe('Health Endpoints (Integration)', () => {
     (context.prismaMock.permission.findMany as jest.Mock).mockResolvedValue(
       EXPECTED_PERMISSIONS.map((name) => ({ name })),
     );
+  }
+
+  /** One registered, enabled, available runner: a healthy fleet (#277). */
+  function registerFleet(): void {
+    (context.prismaMock.runner.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 'runner-1',
+        key: 'claude-code-local',
+        displayName: 'Claude Code (local)',
+        version: '2.0.1',
+        enabled: true,
+        capability: {
+          schemaVersion: '1.3.0',
+          invocationModel: 'process',
+          executionLocus: 'own_infrastructure',
+          streamingFidelity: 'full',
+          rateLimitSignal: 'structured',
+          stabilityTier: 'stable',
+          reportsCost: true,
+          resumable: true,
+          maxConcurrency: 2,
+          branchPatterns: ['factory/*'],
+          manifest: {},
+        },
+      },
+    ]);
   }
 
   /** The same table with `omit` never inserted — the #173 condition. */

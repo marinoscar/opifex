@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { HealthCheckService, HealthCheckResult } from '@nestjs/terminus';
 import { HealthController } from './health.controller';
 import { DatabaseHealthIndicator } from './indicators/database.indicator';
+import { FleetIndicator } from './indicators/fleet.indicator';
 import { SeedIntegrityIndicator } from './indicators/seed-integrity.indicator';
 
 describe('HealthController', () => {
@@ -9,6 +10,7 @@ describe('HealthController', () => {
   let mockHealthCheckService: jest.Mocked<HealthCheckService>;
   let mockDatabaseIndicator: jest.Mocked<DatabaseHealthIndicator>;
   let mockSeedIndicator: jest.Mocked<SeedIntegrityIndicator>;
+  let mockFleetIndicator: jest.Mocked<FleetIndicator>;
 
   beforeEach(async () => {
     mockHealthCheckService = {
@@ -27,12 +29,19 @@ describe('HealthController', () => {
       isHealthy: jest.fn(),
     } as any;
 
+    // Same two-method split as the seed indicator, for the same reason (#277).
+    mockFleetIndicator = {
+      report: jest.fn(),
+      isHealthy: jest.fn(),
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [HealthController],
       providers: [
         { provide: HealthCheckService, useValue: mockHealthCheckService },
         { provide: DatabaseHealthIndicator, useValue: mockDatabaseIndicator },
         { provide: SeedIntegrityIndicator, useValue: mockSeedIndicator },
+        { provide: FleetIndicator, useValue: mockFleetIndicator },
       ],
     }).compile();
 
@@ -79,6 +88,7 @@ describe('HealthController', () => {
       const result = await controller.readiness();
 
       expect(mockHealthCheckService.check).toHaveBeenCalledWith([
+        expect.any(Function),
         expect.any(Function),
         expect.any(Function),
       ]);
@@ -176,6 +186,7 @@ describe('HealthController', () => {
         return mockResult;
       });
       mockSeedIndicator.report.mockResolvedValue({ seed: { status: 'up' } });
+      mockFleetIndicator.report.mockResolvedValue({ fleet: { status: 'up' } });
 
       await controller.readiness();
 
@@ -183,6 +194,29 @@ describe('HealthController', () => {
       // and stays up. See SeedIntegrityIndicator for the argument.
       expect(mockSeedIndicator.report).toHaveBeenCalledWith('seed');
       expect(mockSeedIndicator.isHealthy).not.toHaveBeenCalled();
+    });
+
+    it('asks the fleet indicator to report, never to fail (#277)', async () => {
+      const mockResult: HealthCheckResult = {
+        status: 'ok',
+        info: {},
+        error: {},
+        details: {},
+      };
+
+      mockHealthCheckService.check.mockImplementation(async (indicators) => {
+        await Promise.all(indicators.map((indicator) => indicator()));
+        return mockResult;
+      });
+      mockSeedIndicator.report.mockResolvedValue({ seed: { status: 'up' } });
+      mockFleetIndicator.report.mockResolvedValue({ fleet: { status: 'up' } });
+
+      await controller.readiness();
+
+      // An empty fleet stops dispatch and nothing else, and the remedy runs
+      // inside the container a readiness failure would take down.
+      expect(mockFleetIndicator.report).toHaveBeenCalledWith('fleet');
+      expect(mockFleetIndicator.isHealthy).not.toHaveBeenCalled();
     });
   });
 
@@ -208,6 +242,7 @@ describe('HealthController', () => {
       const result = await controller.fullHealth();
 
       expect(mockHealthCheckService.check).toHaveBeenCalledWith([
+        expect.any(Function),
         expect.any(Function),
         expect.any(Function),
       ]);
