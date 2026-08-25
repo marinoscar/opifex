@@ -129,7 +129,14 @@ export default function QueuePage() {
                 <TableCell align="right">#</TableCell>
                 <TableCell>Work order</TableCell>
                 <TableCell>State</TableCell>
-                <TableCell>Waiting on</TableCell>
+                {/* Not "Waiting on" (#170). The cells under it hold complete
+                    sentences from the dispatch policy, so a header that reads
+                    as the first half of one — "Waiting on" / "Waiting for a
+                    free slot on claude-code-local…" — collides with them.
+                    This header asks a question the sentence answers instead of
+                    starting a sentence the API finishes. Held rows are covered
+                    too: held is waiting on a human. */}
+                <TableCell>Why it is waiting</TableCell>
                 <TableCell>Queued</TableCell>
                 <TableCell align="right">Steer</TableCell>
               </TableRow>
@@ -202,6 +209,9 @@ function QueueRow({
         />
       </TableCell>
       <TableCell>
+        {/* Verbatim, never reworded. #64 wants an operator comparing this
+            screen against the dispatch log to read the same sentence twice,
+            not two paraphrases of one decision. */}
         <Typography variant="body2" color="text.secondary">
           {entry.waitingOn ?? '—'}
         </Typography>

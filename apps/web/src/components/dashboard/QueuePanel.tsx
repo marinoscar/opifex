@@ -29,12 +29,20 @@ import type { QueueEntry } from '../../types/cockpit';
  * because the two clear differently — waiting clears itself, held waits on a
  * human — and the labels have to preserve that or the distinction dies at the
  * last step.
+ *
+ * `held` reads "On hold" and NOT "Held for approval" (#170). A hold is an
+ * operator writing `factory:hold` on the issue, cleared by writing
+ * `factory:ready` back; an approval is a different mechanism entirely, with its
+ * own record (`ApprovalRequest`), its own screen (`/approvals`) and its own
+ * decision. Naming one after the other sends an operator looking for a pending
+ * approval that does not exist, and hides the label that actually holds the
+ * work order.
  */
 const QUEUE_STATE_LABELS: Record<QueueEntry['state'], string> = {
   waiting: 'Waiting',
   ready: 'Ready',
   dispatching: 'Dispatching',
-  held: 'Held for approval',
+  held: 'On hold',
 };
 
 export function QueuePanel() {
@@ -117,9 +125,23 @@ export function QueuePanel() {
               </Typography>
             </Stack>
 
+            {/* The API's sentence, VERBATIM and unprefixed (#170).
+                `waitingOn` is a complete sentence, not a noun phrase — it
+                arrives as "All 1 registered runner(s) are disabled." or
+                "Held by a factory:hold label; release it on the issue" — so
+                the old "Waiting on " prefix collided with every one of them.
+                The state chip on the row above already says "Waiting" or
+                "On hold"; a label here would restate it and then run into the
+                sentence's own grammar. Rewriting the sentence client-side is
+                worse still: #64 wants the queue and the dispatch log to read
+                identically, which they only do if this is the same string. */}
             {entry.waitingOn && (
-              <Typography variant="caption" color="text.secondary">
-                Waiting on {entry.waitingOn}
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: 'block' }}
+              >
+                {entry.waitingOn}
               </Typography>
             )}
           </Box>
