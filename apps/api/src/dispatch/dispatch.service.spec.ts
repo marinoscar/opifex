@@ -35,9 +35,10 @@ function runnerRow(overrides: Record<string, unknown> = {}) {
 /**
  * A run sitting `blocked`, as `loadQuotaBlocks` selects it.
  *
- * This shape IS the quota signal: there is no meter to mock, because there is
- * no meter (#231 is unbuilt). What the control plane genuinely has is a dated,
- * first-hand block reported by the runner.
+ * The LAGGING half of the quota signal (#105): a dated, first-hand block the
+ * runner reported, which can only ever be observed after a run has already hit
+ * the wall. The leading half is {@link meterWindow} — since #285 there are two
+ * of them, and `resolveQuotaPosition` ranks them.
  */
 function blockedRun(
   overrides: {
@@ -61,6 +62,7 @@ describe('DispatchService', () => {
   let prisma: {
     runner: { findMany: jest.Mock };
     run: { groupBy: jest.Mock; count: jest.Mock; findMany: jest.Mock };
+    quotaWindow: { findMany: jest.Mock };
   };
   let service: DispatchService;
 
@@ -81,6 +83,7 @@ describe('DispatchService', () => {
         count: jest.fn().mockResolvedValue(0),
         findMany: jest.fn().mockResolvedValue([]),
       },
+      quotaWindow: { findMany: jest.fn().mockResolvedValue([]) },
     };
     build();
   });
@@ -327,10 +330,11 @@ describe('DispatchService', () => {
     );
   });
   describe('the quota position it derives (#105)', () => {
-    it('reads it from blocked runs, because there is no quota meter to read', async () => {
-      // #231 (a real consumption model) is open and unbuilt. What IS recorded
-      // is an observed position: this runner has a run blocked on a rate limit
-      // with a reset time in the future.
+    it('reads a position from blocked runs, with no meter reading present', async () => {
+      // The lagging signal on its own, which is what a runner that has never
+      // emitted a rate-limit line still has: a run blocked on a rate limit
+      // with a reset time in the future. Since #285 it is one of two sources,
+      // and `resolveQuotaPosition` takes this one when the meter is silent.
       prisma.run.findMany.mockResolvedValue([blockedRun()]);
 
       const decision = await service.decide([]);
