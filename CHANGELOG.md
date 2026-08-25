@@ -5,21 +5,84 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+**Convention:** every pull request that ships a `feat` or `fix` (per this
+repository's commit-type vocabulary) adds its own bullet under `[Unreleased]`,
+grouped by the `VISION.MD` §12 phase it belongs to, as part of that PR — not
+retroactively. `chore`, `docs`, `refactor`, and `test`-only changes are
+exempt. This is a norm recorded here, not yet a CI gate; see the project
+board / issue tracker for whether a `check-changelog`-style enforcement (on
+the model of `scripts/check-provenance.mjs`) has since been built.
+
 ## [Unreleased]
+
+> **Before deploying this: three things changed what it takes to start or operate the API.**
+>
+> - `JWT_SECRET` is now required and validated at boot: unset, or under 32 characters, and the API refuses to start — the startup failure names every invalid variable at once. Generate one with `openssl rand -base64 32` (44 characters, comfortably over the floor). (#278, #295, #309)
+> - `POSTGRES_PASSWORD` is now required when `NODE_ENV=production`: an unset value, an empty value, and the literal `postgres` default — the value `infra/compose/.env.example` ships, so copying that file is not choosing a password — are all rejected at boot. Outside production the default still applies with no enforcement, so a local `docker compose up` stays frictionless. (#299, #306)
+> - `GET /api/health` (the comprehensive check — not the liveness or readiness probes) now fails when no runner is registered and routable, the way it already failed on seed drift. `GET /api/health/ready` deliberately does **not** fail on either condition: it reports the finding and stays up, because the container that would go down under `restart: unless-stopped` is the same one running the fix (registration convergence, or `prisma:seed`). (#277, #294)
 
 ### Added
 
-- **Contracts**: `schemas/work-order.schema.json`, `schemas/runner-capability.schema.json` and `schemas/run-event.schema.json`, with worked examples, invalid fixtures and a conformance suite that asserts each fixture is rejected for the reason it was written for.
-- **Contract types**: TypeScript generated from the three schemas by `npm run contracts:generate` into both `apps/api` and `apps/web`, so the cockpit and the API cannot disagree about a shape. `npm run contracts:check` fails the build when a schema changes and the generated output does not.
-- **Boundary validation**: work orders are validated before they become an authorization record and an execution record, capability manifests before a runner enters the fleet, and run events at ingestion. Failures name the offending field.
-- **Schema versioning**: `schemaVersion` accepts the whole `1.x` range with `default` naming the version a producer should write; one schema file per major, and the old file stays so a persisted work order remains re-runnable. Policy recorded as ADR-0010.
-- **OpenAPI**: `npm run openapi:dump` and `npm run openapi:lint` are wired and enforced in CI against a Spectral ruleset; the document is generated rather than committed.
+#### Phase 0 — Conventions
+
 - **CI**: GitHub Actions pipeline (`.github/workflows/ci.yml`) with `provenance`, `lint`, `typecheck`, `test-api`, `test-web`, and `build` jobs, running on pull requests and pushes to `main`. `provenance` is pull-request-only, since a push to `main` has no PR body to carry a closing keyword.
 - **Provenance enforcement**: `scripts/check-provenance.mjs` fails a pull request whose body carries no closing keyword, whose commits are missing a required trailer, or that names a decision resolving to no file under `docs/adr/`. Its patterns are read out of `docs/PROVENANCE.md` at run time so the check and the specification cannot drift.
 - **Architecture decision records**: `docs/adr/` with a template, an index, and the numbering, lifecycle and supersession conventions (`docs/adr/README.md`); recorded as ADR-0009. Every ADR names its discussion issue, and CI enforces it.
 - **Linting and formatting**: ESLint (flat config) and Prettier across both workspaces, replacing the `echo 'No linter configured'` stubs. `npm run lint` and `npm run format:check` are real and CI blocks on both.
 - **Dependency updates**: Dependabot configuration (`.github/dependabot.yml`) for weekly npm updates across the root, `apps/api`, and `apps/web` workspaces, plus weekly GitHub Actions updates.
 - **Governance**: GitHub issue templates (Epic, Feature request, Bug report, Decision proposal), a pull request template with required provenance trailers, a machine-readable label taxonomy (`.github/labels.yml`), and `.github/CODEOWNERS`.
+
+#### Phase 1 — Contracts
+
+- **Contracts**: `schemas/work-order.schema.json`, `schemas/runner-capability.schema.json` and `schemas/run-event.schema.json`, with worked examples, invalid fixtures and a conformance suite that asserts each fixture is rejected for the reason it was written for.
+- **Contract types**: TypeScript generated from the three schemas by `npm run contracts:generate` into both `apps/api` and `apps/web`, so the cockpit and the API cannot disagree about a shape. `npm run contracts:check` fails the build when a schema changes and the generated output does not.
+- **Boundary validation**: work orders are validated before they become an authorization record and an execution record, capability manifests before a runner enters the fleet, and run events at ingestion. Failures name the offending field.
+- **Schema versioning**: `schemaVersion` accepts the whole `1.x` range with `default` naming the version a producer should write; one schema file per major, and the old file stays so a persisted work order remains re-runnable. Policy recorded as ADR-0010.
+- **OpenAPI**: `npm run openapi:dump` and `npm run openapi:lint` are wired and enforced in CI against a Spectral ruleset; the document is generated rather than committed.
+
+#### Phase 2 — Reconciler, read-only
+
+The control loop that everything else now runs on top of exists, and for this phase it can only look. Each tick it observes GitHub and the run state in Postgres, computes what should be true, and records the diff — it holds no GitHub write client, so it cannot act on what it observes (epics #15, #16; #131, #133). An eligible issue projects into a work order and that projection is persisted on the tick, ahead of anything that could execute one (#155–#158).
+
+#### Phase 3 — Liveness and escalation
+
+The failure the project exists to fix — a stalled session going unnoticed for hours — now has a watcher. The watchdog computes a verdict on a run and escalates to a human; it does not kill or re-dispatch anything itself, since that is Phase 4 machinery by design (epic #17; #135). A failed escalation delivery now retries instead of being dropped (#137), and a parked approval whose escalation never raised is completed later by a backfill (#237, #280).
+
+#### Phase 4 — Execution
+
+Work orders now actually run. `claude-code-local` is the first runner: it streams a Claude Code session, maps its output to run events, and enforces its own concurrency limits, reaping and shutdown (#139, #144–#146, #148). The reconciler's dispatch queue routes a work order to a capable runner, enforces concurrency, and drains on every tick (#142, #152, #160). A hard spend ceiling and a wall-clock deadline are enforced from the control plane, and can act once passed (#176, #181, #188). A work order that has used all its retry attempts is quarantined rather than retried forever, and a pull request is held back from review until CI is green (#200, #201). Runs conclude correctly on their terminal event — including a stalled run that would otherwise hold its dispatch slot forever — and survive a runner child process that never reads its prompt (#203, #258, #255). A work order can declare a required model tier and dispatch routes on it, with a distinct refusal reason when the tier can't be met (#206, #293, #311). Runner registration now converges instead of only running once at boot, so a runner that starts late is still picked up (#276).
+
+#### Phase 5 — Cockpit
+
+The web application is wired to real data. Projects and repositories, the work-order queue with hold/release, the runs list with an event timeline, work-order detail, cost, and the activity feed are all backed by API read models rather than placeholders (epic #80; #163–#168). Pull-request merge state is now tracked, which two of the project's six headline metrics depended on (#216). The gaps a run leaves between stopping and being noticed are now recorded, feeding the detection-latency metric (#263).
+
+#### Phase 6 — Supervisor, observe-only
+
+An advisory agent now runs on a schedule, off the request path, and writes proposals to a decision log — nothing more. `SupervisorModule` imports nothing that could dispatch, write to GitHub, or reach a runner, so execution is structurally impossible here, not merely unimplemented (#90, #221, #222). Three proposers feed it — decomposition, issue shaping, and spec-quality feedback — plus a failure-diagnosis proposer whose output is explicitly labelled a hypothesis rather than a finding (#223, #224, #225, #227). Postgres state renders into a bounded snapshot the supervisor reads (#220), it now has its own model adapter and its own spend ceiling, separate from execution's (#259, #286), and a daily brief ranks what needs a human's attention (#228).
+
+#### Phase 7 — Earned autonomy
+
+The action-class taxonomy is now a single registry every proposer and grant reads from — the unit at which autonomy is ever granted is a class, never "the agent" as a whole (ADR-0011; #219). Trust grants layer on top of it: scoped, expiring, budget-capped authorizations to skip an approval for one class, gated by a per-class timeout, and renewable in one tap without ever widening scope (#96, #97, #115, #238, #243). A small, fixed set of effects is refused at the execution boundary regardless of any grant (#95, #235). Action classes promote on evidence and demote on regression, and a hand-demoted class is held off the ladder for a full regression window rather than re-promoting on the next good sample (#99, #240, #244, #281). A one-tap mobile approval surface and a cockpit view of trust grants and the promotion ladder ship for operating this by phone (#98, #101, #241, #245).
+
+#### Phase 8 — Second runner
+
+`claude-code-cloud` — the vendor-cloud runner VISION's roadmap named as the first candidate — was investigated and found blocked: the vendor CLI refuses non-interactive `--cloud` sessions, so required manifest fields are unobservable and its capability manifest cannot be honestly written. `claude-code-api` is documented as the resulting only viable second runner, but per VISION §3.7 is not built until its gate opens — this phase shipped a plan, not code (#112). Ahead of a second runner existing, dispatch gained the accounting a second one would need: a runner can report it exists but currently cannot take work, distinct from being unregistered (#105, #253, #266); dispatch routes around a runner whose subscription quota is observably spent, and ranks the two available quota signals by a stated precedence rule (#231, #248, #285, #300); and a "burn ratio" is deliberately **not** computed, since no vendor publishes the capacity it would need as a denominator — the metric stays `NOT_MEASURED` rather than a number nobody should trust (#231, #284). Quota windows are now recorded per runner and every live window is reported, not just the newest one (#301, #307). A cross-runner conformance suite exists so that a second runner, when built, has to prove it behaves like the first (#106, #250).
+
+### Fixed
+
+- The database readiness check now performs a real round trip through `PrismaService.verifyConnection()` instead of reporting healthy on a client that was merely constructed (#161, #257).
+- The API now boots without Google OAuth credentials configured, reporting the missing provider instead of failing to start (#138, #279).
+- Seed drift — the database's permission rows falling behind the code that enforces them — is now detected and reported instead of manifesting as unexplained 403s while health checks still said `ok` (#173, #274).
+- A run no longer writes to a column the `Run` model does not have (#159, #288, #289).
+- The queue's cockpit labels no longer collide with the API's own status labels (#170, #270).
+- The cockpit's theme override setting (`allowUserThemeOverride`) is now honoured; previously nothing read it (#211).
+- The frontend now refetches when a filter changes instead of waiting for the next poll interval (#246, #256).
+- Dispatch policy now carries a work order's model tier into its routing decision, with the projection under test (#265, #272).
+- An ignored `needs:`/`tier:` routing label is now reported instead of silently swallowed (#297, #305).
+
+### Changed
+
+- The supervisor's live-run ceiling was removed: the argument for capping supervisor invocations by concurrent run count no longer held once the supervisor had its own spend ceiling (#260, #275).
 
 ## [1.1.0] - 2026-06-10
 
