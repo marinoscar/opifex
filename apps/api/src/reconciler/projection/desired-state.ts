@@ -3,6 +3,7 @@ import {
   MIRROR_LABELS,
   isMirrorLabel,
 } from '../../github/labels/factory-labels';
+import { describeIgnoredLabels } from '../../github/labels/ignored-labels';
 import type { NormalizedIssue } from '../../github/read/github-read.types';
 import type {
   DesiredIssueState,
@@ -54,7 +55,63 @@ export function projectDesiredState(observed: ObservedState): DesiredState {
   };
 }
 
+/**
+ * What should be true for one issue, plus whatever the factory could not act on.
+ *
+ * Two steps rather than one, and the split is the design (#297). `projectIntent`
+ * decides what the factory is DOING, and exactly one of its branches applies.
+ * An ignored `needs:`/`tier:`/`factory:` label is a fact about the INPUT, so it
+ * is orthogonal to all of them: an issue can be dispatched and still have had a
+ * mistyped tier ignored. Folding the report into the intent branches would have
+ * meant repeating it in nine places and getting it wrong in one.
+ *
+ * Critically, the report NEVER changes the intent. #273 settled that an ignored
+ * label means the default and never stalls or reroutes work, and #297 is only
+ * about making that audible.
+ */
 function projectIssue(
+  issue: NormalizedIssue,
+  workOrder: ObservedWorkOrder | null,
+  observed: ObservedState,
+): DesiredIssueState {
+  return reportIgnoredLabels(issue, projectIntent(issue, workOrder, observed));
+}
+
+/**
+ * Add the advisory mirror label when a declaration was ignored.
+ *
+ * ## Why this needs no dedupe key
+ *
+ * It has none, and that is the point. The projection recomputes from scratch
+ * every tick and the diff engine adds what is missing and removes what is
+ * stale, so the label's presence in GitHub IS the record of having reported.
+ * Fixing the label removes the report; making the same mistake again is a
+ * fresh fact and reports again. Compare `SpecFeedbackExecutor`, which must
+ * keep a row and a body digest because a comment is an event that cannot be
+ * unsaid — and which for that reason could not serve here at all, since a
+ * label change does not change the body.
+ *
+ * The label alone cannot say WHICH label was wrong, so the `reason` names
+ * them. #47: the reason is the deliverable, not a log message.
+ */
+function reportIgnoredLabels(
+  issue: NormalizedIssue,
+  state: DesiredIssueState,
+): DesiredIssueState {
+  if (issue.ignoredLabels.length === 0) return state;
+
+  return {
+    ...state,
+    reason: `${state.reason} (${describeIgnoredLabels(issue.ignoredLabels)})`,
+    // Appended, never substituted: the issue is still whatever it was.
+    desiredMirrorLabels: [
+      ...state.desiredMirrorLabels,
+      MIRROR_LABELS.LABEL_IGNORED,
+    ],
+  };
+}
+
+function projectIntent(
   issue: NormalizedIssue,
   workOrder: ObservedWorkOrder | null,
   observed: ObservedState,

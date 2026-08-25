@@ -61,6 +61,10 @@
   color: "666666"
   description: "Mirror: quarantined after repeated failure. Visibility only — do not hand-edit."
 
+- name: "factory/label-ignored"
+  color: "9E6A03"
+  description: "Mirror: a needs:/tier:/factory: label was not understood and was ignored. Visibility only."
+
 # -----------------------------------------------------------------------------
 # Type — what kind of issue this is
 # -----------------------------------------------------------------------------

@@ -63,6 +63,29 @@ export const MIRROR_LABELS = {
   BLOCKED: 'factory/blocked',
   REVIEW: 'factory/review',
   QUARANTINE: 'factory/quarantine',
+  /**
+   * A `factory:`, `needs:` or `tier:` label on this issue was not understood,
+   * or contradicted another, so it was ignored (#297).
+   *
+   * ## Why a fifth mirror label was worth it when a fourth INPUT label was not
+   *
+   * #273 declined to name the model tier `factory:tier-…` because `factory:`
+   * is a closed vocabulary of three human INTENTS, and a fourth would have to
+   * be understood by the mirror machinery and the unknown-input reporting.
+   * None of that applies here. A mirror label is never read as truth, so it
+   * couples to nothing; the whole cost is this entry plus one in
+   * `.github/labels.yml`, which is exactly the registration `MIRROR_LABELS`
+   * exists to force.
+   *
+   * ## It is advisory, and orthogonal to intent
+   *
+   * Every other mirror label reports what the factory is DOING, and exactly
+   * one of them applies at a time. This one reports something about the
+   * INPUT, so it can accompany any of them — an issue can be dispatched and
+   * still have had a `tier:` typo ignored. The projection therefore appends
+   * it rather than choosing it, and the work still runs on the default.
+   */
+  LABEL_IGNORED: 'factory/label-ignored',
 } as const;
 
 export type MirrorLabel = (typeof MIRROR_LABELS)[keyof typeof MIRROR_LABELS];
