@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { EscalationsModule } from '../escalations/escalations.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { QuotaModule } from '../quota/quota.module';
 import { RunEventsModule } from '../run-events/run-events.module';
 import { ClaudeCodeLocalRunner } from './claude-code-local/claude-code-local.runner';
 import { RunWorkspaceService } from './claude-code-local/run-workspace.service';
@@ -25,7 +26,10 @@ import { RunPollerTask } from './run-poller.task';
  * this file is where that stays true or quietly stops being true.
  */
 @Module({
-  imports: [PrismaModule, RunEventsModule, EscalationsModule],
+  // QuotaModule because the poller carries window sightings into it (#231) —
+  // the same one-way pump it already is for events. Nothing in QuotaModule
+  // depends on a runner, only on what one reported, so the edge stays acyclic.
+  imports: [PrismaModule, RunEventsModule, EscalationsModule, QuotaModule],
   providers: [
     RunWorkspaceService,
     ClaudeCodeLocalRunner,

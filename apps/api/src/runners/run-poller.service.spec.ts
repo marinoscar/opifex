@@ -1,6 +1,7 @@
 import { EscalationsService } from '../escalations/escalations.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import type { QuotaService } from '../quota/quota.service';
 import {
   RunEventsService,
   type IngestResult,
@@ -37,6 +38,7 @@ describe('RunPollerService', () => {
   const RUN_ID = '3f1d9d3e-6b1a-4f8e-9c2a-8b5a4f0c1d22';
 
   let ingest: jest.Mock<Promise<IngestResult>, [string, unknown[]]>;
+  let recordQuota: jest.Mock;
   let findMany: jest.Mock;
   let updateMany: jest.Mock;
   let poller: RunPollerService;
@@ -107,9 +109,14 @@ describe('RunPollerService', () => {
     } as unknown as ConfigService;
 
     raiseFrom = jest.fn().mockResolvedValue({ raised: 1, deduplicated: 0 });
-    poller = new RunPollerService(prisma, runEvents, config, {
-      raiseFrom,
-    } as unknown as EscalationsService);
+    recordQuota = jest.fn().mockResolvedValue(1);
+    poller = new RunPollerService(
+      prisma,
+      runEvents,
+      config,
+      { raiseFrom } as unknown as EscalationsService,
+      { record: recordQuota } as unknown as QuotaService,
+    );
   });
 
   /** A runner whose poll result the test dictates outright. */

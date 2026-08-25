@@ -5,6 +5,7 @@ import {
   type RunEventPayload,
   type RunEventTypeName,
 } from '../../run-events/run-event.types';
+import type { QuotaPressure, RunnerQuotaObservation } from '../runner.types';
 
 /**
  * `stream-json` → the six normalized types (#33).
@@ -72,8 +73,22 @@ export interface StreamResult {
 }
 
 export type StreamMapping =
-  | { kind: 'event'; event: RunEventPayload }
+  | { kind: 'event'; event: RunEventPayload; quota?: RunnerQuotaObservation }
   | { kind: 'result'; result: StreamResult }
+  /**
+   * A quota window sighting and nothing else (#231).
+   *
+   * `result` established the precedent: a line can carry a fact worth keeping
+   * without being one of the six normalized event types. This is the same
+   * shape of thing — a fact about the SUBSCRIPTION rather than about the run,
+   * which outlives every run that observes it, and which ADR-0010 would make a
+   * major schema bump to express as a seventh event type.
+   *
+   * It also rides alongside a `run.blocked` event when the vendor refuses a
+   * request, because that line says both things at once: the run is parked,
+   * and the window it is parked on rolls at a known time.
+   */
+  | { kind: 'quota'; quota: RunnerQuotaObservation }
   | { kind: 'drop'; reason: string };
 
 const drop = (reason: string): StreamMapping => ({ kind: 'drop', reason });
@@ -206,6 +221,13 @@ function mapUser(
  * failure than missing a real block — the watchdog would eventually notice a
  * real block through silence, but it has nothing that notices a wrongly
  * parked run.
+ *
+ * It is not nothing, though, and #231 is where that stopped being thrown away.
+ * Every one of these lines — served, warned or refused — carries `resetsAt`
+ * and a window label, so a healthy one is the only place the window boundary
+ * is observable BEFORE the wall is hit. It now produces a quota OBSERVATION
+ * and still no event, which keeps both halves true: the run is not parked, and
+ * the window is recorded.
  */
 function mapRateLimit(
   line: Record<string, unknown>,
@@ -215,7 +237,16 @@ function mapRateLimit(
   if (!info) return drop('rate_limit_event with no rate_limit_info');
 
   const status = typeof info.status === 'string' ? info.status : 'unknown';
-  if (status === 'allowed') return drop('rate limit status is allowed');
+  const quota = quotaObservation(info, status, context);
+
+  if (status !== 'rejected') {
+    // Not blocked, so no event — but the window is still worth having, which
+    // is what changed in #231. This branch used to `drop`, and dropping it
+    // meant the reset instant was only ever learnt by hitting the wall.
+    return quota
+      ? { kind: 'quota', quota }
+      : drop(`rate limit status is ${status} and undated`);
+  }
 
   // `quota-exhausted` and `rate-limit` are different in #56: one clears at a
   // known time, the other needs a human to buy more. The CLI tells us which.
@@ -235,7 +266,79 @@ function mapRateLimit(
             : undefined,
       },
     }),
+    // Both facts from one line: the run is parked, and the window it is
+    // parked on rolls at a known time. `run.blocked` already carries the
+    // second for THIS run; the observation is what makes it a fact about the
+    // subscription that outlives the run.
+    ...(quota ? { quota } : {}),
   };
+}
+
+/**
+ * A window sighting off a `rate_limit_event` line, or nothing.
+ *
+ * ## Undated sightings are dropped, not stored with a guessed reset
+ *
+ * `resetsAt` IS the window's identity — it is what the upsert key is built
+ * from, and what #113 would schedule against. A sighting without one has
+ * nothing to be a sighting OF, and storing it under an invented instant would
+ * put a row in front of an operator naming a moment that means nothing. Same
+ * refusal `resetAt()` below makes for the same reason.
+ *
+ * ## The status is normalized here, not stored raw
+ *
+ * #60: *"`poll` returns normalized events (#33), never a runner's native
+ * format"* — the adapter is where a vendor vocabulary stops. An unrecognized
+ * status becomes `unknown` rather than being discarded, because the reset
+ * instant on that line is just as good as any other line's; only the pressure
+ * reading is lost.
+ */
+function quotaObservation(
+  info: Record<string, unknown>,
+  status: string,
+  context: MapperContext,
+): RunnerQuotaObservation | undefined {
+  const { resetAt: resets } = resetAt(info.resetsAt);
+  if (!resets) return undefined;
+
+  return {
+    runnerKey: context.runnerKey,
+    kind:
+      typeof info.rateLimitType === 'string' && info.rateLimitType.length > 0
+        ? info.rateLimitType
+        : 'unknown',
+    resetsAt: new Date(resets),
+    pressure: pressureOf(status),
+    // Receipt time. The CLI does not timestamp these lines, and inventing an
+    // occurrence time for a sighting would misdate the window's first
+    // observation — which is the fallback window START when the vendor names
+    // no length.
+    observedAt: context.receivedAt,
+  };
+}
+
+/**
+ * The CLI's three words, mapped onto the ordinal.
+ *
+ * `allowed_warning` is the valuable one and the reason this mapping exists at
+ * all: it is the vendor saying "approaching the limit" while requests are
+ * still being served, which is the only signal in the whole system that
+ * arrives BEFORE a run is parked. #89's supervisor quota gate stands down on
+ * observed parks today; this is what could let it stand down earlier.
+ */
+function pressureOf(status: string): QuotaPressure {
+  switch (status) {
+    case 'allowed':
+      return 'allowed';
+    case 'allowed_warning':
+      return 'warning';
+    case 'rejected':
+      return 'exhausted';
+    default:
+      // A word this CLI version did not use to have. Version skew, not a
+      // stalled run — same posture ADR-0006 takes for an unmappable line.
+      return 'unknown';
+  }
 }
 
 /**

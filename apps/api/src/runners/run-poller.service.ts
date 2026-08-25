@@ -9,6 +9,7 @@ import {
 import { toNumberOrNull } from '../common/decimal';
 import { EscalationsService } from '../escalations/escalations.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { QuotaService } from '../quota/quota.service';
 import { RunEventsService } from '../run-events/run-events.service';
 import { SILENCE_THRESHOLDS_MS } from '../watchdog/silent-detection';
 import type { RunHandle, Runner } from './runner.types';
@@ -97,6 +98,8 @@ export interface PollTickResult {
   timedOut: number;
   /** Runs found to have passed their work order's budget ceiling (#182). */
   overBudget: number;
+  /** Vendor quota windows recorded from what runners reported (#231). */
+  quotaWindows: number;
 }
 
 @Injectable()
@@ -123,6 +126,7 @@ export class RunPollerService {
     private readonly runEvents: RunEventsService,
     private readonly config: ConfigService,
     private readonly escalations: EscalationsService,
+    private readonly quota: QuotaService,
   ) {}
 
   /**
@@ -168,6 +172,7 @@ export class RunPollerService {
       failed: 0,
       timedOut: 0,
       overBudget: 0,
+      quotaWindows: 0,
     };
 
     // BEFORE polling, not after. A run that is already past its ceiling
@@ -221,6 +226,16 @@ export class RunPollerService {
   ): Promise<void> {
     const poll = await entry.runner.poll(entry.handle);
     result.polled += 1;
+
+    // Before the `unknown` check and before ingestion, for the same reason
+    // ingestion itself is: a runner that lost the run may still have handed
+    // back what it saw on the way out. A window sighting is a fact about the
+    // SUBSCRIPTION rather than about this run, so it stays true even when the
+    // run it arrived with is gone. Never throws, by contract (#231), so it
+    // needs no guard of its own.
+    if (poll.quota && poll.quota.length > 0) {
+      result.quotaWindows += await this.quota.record(poll.quota);
+    }
 
     // Ingest BEFORE acting on `unknown`. A runner that lost the run may still
     // have handed back its final events on the way out, and throwing those

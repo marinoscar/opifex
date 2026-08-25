@@ -31,6 +31,7 @@ import { EscalationsModule } from './escalations/escalations.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { CockpitModule } from './cockpit/cockpit.module';
 import { DispatchModule } from './dispatch/dispatch.module';
+import { QuotaModule } from './quota/quota.module';
 import { RunnersModule } from './runners/runners.module';
 import { WorkOrdersModule } from './work-orders/work-orders.module';
 import { TelemetryModule } from './telemetry/telemetry.module';
@@ -105,6 +106,11 @@ import configuration from './config/configuration';
     // The cockpit read models (#80) — read-only, one family per module.
     CockpitModule,
     RunnersModule,
+    // Vendor quota windows (#231). After RunnersModule, which imports it: the
+    // poller is the only writer, and everything here reads what a runner saw.
+    // It computes no burn fraction — see `quota/quota-window.ts` for why
+    // metric 6 stays NOT_MEASURED even with this registered.
+    QuotaModule,
     // Trust grants (VISION §8, #96). Registered after the modules it scopes —
     // a grant names an action class and a repository, and authorizes nothing
     // by itself. It imports only PrismaModule on purpose; see TrustModule.

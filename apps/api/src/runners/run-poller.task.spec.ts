@@ -18,6 +18,7 @@ describe('RunPollerTask', () => {
     failed: 0,
     timedOut: 0,
     overBudget: 0,
+    quotaWindows: 0,
   };
 
   let addInterval: jest.Mock;

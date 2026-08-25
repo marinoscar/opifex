@@ -195,6 +195,72 @@ export interface RunPollResult {
    * returned should return everything rather than risk dropping an event.
    */
   events: RunEventPayload[];
+  /**
+   * Quota windows the runner saw while producing those events (#231).
+   *
+   * Optional, and absent means UNKNOWN rather than "no quota consumed" — the
+   * same rule `reportsCost` follows. A runner whose vendor says nothing about
+   * rate limits (`rateLimitSignal: 'none'`) omits this forever, and every
+   * consumer must keep working with a fleet that never populates it.
+   *
+   * Not an event, deliberately. The six normalized types are closed and a
+   * seventh is a major schema bump (ADR-0010); a quota window is also not a
+   * fact about the RUN — it is a fact about the subscription, which outlives
+   * every run that observed it. So it rides the poll result alongside the
+   * events instead of pretending to be one.
+   */
+  quota?: RunnerQuotaObservation[];
+}
+
+/**
+ * How the vendor described its own rate-limit position, normalized (#231).
+ *
+ * An ORDINAL, not a fraction, and the ordering is all it claims. There is no
+ * capacity number anywhere to turn this into a percentage — see
+ * `quota/quota-window.ts` for why one cannot honestly be obtained — so a
+ * consumer that wants "how full is the window" gets a vendor-supplied word
+ * rather than a manufactured ratio.
+ *
+ * Spelled to match the Prisma `QuotaPressure` enum exactly, so no translation
+ * function is needed in either direction. `run-event.types.ts` has three
+ * vocabularies for one concept and a mapper for each pair; this deliberately
+ * has one.
+ */
+export type QuotaPressure = 'unknown' | 'allowed' | 'warning' | 'exhausted';
+
+/** Ordered worst-last, so "which of these two readings is worse" is an index. */
+export const QUOTA_PRESSURE_ORDER: readonly QuotaPressure[] = [
+  'unknown',
+  'allowed',
+  'warning',
+  'exhausted',
+];
+
+/**
+ * One sighting of a vendor rate-limit window.
+ *
+ * The identity is `(runnerKey, kind, resetsAt)`: the same window seen fifty
+ * times is one row with an observation count, which is what lets an adapter be
+ * as dumb as `poll` already lets it be — report every sighting, and let the
+ * control plane collapse them.
+ */
+export interface RunnerQuotaObservation {
+  /** Whose window. Set by the control plane if the adapter leaves it off. */
+  runnerKey: string;
+  /**
+   * The vendor's own label for the window, verbatim: `five_hour`, `weekly`.
+   *
+   * `unknown` when the vendor named none. Never normalized into a duration
+   * here: turning a label into a length is a judgement with a fallback, and it
+   * belongs in one place (`quota/quota-window.ts`) rather than in every
+   * adapter.
+   */
+  kind: string;
+  /** When the vendor said the window rolls. The window's identity. */
+  resetsAt: Date;
+  pressure: QuotaPressure;
+  /** When this sighting happened, per the adapter's clock. */
+  observedAt: Date;
 }
 
 /**
