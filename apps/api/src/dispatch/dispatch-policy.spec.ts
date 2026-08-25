@@ -482,6 +482,83 @@ describe('dispatch policy', () => {
         (c) => c.runnerKey === 'preview',
       );
       expect(preview?.reason).toContain('load-bearing');
+      // The answer CHANGED as a side effect of #296's fix: `stable-small`
+      // does not serve the tier either, so it is not a GA fallback for this
+      // work order and the fleet really is only-preview for it. Before the
+      // fix this was misreported as `capable-runners-are-at-capacity`
+      // because the tier refusal was invisible to `diagnose`; a test that
+      // asserts only the prose above passes unchanged either way, which is
+      // exactly how the regression stayed invisible.
+      expect(decision.queueReason).toBe(
+        'only-preview-runners-and-no-ga-fallback',
+      );
+    });
+
+    it('reports the tier refusal, not capacity, for a sole runner that meets every need', () => {
+      // THE regression #296 is about. `diagnose` used to classify on
+      // `unmetNeeds.length === 0` alone, so a runner refused only for its
+      // tier still counted as capable and the fleet was reported merely
+      // busy — which sends an operator to wait for a slot that waiting can
+      // never produce, since no amount of patience adds a tier to a
+      // manifest.
+      const decision = decideDispatch(
+        { needs: [], modelTier: 'large' },
+        [entry({ key: 'small-only', modelTiers: ['small'] })],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.queueReason).toBe('no-runner-serves-the-model-tier');
+    });
+
+    it('still reports the tier refusal in a mixed pool, because "no capabilities" would be false', () => {
+      // One runner short of a need, another short of the tier: "no runner
+      // has the capabilities" is a false sentence here, since the tier-only
+      // runner has them. `diagnose` must narrow to the tier answer instead
+      // of the blunter capability one.
+      const decision = decideDispatch(
+        { needs: ['cost-reporting'], modelTier: 'large' },
+        [
+          entry({ key: 'incapable', reportsCost: false }),
+          entry({ key: 'wrong-tier', modelTiers: ['small'] }),
+        ],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.queueReason).toBe('no-runner-serves-the-model-tier');
+    });
+
+    it('keeps reporting missing capabilities when nothing meets the needs, tier or not', () => {
+      // The tier value must not swallow the capability case: with a
+      // `modelTier` set but every runner failing on `unmetNeeds`, the
+      // answer is still the plain capability failure.
+      const decision = decideDispatch(
+        { needs: ['cost-reporting'], modelTier: 'large' },
+        [entry({ key: 'incapable', reportsCost: false })],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.queueReason).toBe('no-runner-has-the-capabilities');
+    });
+
+    it('reports capacity, not the tier code, once a capable runner exists', () => {
+      // The tier code must not be reported when something capable exists:
+      // a tier-refused runner sitting alongside a busy but genuinely
+      // capable one is exactly the "fleet is busy" case, and the tier
+      // refusal must not leak into that answer.
+      const decision = decideDispatch(
+        { needs: [], modelTier: 'large' },
+        [
+          entry({ key: 'wrong-tier', modelTiers: ['small'] }),
+          entry({ key: 'busy', modelTiers: ['large'], maxConcurrency: 1 }, 1),
+        ],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.queueReason).toBe('capable-runners-are-at-capacity');
     });
   });
 
@@ -734,6 +811,81 @@ describe('dispatch policy', () => {
         ).runnerKey,
       ).toBeNull();
     });
+
+    it('classifies the preview refusal from the recorded sets, not from parsing its own sentence', () => {
+      // The anti-coupling test the doc comment on `diagnose` claims and
+      // nothing enforced: "a `reason.includes(...)` on a sentence written
+      // for humans is a coupling that breaks silently the first time the
+      // sentence is reworded ... broken three lines below it until #296."
+      // A decoy candidate's reason is operator-supplied free text
+      // (`unavailableReason` is printed verbatim, per this file's own
+      // comment on `isAvailable`) that happens to contain the exact prose
+      // a naive re-derivation would key on, while genuinely being refused
+      // for an unrelated reason (unavailability, not load-bearing preview).
+      // A correct classifier must not be fooled by that text; a
+      // `reason.includes('preview runner load-bearing')` re-derivation
+      // would be. Deliberately asserts nothing about `reason` — only the
+      // classification, which must hold independent of the prose.
+      const decision = decideDispatch(
+        { needs: [] },
+        [
+          entry({
+            key: 'decoy-unavailable',
+            stabilityTier: 'experimental',
+            available: false,
+            unavailableReason:
+              'operator note: would make a preview runner load-bearing, allegedly',
+          }),
+          entry({
+            key: 'genuinely-refused',
+            stabilityTier: 'beta',
+          }),
+        ],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('queued');
+      // Neither candidate is a GA fallback (both preview) and the decoy was
+      // never even evaluated against the preview rule — it returned earlier
+      // on unavailability — so the fleet is not correctly described as
+      // "only preview runners with no GA fallback"; it falls to the
+      // catch-all capacity answer. A prose match would wrongly say
+      // `only-preview-runners-and-no-ga-fallback` because the decoy's text
+      // happens to contain the tell-tale phrase.
+      expect(decision.queueReason).toBe('capable-runners-are-at-capacity');
+    });
+
+    it('reports quota exhaustion, not the preview code, for an also-exhausted preview runner', () => {
+      // The branch-order property recording-at-the-branch preserves: the
+      // quota check sits strictly BEFORE the preview branch (#105's
+      // tiebreaker rule), so a preview runner that is also observably out
+      // of quota never reaches the preview check at all and its verdict
+      // reports the quota fact, not the structural one. A naive
+      // re-derivation from `unmetNeeds`/prose would not necessarily
+      // preserve that ordering.
+      const decision = decideDispatch(
+        { needs: [] },
+        [
+          {
+            capabilities: capabilities({
+              key: 'preview-and-spent',
+              stabilityTier: 'beta',
+            }),
+            enabled: true,
+            liveRuns: 0,
+            quota: {
+              exhausted: true,
+              resumesAt: '2026-08-23T18:00:00.000Z',
+              basis: "1 run(s) on this runner are blocked on 'rate-limit'",
+            },
+          },
+        ],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.queueReason).toBe('capable-runners-quota-exhausted');
+    });
   });
 
   describe('queueing rather than failing', () => {
@@ -762,7 +914,11 @@ describe('dispatch policy', () => {
 
     it('distinguishes disabled runners from an empty fleet', () => {
       // Different fixes: one needs a runner registered, the other needs a
-      // switch flipped.
+      // switch flipped. #296: a fleet of disabled runners is a fleet whose
+      // runners ARE registered, so `no-runners-registered` would be a false
+      // statement about it — the prose always said "disabled", but the
+      // `queueReason` used to say `no-runners-registered` regardless, and a
+      // test asserting only the sentence let that pass unnoticed.
       const decision = decideDispatch(
         { needs: [] },
         [entry({}, 0, false)],
@@ -770,6 +926,22 @@ describe('dispatch policy', () => {
       );
 
       expect(decision.reason).toContain('disabled');
+      expect(decision.queueReason).toBe('all-runners-disabled');
+    });
+
+    it('does not take the disabled-fleet branch at all when even one runner is enabled', () => {
+      // A partially-disabled pool is a normal dispatch, not a fleet-state
+      // answer: one disabled runner alongside one enabled, capable runner
+      // must dispatch, never queue with `all-runners-disabled` or
+      // `no-runners-registered`.
+      const decision = decideDispatch(
+        { needs: [] },
+        [entry({ key: 'off' }, 0, false), entry({ key: 'on' })],
+        NO_LIMIT,
+      );
+
+      expect(decision.outcome).toBe('dispatch');
+      expect(decision.runnerKey).toBe('on');
     });
 
     it('reports the failure that needs the most action', () => {
