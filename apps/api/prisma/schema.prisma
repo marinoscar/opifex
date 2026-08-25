@@ -1790,6 +1790,38 @@ model ReconcileTick {
   /// Per-repository failures, `[{ repository, reason }]`. Always present.
   failures Json
 
+  /// Failures from the ACTING phase's executors — `MirrorLabelExecutor` and
+  /// `SpecFeedbackExecutor` — normalized to one shape so both are readable
+  /// without knowing which executor produced them: `{ source, actionType,
+  /// repository, issueNumber, reason }`. Distinct from `failures` above,
+  /// which is observation-only and unrelated (#320: before this column, a
+  /// tick could say `actionsExecuted: 3` with the one that threw recorded
+  /// nowhere but a container log that may since have rotated).
+  ///
+  /// NOT "write failures" despite the name it almost got. `MirrorLabelExecutor`
+  /// pushes an entry here for a label action with no label at all — a
+  /// diff-engine bug, not a failed GitHub call — because the executor cannot
+  /// tell the difference from where it stands, and dropping the entry would
+  /// hide the bug worse than mislabeling it does. Read `reason` before
+  /// assuming every row here means GitHub said no.
+  ///
+  /// Scoped to the reconciler's own executors, not dispatch's writes. The
+  /// authorization record (`WorkOrderRecordsService`) and branch creation both
+  /// go through `GitHubWriteService.guardedWrite` too and are counted in
+  /// `actionsExecuted` above, but a failure in either is recorded on the RUN
+  /// (`run.attention_reason`), not the tick — dispatch already has a row of
+  /// its own to fail onto. An empty array here means THIS tick's own
+  /// executors ran clean, not that nothing failed anywhere this tick.
+  ///
+  /// Null, not `[]`, when no acting-phase executor ran at all this tick — the
+  /// row is created before `ReconcilerTask` calls either executor (see
+  /// `ReconcileLogService.record`), and for the whole observation week
+  /// (`GITHUB_WRITES_ENABLED` off) that call never happens. So null means
+  /// "nothing acted", `[]` means "acted, nothing failed", and a populated
+  /// array means "acted, and here is what to check" — #47's standard: which
+  /// action, which target, what error, answerable from the row alone.
+  executionFailures Json? @map("execution_failures")
+
   /// The computed desired state, stored only for a tick that had something to
   /// say. Null on a quiet tick — see the retention note above.
   projections Json?
