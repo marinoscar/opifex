@@ -26,6 +26,22 @@ import { z } from 'zod';
  * What replaces it is a window that is real (`resetsAt` is the vendor's own),
  * a pressure the vendor stated itself, and a consumption figure named for
  * whose it is.
+ *
+ * ## Every live window is carried, and one of them binds (#301)
+ *
+ * This used to report ONE window per runner — the newest live one — which is
+ * the least useful choice available, because a `weekly` row almost always
+ * resets later than a `five_hour` one. An exhausted five-hour window was
+ * therefore hidden behind a healthy weekly window, and the panel said a runner
+ * was fine while it could not take work for four hours.
+ *
+ * The shape now says both halves of the one fact an operator is actually
+ * asking about. `QuotaRunnerReadingDto.windows` is EVERY live window, soonest
+ * reset first, because "fine for the week, out for the next four hours" is one
+ * sentence and showing one window means picking which half of it to hide.
+ * `QuotaRunnerReadingDto.position` is the single binding answer to "can this
+ * runner work right now", and it is computed by the same `meterQuotaPosition`
+ * that routing consumes — not by a second implementation of the same rule.
  */
 
 /**
@@ -60,8 +76,39 @@ export const opifexConsumptionSchema = z.object({
   tokensOutput: z.number().int().nullable(),
 });
 
-export const quotaReadingSchema = z.object({
-  runnerKey: z.string(),
+/**
+ * The single binding answer to "can this runner work right now".
+ *
+ * Structurally identical to `RunnerQuotaPosition` in `dispatch/dispatch-policy.ts`,
+ * and produced by the same function — `meterQuotaPosition`. That is the point
+ * of the field: #301 was filed because the cockpit and routing were answering
+ * one question from two code paths, and only one of them was right. They now
+ * agree by construction rather than by coincidence.
+ *
+ * Null means UNKNOWN, not healthy. It is what you get when every live window
+ * reads `unknown`, or when the only non-exhausted readings are older than the
+ * meter's health horizon (`QUOTA_METER_HEALTH_HORIZON_MS`) — a stale `allowed`
+ * is no news about a subscription VISION §11 shares with the operator. The
+ * `windows` list still carries those readings with their `lastObservedAt`, so
+ * a screen can show what was seen and when while the position declines to
+ * vouch for it.
+ */
+export const quotaPositionSchema = z.object({
+  /** True only when an observed, dated block is still in force. */
+  exhausted: z.boolean(),
+  /**
+   * When it lifts, or null when nothing could date it.
+   *
+   * The LATEST reset among the exhausted windows, never the earliest: the
+   * runner is not usable again until the last binding ceiling has rolled, and
+   * reporting the soonest would promise a refill the other limit will refuse.
+   */
+  resumesAt: z.string().nullable(),
+  /** The observation this was derived from, in words. */
+  basis: z.string(),
+});
+
+export const quotaWindowReadingSchema = z.object({
   /** The vendor's own label, verbatim: `five_hour`, `weekly`, or `unknown`. */
   windowKind: z.string(),
   /** When the vendor said this window rolls. The window's identity. */
@@ -110,6 +157,27 @@ export const quotaReadingSchema = z.object({
   basis: z.string(),
 });
 
+export const quotaRunnerReadingSchema = z.object({
+  runnerKey: z.string(),
+  /**
+   * Which window binds, and when it releases. Null is UNKNOWN, not healthy.
+   *
+   * Read this to answer "can this runner work now". Read `windows` to see
+   * why. See {@link quotaPositionSchema}.
+   */
+  position: quotaPositionSchema.nullable(),
+  /**
+   * EVERY window of this runner's that has not yet rolled, soonest reset first.
+   *
+   * Soonest first because the nearest ceiling is the one most likely to bind,
+   * and an operator reading top-down should meet it before the distant one.
+   * More than one entry is the normal case, not an anomaly: a runner routinely
+   * holds a `five_hour` and a `weekly` row at once, and two of a kind whenever
+   * the vendor's reported reset drifts.
+   */
+  windows: z.array(quotaWindowReadingSchema),
+});
+
 export const quotaSummarySchema = z.object({
   generatedAt: z.string(),
   /**
@@ -120,7 +188,7 @@ export const quotaSummarySchema = z.object({
    * one — which is why an unobserved runner is absent rather than present with
    * zeroes. #231's last acceptance criterion is exactly this case.
    */
-  runners: z.array(quotaReadingSchema),
+  runners: z.array(quotaRunnerReadingSchema),
 });
 
 export class QuotaSummaryDto extends createZodDto(quotaSummarySchema) {}
