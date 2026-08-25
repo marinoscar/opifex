@@ -6,6 +6,7 @@ import { RunEventsModule } from '../run-events/run-events.module';
 import { ClaudeCodeLocalRunner } from './claude-code-local/claude-code-local.runner';
 import { RunWorkspaceService } from './claude-code-local/run-workspace.service';
 import { RunnerRegistrationService } from './runner-registration.service';
+import { RunnerRegistrationTask } from './runner-registration.task';
 import { RunPollerService } from './run-poller.service';
 import { RunPollerTask } from './run-poller.task';
 
@@ -29,6 +30,11 @@ import { RunPollerTask } from './run-poller.task';
     RunWorkspaceService,
     ClaudeCodeLocalRunner,
     RunnerRegistrationService,
+    // Unconditional, unlike `RunPollerTask` below: registration must converge
+    // even where every enable flag is off, because an empty fleet table is
+    // exactly the state an operator needs resolved before turning them on
+    // (#162).
+    RunnerRegistrationTask,
     RunPollerService,
     RunPollerTask,
   ],

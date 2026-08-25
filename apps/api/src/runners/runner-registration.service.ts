@@ -9,6 +9,76 @@ import { ClaudeCodeLocalRunner } from './claude-code-local/claude-code-local.run
 import type { Runner, RunnerCapabilities } from './runner.types';
 
 /**
+ * How often registration re-runs, in milliseconds.
+ *
+ * A minute, matching the reconciler's default tick, because this IS a
+ * reconciler: it recomputes desired state — the fleet as the runners currently
+ * describe themselves — rather than depending on one successful moment at
+ * boot. #162's whole complaint is that a single consumed attempt made the
+ * health of the fleet a function of container start ordering.
+ *
+ * Not configurable, for the reason `PrismaService`'s retry schedule is not: a
+ * knob implies a decision an operator has to make, and there is no deployment
+ * that wants a different number here. The work is one cached `capabilities()`
+ * call, one schema check and one two-row upsert; a minute is far below where
+ * that cost is worth thinking about, and far above the rate at which anything
+ * being fixed by hand actually changes.
+ */
+export const REGISTRATION_INTERVAL_MS = 60_000;
+
+/**
+ * How many consecutive identical TRANSIENT failures pass before the error is
+ * said again — ten, so roughly every ten minutes.
+ *
+ * The two obvious settings are both wrong. Never repeating is #162 itself: one
+ * ERROR at boot, scrolled past within seconds, and a fleet that is empty and
+ * silent about it forever. Repeating every tick is how an operator learns the
+ * log is noise, and this line would be competing for attention with the
+ * escalations that matter.
+ *
+ * A repeat is only earned because the information is genuinely new: "still
+ * unable to register, now for eleven minutes" is a different fact from the
+ * first failure, and it is the fact somebody who arrived after boot needs.
+ * Contrast the permanent case below, where a repeat carries nothing.
+ */
+const TRANSIENT_REPEAT_EVERY = 10;
+
+/**
+ * What one attempt at one runner produced.
+ *
+ * `transient` and `permanent` are the distinction the retry turns on, and they
+ * are named for what they say about the NEXT attempt rather than for what
+ * failed. A database that could not be reached will very likely answer later,
+ * so the loop keeps trying and keeps saying so. A manifest that failed the
+ * schema check is a deterministic function of that manifest — the next attempt
+ * on an unchanged document produces the identical violations — so retrying is
+ * free but SAYING it again is pure noise.
+ */
+export type RegistrationOutcome = 'registered' | 'transient' | 'permanent';
+
+/** What a whole pass over the fleet produced. Counts, for the task's log. */
+export interface RegistrationSweep {
+  registered: number;
+  transient: number;
+  permanent: number;
+}
+
+/**
+ * What has already been said about one runner, so it is not said again.
+ *
+ * Per runner rather than global: two runners failing for two different reasons
+ * must both be reported, and a shared counter would suppress the second.
+ */
+interface RunnerReportState {
+  /** Dedupe key for the last outcome reported. `null` before the first. */
+  reported: string | null;
+  /** Consecutive attempts that produced that same key. */
+  repeats: number;
+  /** When the current run of failures started, for the recovery line. */
+  failingSince: number | null;
+}
+
+/**
  * Puts the fleet in the database, so dispatch can find it.
  *
  * ## Why this exists at all
@@ -59,10 +129,61 @@ import type { Runner, RunnerCapabilities } from './runner.types';
  * None of this weakens the boundary. A manifest that is genuinely malformed
  * still keeps its runner out of the fleet; what changed is that being unable
  * to work stopped counting as being malformed.
+ *
+ * ## It converges; it does not try once (#162)
+ *
+ * Everything above was written down once, at `onModuleInit`, and never again.
+ * So a database that was away for the thirty seconds around boot left the
+ * fleet table empty for the LIFE of the process: `loadPool()` returned `[]`,
+ * every work order queued behind *"No runners are registered"*, and the only
+ * evidence was one ERROR line that had scrolled past. That is the failure
+ * VISION §1 exists to eliminate, with the roles reversed — the control plane
+ * itself, silently dead, looking perfectly healthy.
+ *
+ * It was reachable by ordinary means, not exotic ones. PostgreSQL is not a
+ * service in `base.compose.yml`; it is an external container on a shared
+ * network, so Compose cannot order the API behind it with `depends_on`, and
+ * `compose up` routinely races it. `PrismaService` absorbs the short version
+ * of that race with a bounded probe and then — deliberately, see its comment
+ * on #162 — warns and boots anyway rather than crash-looping. That leaves the
+ * long version to be handled HERE, which is where it belongs: a registration
+ * that never retries is a registration bug, not a reason to buy a workaround
+ * by making the whole process exit.
+ *
+ * So {@link registerAll} is now driven by `RunnerRegistrationTask` on an
+ * interval as well as at boot, and the two paths are the same code. It is safe
+ * to repeat by construction: `capabilities()` is required to be cheap enough
+ * to call on a tick, and {@link upsert} is idempotent inside one transaction.
+ *
+ * Repeating forever, rather than stopping at the first success, buys three
+ * things a bounded boot retry would not:
+ *
+ * - A fleet row deleted or edited by hand heals on the next tick instead of
+ *   at the next restart.
+ * - `available` is a SNAPSHOT in the database — dispatch routes off the row,
+ *   not off a live probe — so a CLI installed after boot only becomes
+ *   dispatchable because something re-observes it.
+ * - A runner that becomes unregisterable later is retried on exactly the same
+ *   path as one that was unregisterable at boot, so there is no second case.
+ *
+ * What it must not buy is a log an operator learns to skip. See
+ * {@link TRANSIENT_REPEAT_EVERY} and {@link report} for what the second,
+ * tenth and hundredth attempt actually say.
  */
 @Injectable()
 export class RunnerRegistrationService implements OnModuleInit {
   private readonly logger = new Logger(RunnerRegistrationService.name);
+
+  /**
+   * What has already been reported, per runner key.
+   *
+   * In memory rather than in the database: this is about what this PROCESS has
+   * already said in its own log, so it is per process by definition, and a
+   * fresh boot re-saying the state of the fleet is correct — that is the one
+   * moment somebody is reading. Bounded by the number of runners, which is
+   * one.
+   */
+  private readonly reportState = new Map<string, RunnerReportState>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -79,6 +200,11 @@ export class RunnerRegistrationService implements OnModuleInit {
    * path — is what VISION §9 relies on to notice things going wrong, and
    * refusing to boot because one runner could not be written down would take
    * all of it out over the least important of them.
+   *
+   * Kept as well as the interval, not replaced by it. Boot is when the fleet
+   * is most likely to be stale (a new build, a changed manifest) and the one
+   * moment an operator is definitely reading the log, so waiting a minute for
+   * the first tick would make every healthy start look like a failed one.
    */
   async onModuleInit(): Promise<void> {
     await this.registerAll();
@@ -92,12 +218,50 @@ export class RunnerRegistrationService implements OnModuleInit {
    * Adding one here is a line; a registry abstraction for a single entry is
    * the kind of thing that makes the second runner look easy and the first
    * one hard to read.
+   *
+   * Returns counts rather than nothing so the task above it can act on a pass
+   * without re-deriving what happened from the log. Never throws, on the tick
+   * for the same reason as at boot: an unhandled rejection out of a
+   * `setInterval` callback has no caller and takes the process down.
    */
-  async registerAll(): Promise<void> {
-    await this.register(this.claudeCodeLocal, this.claudeCodeLocalEnabled);
+  async registerAll(): Promise<RegistrationSweep> {
+    const sweep: RegistrationSweep = {
+      registered: 0,
+      transient: 0,
+      permanent: 0,
+    };
+
+    const outcomes = [
+      await this.register(
+        ClaudeCodeLocalRunner.KEY,
+        this.claudeCodeLocal,
+        this.claudeCodeLocalEnabled,
+      ),
+    ];
+
+    for (const outcome of outcomes) {
+      if (outcome === 'registered') sweep.registered += 1;
+      else if (outcome === 'transient') sweep.transient += 1;
+      else sweep.permanent += 1;
+    }
+
+    return sweep;
   }
 
-  private async register(runner: Runner, enabled: boolean): Promise<void> {
+  /**
+   * The key is passed in rather than read off the runner.
+   *
+   * `Runner` is the four-function seam of #60 and carries no `key`; the only
+   * place one appears is inside the capabilities document, which is precisely
+   * what is unavailable when `capabilities()` is the thing that threw. Keying
+   * the report state on the manifest would mean a runner whose probe keeps
+   * failing gets no dedupe at all — the one case that most needs it.
+   */
+  private async register(
+    key: string,
+    runner: Runner,
+    enabled: boolean,
+  ): Promise<RegistrationOutcome> {
     let capabilities: RunnerCapabilities;
     try {
       capabilities = await runner.capabilities();
@@ -105,10 +269,14 @@ export class RunnerRegistrationService implements OnModuleInit {
       // Reaching here means the runner could not describe itself, which is a
       // different failure from the binary being missing — that one is already
       // handled inside `capabilities()` and comes back as `available: false`.
-      this.logger.error(
-        `Could not read capabilities; leaving the fleet unchanged: ${asMessage(error)}`,
-      );
-      return;
+      //
+      // Transient: a probe that threw is usually a machine in a bad moment
+      // (a spawn that could not allocate, a filesystem that was busy), and
+      // the next tick genuinely may differ.
+      return this.report(key, {
+        outcome: 'transient',
+        message: `Could not read capabilities for ${key}; leaving the fleet unchanged: ${asMessage(error)}`,
+      });
     }
 
     // The boundary (#35). A manifest is a runner's declaration of itself, and
@@ -122,36 +290,166 @@ export class RunnerRegistrationService implements OnModuleInit {
     // document is what the schema has an opinion about.
     const check = this.contracts.checkCapability(capabilities.manifest);
     if (!check.valid) {
-      this.logger.error(
-        `${capabilities.key} published a manifest that does not match ` +
+      // Permanent: validation is a pure function of the document, so an
+      // unchanged manifest fails identically on every future tick. The loop
+      // still re-checks it — a manifest is re-observed, and a version string
+      // that was garbage can become valid once the CLI is fixed — but the
+      // report is said once, and again only if the violations CHANGE.
+      return this.report(key, {
+        outcome: 'permanent',
+        message:
+          `${capabilities.key} published a manifest that does not match ` +
           `runner-capability.schema.json; leaving it unregistered so dispatch ` +
           `cannot route to it: ${ContractValidator.describe(check.violations)}`,
-      );
-      return;
+      });
     }
 
     try {
       await this.upsert(capabilities, enabled);
     } catch (error) {
-      this.logger.error(
-        `Could not register ${capabilities.key}; dispatch will not route to it: ${asMessage(error)}`,
-      );
-      return;
+      // The #162 path. Transient by nature — this is a database write, and
+      // the overwhelmingly common cause is a database that is briefly away.
+      return this.report(key, {
+        outcome: 'transient',
+        message: `Could not register ${capabilities.key}; dispatch will not route to it: ${asMessage(error)}`,
+      });
     }
 
-    // Logged at `warn` when something is off, because both cases produce the
-    // same visible symptom — work orders queueing forever — and an operator
-    // scanning for why deserves to find the reason without turning up the log
-    // level.
-    //
-    // Two conditions, two lines, and deliberately not one `else if` chain.
-    // `enabled: false` is a decision a human made and `available: false` is a
-    // condition the machine is in; they take opposite responses — flip a flag
-    // back, or fix what the runner's own reason names — and they are very
-    // often BOTH true at once, which is exactly the case the chain used to
-    // hide. The dev deployment defaults the flag off AND has no `claude` on
-    // its PATH, so reporting only the flag would send an operator to fix it
-    // and leave them waiting on a runner that still could not take the work.
+    return this.report(key, {
+      outcome: 'registered',
+      // Everything an operator would act on, so an UNCHANGED registration can
+      // be repeated in silence and a changed one always speaks. A version
+      // bump, a flag flipped, a CLI that appeared or vanished: each of them
+      // moves this string and is therefore reported on the tick it happens,
+      // without the log gaining a line a minute for the state that did not.
+      signature:
+        `${capabilities.key}@${capabilities.version}/${enabled}/` +
+        `${capabilities.available !== false}/${capabilities.unavailableReason ?? ''}/` +
+        `${capabilities.maxConcurrency}/${capabilities.streamingFidelity}`,
+      lines: () => this.describeRegistration(capabilities, enabled),
+    });
+  }
+
+  /**
+   * Say it, unless it has already been said.
+   *
+   * The whole answer to "what does the second, third and hundredth attempt
+   * log at", in one place so the three outcomes cannot drift apart:
+   *
+   * | attempt                          | level                          |
+   * | -------------------------------- | ------------------------------ |
+   * | first failure, or a NEW reason   | `error`                        |
+   * | transient repeat, 2nd..9th       | `debug`                        |
+   * | transient repeat, every 10th     | `error`, with how long          |
+   * | permanent repeat, ever           | `debug`                        |
+   * | first success, or a CHANGED one  | `log` / `warn`, as before      |
+   * | identical success, repeated      | nothing                        |
+   * | success after failures           | `log`, naming the recovery     |
+   *
+   * The recovery line is the one #162 was missing entirely and it is not
+   * optional: an error that is silently retried until it works is worse than
+   * either an error that repeats or one that never appears, because an
+   * operator who read the failure has no way to learn it is over.
+   */
+  private report(
+    key: string,
+    attempt: {
+      outcome: RegistrationOutcome;
+      /** Dedupe key. Defaults to the message for failures. */
+      signature?: string;
+      message?: string;
+      lines?: () => void;
+    },
+  ): RegistrationOutcome {
+    const state = this.stateFor(key);
+    const signature = `${attempt.outcome}:${attempt.signature ?? attempt.message ?? ''}`;
+    const repeated = state.reported === signature;
+    state.repeats = repeated ? state.repeats + 1 : 1;
+    state.reported = signature;
+
+    if (attempt.outcome === 'registered') {
+      if (state.failingSince !== null) {
+        const seconds = Math.round((Date.now() - state.failingSince) / 1000);
+        this.logger.log(
+          `Registered ${key} after failing for ${seconds}s; dispatch can route to it again`,
+        );
+        state.failingSince = null;
+        // Reported below regardless of the dedupe: a recovery is exactly when
+        // an operator wants the full manifest line, and suppressing it because
+        // it matches the one from before the outage would leave the recovery
+        // line unexplained.
+        attempt.lines?.();
+        return 'registered';
+      }
+      if (!repeated) attempt.lines?.();
+      return 'registered';
+    }
+
+    const message = attempt.message ?? 'Registration failed';
+    if (state.failingSince === null) state.failingSince = Date.now();
+
+    if (!repeated) {
+      // A new reason is new information, whatever came before it.
+      this.logger.error(message);
+      return attempt.outcome;
+    }
+
+    if (
+      attempt.outcome === 'transient' &&
+      state.repeats % TRANSIENT_REPEAT_EVERY === 0
+    ) {
+      const minutes = Math.round((Date.now() - state.failingSince) / 60_000);
+      this.logger.error(
+        `Still cannot register ${key} after ${state.repeats} attempts over ~${minutes}m; ` +
+          `dispatch has no runner to route to. ${message}`,
+      );
+      return attempt.outcome;
+    }
+
+    // Deliberately `debug`: the condition is unchanged and already reported,
+    // so this exists to be found by someone who has turned the level up and
+    // is asking whether the loop is still running at all.
+    this.logger.debug(
+      `Registration attempt ${state.repeats} for ${key} failed the same way; retrying in ` +
+        `${REGISTRATION_INTERVAL_MS}ms`,
+    );
+    return attempt.outcome;
+  }
+
+  private stateFor(key: string): RunnerReportState {
+    const existing = this.reportState.get(key);
+    if (existing) return existing;
+
+    const fresh: RunnerReportState = {
+      reported: null,
+      repeats: 0,
+      failingSince: null,
+    };
+    this.reportState.set(key, fresh);
+    return fresh;
+  }
+
+  /**
+   * The success lines, unchanged from before the retry existed.
+   *
+   * Logged at `warn` when something is off, because both cases produce the
+   * same visible symptom — work orders queueing forever — and an operator
+   * scanning for why deserves to find the reason without turning up the log
+   * level.
+   *
+   * Two conditions, two lines, and deliberately not one `else if` chain.
+   * `enabled: false` is a decision a human made and `available: false` is a
+   * condition the machine is in; they take opposite responses — flip a flag
+   * back, or fix what the runner's own reason names — and they are very
+   * often BOTH true at once, which is exactly the case the chain used to
+   * hide. The dev deployment defaults the flag off AND has no `claude` on
+   * its PATH, so reporting only the flag would send an operator to fix it
+   * and leave them waiting on a runner that still could not take the work.
+   */
+  private describeRegistration(
+    capabilities: RunnerCapabilities,
+    enabled: boolean,
+  ): void {
     if (!enabled) {
       this.logger.warn(
         `Registered ${capabilities.key}@${capabilities.version} as DISABLED by ` +
