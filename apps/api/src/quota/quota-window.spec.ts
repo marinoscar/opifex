@@ -336,13 +336,13 @@ describe('meterQuotaPosition', () => {
     expect(meterQuotaPosition([rolled], NOW)).toBeUndefined();
   });
 
-  // Case 9 — THE case. `QuotaService.readings()` keeps only the newest live
-  // window per runner, which would hide an exhausted `five_hour` window
-  // behind a healthy `weekly` one (the weekly `resetsAt` is almost always
-  // later). `meterQuotaPosition` must bind on EVERY live window instead. If a
-  // future refactor folds `loadQuotaMeter` into `readings()`, this is the one
-  // test standing between that change and a runner being dispatched into an
-  // exhausted window it is still inside of.
+  // Case 9 — THE case. Keeping only the newest live window per runner hides an
+  // exhausted `five_hour` window behind a healthy `weekly` one, because the
+  // weekly `resetsAt` is almost always later. `QuotaService.readings()` did
+  // that until #301; this function never has, and both callers now depend on
+  // it not starting. This is the one test standing between a "just take the
+  // latest" simplification and a runner being dispatched into — or reported
+  // as clear of — an exhausted window it is still inside of.
   it('an exhausted five_hour window binds even behind a healthy weekly one (guards against the readings() masking bug)', () => {
     const position = meterQuotaPosition(
       [

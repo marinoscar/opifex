@@ -219,15 +219,17 @@ export class DispatchService {
    *
    * ## Deliberately not `QuotaService.readings()`
    *
-   * That method keeps the NEWEST live window per runner, which is right for a
-   * panel showing "the current window" and wrong here — a `weekly` row almost
-   * always has a later reset than a `five_hour` one, so keeping the newest
-   * would hide an exhausted five-hour window behind a healthy weekly one. Any
-   * live window can bind, so routing loads them all and
-   * {@link meterQuotaPosition} collapses them. It also does no consumption
-   * aggregation at all: `readings()` runs three aggregate queries per runner
-   * to sum spend through a window, which is a read model's budget and not the
-   * dispatch path's.
+   * Any live window can bind — a `weekly` row almost always has a later reset
+   * than a `five_hour` one, so keeping only the newest would hide an exhausted
+   * five-hour window behind a healthy weekly one. That is what `readings()`
+   * used to do, and routing read the rows itself to avoid it; #301 fixed the
+   * read model, and both paths now collapse the same rows through the same
+   * {@link meterQuotaPosition}.
+   *
+   * They still load separately, because what they need past that point
+   * diverges: `readings()` also sums spend through every window for the
+   * cockpit, which is a read model's budget and not the dispatch path's. This
+   * wants the raw windows and nothing else.
    *
    * Read straight from Prisma, alongside `loadQuotaBlocks`, so the whole pool
    * still loads in one `Promise.all` and dispatch gains no injected dependency

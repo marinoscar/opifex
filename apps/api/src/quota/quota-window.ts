@@ -332,13 +332,16 @@ export interface MeterWindow {
  *
  * ## Every live window binds, not just the newest one
  *
- * `QuotaService.readings()` keeps the newest live window per runner, which is
- * the right answer for a panel showing "the current window". It is the wrong
- * answer here, and the difference matters: a runner can hold a `five_hour` and
- * a `weekly` row at the same time, and the weekly one almost always has the
- * later `resetsAt`. Keeping only the newest would let an exhausted five-hour
- * window be hidden behind a healthy weekly one — the fleet would dispatch into
+ * A runner can hold a `five_hour` and a `weekly` row at the same time, and the
+ * weekly one almost always has the later `resetsAt`. Keeping only the newest
+ * lets an exhausted five-hour window be hidden behind a healthy weekly one —
  * a wall that was recorded, observed, and then discarded by a tie-break.
+ *
+ * `QuotaService.readings()` did exactly that until #301, which is why this
+ * function existed for routing alone: the fleet would have dispatched into
+ * that wall. The cockpit path now calls this same function for its `position`
+ * rather than carrying a second answer to the same question, so there is one
+ * implementation of "which window binds" and both readers get it.
  *
  * So: **any live window exhausted means the runner is exhausted**, because
  * every one of them is a ceiling the vendor will enforce independently, and
