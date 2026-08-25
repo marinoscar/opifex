@@ -75,6 +75,8 @@ key, mirroring `github`'s existing shape in `configuration.ts`:
   Anthropic API key. Unset is the unconfigured path — see below.
 - `SUPERVISOR_MODEL_NAME` → `supervisor.model.name`. Default unset. Sent
   verbatim as the API request's `model` field and as `SupervisorModel.name`.
+  Unset while the API key IS set is a half-configured deployment rather than an
+  unconfigured one — see "A key with no model name is half-configured" below.
 - `SUPERVISOR_MODEL_BASE_URL` → `supervisor.model.baseUrl`. Default
   `https://api.anthropic.com`. Override point for tests, mirroring
   `github.apiBaseUrl`.
@@ -87,10 +89,22 @@ key, mirroring `github`'s existing shape in `configuration.ts`:
 
 `SupervisorModule`'s provider for `SUPERVISOR_MODEL` is a factory: when
 `SUPERVISOR_MODEL_API_KEY` is set, it constructs the adapter; when it is not,
-the factory contributes no provider at all, and `@Optional()` in
-`SupervisorService`'s constructor leaves `model` `undefined`, which is what
-already falls back to `new UnavailableSupervisorModel()` today. Nothing about
-that fallback path changes — see "The unconfigured path is unchanged" below.
+the factory **yields no adapter**, and `@Optional()` in `SupervisorService`'s
+constructor leaves `model` `undefined`, which is what already falls back to
+`new UnavailableSupervisorModel()` today. Nothing about that fallback path
+changes — see "The unconfigured path is unchanged" below.
+
+"Yields no adapter" rather than "contributes no provider at all", which is how
+this paragraph read in the first draft. Nest gives a factory no way to abstain:
+the provider is in the DI graph and its value is `undefined`, which is exactly
+what `@Optional()` needs and which produces precisely the outcome this
+paragraph specifies. The literal alternative — assembling the `providers` array
+conditionally — would have to read `process.env` at module-DEFINITION time,
+which runs while `app.module.ts` is being imported and therefore before
+`ConfigModule.forRoot()` has loaded a `.env` file: right in a container, wrong
+on a developer's machine. The wording is corrected rather than quietly left in
+place, because "no provider at all" is the kind of phrase a later reader would
+try to make literally true.
 
 **One request, mapped directly:**
 
@@ -263,15 +277,41 @@ until a worker is unblocked. Standing down is still correct; it is no longer
 "protecting the budget," it is "there is nothing worth diagnosing while
 everything is parked."
 
-**This changes text, not behaviour, and the ADR names exactly where:**
-`quota-gate.ts`'s file-header docstring (the "It consumes the same quota as
-the workers" paragraph and the "A supervisor invocation while workers are
-parked spends budget that a parked run is waiting for" sentence in
-`assessQuota`'s doc comment), `configuration.ts:157`'s inline comment, and
-the `SUPERVISOR_ENABLED` block in `.env.example` (lines 484-487) all assert
-the old, now-false reason and need updating alongside the adapter. The
-`liveRunCeiling` justification in the same files — "pressure is not
-exhaustion" — does not depend on shared budget and needs no change.
+**This changes text, not behaviour, and the ADR names where to start
+looking:** `quota-gate.ts`'s file-header docstring — both the "It consumes the
+same quota as the workers" paragraph and the "A supervisor invocation while
+workers are parked spends budget that a parked run is waiting for" sentence,
+which are BOTH in that header. The first draft of this ADR placed the second in
+`assessQuota`'s doc comment; it is not there, and `assessQuota`'s own doc
+comment asserts only that the function is pure, which is still true. Then
+`configuration.ts`'s `supervisor` block, and the `SUPERVISOR_ENABLED` block in
+`.env.example`. The same claim recurs a few lines below each of those, in the
+`standDownWhenBlocked` justification, and once more in
+`run-diagnosis.proposer.ts`'s comment explaining why its model calls are
+sequential. Every site that states the old reason needs correcting alongside
+the adapter; the names above are where to start the search, not its extent.
+
+**The `liveRunCeiling` exemption in the first draft was an error, and is
+withdrawn.** That draft asserted the ceiling's justification — "pressure is not
+exhaustion" — "does not depend on shared budget and needs no change". Two
+things it actually says do depend on shared budget, and are false for exactly
+the reason the rest of this section exists: `quota-gate.ts`'s header claims the
+supervisor's "marginal call is more likely to be the one that tips a worker
+into parking", and the verdict the gate RETURNS says "The supervisor yields the
+shared quota to the workers." The second is worse than a stale comment rather
+than better, because it is logged output — an operator reading a
+`skipped_quota` row is told something untrue about why the supervisor stood
+down, in the log this system asks them to trust.
+
+The ceiling's BEHAVIOUR stays exactly as it is: same threshold, same
+comparison, same default of no ceiling at all. Its stated reason takes the same
+correction as the stand-down reason. With many runs live there is a great deal
+in flight and little worth diagnosing until some of it lands — a diagnosis
+written against a factory mid-flight is out of date by the time anything can
+act on it — and the supervisor's own spend is separately metered either way.
+"Pressure is not exhaustion" survives intact as the argument for the default
+being OFF; what does not survive is the claim about whose budget the pressure
+falls on.
 
 ### The model is named, not tiered — and that is a deliberate departure from `ModelTier`
 
@@ -325,11 +365,32 @@ silently disable the supervisor without a trace, and must not be
 `@Optional()` constructor parameter and its `model ?? new
 UnavailableSupervisorModel()` fallback are exactly right today and stay
 exactly as they are: the new factory provider for `SUPERVISOR_MODEL`
-contributes nothing to the DI graph when the key is absent, which is what
-makes `@Optional()` see `undefined` and fall back, precisely as it does
-before this ADR is implemented. The refusal is recorded in the decision log
+yields no adapter when the key is absent, which is what makes `@Optional()`
+see `undefined` and fall back, precisely as it does before this ADR is
+implemented. The refusal is recorded in the decision log
 via the existing `skipped_disabled` / thrown-error path — nothing about that
 recording changes.
+
+### A key with no model name is half-configured, not unconfigured
+
+The trigger for binding the adapter is `SUPERVISOR_MODEL_API_KEY` alone, and
+the first draft of this ADR said nothing about the corner that leaves: a key
+set with no `SUPERVISOR_MODEL_NAME` beside it. The adapter is constructed —
+the key is present — but there is no model string to send.
+
+The resolution: **construct the adapter, warn once at startup, and refuse per
+call with an error naming the missing variable**, reporting
+`SupervisorModel.name` as the literal `'unconfigured'` so the decision log
+records what actually happened rather than a model that was never asked.
+
+Falling back to `UnavailableSupervisorModel` instead would be the tidier-looking
+choice and is the wrong one: it would make a typo in a model name
+indistinguishable from a deliberate decision not to run a supervisor at all,
+and those are the two states this whole seam exists to keep apart. Throwing at
+construction is also wrong, for the reason the unset-key path is wrong to
+throw on — a misconfiguration must not stop the API booting. What is left is a
+supervisor that says, once an hour, in the log, exactly which variable is
+missing.
 
 ### What this does not settle
 
