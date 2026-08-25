@@ -1,26 +1,36 @@
 /**
- * The not-yet-wired registry — one grep-able answer to "what is not built yet".
+ * The cockpit endpoint registry — one grep-able answer to "what is wired".
  *
- * Epic #19. `apps/api` has no runs, queue, projects, cost or metrics module,
- * so every cockpit panel is fed by an endpoint that does not exist. That fact
- * is recorded HERE, once, as data — rather than as a `// TODO` in four hooks
- * and a hardcoded phase string in four components.
+ * Epic #19. **All four are now wired**: `apps/api` serves `/metrics/summary`,
+ * `/runs`, `/queue` and `/events` (#163, #164, #165, #168), so every entry
+ * below is `available: true` and no cockpit panel renders an unwired state.
+ *
+ * When this file was written none of those endpoints existed, and that fact was
+ * recorded HERE, once, as data — rather than as a `// TODO` in four hooks and a
+ * hardcoded phase string in four components. The registry outlives that state
+ * on purpose: it is where the NEXT unbuilt resource declares itself, and while
+ * everything is wired it is the one place a reader can confirm that in a line.
  *
  * Three things read this file, and between them they are the whole mechanism:
  *
  *  1. Each domain hook passes `available` straight into `usePolledResource`'s
  *     `enabled`. `enabled: false` issues ZERO requests — the unwired state is
  *     structural, not inferred from a 404 (see `hooks/usePolledResource.ts`).
+ *     With all four `true` every panel polls; the switch is held open rather
+ *     than removed, and the hook suites still exercise both sides of it.
  *  2. Each panel passes `phase` into `components/common/NotWiredState.tsx`, so
  *     the screen names the roadmap phase that will supply it. "Coming soon" is
- *     not a claim anyone can check; "Phase 4 — Execution" is.
- *  3. `path` documents the endpoint the frontend is waiting for, which is what
- *     makes this file readable as a request TO the API rather than as a note
- *     to ourselves.
+ *     not a claim anyone can check; "Phase 4 — Execution" is. Nothing reaches
+ *     that component from the running app today, because no entry is `false`.
+ *  3. `path` documents the endpoint each panel reads. It was written as a
+ *     request TO the API rather than as a note to ourselves, and the request
+ *     was answered; it now has to stay in step with the paths in
+ *     `services/api.ts`, which are the executable half of the same statement.
  *
  * **Wiring an endpoint is a one-line flip here**, plus whatever the response
- * parsing needs in `services/api.ts`. That is the point of the indirection: no
- * panel, and no hook, contains a second copy of "does this exist yet".
+ * parsing needs in `services/api.ts`. That was the point of the indirection and
+ * it held: the four flipped one line at a time, and no panel and no hook ever
+ * grew a second copy of "does this exist yet".
  *
  * `phase` values are verbatim from VISION §12's roadmap. Do not paraphrase
  * them — the operator reading "Phase 3 — Liveness and escalation" on the

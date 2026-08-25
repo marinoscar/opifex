@@ -446,28 +446,42 @@ export async function revokePersonalAccessToken(id: string): Promise<void> {
 // ---------------------------------------------------------------------------
 // Cockpit API (epic #19)
 //
-// ⚠️ NONE OF THESE FOUR ENDPOINTS EXIST IN `apps/api` TODAY. They are declared
-// here anyway, and that is a deliberate choice rather than an oversight:
+// ALL FOUR OF THESE ENDPOINTS NOW EXIST IN `apps/api`, and the cockpit is
+// reachable from the running app: `/metrics/summary`, `/runs` (which is also
+// where `?needsAttention=true` is answered), `/queue` and `/events`, plus the
+// run detail and run timeline reads below — `/runs/:id` and `/runs/:id/events`.
+// They landed one at a time across #163, #164, #165 and #168, and every entry
+// in `config/cockpitApi.ts` is now `available: true`.
+//
+// THIS BLOCK WAS WRITTEN BEFORE ANY OF THEM, deliberately, and the reasoning is
+// kept here because it is the record of a decision that turned out well — not
+// because anything below is still waiting on a server:
 //
 //  - The typed boundary is where a response shape is asserted. Writing these
-//    now means the hooks, the panels and their tests are built against
-//    `RunSummary` rather than against `any`, and the day the endpoint lands the
-//    only thing that changes is a `false -> true` in `config/cockpitApi.ts`.
+//    first meant the hooks, the panels and their tests were built against
+//    `RunSummary` rather than against `any`, and the intended cost of landing
+//    an endpoint was a single `false -> true` in `config/cockpitApi.ts`. That
+//    is what it actually cost, four times: no panel and no hook changed shape.
 //  - Each one has an MSW-backed test, so the request path, the query string and
 //    the `{ data }` unwrapping are verified against a stand-in server exactly
-//    the way `getUsers` is. That test is what makes the declaration a
-//    specification of the endpoint rather than a guess about it.
+//    the way `getUsers` is. That test is what made each declaration a
+//    specification of the endpoint rather than a guess about it — and where the
+//    real controller disagreed with the guess, the mismatch surfaced at this
+//    parse boundary instead of in a component reading `undefined`. See
+//    `getRunsNeedingAttention` and `getActivityFeed`, whose `limit` is
+//    translated into the `pageSize` those endpoints really paginate by.
 //
-// What stops them from being CALLED is `COCKPIT_ENDPOINTS[…].available`, which
-// every cockpit hook reads into `usePolledResource`'s `enabled`. Nothing here
-// is reachable from the running app until that flips. The paths below and the
-// paths in that registry must stay in step — the registry is the human-readable
-// half, these are the executable half.
+// `COCKPIT_ENDPOINTS[…].available` still gates whether these are CALLED — every
+// cockpit hook reads it into `usePolledResource`'s `enabled` — but with all four
+// entries `true` it currently gates nothing shut. It is kept as the mechanism
+// the NEXT unbuilt panel declares itself through, not as a brake on these. The
+// paths below and the paths in that registry must stay in step: the registry is
+// the human-readable half, these are the executable half.
 //
-// There are no `sortBy` unions here (contrast `UserSortField` above, which
-// mirrors a real zod enum in `apps/api`). Inventing one would be fabricating a
-// contract: these get their sort enums from the controllers' query DTOs when
-// those DTOs are written.
+// `RunSortField` below mirrors `runsQuerySchema` in `apps/api` (#82), the same
+// way `UserSortField` above mirrors its own zod enum. The other cockpit reads
+// still declare no sort union, because their query DTOs still declare no `sort`
+// — inventing one would be fabricating a contract.
 // ---------------------------------------------------------------------------
 
 /**
