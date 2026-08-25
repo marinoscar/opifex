@@ -47,12 +47,84 @@ async function rejection(promise: Promise<unknown>): Promise<{
   throw new Error('expected the batch to be rejected, but it resolved');
 }
 
+/** The columns of the one run row the doubles below stand in for. */
+interface RunRow {
+  status: string;
+  lastEventAt?: Date | null;
+  endedAt?: Date;
+  attentionReason?: string;
+  [column: string]: unknown;
+}
+
+/**
+ * Does this WHERE match the row?
+ *
+ * Only the operators this service actually uses — equality, `in`, `lt` and
+ * `OR`. A `lt` against a null column does not match, exactly as SQL's
+ * three-valued logic has it, which is what makes the `{ lastEventAt: null }`
+ * arm of the advance guard load-bearing rather than decorative.
+ */
+function whereMatches(where: Record<string, unknown>, row: RunRow): boolean {
+  return Object.entries(where).every(([column, condition]) => {
+    if (column === 'OR') {
+      return (condition as Record<string, unknown>[]).some((arm) =>
+        whereMatches(arm, row),
+      );
+    }
+    if (column === 'id') return condition === RUN_ID;
+
+    const value = row[column];
+    if (condition === null) return value === null || value === undefined;
+    if (condition instanceof Date) return value === condition;
+
+    if (typeof condition === 'object') {
+      const test = condition as { in?: unknown[]; lt?: Date | number };
+      if (test.in) return test.in.includes(value);
+      if (test.lt !== undefined) {
+        if (value === null || value === undefined) return false;
+        return (value as Date | number) < test.lt;
+      }
+      return true;
+    }
+
+    return value === condition;
+  });
+}
+
 describe('RunEventsService', () => {
   let prisma: {
     run: { findUnique: jest.Mock; updateMany: jest.Mock };
     runEvent: { createMany: jest.Mock; aggregate: jest.Mock };
   };
   let service: RunEventsService;
+
+  /**
+   * Give the doubles a real row to apply their WHERE clauses against.
+   *
+   * The guards in this service ARE their WHERE clauses, and a double that
+   * answers `{ count: 1 }` unconditionally cannot tell a guard that matched
+   * from one that matched nothing. That is precisely how #254 survived this
+   * whole file: `status: 'running'` silently updated zero rows for every
+   * stalled run, and every assertion here still passed.
+   */
+  function withRunRow(initial: Partial<RunRow> & { status: string }): RunRow {
+    const row: RunRow = { lastEventAt: null, ...initial };
+
+    prisma.run.updateMany.mockImplementation(
+      (args: {
+        where: Record<string, unknown>;
+        data: Record<string, unknown>;
+      }) => {
+        if (!whereMatches(args.where, row)) {
+          return Promise.resolve({ count: 0 });
+        }
+        Object.assign(row, args.data);
+        return Promise.resolve({ count: 1 });
+      },
+    );
+
+    return row;
+  }
 
   beforeEach(() => {
     prisma = {
@@ -380,13 +452,20 @@ describe('RunEventsService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('only concludes a run that is still running', async () => {
+    it('only concludes a run that has not finished yet', async () => {
       // The monotonic guard, in the WHERE clause for the same reason
       // `lastEventAt` guards there: a redelivered terminal event must not drag
       // a run back out of a terminal state, and a late run.failed must not
       // overwrite a succeeded that already landed.
+      //
+      // The set, not `running` alone (#254). `succeeded` and `failed` are
+      // outside it, which is the whole of the idempotence; `quarantined` is
+      // outside it because VISION §8 says a run cannot clear its own.
       await service.ingest(RUN_ID, [event({ type: 'run.completed' })]);
-      expect(conclusion().where).toEqual({ id: RUN_ID, status: 'running' });
+      expect(conclusion().where).toEqual({
+        id: RUN_ID,
+        status: { in: ['running', 'stalled', 'blocked'] },
+      });
     });
 
     it('carries the pull request onto the run, with its number', async () => {
@@ -422,10 +501,12 @@ describe('RunEventsService', () => {
     it('does not conclude on a non-terminal event', async () => {
       await service.ingest(RUN_ID, [event({ type: 'run.progress' })]);
 
+      // A progress event may return a stalled run to `running` (#254). What it
+      // may never do is write a conclusion.
       for (const [call] of prisma.run.updateMany.mock.calls) {
-        expect(
+        expect(['succeeded', 'failed']).not.toContain(
           (call as { data: Record<string, unknown> }).data.status,
-        ).toBeUndefined();
+        );
       }
     });
 
@@ -447,6 +528,192 @@ describe('RunEventsService', () => {
       ]);
 
       expect(conclusion().data.status).toBe('failed');
+    });
+  });
+
+  /**
+   * #254: a stalled run could never conclude, and `stalled` occupies a
+   * concurrency slot — so every stall cost a slot for the life of the
+   * deployment, and two of them wedged a `maxConcurrency: 2` runner
+   * permanently. These tests run against a row the doubles actually apply
+   * their WHERE to, because the bug was invisible to one that did not.
+   */
+  describe('concluding from a status other than running (#254)', () => {
+    it('concludes a stalled run, so its slot comes back', async () => {
+      const row = withRunRow({ status: 'stalled' });
+
+      await service.ingest(RUN_ID, [
+        event({
+          type: 'run.completed',
+          occurredAt: '2026-08-21T11:00:00.000Z',
+        }),
+      ]);
+
+      expect(row.status).toBe('succeeded');
+      expect(row.endedAt).toEqual(new Date('2026-08-21T11:00:00.000Z'));
+    });
+
+    it('concludes a blocked run whose runner reported it stopped', async () => {
+      // A parked run can be cancelled while it waits — the poller's deadline
+      // and budget passes both do exactly that — and the child then reports
+      // `run.failed`. Leaving `blocked` out of the set would strand it the
+      // same way `stalled` was stranded.
+      const row = withRunRow({ status: 'blocked' });
+
+      await service.ingest(RUN_ID, [
+        event({
+          type: 'run.failed',
+          failure: { reason: 'cancelled (SIGTERM)' },
+        }),
+      ]);
+
+      expect(row.status).toBe('failed');
+      expect(row.attentionReason).toBe('cancelled (SIGTERM)');
+    });
+
+    it('refuses to conclude a quarantined run', async () => {
+      // VISION §8: a run cannot clear its own quarantine. A runner-reported
+      // terminal event concluding one would be it doing precisely that, which
+      // is why the guard is a named set rather than "anything not terminal".
+      const row = withRunRow({ status: 'quarantined' });
+
+      await service.ingest(RUN_ID, [event({ type: 'run.completed' })]);
+
+      expect(row.status).toBe('quarantined');
+      expect(row.endedAt).toBeUndefined();
+    });
+
+    it('makes a redelivered terminal event a no-op', async () => {
+      // The property the old narrow guard was protecting, preserved: it never
+      // came from the value being `running`, it comes from the status CHANGING
+      // on the first write.
+      const row = withRunRow({ status: 'stalled' });
+      const completed = event({
+        eventId: 'clr-terminal',
+        type: 'run.completed',
+        occurredAt: '2026-08-21T11:00:00.000Z',
+      });
+
+      await service.ingest(RUN_ID, [completed]);
+      expect(row.status).toBe('succeeded');
+
+      // Second delivery of the same event: the row already holds it, so the
+      // insert skips it and the conclusion must match nothing.
+      prisma.runEvent.createMany.mockResolvedValue({ count: 0 });
+      await expect(service.ingest(RUN_ID, [completed])).resolves.toEqual({
+        accepted: 0,
+        duplicates: 1,
+      });
+
+      expect(row.status).toBe('succeeded');
+      expect(row.endedAt).toEqual(new Date('2026-08-21T11:00:00.000Z'));
+    });
+
+    it('will not let a late run.failed overwrite a succeeded that landed', async () => {
+      const row = withRunRow({ status: 'running' });
+
+      await service.ingest(RUN_ID, [
+        event({
+          eventId: 'done',
+          type: 'run.completed',
+          occurredAt: '2026-08-21T11:00:00.000Z',
+        }),
+      ]);
+      await service.ingest(RUN_ID, [
+        event({
+          eventId: 'late',
+          type: 'run.failed',
+          occurredAt: '2026-08-21T12:00:00.000Z',
+          failure: { reason: 'killed for silence' },
+        }),
+      ]);
+
+      expect(row.status).toBe('succeeded');
+      expect(row.attentionReason).toBeUndefined();
+    });
+  });
+
+  /**
+   * The other half of #254: nothing un-stalled a run either, so even a run
+   * that never concluded stayed `stalled` while it was demonstrably alive.
+   *
+   * The decision recorded here is that a resumed run returns to `running`.
+   * `Run.status` is present tense, and the operator-facing reads built on it
+   * (the daily brief, the snapshot totals) state things about a stalled run
+   * that are false of one that is reporting again. The record that it stalled
+   * lives in the `Escalation` (`progressStoppedAt`) and in the append-only
+   * event stream, neither of which this touches — and this transition is what
+   * gives #232's stall durations an end to measure to.
+   */
+  describe('a stalled run that reports again (#254)', () => {
+    it('returns to running', async () => {
+      const row = withRunRow({
+        status: 'stalled',
+        lastEventAt: new Date('2026-08-21T09:00:00.000Z'),
+      });
+
+      await service.ingest(RUN_ID, [event({ type: 'run.heartbeat' })]);
+
+      expect(row.status).toBe('running');
+      expect(row.lastEventAt).toEqual(new Date('2026-08-21T10:00:00.000Z'));
+    });
+
+    it('does not un-stall on an event older than the run already has', async () => {
+      // The same monotonic guard `lastEventAt` uses, reused rather than
+      // re-derived: an event that cannot make a live run look staler must not
+      // make a stalled one look alive.
+      const row = withRunRow({
+        status: 'stalled',
+        lastEventAt: new Date('2026-08-21T11:00:00.000Z'),
+      });
+
+      await service.ingest(RUN_ID, [
+        event({ occurredAt: '2026-08-21T10:00:00.000Z' }),
+      ]);
+
+      expect(row.status).toBe('stalled');
+      expect(row.lastEventAt).toEqual(new Date('2026-08-21T11:00:00.000Z'));
+    });
+
+    it('leaves attentionReason alone', async () => {
+      // The poller wrote "nobody is watching this run", and that stays true
+      // whether or not the run is reporting. The cockpit drains its attention
+      // panel on the escalation lifecycle, not on this field, so clearing it
+      // would erase an explanation without resolving anything.
+      const row = withRunRow({
+        status: 'stalled',
+        attentionReason: 'No runner handle in this process.',
+      });
+
+      await service.ingest(RUN_ID, [event({ type: 'run.heartbeat' })]);
+
+      expect(row.status).toBe('running');
+      expect(row.attentionReason).toBe('No runner handle in this process.');
+    });
+
+    it('cannot drag a concluded run back out of its terminal state', async () => {
+      const row = withRunRow({ status: 'succeeded' });
+
+      await service.ingest(RUN_ID, [event({ type: 'run.heartbeat' })]);
+
+      expect(row.status).toBe('succeeded');
+    });
+
+    it('never passes through running when the batch also concludes it', async () => {
+      // Writing `running` on the way to `succeeded` would put a state through
+      // the row that never happened, and anything watching status transitions
+      // would see a resume that did not occur.
+      const row = withRunRow({ status: 'stalled' });
+
+      await service.ingest(RUN_ID, [event({ type: 'run.completed' })]);
+
+      const statuses = prisma.run.updateMany.mock.calls
+        .map(
+          ([call]) => (call as { data: Record<string, unknown> }).data.status,
+        )
+        .filter(Boolean);
+      expect(statuses).toEqual(['succeeded']);
+      expect(row.status).toBe('succeeded');
     });
   });
 
