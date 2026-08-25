@@ -8,8 +8,10 @@ describe('assessQuota (#89)', () => {
   });
 
   it('stands down while a run is parked on a rate limit', () => {
-    // VISION §7: "a supervisor competing for the quota it is managing is a bad
-    // loop." A parked worker is the evidence that the budget already ran out.
+    // A parked worker is evidence that everything the supervisor exists to
+    // advise about has stopped moving. Since ADR-0015 that, rather than a
+    // shared budget, is why the gate stands down -- the behaviour is the same,
+    // the reason is not.
     const verdict = assessQuota({ runsBlocked: 2, runsRunning: 1 });
 
     expect(verdict.standDown).toBe(true);
@@ -34,7 +36,7 @@ describe('assessQuota (#89)', () => {
 
   it('defaults to standing down when blocked, and to no live-run ceiling', () => {
     // The default matters: this is the one supervisor switch that defaults ON,
-    // because respecting an already-exhausted budget costs nothing.
+    // because a diagnosis nobody can act on is worth waiting on.
     expect(DEFAULT_QUOTA_GATE.standDownWhenBlocked).toBe(true);
     expect(DEFAULT_QUOTA_GATE.liveRunCeiling).toBeNull();
   });

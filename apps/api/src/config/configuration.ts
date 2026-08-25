@@ -154,8 +154,8 @@ export default () => {
     //
     // DEFAULTS OFF, and compared against 'true' so unset, misspelled and empty
     // all mean off — the same rule every other switch here follows. This one
-    // matters for a specific reason: the supervisor consumes the same
-    // subscription the workers do (VISION §7), so a deployment that has not
+    // matters for a specific reason: since ADR-0015 the supervisor spends real
+    // money on a metered API key of its own, so a deployment that has not
     // decided to run one must not start spending on it because a default said
     // yes.
     supervisor: {
@@ -212,10 +212,12 @@ export default () => {
 
       // Stand down while any run is parked on a rate limit.
       //
-      // DEFAULTS ON, and it is the one supervisor switch that does. VISION §7:
-      // "a supervisor competing for the quota it is managing is a bad loop."
-      // A parked worker is the clearest evidence available that the shared
-      // budget is already exhausted, and respecting it costs nothing. Note the
+      // DEFAULTS ON, and it is the one supervisor switch that does. The reason
+      // is no longer the one this comment used to give -- since ADR-0015 the
+      // supervisor spends its own budget and competes with no worker for
+      // quota. What survives is that a parked worker is evidence that
+      // everything the supervisor exists to advise about has stopped moving,
+      // and diagnosis nobody can act on is worth waiting on. Note the
       // comparison is !== 'false', because this default is ON.
       standDownWhenBlocked:
         process.env.SUPERVISOR_STAND_DOWN_WHEN_BLOCKED !== 'false',
