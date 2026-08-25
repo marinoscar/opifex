@@ -50,6 +50,13 @@ function buildConnectionString(): string {
   const host = process.env.POSTGRES_HOST ?? 'localhost';
   const port = process.env.POSTGRES_PORT ?? '5432';
   const user = process.env.POSTGRES_USER ?? 'postgres';
+  // The SECOND copy of this default, and the one #299 did not name.
+  //
+  // Same rule as `configuration.ts`: `validateEnv` has already refused the
+  // boot if NODE_ENV=production and POSTGRES_PASSWORD is unset or the shipped
+  // default, because it runs at `app.module.ts` import time and `PrismaModule`
+  // is inside `AppModule`. Reachable in development, test, and when this
+  // service is constructed directly by a spec — never in a production process.
   const password = process.env.POSTGRES_PASSWORD ?? 'postgres';
   const dbName = process.env.POSTGRES_DB ?? 'appdb';
   const ssl = process.env.POSTGRES_SSL === 'true';
