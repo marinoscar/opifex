@@ -63,6 +63,15 @@ function fakePrisma() {
       }
     }
     if (where.kind !== undefined && row.kind !== where.kind) return false;
+    // Needed for `raiseSystemOnce` / `resolveSystem` (#277), which have no
+    // other column to key their control-plane condition on: `runId` is null
+    // and `kind` is `system` for every one of these, so the summary is the
+    // ONLY thing distinguishing a parked approval from an empty fleet. A fake
+    // that ignored it would let one alarm silently suppress the other and
+    // never notice, which is exactly the failure that matters here.
+    if (where.summary !== undefined && row.summary !== where.summary) {
+      return false;
+    }
     if (where.status !== undefined) {
       const expected = where.status;
       if (
@@ -353,6 +362,163 @@ describe('EscalationsService', () => {
       });
       expect(metrics.recordDetected).not.toHaveBeenCalled();
     });
+  });
+
+  describe('raiseSystemOnce / resolveSystem (#277)', () => {
+    it('raises once and reports the raise as not deduplicated', async () => {
+      const result = await service.raiseSystemOnce({
+        summary:
+          'No runner is registered: the factory cannot dispatch anything',
+        detail: 'The runners table has no rows at all.',
+      });
+
+      expect(result.deduplicated).toBe(false);
+      expect(prisma.rows).toHaveLength(1);
+      expect(prisma.rows[0]).toMatchObject({
+        id: result.id,
+        runId: null,
+        kind: 'system',
+        status: 'raised',
+      });
+    });
+
+    it('dedupes a second raise with the SAME summary while the first is unresolved', async () => {
+      // The dedupe key is the summary string, because there is no run and no
+      // second column to key on — every empty-fleet raise carries `runId:
+      // null, kind: 'system'`.
+      const first = await service.raiseSystemOnce({
+        summary: 'The fleet is empty',
+        detail: '1 tick',
+      });
+      const second = await service.raiseSystemOnce({
+        summary: 'The fleet is empty',
+        detail: '5 ticks — an entirely different detail body',
+      });
+
+      expect(second).toEqual({ id: first.id, deduplicated: true });
+      expect(prisma.rows).toHaveLength(1);
+      // The FIRST raise is the one an operator was told about; a dedupe must
+      // not overwrite its detail with the later call's.
+      expect(prisma.rows[0].detail).toBe('1 tick');
+    });
+
+    it.each(['raised', 'dispatched', 'delivered', 'failed'])(
+      'still dedupes while the outstanding row is %s',
+      async (status) => {
+        const first = await service.raiseSystemOnce({
+          summary: 'The fleet is empty',
+          detail: 'a',
+        });
+        prisma.rows[0].status = status;
+
+        const second = await service.raiseSystemOnce({
+          summary: 'The fleet is empty',
+          detail: 'b',
+        });
+
+        expect(second).toEqual({ id: first.id, deduplicated: true });
+        expect(prisma.rows).toHaveLength(1);
+      },
+    );
+
+    it('does NOT dedupe against a different system escalation with a different summary', async () => {
+      // `runId` is null and `kind` is `system` for every one of these — a
+      // parked approval (#97) and an empty fleet (#277) are otherwise
+      // identical rows. Keying dedupe on that pair, rather than the summary,
+      // would let one alarm silently suppress the other.
+      const approval = await service.raiseSystemOnce({
+        summary: 'Approval parked, waiting on a human',
+        detail: 'No timer on this request.',
+      });
+      const fleet = await service.raiseSystemOnce({
+        summary: 'The fleet is empty',
+        detail: 'no runner registered',
+      });
+
+      expect(approval.deduplicated).toBe(false);
+      expect(fleet.deduplicated).toBe(false);
+      expect(prisma.rows).toHaveLength(2);
+      expect(prisma.rows.map((row) => row.summary)).toEqual([
+        'Approval parked, waiting on a human',
+        'The fleet is empty',
+      ]);
+    });
+
+    it('resolves the outstanding row(s) and reports how many', async () => {
+      await service.raiseSystemOnce({
+        summary: 'The fleet is empty',
+        detail: 'a',
+      });
+
+      const resolved = await service.resolveSystem('The fleet is empty');
+
+      expect(resolved).toBe(1);
+      expect(prisma.rows[0].status).toBe('resolved');
+    });
+
+    it('resolves nothing, and says so, when there is no outstanding row for that summary', async () => {
+      const resolved = await service.resolveSystem('Nothing ever raised this');
+
+      expect(resolved).toBe(0);
+    });
+
+    it('does not resolve a DIFFERENT summary sharing runId: null and kind: system', async () => {
+      await service.raiseSystemOnce({
+        summary: 'Approval parked, waiting on a human',
+        detail: 'a',
+      });
+      await service.raiseSystemOnce({
+        summary: 'The fleet is empty',
+        detail: 'b',
+      });
+
+      await service.resolveSystem('The fleet is empty');
+
+      const approvalRow = prisma.rows.find(
+        (row) => row.summary === 'Approval parked, waiting on a human',
+      );
+      expect(approvalRow?.status).toBe('raised');
+    });
+
+    it('re-arms the alarm: a resolved row does not suppress the next raise', async () => {
+      // `resolveSystem` is the condition's owner deciding it is over. Once it
+      // has, the SAME condition recurring is new information and must be
+      // told about again — permanently disarming would be exactly the
+      // silent failure this system exists to eliminate.
+      const first = await service.raiseSystemOnce({
+        summary: 'The fleet is empty',
+        detail: 'first occurrence',
+      });
+      await service.resolveSystem('The fleet is empty');
+
+      const second = await service.raiseSystemOnce({
+        summary: 'The fleet is empty',
+        detail: 'second occurrence',
+      });
+
+      expect(second.deduplicated).toBe(false);
+      expect(second.id).not.toBe(first.id);
+      expect(prisma.rows).toHaveLength(2);
+    });
+
+    it.each(['acknowledged', 'resolved'])(
+      'does not dedupe against a row already %s',
+      async (status) => {
+        const first = await service.raiseSystemOnce({
+          summary: 'The fleet is empty',
+          detail: 'a',
+        });
+        prisma.rows[0].status = status;
+
+        const second = await service.raiseSystemOnce({
+          summary: 'The fleet is empty',
+          detail: 'b',
+        });
+
+        expect(second.deduplicated).toBe(false);
+        expect(second.id).not.toBe(first.id);
+      },
+    );
   });
 
   describe('the summary', () => {

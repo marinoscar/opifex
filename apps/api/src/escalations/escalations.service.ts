@@ -196,6 +196,100 @@ export class EscalationsService {
     return created;
   }
 
+  /**
+   * The same control-plane escalation, raised at most once while it is
+   * outstanding.
+   *
+   * ## Why this is neither `raiseFrom` nor `raiseSystem`
+   *
+   * `raiseFrom` has the dedupe and the wrong input: it wants a
+   * `ReconcileAction` carrying a repository, an issue number and a projection
+   * `evidence` block, none of which a fact about the control plane itself has.
+   * Synthesising them would put invented facts in the record.
+   *
+   * `raiseSystem` has the right input and deliberately no dedupe, because
+   * every parked approval (#97) is a distinct question and suppressing the
+   * second would be suppressing the cases VISION §8 most wants raised.
+   *
+   * A standing CONDITION — the fleet is empty (#277), and whatever follows it
+   * — is the third shape: one fact that stays true across many ticks, where
+   * #57's rule applies in full. *"An operator who is paged twelve times about
+   * the same stall stops reading escalations, which reproduces the original
+   * problem by a different route."*
+   *
+   * ## The summary is the dedupe key, and that is a constraint on callers
+   *
+   * There is no column to key on. `runId` is null for every one of these and
+   * `kind` is `system` for all of them, so keying on the pair would make one
+   * unresolved parked approval suppress an empty fleet — two unrelated facts
+   * collapsed into one alarm. The summary is the only thing that distinguishes
+   * them, so it is what is matched.
+   *
+   * That means a caller MUST pass a stable string and keep every varying fact
+   * — counts, durations, ids — in `detail`. A summary interpolating a tick
+   * count is a different string every tick and dedupes against nothing.
+   *
+   * ## It does not resolve itself
+   *
+   * The condition's owner decides when it is over, because only it can tell
+   * recovery from a gap in observation. See {@link resolveSystem}, and note
+   * that leaving one unresolved permanently disarms this alarm — which is the
+   * cost of a dedupe key that is a condition rather than an event.
+   */
+  async raiseSystemOnce(input: {
+    summary: string;
+    detail: string;
+    raisedAt?: Date;
+  }): Promise<{ id: string; deduplicated: boolean }> {
+    const existing = await this.prisma.escalation.findFirst({
+      where: {
+        runId: null,
+        kind: 'system',
+        summary: input.summary,
+        status: { in: UNRESOLVED as never },
+      },
+      select: { id: true },
+      // Oldest first: if two ever raced past the check, the FIRST one is the
+      // one an operator was told about, and it is the one to keep pointing at.
+      orderBy: { raisedAt: 'asc' },
+    });
+
+    if (existing) return { id: existing.id, deduplicated: true };
+
+    const created = await this.raiseSystem(input);
+    return { id: created.id, deduplicated: false };
+  }
+
+  /**
+   * Mark a standing control-plane condition over.
+   *
+   * The counterpart to {@link raiseSystemOnce}, matching on the same summary,
+   * and it exists because `resolveStale` cannot do this: that one resolves by
+   * run id, and these escalations have no run.
+   *
+   * Deliberately does NOT touch acknowledged or already-resolved rows —
+   * `UNRESOLVED` is the same set the dedupe reads, so what is cleared is
+   * exactly what would otherwise keep suppressing the next raise.
+   *
+   * Returns the count so a caller can log a recovery only when there was
+   * something to recover from. An error that is silently retried until it
+   * works is worse than one that repeats: the operator who read the failure
+   * has no way to learn it is over.
+   */
+  async resolveSystem(summary: string): Promise<number> {
+    const { count } = await this.prisma.escalation.updateMany({
+      where: {
+        runId: null,
+        kind: 'system',
+        summary,
+        status: { in: UNRESOLVED as never },
+      },
+      data: { status: 'resolved' },
+    });
+
+    return count;
+  }
+
   async list(query: {
     page: number;
     pageSize: number;
