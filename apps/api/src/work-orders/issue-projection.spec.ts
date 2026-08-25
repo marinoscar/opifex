@@ -2,6 +2,7 @@ import { INPUT_LABELS } from '../github/labels/factory-labels';
 import type { NormalizedIssue } from '../github/read/github-read.types';
 import {
   NEEDS_LABEL_PREFIX,
+  TIER_LABEL_PREFIX,
   projectIssue,
   type ProjectIssueInput,
 } from './issue-projection';
@@ -253,6 +254,77 @@ P1
       if (!result.eligible) throw new Error('expected eligible');
 
       expect(result.workOrder.needs).toEqual([]);
+    });
+  });
+
+  describe('the model tier comes from a label too', () => {
+    it.each(['small', 'standard', 'large'])('reads tier:%s', (tier) => {
+      const result = project({
+        issue: issue({
+          labels: [label('feature'), label(`${TIER_LABEL_PREFIX}${tier}`)],
+        }),
+      });
+      if (!result.eligible) throw new Error('expected eligible');
+
+      expect(result.workOrder.modelTier).toBe(tier);
+    });
+
+    it('leaves the tier absent when no label says one', () => {
+      // Absent means the runner's own default, and it is the ordinary case.
+      // An explicit undefined would be a decision nobody made.
+      const result = project();
+      if (!result.eligible) throw new Error('expected eligible');
+
+      expect('modelTier' in result.workOrder).toBe(false);
+    });
+
+    it('treats two conflicting tier labels as no tier at all', () => {
+      // The written-down rule (#273). An ambiguous declaration is not a
+      // declaration: picking the largest spends money nobody asked for,
+      // picking the smallest can park the work order behind a constraint
+      // nobody chose, and rejecting the issue would be deduped on the body
+      // digest, which a label conflict does not change.
+      const result = project({
+        issue: issue({
+          labels: [label('tier:small'), label('tier:large')],
+        }),
+      });
+      if (!result.eligible) throw new Error('expected eligible');
+
+      expect(result.workOrder.modelTier).toBeUndefined();
+    });
+
+    it('still produces a work order when the tiers conflict', () => {
+      // The conflict must never stop the work. Falling back to the default is
+      // exactly what every issue gets today.
+      const result = project({
+        issue: issue({
+          labels: [label('tier:small'), label('tier:standard')],
+        }),
+      });
+
+      expect(result.eligible).toBe(true);
+    });
+
+    it('ignores a mistyped tier label rather than refusing the issue', () => {
+      const result = project({
+        issue: issue({ labels: [label('tier:huge')] }),
+      });
+      if (!result.eligible) throw new Error('expected eligible');
+
+      expect(result.workOrder.modelTier).toBeUndefined();
+    });
+
+    it('never infers a tier from the body text', () => {
+      // Same rule as needs: routing input is set deliberately or not at all.
+      const mentions = BODY.replace(
+        'P1',
+        'P1\n\nThis is a large piece of work and needs a large model.',
+      );
+      const result = project({ issue: issue({ body: mentions }) });
+      if (!result.eligible) throw new Error('expected eligible');
+
+      expect(result.workOrder.modelTier).toBeUndefined();
     });
   });
 
