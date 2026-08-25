@@ -91,13 +91,18 @@ describe('schema versioning (ADR-0010)', () => {
 
   describe('a document from an earlier minor still validates', () => {
     it('accepts a 1.0.0 manifest against the current schema', () => {
-      // The real case, not a hypothetical: runner-capability has moved twice
-      // now — 1.1.0 added `speaksSchemaVersions`, 1.2.0 added `modelTiers` —
-      // and this is a manifest written before either existed. That it still
-      // validates is the whole promise ADR-0010 makes.
+      // The real case, not a hypothetical: runner-capability has moved three
+      // times now — 1.1.0 added `speaksSchemaVersions`, 1.2.0 added
+      // `modelTiers`, 1.3.0 added `available` (#253) — and this is a manifest
+      // written before any of them existed. That it still validates is the
+      // whole promise ADR-0010 makes. All three are the same kind of change,
+      // an added optional property, which is the only kind a minor is allowed
+      // to be: widening `maxConcurrency` to admit zero would have been a
+      // MAJOR under that ADR's table, which is why #253 was solved by adding
+      // a field rather than by loosening a bound.
       expect(
         schemaFor('runner-capability').properties.schemaVersion.default,
-      ).toBe('1.2.0');
+      ).toBe('1.3.0');
       expect(
         validatorFor('runner-capability')(manifest({ schemaVersion: '1.0.0' })),
       ).toBe(true);

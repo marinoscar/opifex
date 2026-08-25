@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.3.0",
+  "key": "silently-unavailable",
+  "displayName": "Says it cannot work and will not say why",
+  "version": "1.0.0",
+  "invocationModel": "process",
+  "executionLocus": "own_infrastructure",
+  "streamingFidelity": "full",
+  "rateLimitSignal": "structured",
+  "stabilityTier": "stable",
+  "reportsCost": true,
+  "resumable": false,
+  "maxConcurrency": 2,
+  "branchPatterns": ["factory/*"],
+  "available": false
+}
