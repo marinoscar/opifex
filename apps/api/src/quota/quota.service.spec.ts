@@ -448,4 +448,94 @@ describe('QuotaService', () => {
       expect(windows[0].opifexConsumption.reportedUsd).toBe(0.0003);
     });
   });
+
+  /**
+   * #301's actual acceptance criterion, checked as an invariant rather than a
+   * handful of examples: for ANY set of live windows a runner holds,
+   * `position.exhausted` must agree with whether any entry in `windows` is
+   * itself exhausted. Three hand-picked cases (case 9 in
+   * `quota-window.spec.ts`, and the two `readings()` tests above) show the
+   * rule holds for the shapes somebody thought to write down. This exercises
+   * every combination in a small parameter space instead, so a change that
+   * keeps all the named examples green but drifts on an untried combination
+   * still fails here.
+   *
+   * `fast-check` is not used: it is a transitive dev dependency of another
+   * package, not one this project declares, and nothing else in the suite
+   * reaches for it. An exhaustive sweep over a deliberately small, named
+   * parameter space gets the same property coverage without introducing that
+   * dependency, and stays fully deterministic — no seed to pin, nothing that
+   * can flake in CI.
+   */
+  describe('position/windows agreement (#301 acceptance criterion)', () => {
+    const PRESSURES = ['unknown', 'allowed', 'warning', 'exhausted'] as const;
+    const FRESH = new Date('2026-08-25T11:55:00.000Z'); // 5 min before NOW
+    const STALE = new Date('2026-08-25T09:00:00.000Z'); // 3 h before NOW
+
+    function windowRow(
+      kind: 'five_hour' | 'weekly',
+      pressure: (typeof PRESSURES)[number],
+      fresh: boolean,
+    ) {
+      return {
+        runnerKey: 'claude-code-local',
+        kind,
+        resetsAt:
+          kind === 'five_hour'
+            ? RESETS_AT
+            : new Date('2026-08-28T20:00:00.000Z'),
+        pressure,
+        peakPressure: pressure,
+        firstObservedAt: new Date('2026-08-25T09:00:00.000Z'),
+        lastObservedAt: fresh ? FRESH : STALE,
+        observations: 1,
+      };
+    }
+
+    function checkInvariant(rows: ReturnType<typeof windowRow>[]) {
+      return async () => {
+        findMany.mockResolvedValue(rows);
+
+        const [runner] = await service.readings(NOW);
+
+        const exhaustedInWindows = runner.windows.some(
+          (w) => w.pressure === 'exhausted',
+        );
+        const exhaustedInPosition = runner.position?.exhausted ?? false;
+
+        expect(exhaustedInPosition).toBe(exhaustedInWindows);
+      };
+    }
+
+    describe('a single live window', () => {
+      for (const pressure of PRESSURES) {
+        for (const fresh of [true, false]) {
+          it(
+            `${pressure}, ${fresh ? 'fresh' : 'stale'}`,
+            checkInvariant([windowRow('five_hour', pressure, fresh)]),
+          );
+        }
+      }
+    });
+
+    describe('two live windows of different kinds', () => {
+      for (const p1 of PRESSURES) {
+        for (const f1 of [true, false]) {
+          for (const p2 of PRESSURES) {
+            for (const f2 of [true, false]) {
+              it(
+                `five_hour ${p1} (${f1 ? 'fresh' : 'stale'}) + weekly ${p2} (${
+                  f2 ? 'fresh' : 'stale'
+                })`,
+                checkInvariant([
+                  windowRow('five_hour', p1, f1),
+                  windowRow('weekly', p2, f2),
+                ]),
+              );
+            }
+          }
+        }
+      }
+    });
+  });
 });
