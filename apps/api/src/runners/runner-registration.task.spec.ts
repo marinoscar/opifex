@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
+import type { FleetStateService } from './fleet-state.service';
 import {
   REGISTRATION_INTERVAL_MS,
   RunnerRegistrationService,
@@ -19,6 +20,7 @@ describe('RunnerRegistrationTask', () => {
   let deleteInterval: jest.Mock;
   let doesExist: jest.Mock;
   let registerAll: jest.Mock;
+  let observe: jest.Mock;
   let intervals: NodeJS.Timeout[];
 
   function build(): RunnerRegistrationTask {
@@ -30,8 +32,9 @@ describe('RunnerRegistrationTask', () => {
     const registration = {
       registerAll,
     } as unknown as RunnerRegistrationService;
+    const fleet = { observe } as unknown as FleetStateService;
 
-    return new RunnerRegistrationTask(scheduler, registration);
+    return new RunnerRegistrationTask(scheduler, registration, fleet);
   }
 
   beforeEach(() => {
@@ -44,6 +47,11 @@ describe('RunnerRegistrationTask', () => {
     deleteInterval = jest.fn();
     doesExist = jest.fn().mockReturnValue(true);
     registerAll = jest.fn().mockResolvedValue(CONVERGED);
+    observe = jest.fn().mockResolvedValue({
+      state: 'converged',
+      emptyTicks: 0,
+      escalated: false,
+    });
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
   });
 
@@ -74,6 +82,7 @@ describe('RunnerRegistrationTask', () => {
     build().onModuleInit();
 
     expect(registerAll).not.toHaveBeenCalled();
+    expect(observe).not.toHaveBeenCalled();
   });
 
   it('clears its interval on shutdown', () => {
@@ -102,6 +111,10 @@ describe('RunnerRegistrationTask', () => {
 
     await expect(build().runOnce()).resolves.toBeUndefined();
     expect(error).toHaveBeenCalledTimes(1);
+    // The two failures are unrelated and one must not consume the other: a
+    // registration that threw still leaves a fleet worth looking at, and #277
+    // is precisely about the case where registration keeps failing.
+    expect(observe).toHaveBeenCalledTimes(1);
   });
 
   it('says nothing about a pass that converged', async () => {
@@ -114,6 +127,34 @@ describe('RunnerRegistrationTask', () => {
 
     expect(registerAll).toHaveBeenCalledTimes(1);
     expect(log).not.toHaveBeenCalled();
+  });
+
+  it('observes the fleet after registering, never before', async () => {
+    // Order is load-bearing (#277): observing first would count an empty tick
+    // for a fleet this very pass had just registered, inflating every count by
+    // one and escalating a tick early.
+    const order: string[] = [];
+    registerAll.mockImplementation(async () => {
+      order.push('register');
+      return CONVERGED;
+    });
+    observe.mockImplementation(async () => {
+      order.push('observe');
+      return { state: 'converged', emptyTicks: 0, escalated: false };
+    });
+
+    await build().runOnce();
+
+    expect(order).toEqual(['register', 'observe']);
+  });
+
+  it('swallows a throw from the fleet observation too', async () => {
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    observe.mockRejectedValue(new Error('observation exploded'));
+
+    await expect(build().runOnce()).resolves.toBeUndefined();
+    expect(registerAll).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledTimes(1);
   });
 
   it('ticks on the interval the service publishes', () => {

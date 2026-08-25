@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
+import { FleetStateService } from './fleet-state.service';
 import {
   REGISTRATION_INTERVAL_MS,
   RunnerRegistrationService,
@@ -64,6 +65,7 @@ export class RunnerRegistrationTask implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly scheduler: SchedulerRegistry,
     private readonly registration: RunnerRegistrationService,
+    private readonly fleet: FleetStateService,
   ) {}
 
   /**
@@ -90,7 +92,7 @@ export class RunnerRegistrationTask implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * The scheduler's entry point.
+   * The scheduler's entry point: converge the fleet, then judge the result.
    *
    * `registerAll()` is written not to throw, and this catches anyway: an
    * unhandled rejection from a `setInterval` callback has no caller to
@@ -102,6 +104,23 @@ export class RunnerRegistrationTask implements OnModuleInit, OnModuleDestroy {
    * and, more importantly, says it only when it CHANGED; a summary line here
    * would reintroduce the every-minute noise that suppression exists to
    * prevent.
+   *
+   * ## Why the fleet observation is here and runs AFTER
+   *
+   * #277: converging is not the same as noticing, and #162 fixed only the
+   * first. This is the one loop that runs on every deployment regardless of
+   * every enable flag — the same property that made it the right home for
+   * registration makes it the only place an empty fleet is reliably counted.
+   *
+   * After, and never before, so what is observed is the state registration
+   * converged TO rather than the state it started from. Observing first would
+   * count an empty tick for a fleet that this very pass had just registered,
+   * inflating every count by one and escalating a tick early.
+   *
+   * In its own `try`, because the two failures are unrelated and one must not
+   * consume the other: a registration that threw still leaves a fleet worth
+   * looking at, and an observation that threw must not make a successful
+   * registration look failed.
    */
   async runOnce(): Promise<void> {
     try {
@@ -109,6 +128,16 @@ export class RunnerRegistrationTask implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       this.logger.error(
         `Runner registration tick threw, which it should not: ${
+          error instanceof Error ? error.stack : String(error)
+        }`,
+      );
+    }
+
+    try {
+      await this.fleet.observe();
+    } catch (error) {
+      this.logger.error(
+        `Observing the fleet threw, which it should not: ${
           error instanceof Error ? error.stack : String(error)
         }`,
       );

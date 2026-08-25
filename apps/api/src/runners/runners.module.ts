@@ -6,6 +6,7 @@ import { QuotaModule } from '../quota/quota.module';
 import { RunEventsModule } from '../run-events/run-events.module';
 import { ClaudeCodeLocalRunner } from './claude-code-local/claude-code-local.runner';
 import { RunWorkspaceService } from './claude-code-local/run-workspace.service';
+import { FleetStateService } from './fleet-state.service';
 import { RunnerRegistrationService } from './runner-registration.service';
 import { RunnerRegistrationTask } from './runner-registration.task';
 import { RunPollerService } from './run-poller.service';
@@ -34,6 +35,11 @@ import { RunPollerTask } from './run-poller.task';
     RunWorkspaceService,
     ClaudeCodeLocalRunner,
     RunnerRegistrationService,
+    // Fleet cardinality, for the health endpoints and for #277's escalation.
+    // It lives here rather than in `HealthModule` because it is a fact about
+    // the fleet, and the loop that observes it is the registration tick — the
+    // one loop that runs on every deployment whatever the enable flags say.
+    FleetStateService,
     // Unconditional, unlike `RunPollerTask` below: registration must converge
     // even where every enable flag is off, because an empty fleet table is
     // exactly the state an operator needs resolved before turning them on
@@ -43,6 +49,9 @@ import { RunPollerTask } from './run-poller.task';
     RunPollerTask,
   ],
   exports: [
+    // Exported for `HealthModule`, which reports the fleet on
+    // /api/health/ready without failing it (#277, following #173's shape).
+    FleetStateService,
     RunWorkspaceService,
     ClaudeCodeLocalRunner,
     RunnerRegistrationService,
