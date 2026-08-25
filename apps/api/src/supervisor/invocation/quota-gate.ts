@@ -38,18 +38,31 @@ import type { SnapshotTotals } from '../snapshot/snapshot.types';
  * and is waiting to resume. That is not a proxy for what anyone has left to
  * spend — it is a fact about work having stopped.
  *
- * The second signal is pressure rather than exhaustion, and its reason was
- * corrected alongside the first. It used to read that the supervisor's
- * "marginal call is more likely to be the one that tips a worker into
- * parking" — another claim about a budget the supervisor no longer shares with
- * anyone. What is true instead: with many runs live there is a great deal in
- * flight and little worth diagnosing until some of it lands, because a
- * diagnosis written against a factory mid-flight is out of date by the time
- * anything can act on it.
+ * ## There was a second arm, and ADR-0016 removed it
  *
- * The threshold is configurable and defaults to no ceiling at all, because a
- * gate that fires constantly is a supervisor that never runs — pressure is not
- * exhaustion, and that argument survives the correction untouched.
+ * A `liveRunCeiling` used to stand the supervisor down once `runsRunning`
+ * reached a configured threshold. Its stated reason was rewritten twice — from
+ * "the supervisor yields the shared quota to the workers", which ADR-0015
+ * falsified, to "there is little worth diagnosing while that much is still in
+ * flight" — without anyone deciding whether the arm should exist. ADR-0016
+ * decided: it should not. `runsRunning` is not evidence about anything the
+ * ceiling could legitimately stand down for. It is not a cost control, because
+ * `SupervisorService.invoke()` runs every proposer exactly once per tick
+ * regardless of how many runs are live, and the one proposer with a bounded
+ * call count caps against `attentionRuns` — runs that are stalled, blocked or
+ * quarantined — not against `runsRunning`. It is not a staleness control
+ * either, because a diagnosis of a run stalled for six hours does not go stale
+ * because fifty other healthy runs happen to be moving.
+ *
+ * That is recorded here rather than dropped because the removal is the
+ * decision: a future PR wanting a throttle in this file should read ADR-0016
+ * and argue past it, not rediscover the same proxy. If the concern is dollars,
+ * the honest mechanism is a spend ceiling in the shape of
+ * `hard-spend-ceiling.ts` (#261), which bounds the thing it claims to bound.
+ *
+ * What survives the removal is the one signal that never used `runsRunning`:
+ * `runsBlocked > 0` is a direct fact that work has stopped, not a proxy for
+ * one.
  */
 
 export interface QuotaGateConfig {
@@ -59,20 +72,16 @@ export interface QuotaGateConfig {
    * Defaults ON. A parked worker is the clearest evidence available that the
    * work the supervisor would be diagnosing is not moving, and an hour's
    * diagnosis nobody can act on costs more than it is worth.
+   *
+   * The only field, since ADR-0016. Anything added beside it needs its own
+   * argued decision rather than a config key restored because nothing noticed
+   * the last one had gone.
    */
   standDownWhenBlocked: boolean;
-  /**
-   * Stand down when at least this many runs are live.
-   *
-   * Null disables the check. Live means `running` — work actually consuming
-   * the subscription right now.
-   */
-  liveRunCeiling: number | null;
 }
 
 export const DEFAULT_QUOTA_GATE: QuotaGateConfig = Object.freeze({
   standDownWhenBlocked: true,
-  liveRunCeiling: null,
 });
 
 export interface QuotaVerdict {
@@ -95,9 +104,13 @@ export interface QuotaVerdict {
  * querying. The gate must not itself cost a round trip on a system already
  * judged to be under pressure, and being pure means the decision that produced
  * a `skipped_quota` row is reconstructable from the row.
+ *
+ * Takes only `runsBlocked` since ADR-0016. The narrower parameter is the
+ * point: the gate cannot regrow a `runsRunning` branch without the signature
+ * changing in a diff.
  */
 export function assessQuota(
-  totals: Pick<SnapshotTotals, 'runsBlocked' | 'runsRunning'>,
+  totals: Pick<SnapshotTotals, 'runsBlocked'>,
   config: QuotaGateConfig = DEFAULT_QUOTA_GATE,
 ): QuotaVerdict {
   if (config.standDownWhenBlocked && totals.runsBlocked > 0) {
@@ -106,24 +119,6 @@ export function assessQuota(
       reason:
         `${totals.runsBlocked} run(s) are parked on a rate limit. Diagnosis is worth ` +
         'less than execution, so the supervisor stands down until they resume.',
-    };
-  }
-
-  if (
-    config.liveRunCeiling !== null &&
-    totals.runsRunning >= config.liveRunCeiling
-  ) {
-    return {
-      standDown: true,
-      // The wording matters more here than in a comment: this string is
-      // logged against the `skipped_quota` row an operator reads. It used to
-      // say the supervisor "yields the shared quota to the workers", which
-      // ADR-0015 made false — the supervisor's spend is separately metered and
-      // yields nothing to anybody.
-      reason:
-        `${totals.runsRunning} run(s) are live, at or above the ceiling of ` +
-        `${config.liveRunCeiling}. There is little worth diagnosing while that ` +
-        'much is still in flight, so the supervisor waits for some of it to land.',
     };
   }
 

@@ -148,15 +148,25 @@ describe('SupervisorService (#89)', () => {
       expect(record.mock.calls[0][0].outcome).toBe('completed');
     });
 
-    it('honours a configured live-run ceiling', async () => {
+    it('proceeds with many runs live, since ADR-0016 removed the ceiling', async () => {
+      // The inverse of the test that used to sit here ('honours a configured
+      // live-run ceiling'). A busy factory is no longer a reason to skip a
+      // tick: every proposer runs once per invocation whatever `runsRunning`
+      // is, so the count the ceiling gated on never determined what the tick
+      // cost. `SUPERVISOR_LIVE_RUN_CEILING` is left set in the config double
+      // on purpose -- a deployment that still has it exported must not still
+      // be gated by it.
+      const propose = jest.fn().mockResolvedValue([]);
       const { service, record } = build({
         config: { 'supervisor.liveRunCeiling': 2 },
-        snapshot: state({ runsRunning: 2 }),
+        snapshot: state({ runsRunning: 50 }),
+        proposers: [proposer('p', propose)],
       });
 
       await service.invoke(NOW);
 
-      expect(record.mock.calls[0][0].outcome).toBe('skipped_quota');
+      expect(record.mock.calls[0][0].outcome).toBe('completed');
+      expect(propose).toHaveBeenCalled();
     });
   });
 

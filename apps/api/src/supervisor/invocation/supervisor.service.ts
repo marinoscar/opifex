@@ -182,8 +182,6 @@ export class SupervisorService {
     return {
       standDownWhenBlocked:
         this.config.get<boolean>('supervisor.standDownWhenBlocked') !== false,
-      liveRunCeiling:
-        this.config.get<number | null>('supervisor.liveRunCeiling') ?? null,
     };
   }
 

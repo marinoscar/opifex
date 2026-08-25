@@ -222,12 +222,13 @@ export default () => {
       standDownWhenBlocked:
         process.env.SUPERVISOR_STAND_DOWN_WHEN_BLOCKED !== 'false',
 
-      // Stand down when at least this many runs are live. Unset means no
-      // ceiling: pressure is not exhaustion, and a gate that fires constantly
-      // is a supervisor that never runs.
-      liveRunCeiling: process.env.SUPERVISOR_LIVE_RUN_CEILING
-        ? parseInt(process.env.SUPERVISOR_LIVE_RUN_CEILING, 10)
-        : null,
+      // SUPERVISOR_LIVE_RUN_CEILING used to be read here, standing the
+      // supervisor down once that many runs were live. ADR-0016 removed it:
+      // `runsRunning` does not determine what an invocation costs -- every
+      // proposer runs once per tick regardless -- so the ceiling gated on a
+      // number that was never evidence of the thing it claimed to bound. It is
+      // named here rather than silently absent so a reader who finds the
+      // variable in an old `.env` can trace where it went.
     },
 
     // The promotion ladder (epic #22, #99), VISION §7 "Earned autonomy".
