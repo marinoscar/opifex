@@ -395,8 +395,21 @@ export class RunEventsService {
    * ## `result` is carried onto the run
    *
    * `run-event.schema.json` puts `branch`, `headCommit` and `pullRequestUrl` on
-   * `run.completed` for exactly this. #107 gates surfacing on the checks of
-   * `headCommit`, so without this the gate has nothing to ask GitHub about.
+   * `run.completed`. #107 gates surfacing on the checks of `headCommit`, so
+   * without this the gate has nothing to ask GitHub about.
+   *
+   * `branch` is deliberately NOT among them. There is no `Run.branch` column
+   * and there should not be: the branch belongs to the work order, which
+   * derives it deterministically, and every reader already takes it from
+   * there (`run.workOrder.branch` in the liveness sweep and the cockpit
+   * projection). The runner itself reads `run.workOrder.branch` to populate
+   * the event, so writing it back would round-trip a value Opifex assigned.
+   *
+   * It used to be written here anyway, and Prisma REJECTS an unknown argument
+   * rather than dropping it — so every successful claude-code-local run threw
+   * out of `ingest` and was never concluded, wedging the concurrency slot this
+   * very method exists to release. See #159: `data` is a generic inference
+   * target, so the compiler never checks it.
    */
   private async concludeRun(
     runId: string,
@@ -418,7 +431,6 @@ export class RunEventsService {
         ...(succeeded
           ? {}
           : { attentionReason: terminal.failure?.reason ?? 'run failed' }),
-        ...(result?.branch ? { branch: result.branch } : {}),
         ...(result?.headCommit ? { headCommit: result.headCommit } : {}),
         ...(result?.pullRequestUrl
           ? {
