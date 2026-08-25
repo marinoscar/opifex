@@ -2,10 +2,12 @@ import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../prisma/prisma.service';
 import type { RunnerCapabilities } from '../runners/runner.types';
+import type { RunnerQuotaPosition } from './dispatch-policy';
 import {
   DispatchService,
   OCCUPYING_STATUSES,
   QUOTA_BLOCK_REASONS,
+  resolveQuotaPosition,
   toCapabilities,
 } from './dispatch.service';
 
@@ -37,8 +39,8 @@ function runnerRow(overrides: Record<string, unknown> = {}) {
  *
  * The LAGGING half of the quota signal (#105): a dated, first-hand block the
  * runner reported, which can only ever be observed after a run has already hit
- * the wall. The leading half is {@link meterWindow} — since #285 there are two
- * of them, and `resolveQuotaPosition` ranks them.
+ * the wall. The leading half is {@link meterWindowRow} — since #285 there are
+ * two of them, and `resolveQuotaPosition` ranks them.
  */
 function blockedRun(
   overrides: {
@@ -56,6 +58,36 @@ function blockedRun(
   } = overrides;
 
   return { runnerKey, resumesAt, events: [{ blockedReason, blockedUntil }] };
+}
+
+/**
+ * One `quota_windows` row, as `loadQuotaMeter` selects it.
+ *
+ * The LEADING half of the quota signal (#231): a vendor rate-limit line
+ * observed while the runner was still serving, which can say `allowed`
+ * POSITIVELY — the lagging half, {@link blockedRun}, can only ever be silent
+ * about health. No such fixture was left behind by the implementation; the
+ * Prisma double needs `quotaWindow.findMany` to hand back rows shaped exactly
+ * like this one.
+ */
+function meterWindowRow(
+  overrides: {
+    runnerKey?: string;
+    kind?: string;
+    resetsAt?: Date;
+    pressure?: string;
+    lastObservedAt?: Date;
+  } = {},
+) {
+  const {
+    runnerKey = 'claude-code-local',
+    kind = 'five_hour',
+    resetsAt = new Date(Date.now() + 60 * 60_000),
+    pressure = 'exhausted',
+    lastObservedAt = new Date(),
+  } = overrides;
+
+  return { runnerKey, kind, resetsAt, pressure, lastObservedAt };
 }
 
 describe('DispatchService', () => {
@@ -468,6 +500,84 @@ describe('DispatchService', () => {
     });
   });
 
+  describe('the meter as a leading signal (#231/#285)', () => {
+    // Case 2 of #285's own acceptance criteria, and the one with ZERO
+    // coverage before this file: the blocked-run signal is lagging by
+    // construction, so a runner the meter alone reports exhausted — with no
+    // run having hit the wall yet — must still be parked. Dispatching into it
+    // anyway is exactly the dead time #231 was wired in to avoid.
+    it('parks a runner the METER ALONE reports exhausted, with no blocked run yet', async () => {
+      prisma.run.findMany.mockResolvedValue([]); // no blocked runs at all
+      prisma.quotaWindow.findMany.mockResolvedValue([
+        meterWindowRow({
+          pressure: 'exhausted',
+          resetsAt: new Date(Date.now() + 60 * 60_000),
+          lastObservedAt: new Date(),
+        }),
+      ]);
+
+      const decision = await service.decide([]);
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.queueReason).toBe('capable-runners-quota-exhausted');
+    });
+
+    it('does not let a stale meter reading silence a blocked run’s own exhaustion', async () => {
+      // The cross-function half of case 7: `meterQuotaPosition` drops the
+      // stale ALLOWED reading and reports no position at all, so
+      // `resolveQuotaPosition` never even sees a healthy meter to disagree
+      // with — the blocked run's own exhaustion is what routing acts on.
+      prisma.run.findMany.mockResolvedValue([blockedRun()]);
+      prisma.quotaWindow.findMany.mockResolvedValue([
+        meterWindowRow({
+          pressure: 'allowed',
+          resetsAt: new Date(Date.now() + 60 * 60_000),
+          lastObservedAt: new Date(Date.now() - 20 * 60_000), // stale (>15m)
+        }),
+      ]);
+
+      const decision = await service.decide([]);
+
+      expect(decision.outcome).toBe('queued');
+      expect(decision.queueReason).toBe('capable-runners-quota-exhausted');
+    });
+
+    it('reads the whole fleet’s meter in one query, not once per runner', async () => {
+      prisma.runner.findMany.mockResolvedValue([
+        runnerRow({ key: 'a' }),
+        runnerRow({ key: 'b' }),
+        runnerRow({ key: 'c' }),
+      ]);
+
+      await service.decide([]);
+
+      expect(prisma.quotaWindow.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a signal DISAGREEMENT once, not again on a repeated hypothetical decide()', async () => {
+      // `cockpit/queue.service.ts` calls `decide()` hypothetically on every
+      // 30-second poll. An undeduped warn would print the same disagreement
+      // sentence twice a minute for the life of a five-hour window.
+      prisma.run.findMany.mockResolvedValue([blockedRun()]); // exhausted
+      prisma.quotaWindow.findMany.mockResolvedValue([
+        meterWindowRow({
+          pressure: 'allowed', // fresh and disagrees
+          resetsAt: new Date(Date.now() + 60 * 60_000),
+          lastObservedAt: new Date(Date.now() - 60_000),
+        }),
+      ]);
+      const warn = jest.spyOn(service['logger'], 'warn');
+
+      await service.decide([]);
+      await service.decide([]);
+
+      const disagreementWarnings = warn.mock.calls.filter(([line]) =>
+        String(line).includes('disagree'),
+      );
+      expect(disagreementWarnings).toHaveLength(1);
+    });
+  });
+
   describe('model tiers (#265)', () => {
     // The tier a runner serves has no column. It lives in the verbatim
     // manifest, and until #265 nothing read it back out — so `servesTier` saw
@@ -704,5 +814,204 @@ describe('DispatchService', () => {
         (capabilities.manifest as { modelTiers: unknown }).modelTiers,
       );
     });
+  });
+});
+
+/**
+ * The pure function `resolveQuotaPosition` argues at length in its own doc
+ * comment (#285): exhaustion wins from either source, health needs both to
+ * agree, and a disagreement is recorded rather than resolved away. These
+ * specs pin the ARGUMENTS, not just the branches — each one asserts the
+ * reason the rule gives for the outcome, not only the outcome.
+ */
+describe('resolveQuotaPosition (#285)', () => {
+  function position(
+    overrides: Partial<RunnerQuotaPosition> = {},
+  ): RunnerQuotaPosition {
+    return {
+      exhausted: true,
+      resumesAt: '2026-08-25T15:00:00.000Z',
+      basis: 'test basis',
+      ...overrides,
+    };
+  }
+
+  // Case 1.
+  it('returns no position when neither source has one, and unknown is not zero (VISION §6)', () => {
+    // Routing reads `undefined` as UNKNOWN and dispatches to it freely — see
+    // `DispatchService`'s default-mock tests, where an empty pool of blocked
+    // runs and an empty meter still dispatch.
+    expect(resolveQuotaPosition(undefined, undefined)).toBeUndefined();
+  });
+
+  // Case 2 — the case that justifies the whole issue. Pure-function form;
+  // the end-to-end park is pinned in `DispatchService`'s
+  // "the meter as a leading signal" describe block above.
+  it('takes the meter alone when only it has a reading, exhausted — no blocked run required', () => {
+    const meter = position({
+      exhausted: true,
+      basis:
+        'runner reported rate-limit status "exhausted" for its five_hour window',
+    });
+
+    const resolved = resolveQuotaPosition(undefined, meter);
+
+    expect(resolved?.exhausted).toBe(true);
+    // Case 6: the basis names its source even with only one to distinguish
+    // it from — a string that only sometimes says where it came from is a
+    // record that reads differently depending on facts it does not contain.
+    expect(resolved?.basis).toBe(`meter: ${meter.basis}`);
+  });
+
+  // Case 3.
+  it('takes the meter alone when healthy: exhausted false, basis prefixed meter:', () => {
+    const meter = position({
+      exhausted: false,
+      basis:
+        'runner reported rate-limit status "allowed" for its five_hour window',
+    });
+
+    const resolved = resolveQuotaPosition(undefined, meter);
+
+    expect(resolved?.exhausted).toBe(false);
+    expect(resolved?.basis).toBe(`meter: ${meter.basis}`);
+  });
+
+  it('takes the blocked-run signal alone when the meter has nothing to say', () => {
+    const derived = position({
+      exhausted: true,
+      basis: "1 run(s) on this runner are blocked on 'rate-limit'",
+    });
+
+    const resolved = resolveQuotaPosition(derived, undefined);
+
+    expect(resolved?.exhausted).toBe(true);
+    expect(resolved?.basis).toBe(`blocked runs: ${derived.basis}`);
+  });
+
+  // Case 4 — the disagreement. Meter-exhausted-alone (case 2) is NOT this
+  // case: silence from the blocked-run side is not a health claim, so the
+  // meter simply speaks. This is the other direction — a blocked run says
+  // exhausted while a FRESH meter says allowed — which can be genuinely true
+  // on both sides at once (VISION §11's interactive co-tenant can empty a
+  // window between the vendor's `allowed` line and the block).
+  it('DISAGREEMENT: takes the exhausted reading, and the BLOCKED RUN’s own resumesAt — not the meter’s', () => {
+    const derived = position({
+      exhausted: true,
+      resumesAt: '2026-08-25T13:00:00.000Z',
+      basis:
+        "1 run(s) on this runner are blocked on 'rate-limit' with a reset time",
+    });
+    const meter = position({
+      exhausted: false,
+      resumesAt: '2026-08-31T12:00:00.000Z', // an unrelated, later weekly reset
+      basis:
+        'runner reported rate-limit status "allowed" for its weekly window',
+    });
+
+    const resolved = resolveQuotaPosition(derived, meter);
+
+    expect(resolved?.exhausted).toBe(true);
+    // The whole reason exhaustion wins over the fresher reading: a false
+    // `exhausted` costs a delay bounded by the exhausted source's OWN date,
+    // and taking the meter's unrelated (and later) date here would extend a
+    // five-hour park into a multi-day one on a healthy weekly window's say-so.
+    expect(resolved?.resumesAt).toBe(derived.resumesAt);
+    expect(resolved?.resumesAt).not.toBe(meter.resumesAt);
+    expect(resolved?.basis).toContain('DISAGREE');
+    expect(resolved?.basis).toContain(derived.basis);
+    expect(resolved?.basis).toContain(meter.basis);
+  });
+
+  // Case 5.
+  it('AGREEMENT (both exhausted): resumesAt is the LATER of the two dates, basis says they agree', () => {
+    const derived = position({
+      exhausted: true,
+      resumesAt: '2026-08-25T13:00:00.000Z',
+      basis: 'blocked-run basis sentence',
+    });
+    const meter = position({
+      exhausted: true,
+      resumesAt: '2026-08-25T20:00:00.000Z', // later
+      basis: 'meter basis sentence',
+    });
+
+    const resolved = resolveQuotaPosition(derived, meter);
+
+    expect(resolved?.exhausted).toBe(true);
+    expect(resolved?.resumesAt).toBe(meter.resumesAt);
+    expect(resolved?.basis).toContain('agree');
+    expect(resolved?.basis).toContain(derived.basis);
+    expect(resolved?.basis).toContain(meter.basis);
+  });
+
+  it('AGREEMENT (both exhausted): still takes the later date when the BLOCKED side is later', () => {
+    // The later-of-two-dates rule does not favour either source — only the
+    // later CLOCK READING, whichever side it came from.
+    const derived = position({
+      exhausted: true,
+      resumesAt: '2026-08-26T01:00:00.000Z', // later this time
+      basis: 'blocked-run basis sentence',
+    });
+    const meter = position({
+      exhausted: true,
+      resumesAt: '2026-08-25T20:00:00.000Z',
+      basis: 'meter basis sentence',
+    });
+
+    expect(resolveQuotaPosition(derived, meter)?.resumesAt).toBe(
+      derived.resumesAt,
+    );
+  });
+
+  it('both healthy: reports only the meter’s sentence, since only the meter can cast that vote', () => {
+    // A blocked-run position is documented as always `exhausted: true` in
+    // production, but the function itself is generic — exercised here as the
+    // pure branch it is, independent of what its one real caller happens to
+    // ever construct.
+    const derived = position({
+      exhausted: false,
+      basis: 'derived basis that should not appear in the result',
+    });
+    const meter = position({
+      exhausted: false,
+      basis: 'meter basis sentence',
+    });
+
+    const resolved = resolveQuotaPosition(derived, meter);
+
+    expect(resolved?.exhausted).toBe(false);
+    expect(resolved?.basis).toBe(`meter: ${meter.basis}`);
+    expect(resolved?.basis).not.toContain(derived.basis);
+  });
+
+  // Case 6, consolidated: every branch's basis names its source(s).
+  it('names its source in the basis on every branch', () => {
+    expect(resolveQuotaPosition(undefined, position())?.basis).toMatch(
+      /^meter: /,
+    );
+    expect(resolveQuotaPosition(position(), undefined)?.basis).toMatch(
+      /^blocked runs: /,
+    );
+
+    const bothExhausted = resolveQuotaPosition(
+      position({ exhausted: true }),
+      position({ exhausted: true }),
+    )?.basis;
+    expect(bothExhausted).toContain('blocked runs:');
+    expect(bothExhausted).toContain('meter:');
+
+    const disagreeing = resolveQuotaPosition(
+      position({ exhausted: true }),
+      position({ exhausted: false }),
+    )?.basis;
+    expect(disagreeing).toContain('blocked runs:');
+    expect(disagreeing).toContain('meter:');
+
+    const bothHealthy = resolveQuotaPosition(
+      position({ exhausted: false }),
+      position({ exhausted: false }),
+    )?.basis;
+    expect(bothHealthy).toMatch(/^meter: /);
   });
 });
