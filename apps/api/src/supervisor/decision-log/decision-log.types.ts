@@ -62,6 +62,16 @@ export interface InvocationDraft {
   snapshotTruncated?: boolean;
   snapshotCharacters?: number;
   costUsd?: number | null;
+  /**
+   * How many model calls in this invocation priced at null (#282).
+   *
+   * Above zero, `costUsd` is a FLOOR and not a total: the unpriced calls
+   * contributed real money that nothing measured. Recorded beside the figure
+   * rather than folded into it, because folding it in is the bug — an
+   * unpriced call added as zero says "free", and free is a measurement
+   * nobody took.
+   */
+  unpricedCalls?: number;
   tokensInput?: number | null;
   tokensOutput?: number | null;
   failureReason?: string | null;

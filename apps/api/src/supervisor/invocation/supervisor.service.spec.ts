@@ -332,6 +332,98 @@ describe('SupervisorService (#89)', () => {
       expect(record.mock.calls[0][0].costUsd).toBeNull();
     });
 
+    it('counts the calls that priced at null instead of dropping them (#282)', async () => {
+      // The MIXED tick, which is the case the old `add()` got wrong on its
+      // own: one call prices, one does not, and the row used to report the
+      // known half as if it were the whole bill. `unpricedCalls` is what makes
+      // $0.01 readable as a floor rather than a total.
+      const model: SupervisorModel = {
+        name: 'm',
+        ask: jest
+          .fn()
+          .mockResolvedValueOnce({
+            text: 'ok',
+            costUsd: 0.01,
+            tokensInput: 100,
+            tokensOutput: 20,
+          })
+          .mockResolvedValueOnce({
+            text: 'ok',
+            costUsd: null,
+            tokensInput: 40,
+            tokensOutput: 5,
+          }),
+      };
+
+      const ask = async (ctx: { model: SupervisorModel; snapshot: string }) => {
+        await ctx.model.ask({ snapshot: ctx.snapshot, instruction: 'x' });
+        return [];
+      };
+      const { service, record } = build({
+        model,
+        proposers: [proposer('a', ask), proposer('b', ask)],
+      });
+
+      await service.invoke(NOW);
+
+      const draft = record.mock.calls[0][0];
+      expect(draft.costUsd).toBeCloseTo(0.01);
+      expect(draft.unpricedCalls).toBe(1);
+    });
+
+    it('counts every call when nothing priced at all', async () => {
+      const model: SupervisorModel = {
+        name: 'm',
+        ask: jest.fn().mockResolvedValue({
+          text: 'ok',
+          costUsd: null,
+          tokensInput: null,
+          tokensOutput: null,
+        }),
+      };
+      const ask = async (ctx: { model: SupervisorModel; snapshot: string }) => {
+        await ctx.model.ask({ snapshot: ctx.snapshot, instruction: 'x' });
+        return [];
+      };
+      const { service, record } = build({
+        model,
+        proposers: [proposer('a', ask), proposer('b', ask)],
+      });
+
+      await service.invoke(NOW);
+
+      const draft = record.mock.calls[0][0];
+      expect(draft.costUsd).toBeNull();
+      expect(draft.unpricedCalls).toBe(2);
+    });
+
+    it('counts nothing unpriced when every call priced', async () => {
+      const model: SupervisorModel = {
+        name: 'm',
+        ask: jest.fn().mockResolvedValue({
+          text: 'ok',
+          costUsd: 0.02,
+          tokensInput: 10,
+          tokensOutput: 2,
+        }),
+      };
+      const { service, record } = build({
+        model,
+        proposers: [
+          proposer('a', async (ctx) => {
+            await ctx.model.ask({ snapshot: ctx.snapshot, instruction: 'x' });
+            return [];
+          }),
+        ],
+      });
+
+      await service.invoke(NOW);
+
+      const draft = record.mock.calls[0][0];
+      expect(draft.costUsd).toBeCloseTo(0.02);
+      expect(draft.unpricedCalls).toBe(0);
+    });
+
     it('records an invocation with no proposers at all', async () => {
       const { service, record } = build();
 

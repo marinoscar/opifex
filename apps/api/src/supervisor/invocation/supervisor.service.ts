@@ -138,10 +138,15 @@ export class SupervisorService {
     const proposals: ProposalDraft[] = [];
     let anyFailed = false;
     let costUsd: number | null = null;
+    let unpricedCalls = 0;
     let tokensInput: number | null = null;
     let tokensOutput: number | null = null;
 
     const metered = meter(this.model, (response) => {
+      // Counted BEFORE the money, because it is what makes the money
+      // readable: a call the price table has no rate for contributed real
+      // spend that `costUsd` cannot include (#282).
+      if (response.costUsd === null) unpricedCalls += 1;
       costUsd = add(costUsd, response.costUsd);
       tokensInput = add(tokensInput, response.tokensInput);
       tokensOutput = add(tokensOutput, response.tokensOutput);
@@ -176,6 +181,7 @@ export class SupervisorService {
       snapshotTruncated: rendered.truncated,
       snapshotCharacters: rendered.characters,
       costUsd,
+      unpricedCalls,
       tokensInput,
       tokensOutput,
       failureReason: anyFailed ? 'At least one proposer failed.' : null,
@@ -269,6 +275,23 @@ function meter(
  * Null plus null is null, not zero. VISION §6 makes cost reporting a declared
  * capability, so an invocation whose adapter reports nothing must not appear
  * to have been free.
+ *
+ * ## What this function alone cannot say, and who says it (#282)
+ *
+ * A MIXED tick — one proposer's call priced, another's did not — leaves the
+ * total holding only the known part. That is the right arithmetic and the
+ * wrong claim on its own: the row would report a complete-looking figure that
+ * silently omits whatever the unpriced call cost, which is precisely the
+ * unpriced call being read as free. The case is not hypothetical; it is what
+ * happens the day `SUPERVISOR_MODEL_NAME` moves to a dated snapshot
+ * `model-pricing.ts` has not caught up with.
+ *
+ * The fix is not here. Summing a null as zero would be worse, and inventing a
+ * rate would be worse still. It is `unpricedCalls`, counted beside this total
+ * and stored beside it, which turns the figure into an explicit FLOOR — the
+ * same shape `SpendLedgerService` gives the dispatch ceiling with
+ * `unboundedRuns`. This function keeps doing the one honest thing it can:
+ * add what was measured, and never invent what was not.
  */
 function add(total: number | null, value: number | null): number | null {
   if (value === null) return total;

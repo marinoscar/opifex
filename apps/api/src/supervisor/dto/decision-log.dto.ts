@@ -105,6 +105,14 @@ export const invocationSchema = z.object({
   snapshotCharacters: z.number().int(),
   /** Null when the adapter reports no cost. Not zero — VISION §6. */
   costUsd: z.number().nullable(),
+  /**
+   * How many of this invocation's model calls priced at null (#282).
+   *
+   * Read WITH `costUsd`, never instead of it: above zero, the dollar figure
+   * is a floor, because the unpriced calls cost something no table could
+   * convert. Zero on rows written before the count existed.
+   */
+  unpricedCalls: z.number().int(),
   tokensInput: z.number().int().nullable(),
   tokensOutput: z.number().int().nullable(),
   failureReason: z.string().nullable(),

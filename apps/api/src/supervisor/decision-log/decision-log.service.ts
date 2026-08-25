@@ -89,6 +89,7 @@ export class DecisionLogService {
           snapshotCharacters:
             invocation.snapshotCharacters ?? invocation.snapshotText.length,
           costUsd: invocation.costUsd ?? null,
+          unpricedCalls: invocation.unpricedCalls ?? 0,
           tokensInput: invocation.tokensInput ?? null,
           tokensOutput: invocation.tokensOutput ?? null,
           failureReason: invocation.failureReason ?? null,
@@ -322,6 +323,7 @@ export class DecisionLogService {
       snapshotTruncated: row.snapshotTruncated,
       snapshotCharacters: row.snapshotCharacters,
       costUsd: toNumberOrNull(row.costUsd),
+      unpricedCalls: row.unpricedCalls,
       tokensInput: row.tokensInput,
       tokensOutput: row.tokensOutput,
       failureReason: row.failureReason,
@@ -361,6 +363,14 @@ export interface InvocationView {
   snapshotTruncated: boolean;
   snapshotCharacters: number;
   costUsd: number | null;
+  /**
+   * Model calls that priced at null. Above zero, `costUsd` is a floor (#282).
+   *
+   * Rendered alongside the money on purpose: a reader who sees only the
+   * dollar figure cannot tell a complete total from a partial one, which is
+   * the whole failure this count exists to make visible.
+   */
+  unpricedCalls: number;
   tokensInput: number | null;
   tokensOutput: number | null;
   failureReason: string | null;
