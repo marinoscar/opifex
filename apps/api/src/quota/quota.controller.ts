@@ -41,10 +41,17 @@ export class QuotaController {
       '`resetsAt` is the vendor’s own reset instant, and `pressure` is the vendor’s own ordinal ' +
       'reading — `warning` being the only signal in the system that arrives before a run is ' +
       'parked. A runner that has reported no rate-limit signal is ABSENT from `runners` rather ' +
-      'than present with zeroes: unknown is not zero.',
+      'than present with zeroes: unknown is not zero. Each runner carries EVERY window that ' +
+      'has not yet rolled, soonest reset first, plus a `position` saying which of them binds ' +
+      'and when it lifts — a runner holds a `five_hour` and a `weekly` at once, and reporting ' +
+      'only one of them hid an exhausted short window behind a healthy long one (#301). ' +
+      '`position` is null for UNKNOWN, never for healthy, and comes from the same function ' +
+      'dispatch routes on, so this endpoint and the fleet answer "can this runner work now" ' +
+      'identically.',
   })
   @ApiDataResponse(QuotaSummaryDto, {
-    description: 'One entry per runner with a live window',
+    description:
+      'One entry per runner with at least one live window, carrying all of them',
   })
   async summary() {
     const now = new Date();
