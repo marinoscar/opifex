@@ -171,7 +171,7 @@ export class AnthropicSupervisorModel implements SupervisorModel {
         signal: AbortSignal.timeout(this.config.timeoutMs),
       });
     } catch (error) {
-      if (error instanceof Error && error.name === 'TimeoutError') {
+      if (isAbort(error)) {
         throw new SupervisorModelError(
           `The supervisor model did not answer within ${this.config.timeoutMs}ms.`,
           null,
@@ -342,6 +342,21 @@ async function errorDetail(response: Response): Promise<string> {
   // Bounded: an HTML error page from a proxy would otherwise be copied whole
   // into the decision log's failure reason.
   return raw.slice(0, 500);
+}
+
+/**
+ * Whether a rejected `fetch` was our own timeout firing.
+ *
+ * Checked by `name` rather than with `instanceof Error`, because what
+ * `AbortSignal.timeout` rejects with is a `DOMException`, and a `DOMException`
+ * is NOT an `instanceof Error` in Node. Getting that wrong reports a timeout
+ * as an unreachable endpoint, which sends whoever reads the decision log
+ * looking at the network instead of at the timeout they set.
+ */
+function isAbort(error: unknown): boolean {
+  if (error === null || typeof error !== 'object') return false;
+  const name = (error as { name?: unknown }).name;
+  return name === 'TimeoutError' || name === 'AbortError';
 }
 
 function message(error: unknown): string {
