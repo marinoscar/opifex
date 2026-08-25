@@ -38,10 +38,18 @@ import type { SnapshotTotals } from '../snapshot/snapshot.types';
  * and is waiting to resume. That is not a proxy for what anyone has left to
  * spend — it is a fact about work having stopped.
  *
- * The second signal is pressure rather than exhaustion: with many runs live,
- * the marginal call is more likely to be the one that tips a worker into
- * parking. That threshold is configurable and defaults generously, because a
- * gate that fires constantly is a supervisor that never runs.
+ * The second signal is pressure rather than exhaustion, and its reason was
+ * corrected alongside the first. It used to read that the supervisor's
+ * "marginal call is more likely to be the one that tips a worker into
+ * parking" — another claim about a budget the supervisor no longer shares with
+ * anyone. What is true instead: with many runs live there is a great deal in
+ * flight and little worth diagnosing until some of it lands, because a
+ * diagnosis written against a factory mid-flight is out of date by the time
+ * anything can act on it.
+ *
+ * The threshold is configurable and defaults to no ceiling at all, because a
+ * gate that fires constantly is a supervisor that never runs — pressure is not
+ * exhaustion, and that argument survives the correction untouched.
  */
 
 export interface QuotaGateConfig {
@@ -107,9 +115,15 @@ export function assessQuota(
   ) {
     return {
       standDown: true,
+      // The wording matters more here than in a comment: this string is
+      // logged against the `skipped_quota` row an operator reads. It used to
+      // say the supervisor "yields the shared quota to the workers", which
+      // ADR-0015 made false — the supervisor's spend is separately metered and
+      // yields nothing to anybody.
       reason:
         `${totals.runsRunning} run(s) are live, at or above the ceiling of ` +
-        `${config.liveRunCeiling}. The supervisor yields the shared quota to the workers.`,
+        `${config.liveRunCeiling}. There is little worth diagnosing while that ` +
+        'much is still in flight, so the supervisor waits for some of it to land.',
     };
   }
 

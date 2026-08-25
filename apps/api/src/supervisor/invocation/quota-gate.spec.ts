@@ -61,6 +61,23 @@ describe('assessQuota (#89)', () => {
     ).toBe(false);
   });
 
+  it('states a ceiling reason that does not claim to yield anyone quota', () => {
+    // This string is logged against the skipped_quota row an operator reads,
+    // which makes a false sentence here worse than a stale comment rather than
+    // better. Since ADR-0015 the supervisor's spend is separately metered, so
+    // standing down yields the workers nothing - it waits because there is
+    // little worth diagnosing while that much is still in flight.
+    const verdict = assessQuota(
+      { runsBlocked: 0, runsRunning: 7 },
+      { standDownWhenBlocked: true, liveRunCeiling: 5 },
+    );
+
+    expect(verdict.standDown).toBe(true);
+    expect(verdict.reason).toContain('7 run(s) are live');
+    expect(verdict.reason).toContain('ceiling of 5');
+    expect(verdict.reason).not.toMatch(/quota|budget|subscription/i);
+  });
+
   it('reports the parked reason first when both conditions hold', () => {
     const verdict = assessQuota(
       { runsBlocked: 1, runsRunning: 9 },
