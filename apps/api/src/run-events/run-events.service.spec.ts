@@ -486,7 +486,27 @@ describe('RunEventsService', () => {
       expect(data.pullRequestUrl).toBe('https://github.com/acme/app/pull/42');
       expect(data.pullRequestNumber).toBe(42);
       expect(data.headCommit).toBe('a3f91c2b4d5e6f708192a3b4c5d6e7f809a1b2c3');
-      expect(data.branch).toBe('factory/312-a3f91c2-a1');
+    });
+
+    it('does not write the branch, which is not a column on the run', async () => {
+      // #159. `Run` has no `branch` column — the branch is the work order's,
+      // and the runner reads `run.workOrder.branch` to fill this very field.
+      // Writing it back made Prisma reject the whole `updateMany` with
+      // `Unknown argument`, so a run that completed with a branch never
+      // concluded and held its concurrency slot forever.
+      //
+      // This assertion is the only thing standing between that and a repeat:
+      // `data` is a generic inference target, so `tsc` does not check it, and
+      // a conditional spread is not excess-property-checked even under
+      // `satisfies`.
+      await service.ingest(RUN_ID, [
+        event({
+          type: 'run.completed',
+          result: { branch: 'factory/312-a3f91c2-a1' },
+        }),
+      ]);
+
+      expect(conclusion().data).not.toHaveProperty('branch');
     });
 
     it('leaves the pull request columns alone when the runner reported none', async () => {
