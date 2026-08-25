@@ -18,11 +18,12 @@ import globals from 'globals';
  * (`set-state-in-effect`, `refs`, `immutability`,
  * `preserve-manual-memoization`) in its recommended set, and those found 18
  * genuine issues here. Every one of them is a behavioural refactor of a
- * component, not a lint fix, so enabling them now would mean either a red
- * build or a large unreviewed change riding along with a tooling PR. They are
- * tracked in #185, which also asks whether any of the set-state-in-effect
- * findings explains #169. `rules-of-hooks` and `exhaustive-deps` — the classic
- * contract, and the two that catch real bugs cheaply — are on and blocking.
+ * component, not a lint fix, so enabling them all at once would mean either a
+ * red build or a large unreviewed change riding along with a tooling PR. #185
+ * turns them on one at a time, smallest blast radius first, each with its
+ * findings cleared in the same commit. `rules-of-hooks` and `exhaustive-deps`
+ * — the classic contract, and the two that catch real bugs cheaply — have been
+ * on and blocking since #30.
  */
 export default tseslint.config(
   {
@@ -48,6 +49,11 @@ export default tseslint.config(
 
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'error',
+
+      // React Compiler family (#185), enabled one rule at a time.
+      // Zero findings in the app: the memoization we write by hand is already
+      // the memoization the compiler would keep. On, so it stays that way.
+      'react-hooks/preserve-manual-memoization': 'error',
 
       // The automatic JSX runtime (React 19 + Vite) means importing React to
       // use JSX is exactly the unused import the rest of this config flags.
