@@ -66,7 +66,7 @@ export class UserSettingsService {
       settings = await this.prisma.userSettings.create({
         data: {
           userId,
-          value: DEFAULT_USER_SETTINGS as any,
+          value: DEFAULT_USER_SETTINGS,
         },
       });
       this.logger.log(`Created default settings for user: ${userId}`);
@@ -99,12 +99,12 @@ export class UserSettingsService {
     const settings = await this.prisma.userSettings.upsert({
       where: { userId },
       update: {
-        value: validated as any,
+        value: validated,
         version: { increment: 1 },
       },
       create: {
         userId,
-        value: validated as any,
+        value: validated,
       },
     });
 
@@ -190,7 +190,7 @@ export class UserSettingsService {
     const settings = await this.prisma.userSettings.update({
       where: { userId },
       data: {
-        value: validated as any,
+        value: validated,
         version: { increment: 1 },
       },
     });

@@ -63,7 +63,7 @@ export class TestAuthService {
           // Create default user settings
           userSettings: {
             create: {
-              value: DEFAULT_USER_SETTINGS as any,
+              value: DEFAULT_USER_SETTINGS,
             },
           },
         },

@@ -1,4 +1,5 @@
 import { Injectable, Logger, ConflictException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateSystemSettingsDto } from '../dto/update-system-settings.dto';
 import { PatchSystemSettingsDto } from '../dto/update-system-settings.dto';
@@ -35,7 +36,7 @@ export class SystemSettingsService {
       settings = await this.prisma.systemSettings.create({
         data: {
           key: SETTINGS_KEY,
-          value: DEFAULT_SYSTEM_SETTINGS as any,
+          value: DEFAULT_SYSTEM_SETTINGS,
         },
         include: {
           updatedByUser: {
@@ -69,13 +70,13 @@ export class SystemSettingsService {
     const settings = await this.prisma.systemSettings.upsert({
       where: { key: SETTINGS_KEY },
       update: {
-        value: validated as any,
+        value: validated,
         updatedByUserId: userId,
         version: { increment: 1 },
       },
       create: {
         key: SETTINGS_KEY,
-        value: validated as any,
+        value: validated,
         updatedByUserId: userId,
       },
       include: {
@@ -144,7 +145,7 @@ export class SystemSettingsService {
     const settings = await this.prisma.systemSettings.update({
       where: { key: SETTINGS_KEY },
       data: {
-        value: validated as any,
+        value: validated,
         updatedByUserId: userId,
         version: { increment: 1 },
       },
@@ -213,7 +214,12 @@ export class SystemSettingsService {
         action,
         targetType: 'system_settings',
         targetId,
-        meta: meta as any,
+        // Asserted, not converted: `Record<string, unknown>` cannot be proven
+        // assignable to Prisma's `InputJsonObject` because `unknown` is not
+        // `InputJsonValue`, and the callers pass DTO instances that have no
+        // implicit index signature. The assertion still constrains the target
+        // to a JSON object — unlike the `as any` it replaces (#186).
+        meta: meta as Prisma.InputJsonObject,
       },
     });
   }
