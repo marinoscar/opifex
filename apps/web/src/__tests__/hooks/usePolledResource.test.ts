@@ -577,6 +577,283 @@ describe('usePolledResource', () => {
     });
   });
   /**
+   * Issue #246. Every filter control in the cockpit is wired by rebuilding the
+   * fetcher, and the fetcher lives in a ref — so for three merged features a
+   * filter change issued no request, and the list updated up to 30 seconds
+   * later with no apparent cause. That reads as an unreliable screen rather
+   * than a broken one, which is the harder thing to report.
+   *
+   * The suite had 22 tests and not one of them changed the fetcher. These do.
+   */
+  describe('fetcherKey — a changed input re-reads now (#246)', () => {
+    /**
+     * The bug, stated as an assertion: no timer is advanced anywhere in this
+     * test. If the refetch waits for a tick, this fails.
+     */
+    it('re-reads immediately when the key changes', async () => {
+      const fetcher = vi
+        .fn()
+        .mockResolvedValueOnce(['pending-1'])
+        .mockResolvedValue(['parked-1']);
+
+      const { result, rerender } = renderHookWithProviders(
+        ({ status }: { status: string }) =>
+          usePolledResource<string[]>({
+            fetcher,
+            fetcherKey: [status],
+            intervalMs: INTERVAL,
+            enabled: true,
+          }),
+        { initialProps: { status: 'pending' } },
+      );
+
+      await flush();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(result.current.data).toEqual(['pending-1']);
+
+      await act(async () => {
+        rerender({ status: 'parked' });
+      });
+
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(result.current.data).toEqual(['parked-1']);
+    });
+
+    /** The fetcher sees the NEW value, not the one the ref held at mount. */
+    it('reads through the new fetcher, not the one held at mount', async () => {
+      const read = vi.fn(async (status: string) => [status]);
+
+      const { result, rerender } = renderHookWithProviders(
+        ({ status }: { status: string }) =>
+          usePolledResource<string[]>({
+            // An inline arrow, which is a new identity every render — the
+            // exact shape the ref exists to tolerate.
+            fetcher: () => read(status),
+            fetcherKey: [status],
+            intervalMs: INTERVAL,
+            enabled: true,
+          }),
+        { initialProps: { status: 'pending' } },
+      );
+
+      await flush();
+
+      await act(async () => {
+        rerender({ status: 'parked' });
+      });
+
+      expect(read).toHaveBeenLastCalledWith('parked');
+      expect(result.current.data).toEqual(['parked']);
+    });
+
+    /**
+     * The other half of the contract, and the reason identity comparison was
+     * rejected: callers pass an inline array literal, so a fresh array with the
+     * same contents must be a no-op. Otherwise every render is a request.
+     */
+    it('does not re-read when a re-render leaves the values unchanged', async () => {
+      const read = vi.fn(async (status: string) => [status]);
+
+      const { rerender } = renderHookWithProviders(
+        ({ status }: { status: string }) =>
+          usePolledResource<string[]>({
+            fetcher: () => read(status),
+            // A NEW array every render, with the same contents.
+            fetcherKey: [status],
+            intervalMs: INTERVAL,
+            enabled: true,
+          }),
+        { initialProps: { status: 'pending' } },
+      );
+
+      await flush();
+      expect(read).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        rerender({ status: 'pending' });
+        rerender({ status: 'pending' });
+        rerender({ status: 'pending' });
+      });
+
+      expect(read).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * The race. An operator picking a second filter while the first is still
+     * loading must not get the first filter's rows under the second filter's
+     * heading — which is precisely what the issue describes seeing.
+     */
+    it('aborts the in-flight read so the old key cannot win the race', async () => {
+      const resolvers: Array<(value: string[]) => void> = [];
+      const signals: AbortSignal[] = [];
+      const fetcher = vi.fn((signal: AbortSignal) => {
+        signals.push(signal);
+        return new Promise<string[]>((resolve) => resolvers.push(resolve));
+      });
+
+      const { result, rerender } = renderHookWithProviders(
+        ({ status }: { status: string }) =>
+          usePolledResource<string[]>({
+            fetcher,
+            fetcherKey: [status],
+            intervalMs: INTERVAL,
+            enabled: true,
+          }),
+        { initialProps: { status: 'pending' } },
+      );
+
+      // The first read is still in flight when the filter changes.
+      expect(signals).toHaveLength(1);
+
+      await act(async () => {
+        rerender({ status: 'parked' });
+      });
+
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(signals[0].aborted).toBe(true);
+      expect(signals[1].aborted).toBe(false);
+
+      // Land them out of order, superseded LAST — the classic way a stale
+      // response overwrites a fresh one.
+      await act(async () => {
+        resolvers[1](['parked-1']);
+        resolvers[0](['pending-1']);
+      });
+
+      expect(result.current.data).toEqual(['parked-1']);
+    });
+
+    /**
+     * Single-flight still applies to the poll: the key change supersedes, it
+     * does not queue. A key change must not leave the timer disarmed either.
+     */
+    it('keeps polling on the same interval after a key change', async () => {
+      const fetcher = vi.fn().mockResolvedValue(['a']);
+
+      const { rerender } = renderHookWithProviders(
+        ({ status }: { status: string }) =>
+          usePolledResource<string[]>({
+            fetcher,
+            fetcherKey: [status],
+            intervalMs: INTERVAL,
+            enabled: true,
+          }),
+        { initialProps: { status: 'pending' } },
+      );
+
+      await flush();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        rerender({ status: 'parked' });
+      });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+
+      await flush(INTERVAL);
+      expect(fetcher).toHaveBeenCalledTimes(3);
+
+      await flush(INTERVAL);
+      expect(fetcher).toHaveBeenCalledTimes(4);
+    });
+
+    /**
+     * `enabled: false` outranks everything, including this. A key change while
+     * unwired must not conjure the request the whole `unwired` contract exists
+     * to prevent.
+     */
+    it('issues nothing on a key change while disabled', async () => {
+      const fetcher = vi.fn().mockResolvedValue(['a']);
+
+      const { rerender } = renderHookWithProviders(
+        ({ status }: { status: string }) =>
+          usePolledResource<string[]>({
+            fetcher,
+            fetcherKey: [status],
+            intervalMs: INTERVAL,
+            enabled: false,
+          }),
+        { initialProps: { status: 'pending' } },
+      );
+
+      await act(async () => {
+        rerender({ status: 'parked' });
+      });
+
+      expect(fetcher).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A key change on a hidden tab spends quota for nobody (VISION §11). It is
+     * deferred to the resume, which already re-reads — and the resume must read
+     * the NEW key, not the one that was current when the tab was hidden.
+     */
+    it('defers a key change made while hidden to the resume, once', async () => {
+      const read = vi.fn(async (status: string) => [status]);
+
+      const { result, rerender } = renderHookWithProviders(
+        ({ status }: { status: string }) =>
+          usePolledResource<string[]>({
+            fetcher: () => read(status),
+            fetcherKey: [status],
+            intervalMs: INTERVAL,
+            enabled: true,
+          }),
+        { initialProps: { status: 'pending' } },
+      );
+
+      await flush();
+      expect(read).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        setVisibility('hidden');
+      });
+
+      await act(async () => {
+        rerender({ status: 'parked' });
+      });
+      expect(read).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        setVisibility('visible');
+      });
+      await flush();
+
+      // One read, not two: the resume's immediate fetch IS the key change's.
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(read).toHaveBeenLastCalledWith('parked');
+      expect(result.current.data).toEqual(['parked']);
+    });
+
+    /**
+     * The same collision on the other axis: a key that changes in the same
+     * commit as `enabled` flipping true. Single-flight is what makes this one
+     * request rather than an immediate abort-and-reissue.
+     */
+    it('does not double-fire when the key changes as enabled flips true', async () => {
+      const read = vi.fn(async (status: string) => [status]);
+
+      const { rerender } = renderHookWithProviders(
+        ({ status, enabled }: { status: string; enabled: boolean }) =>
+          usePolledResource<string[]>({
+            fetcher: () => read(status),
+            fetcherKey: [status],
+            intervalMs: INTERVAL,
+            enabled,
+          }),
+        { initialProps: { status: 'pending', enabled: false } },
+      );
+
+      await act(async () => {
+        rerender({ status: 'parked', enabled: true });
+      });
+      await flush();
+
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(read).toHaveBeenLastCalledWith('parked');
+    });
+  });
+
+  /**
    * Issue #169. The cockpit's first screen was blank for a full poll interval
    * on every load, in a real browser, while the API served every request in
    * ~50 ms. 1,770 web tests passed throughout, because none of them mounted
