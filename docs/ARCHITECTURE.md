@@ -1,10 +1,10 @@
 # System Architecture
 
 **OPIFEX**
-**Version:** 1.0
-**Last Updated:** January 2026
+**Version:** 1.1
+**Last Updated:** August 2026
 
-This document provides a comprehensive architectural overview of OPIFEX, designed for AI-assisted development with specialized coding agents.
+This document provides a comprehensive architectural overview of OPIFEX, designed for AI-assisted development with specialized coding agents. It covers both the AI software factory (control plane, §3) and the web application foundation it is built on (§4 onward). For why the factory is built the way it is, start with [`VISION.MD`](../VISION.MD).
 
 ---
 
@@ -12,19 +12,20 @@ This document provides a comprehensive architectural overview of OPIFEX, designe
 
 1. [Executive Summary](#1-executive-summary)
 2. [System Overview](#2-system-overview)
-3. [Architecture Principles](#3-architecture-principles)
-4. [Technology Stack](#4-technology-stack)
-5. [Component Architecture](#5-component-architecture)
-6. [Data Architecture](#6-data-architecture)
-7. [Security Architecture](#7-security-architecture)
-8. [API Architecture](#8-api-architecture)
-9. [Frontend Architecture](#9-frontend-architecture)
-10. [Infrastructure Architecture](#10-infrastructure-architecture)
-11. [Observability Architecture](#11-observability-architecture)
-12. [Testing Architecture](#12-testing-architecture)
-13. [Agent-Based Development Model](#13-agent-based-development-model)
-14. [Development Workflows](#14-development-workflows)
-15. [Appendices](#15-appendices)
+3. [Control Plane Architecture](#3-control-plane-architecture)
+4. [Architecture Principles](#4-architecture-principles)
+5. [Technology Stack](#5-technology-stack)
+6. [Component Architecture](#6-component-architecture)
+7. [Data Architecture](#7-data-architecture)
+8. [Security Architecture](#8-security-architecture)
+9. [API Architecture](#9-api-architecture)
+10. [Frontend Architecture](#10-frontend-architecture)
+11. [Infrastructure Architecture](#11-infrastructure-architecture)
+12. [Observability Architecture](#12-observability-architecture)
+13. [Testing Architecture](#13-testing-architecture)
+14. [Agent-Based Development Model](#14-agent-based-development-model)
+15. [Development Workflows](#15-development-workflows)
+16. [Appendices](#16-appendices)
 
 ---
 
@@ -32,28 +33,50 @@ This document provides a comprehensive architectural overview of OPIFEX, designe
 
 ### Purpose
 
-OPIFEX is a production-grade web application template that establishes:
+OPIFEX is an **AI software factory** — a control plane that turns GitHub issues
+into work orders, dispatches them to coding-agent runners, watches those runs
+continuously, recovers from what is recoverable, escalates what is not, and
+writes the complete record of what happened back into GitHub.
+[`VISION.MD`](../VISION.MD) is the source of truth for _why_ it is built this
+way; this document describes _what exists and where it lives_. Where the two
+would otherwise repeat each other, this document links to VISION rather than
+restating it.
 
-- **Secure Authentication**: OAuth 2.0 with Google (extensible to other providers)
-- **Fine-Grained Authorization**: Role-Based Access Control (RBAC) with permissions
-- **Flexible Configuration**: JSONB-based settings framework for system and user preferences
-- **Enterprise Observability**: OpenTelemetry instrumentation with traces, metrics, and structured logs
-- **Agent-Friendly Development**: Modular architecture designed for AI coding agent collaboration
+The factory is built on, and depends on, a production-grade web application
+foundation — OAuth authentication, RBAC authorization, a Postgres/Prisma data
+layer, and OpenTelemetry observability. That foundation is not legacy
+scaffolding left over from an earlier product: the cockpit (§3.7) is a real
+application on top of it, and the same auth/RBAC/audit machinery gates every
+factory action a human takes. §4 onward documents that foundation in the depth
+it has always had. §3 documents the control plane that the rest of this
+document does not cover.
+
+**Read this document knowing that most of the control plane defaults to off.**
+The reconciler, dispatch, GitHub writes, the supervisor, and the promotion
+ladder are each gated behind an environment variable that defaults to `false`
+or unset (`RECONCILER_ENABLED`, `DISPATCH_ENABLED`, `GITHUB_WRITES_ENABLED`,
+`SUPERVISOR_ENABLED`, `PROMOTION_LADDER_ENABLED` — see
+`infra/compose/.env.example`). The code described in §3 exists and is tested;
+whether it is _running_ on a given deployment is a separate, operational
+question answered by that file and by
+[`docs/RUNBOOK-observation-week.md`](RUNBOOK-observation-week.md).
 
 ### Key Characteristics
 
-| Aspect                 | Description                                       |
-| ---------------------- | ------------------------------------------------- |
-| **Architecture Style** | Monorepo with API-first design                    |
-| **Hosting Model**      | Same-origin (UI and API share base URL)           |
-| **Auth Strategy**      | OAuth 2.0 + JWT with refresh token rotation       |
-| **Access Control**     | Email allowlist + RBAC (Admin/Contributor/Viewer) |
-| **Data Storage**       | PostgreSQL with Prisma ORM                        |
-| **Extensibility**      | JSONB settings, modular NestJS structure          |
+| Aspect                            | Description                                                                                                                           |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **System Type**                   | AI software factory: a deterministic control plane orchestrating non-deterministic coding-agent runners (VISION §3.1)                 |
+| **Control Loop**                  | A reconciler (§3.1) — observes GitHub and its own state, computes desired state, diffs, acts — not a job queue                        |
+| **Runner Fleet**                  | One runner today, `claude-code-local` (§3.4); the seam is vendor-neutral by design but a second runner is not yet built (VISION §3.7) |
+| **Foundation Architecture Style** | Monorepo with API-first design                                                                                                        |
+| **Foundation Hosting Model**      | Same-origin (UI and API share base URL)                                                                                               |
+| **Foundation Auth Strategy**      | OAuth 2.0 + JWT with refresh token rotation                                                                                           |
+| **Foundation Access Control**     | Email allowlist + RBAC (Admin/Contributor/Viewer)                                                                                     |
+| **Foundation Data Storage**       | PostgreSQL with Prisma ORM                                                                                                            |
 
 ### Target Audience
 
-- **AI Coding Agents**: Primary consumers for automated development tasks
+- **AI Coding Agents**: Primary consumers for automated development tasks — and, via the runner seam (§3.4), the workers the factory itself dispatches
 - **Backend Developers**: NestJS/Node.js engineers
 - **Frontend Developers**: React/TypeScript engineers
 - **DevOps Engineers**: Infrastructure and deployment specialists
@@ -62,6 +85,18 @@ OPIFEX is a production-grade web application template that establishes:
 ---
 
 ## 2. System Overview
+
+This section diagrams the **web application foundation** — nginx, the React
+frontend, the NestJS API, Postgres, and the observability stack — the same
+process and the same request path that every factory module in §3 runs
+inside. There is no separate "factory server": the reconciler, dispatch,
+runners, watchdog, escalations, supervisor and cockpit modules are NestJS
+modules registered in the same `AppModule` (`apps/api/src/app.module.ts`)
+as `AuthModule` and `SettingsModule`, scheduled with the same
+`@nestjs/schedule`, and reachable through the same nginx `/api/*` route.
+The Controllers/Services lists below are illustrative of the pattern, not
+exhaustive — see §6.1 for the full module inventory and §3 for what the
+factory-specific modules do.
 
 ### High-Level Architecture
 
@@ -149,9 +184,272 @@ OPIFEX is a production-grade web application template that establishes:
 
 ---
 
-## 3. Architecture Principles
+## 3. Control Plane Architecture
 
-### 3.1 Separation of Concerns
+This section is the one this document was missing: the AI software factory
+itself. It describes **structure and where the code lives** — module paths,
+data flow, seams. For _why_ each piece is shaped this way, follow the VISION
+references rather than expecting the reasoning restated here.
+
+Every module below lives under `apps/api/src/` and is registered in
+`AppModule` (`apps/api/src/app.module.ts`) alongside the foundation modules
+from §6 — there is no separate factory process or deployment. Nearly every
+capability described here is real, tested code that is **off by default**;
+§3.9 is the map from feature to the environment variable that turns it on.
+
+### 3.1 The reconciler loop
+
+`apps/api/src/reconciler/` — `ReconcilerService` (observes GitHub, projects
+desired state, diffs; writes only to its own database, never to GitHub) and
+`ReconcilerTask` (`reconciler.task.ts`, the scheduler that drives it and the
+one place that also calls the write-side executors).
+
+VISION §4: the orchestrator is a **reconciler, not a job queue**. Each tick
+(`RECONCILER_INTERVAL_MS`, default 60s):
+
+1. **Observe** — read every repository with `observeEnabled` (open issues,
+   commits, PR checks) via `GitHubReadService`. Sequential per repository, not
+   parallel, to protect the shared GitHub rate-limit budget
+   (`GITHUB_RATE_LIMIT_RESERVE`).
+2. **Project desired state** — `reconciler/projection/desired-state.ts` turns
+   the observed issues, existing work orders, and check verdicts
+   (`projection/check-verdict.ts`) into what _should_ be true.
+3. **Diff** — `reconciler/diff/diff-engine.ts` compares observed and desired
+   state and produces a list of `ReconcileAction`s (`diff/actions.types.ts`):
+   mirror-label writes, escalations, dispatch signals. Nothing here executes
+   anything — the diff engine only computes.
+4. **Execute** — two separate executors, gated independently:
+   - `execute/mirror-label.executor.ts` writes the `factory/*` mirror labels,
+     gated by a repository's `mirrorLabelsEnabled` flag **and**
+     `GITHUB_WRITES_ENABLED`.
+   - `execute/spec-feedback.executor.ts` comments on an issue when its work
+     order was rejected for a spec-quality reason.
+5. **Record** — every tick, quiet or not, is persisted by
+   `log/reconcile-log.service.ts` and readable at `GET /api/reconciler/ticks`
+   (`reconciler.controller.ts`), retained for `RECONCILER_LOG_RETENTION_DAYS`.
+
+`ReconcilerService` cannot write to GitHub: it depends only on
+`GitHubReadService`. `ReconcilerTask.runOnce()` is the one place that both
+computes (via the reconciler and the watchdog, §3.5) and calls the write-side
+executors — see the extensive comments in `reconciler.task.ts` for exactly
+why that separation is load-bearing for the observation-week posture VISION
+§12 requires.
+
+Human intent is read back through **input labels**
+(`github/labels/factory-labels.ts`: `factory:ready`, `factory:hold`,
+`factory:clear-quarantine`) — the only steering surface, per VISION §3.3.
+
+### 3.2 Work orders
+
+`apps/api/src/work-orders/`:
+
+- `issue-projection.ts` — reads an issue's labels and body into a
+  `IssueProjection` (task spec, acceptance criteria, path constraints,
+  `needs:*` runner requirements, `tier:*` model size — see
+  `docs/RUNBOOK-observation-week.md` §3 for the full label vocabulary).
+- `work-order-generator.ts` — a pure function from `IssueProjection` +
+  pinned base commit to a `GeneratedWorkOrder`. VISION §4: a work order is a
+  **projection** of an issue, never an independent source of truth, and the
+  base commit is pinned at generation and never re-resolved (issue #62).
+- `work-order-identity.ts` — the deterministic identity scheme:
+  `wo_<repo>_<issue>_<baseCommit7>_a<attempt>` and its branch
+  `factory/<issue>-<baseCommit7>-a<attempt>`, which is what makes a re-run
+  idempotent.
+- `acceptance-criteria.ts` — assesses whether an issue's criteria are testable
+  enough to generate a work order at all; a rejection produces spec feedback
+  (§3.1 step 4) rather than a work order.
+- `work-order-document.ts` / `work-order-rehydrate.ts` — the fenced-JSON
+  authorization record posted to the issue, and reading it back.
+- `work-order-records.service.ts` — persistence (`WorkOrder` / `Run` Prisma
+  models).
+
+Schema: `schemas/work-order.schema.json`, versioned per ADR-0010.
+
+### 3.3 Dispatch and the runner seam
+
+`apps/api/src/dispatch/` and `apps/api/src/runners/runner.types.ts`.
+
+The seam is **four functions, and adding a fifth requires an ADR**
+(`RUNNER_SEAM_METHODS` in `runner.types.ts`, asserted by
+`runners/runner.seam.spec.ts`):
+
+```
+submit(WorkOrderSpec) -> RunHandle
+poll(handle)          -> RunPollResult (status + normalized events)
+cancel(handle)        -> void
+capabilities()        -> RunnerCapabilities
+```
+
+A `WorkOrderSpec` never names a runner — it declares `needs` (`RunnerNeed`:
+`full-streaming`, `cost-reporting`, `structured-rate-limits`,
+`own-infrastructure`) and an optional `modelTier`. Routing is
+`dispatch/dispatch-policy.ts`, a **pure function** (`decideDispatch`) run
+against real fleet state loaded by `dispatch/dispatch.service.ts`: registered
+runners' capability manifests, live-run counts against `maxConcurrency` and
+`DISPATCH_MAX_CONCURRENT`, and each runner's quota position (resolved from
+two independent signals — blocked runs and the runner's own rate-limit meter,
+`quota/quota-window.ts` — reconciled in `dispatch.service.ts`'s
+`resolveQuotaPosition`). `dispatch/dispatch-queue.service.ts` is what the
+reconciler task drains every tick (`drainDispatchQueue()`); a work order that
+cannot be placed **queues** rather than fails. `dispatch/run-executor.service.ts`
+is the actual `submit()` call site, gated by `DISPATCH_ENABLED`
+(§3.9) and `DISPATCH_RETRY_CEILING` (issue #66 quarantine policy).
+
+### 3.4 The claude-code-local runner
+
+`apps/api/src/runners/claude-code-local/` — the only implemented runner.
+Invoked as a **child process** (`process/child-process-supervisor.ts`,
+`process/run-command.ts`), not through the Agent SDK; see
+[ADR-0008](adr/0008-claude-code-local-invocation.md) for why. Streams the
+CLI's `stream-json` output through `stream-json-mapper.ts` into the six
+normalized run-event types (§3.5). `run-workspace.service.ts` manages one
+git checkout per work-order identity under `RUNNER_WORKSPACE_ROOT`, pinned to
+the work order's base commit.
+
+**There is no second runner.** VISION §6 names `claude-code-cloud` as a
+planned addition; it is vendor-blocked (issues #23, #102, #103) and does not
+exist in this codebase. Every reference to "the fleet" or "runners" in this
+document and in the code means a fleet of size one, routed through a seam
+built to hold more without implying more exist yet.
+
+`runners/runner-registration.service.ts` and `.task.ts` register a runner's
+capability manifest (schema: `schemas/runner-capability.schema.json`) into
+`fleet-state.service.ts`, which dispatch reads. `run-poller.service.ts` /
+`.task.ts` poll live runs (the runner-reported liveness source, §3.5).
+Enabled by `CLAUDE_CODE_LOCAL_ENABLED` (default `false`).
+
+### 3.5 Run events, liveness, and the watchdog
+
+`apps/api/src/run-events/` — the six normalized event types (VISION §9:
+`run.started`, `run.heartbeat`, `run.progress`, `run.blocked`,
+`run.completed`, `run.failed`), validated at ingestion
+(`run-event-validator.ts`) and exposed at `POST /api/runs/:id/events`
+(`run-events.controller.ts`). Every event carries a `source` distinguishing
+runner-reported from git-derived from control-plane-synthesized.
+
+Two **independent** liveness sources, per VISION §9:
+
+- **Runner-reported** — `runners/run-poller.service.ts`, from `poll()`.
+- **Git-derived** — `apps/api/src/liveness/` (`GitLivenessService`), watching
+  commits and PR/check-run activity on a run's branch. Built and run even
+  though the v1 runner does not strictly need it, specifically so the
+  abstraction is exercised by two independent sources rather than one.
+
+`apps/api/src/watchdog/` (`watchdog.service.ts`) judges every live and
+blocked run each tick, called from `ReconcilerTask.sweepWatchdog()` — **before**
+the reconciler's own tick, so verdicts are computed against the freshest
+observed state:
+
+- `silent-detection.ts` — no events at all → `kill-and-re-run`.
+- `loop-detection.ts` — tool-call signature repeating → `kill-and-re-plan`.
+  Reported `unavailable` (not "no loop found") for a runner whose
+  `streamingFidelity` cannot support it — see `check-coverage.ts`.
+- `blocked-parking.ts` — a dated rate-limit block → park with jitter,
+  auto-resume (issue #56).
+
+None of the watchdog's kill/re-run/re-plan actions execute yet; they are
+computed and, like the reconciler's own actions, recorded. `dead-time.service.ts`
+(`apps/api/src/dead-time/`) keeps the ledger behind VISION §10 metric 2
+("dead time per day") from the same sweep.
+
+### 3.6 Escalations and notifications
+
+`apps/api/src/escalations/` — VISION §9: **escalation is an action, not
+telemetry**. `EscalationsService.raiseFrom()` turns `escalate` actions from
+the reconciler and watchdog into persisted, deduplicated records (one per
+`(run, kind)`, never one per tick) — `escalations.controller.ts` exposes them
+at `GET /api/escalations`, including `GET /api/escalations/latency`, the
+endpoint behind VISION §1's detection-latency metric
+(`detection-latency.ts`).
+
+`apps/api/src/notifications/` delivers them: Web Push (RFC 8030) with VAPID,
+plus an independent fallback webhook path
+(`NOTIFY_FALLBACK_WEBHOOK_URL`) — see
+[ADR-0004](adr/0004-notification-transport.md). `EscalationDispatcher`
+(`escalation-dispatcher.service.ts`) is invoked every tick regardless of
+whether that tick raised anything new, because the queue is everything still
+outstanding, not just this pass's output.
+
+### 3.7 The cockpit read models
+
+`apps/api/src/cockpit/` — read-only, one controller/service pair per
+concern, all under `/api`:
+
+| Concern         | Controller                  | Route                                                                                         |
+| --------------- | --------------------------- | --------------------------------------------------------------------------------------------- |
+| Runs            | `runs.controller.ts`        | `GET /api/runs`, `GET /api/runs/:id`, `GET /api/runs/:id/events`                              |
+| Work orders     | `work-orders.controller.ts` | `GET /api/work-orders`, `GET /api/work-orders/:idOrIdentity`                                  |
+| Dispatch queue  | `queue.controller.ts`       | `GET /api/queue`, `POST /api/queue/:workOrderId/hold`, `POST /api/queue/:workOrderId/release` |
+| Cost            | `cost.controller.ts`        | `GET /api/cost/summary`                                                                       |
+| The six metrics | `metrics.controller.ts`     | `GET /api/metrics/summary` (VISION §10)                                                       |
+| Activity feed   | `events.controller.ts`      | `GET /api/events`                                                                             |
+
+Adjacent, related read/write surfaces registered alongside cockpit:
+`repositories.controller.ts` (`/api/repositories`, repository registration —
+see `docs/RUNBOOK-observation-week.md` §4), `quota.controller.ts`
+(`/api/quota`), `escalations.controller.ts`, and `reconciler.controller.ts`
+(the tick log, §3.1).
+
+The frontend cockpit consuming these lives at `apps/web/src/pages/`:
+`DashboardPage`, `ProjectsPage`, `QueuePage`, `RunsPage`, `RunDetailPage`,
+`WorkOrderDetailPage`, `CostPage`, `ApprovalsPage`/`ApprovalDetailPage`,
+`TrustPage`/`TrustGrantDetailPage` — built on the same React/MUI/context
+foundation as §10.
+
+### 3.8 The supervisor, autonomy, and the promotion ladder
+
+`apps/api/src/supervisor/` implements VISION §7's advisory agent — **observe
+only**, per the governing test "if the AI supervisor is offline, the factory
+keeps running." `invocation/supervisor.task.ts` runs it on a schedule (not
+per-event), gated by `SUPERVISOR_ENABLED` and its own metered spend ceiling
+(`SUPERVISOR_HARD_SPEND_CEILING_USD`, [ADR-0017](adr/0017-supervisor-spend-ceiling.md)),
+deliberately separate from the dispatch spend ceiling. It receives a rendered
+snapshot (`snapshot/render-snapshot.ts`) — the "stateless agent, stateful
+system" rule from VISION §7 — and its `proposers/` (spec-quality,
+run-diagnosis, issue-shaping, decomposition) write to a decision log
+(`decision-log/`, exposed at `GET /api/supervisor`), never to an executor.
+
+The **earned-autonomy** machinery around it is real and largely off by
+default:
+
+- `apps/api/src/trust/` — scoped, expiring, budget-capped trust grants
+  (`GET/POST /api/trust/grants`, `POST /api/trust/grants/:id/renew`), per VISION §8.
+- `apps/api/src/approvals/` — the approval gate and its timeout policy
+  ([ADR-0014](adr/0014-approval-timeout-precedence.md)), `/api/approvals`.
+- `apps/api/src/autonomy/` — the **never-trustable** boundary
+  ([ADR-0013](adr/0013-never-trustable-effects.md)): force-push, protected
+  branches, credentials, spend above the hard ceiling, and CI/policy/budget
+  configuration itself are refused regardless of any grant.
+- `apps/api/src/promotion/` — the promotion ladder (VISION §7's four rungs),
+  gated by `PROMOTION_LADDER_ENABLED`; demotion on regression is automatic,
+  promotion is not.
+
+### 3.9 Operating posture: what is on by default
+
+Every switch below lives in `infra/compose/.env.example`, with the reasoning
+recorded next to each one. All default to **off** or **read-only**:
+
+| Flag                        | Default | What it gates                                                                                                                                                |
+| --------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `RECONCILER_ENABLED`        | `false` | The tick runs at all (§3.1). Read-only even when `true`: the module imports the GitHub read service, not the write one.                                      |
+| `GITHUB_WRITES_ENABLED`     | `false` | Every GitHub write adapter (mirror labels, spec-feedback comments) returns `performed: false` and issues no request.                                         |
+| `DISPATCH_ENABLED`          | `false` | Whether `run-executor.service.ts` actually calls a runner's `submit()`. Off: the whole decision still runs and is logged as what it _would_ have dispatched. |
+| `CLAUDE_CODE_LOCAL_ENABLED` | `false` | Whether the local runner spawns subprocesses at all.                                                                                                         |
+| `SUPERVISOR_ENABLED`        | `false` | Whether the advisory agent runs on its schedule.                                                                                                             |
+| `PROMOTION_LADDER_ENABLED`  | `false` | Whether action classes are promoted or demoted; `false` pauses without revoking existing grants.                                                             |
+
+This is why VISION §12's roadmap phases are not a reliable guide to what is
+implemented versus what is running: the code for phases through at least 7
+exists in this repository, gated behind the flags above. Treat this table,
+not the roadmap, as the answer to "is X actually happening in a given
+deployment" — and see `docs/RUNBOOK-observation-week.md` for the sequence in
+which an operator turns these on.
+
+---
+
+## 4. Architecture Principles
+
+### 4.1 Separation of Concerns
 
 | Layer              | Responsibility                  | Location                      |
 | ------------------ | ------------------------------- | ----------------------------- |
@@ -163,7 +461,7 @@ OPIFEX is a production-grade web application template that establishes:
 
 **Rule**: Frontend handles presentation only. All business logic resides in the API.
 
-### 3.2 Same-Origin Hosting
+### 4.2 Same-Origin Hosting
 
 All components served from the same base URL via Nginx reverse proxy:
 
@@ -176,14 +474,14 @@ All components served from the same base URL via Nginx reverse proxy:
 
 **Benefits**: No CORS complexity, simplified cookie handling, unified deployment.
 
-### 3.3 Security by Default
+### 4.3 Security by Default
 
 - **Authentication Required**: All API endpoints require JWT unless explicitly marked `@Public()`
 - **Authorization Enforced**: RBAC guards verify roles/permissions before controller execution
 - **Input Validated**: Zod schemas validate all request payloads
 - **Secrets Protected**: Environment variables only, never committed to source
 
-### 3.4 API-First Design
+### 4.4 API-First Design
 
 - **Contract-Driven**: OpenAPI specification generated from code annotations
 - **Versioned**: API paths support future versioning (`/api/v1/`)
@@ -192,7 +490,7 @@ All components served from the same base URL via Nginx reverse proxy:
   document is assembled in `apps/api/src/openapi/` and linted by Spectral in CI
   (see [`docs/specs/api-documentation.md`](specs/api-documentation.md))
 
-### 3.5 Observable by Design
+### 4.5 Observable by Design
 
 - **Traced**: OpenTelemetry auto-instrumentation for all HTTP and DB operations
 - **Metered**: Request counts, durations, error rates exposed as metrics
@@ -201,9 +499,9 @@ All components served from the same base URL via Nginx reverse proxy:
 
 ---
 
-## 4. Technology Stack
+## 5. Technology Stack
 
-### 4.1 Core Technologies
+### 5.1 Core Technologies
 
 | Component              | Technology        | Version   | Purpose               |
 | ---------------------- | ----------------- | --------- | --------------------- |
@@ -216,7 +514,7 @@ All components served from the same base URL via Nginx reverse proxy:
 | **Database**           | PostgreSQL        | 16+       | Data persistence      |
 | **ORM**                | Prisma            | 7.x       | Database access       |
 
-### 4.2 Authentication & Security
+### 5.2 Authentication & Security
 
 | Component            | Technology         | Purpose                   |
 | -------------------- | ------------------ | ------------------------- |
@@ -226,7 +524,7 @@ All components served from the same base URL via Nginx reverse proxy:
 | **Validation**       | Zod                | Runtime schema validation |
 | **Security Headers** | Helmet (via Nginx) | HTTP security headers     |
 
-### 4.3 Infrastructure
+### 5.3 Infrastructure
 
 | Component            | Technology              | Purpose                           |
 | -------------------- | ----------------------- | --------------------------------- |
@@ -236,7 +534,7 @@ All components served from the same base URL via Nginx reverse proxy:
 | **Observability**    | OpenTelemetry + Uptrace | Traces, metrics, logs             |
 | **Logging**          | Pino                    | Structured JSON logging           |
 
-### 4.4 Testing
+### 5.4 Testing
 
 | Component                | Technology                         | Purpose                                    |
 | ------------------------ | ---------------------------------- | ------------------------------------------ |
@@ -256,9 +554,9 @@ All components served from the same base URL via Nginx reverse proxy:
 
 ---
 
-## 5. Component Architecture
+## 6. Component Architecture
 
-### 5.1 Repository Structure
+### 6.1 Repository Structure
 
 ```
 opifex/
@@ -281,6 +579,28 @@ opifex/
 │   │   │   │   ├── filters/
 │   │   │   │   └── interceptors/
 │   │   │   ├── config/               # Configuration module
+│   │   │   │
+│   │   │   │   # Control-plane modules (§3) — same app, same process
+│   │   │   ├── github/               # GitHub read/write/git-branch adapters
+│   │   │   ├── repositories/         # Registered repositories (observe/dispatch flags)
+│   │   │   ├── reconciler/           # The control loop (§3.1)
+│   │   │   ├── work-orders/          # Issue → work order projection (§3.2)
+│   │   │   ├── dispatch/             # Runner routing and the executor (§3.3)
+│   │   │   ├── runners/              # The runner seam + claude-code-local (§3.4)
+│   │   │   ├── run-events/           # The six normalized event types (§3.5)
+│   │   │   ├── liveness/             # Git-derived liveness (§3.5)
+│   │   │   ├── watchdog/             # Silence/loop/block detection (§3.5)
+│   │   │   ├── dead-time/            # Metric 2 ledger (§3.5)
+│   │   │   ├── escalations/          # Escalation records (§3.6)
+│   │   │   ├── notifications/        # Web Push + fallback webhook (§3.6)
+│   │   │   ├── cockpit/              # Read models: runs, queue, cost, metrics (§3.7)
+│   │   │   ├── quota/                # Runner rate-limit meter
+│   │   │   ├── supervisor/           # The advisory agent, observe-only (§3.8)
+│   │   │   ├── trust/                # Trust grants (§3.8)
+│   │   │   ├── approvals/            # The approval gate (§3.8)
+│   │   │   ├── autonomy/             # The never-trustable boundary (§3.8)
+│   │   │   ├── promotion/            # The promotion ladder (§3.8)
+│   │   │   ├── contracts/            # Generated types from schemas/*.schema.json
 │   │   │   └── main.ts               # Application entry
 │   │   ├── prisma/
 │   │   │   ├── schema.prisma         # Database schema
@@ -292,7 +612,7 @@ opifex/
 │   └── web/                          # Frontend (React + MUI)
 │       ├── src/
 │       │   ├── components/           # Reusable UI components
-│       │   ├── pages/                # Page components
+│       │   ├── pages/                # Page components, including the cockpit (§3.7)
 │       │   ├── contexts/             # React context providers
 │       │   ├── hooks/                # Custom hooks
 │       │   ├── services/             # API client
@@ -301,6 +621,11 @@ opifex/
 │       │   └── __tests__/            # Component tests
 │       └── Dockerfile
 │
+├── schemas/                           # Work order / runner capability / run event
+│   ├── work-order.schema.json         # JSON Schemas (ADR-0010 versioning), with
+│   ├── runner-capability.schema.json  # worked and invalid examples under
+│   └── run-event.schema.json          # schemas/examples/
+│
 ├── docs/                             # Documentation
 │   ├── ARCHITECTURE.md               # This document
 │   ├── SECURITY-ARCHITECTURE.md      # Security details
@@ -308,7 +633,12 @@ opifex/
 │   ├── DEVELOPMENT.md                # Development guide
 │   ├── TESTING.md                    # Testing guide
 │   ├── DEVICE-AUTH.md                # Device auth guide
-│   ├── System_Specification_Document.md  # Full specification
+│   ├── PROVENANCE.md                 # The commit trailer vocabulary
+│   ├── RUNBOOK-observation-week.md   # Turning the factory on
+│   ├── personal-access-tokens.md     # PAT feature guide
+│   ├── ssl-nginx-setup.md            # Dev-VPS deployment runbook
+│   ├── System_Specification_Document.md  # Pre-pivot spec; superseded by VISION.MD, kept for history
+│   ├── adr/                          # Architecture decision records (see adr/README.md)
 │   └── specs/                        # Implementation specifications
 │       ├── 01-project-setup.md
 │       ├── 02-database-schema.md
@@ -320,7 +650,7 @@ opifex/
 │   │   ├── dev.compose.yml           # Development overrides
 │   │   ├── prod.compose.yml          # Production overrides
 │   │   ├── otel.compose.yml          # Observability stack
-│   │   └── .env.example              # Environment template
+│   │   └── .env.example              # Environment template — the canonical env reference
 │   ├── nginx/
 │   │   └── nginx.conf                # Reverse proxy config
 │   └── otel/
@@ -336,10 +666,11 @@ opifex/
 │       └── docs-dev.md               # Documentation specialist
 │
 ├── CLAUDE.md                         # AI assistant guidance
+├── VISION.MD                         # Why the factory is built this way — north star
 └── README.md                         # Project overview
 ```
 
-### 5.2 Backend Module Structure
+### 6.2 Backend Module Structure
 
 Each NestJS module follows a consistent pattern:
 
@@ -356,7 +687,7 @@ module-name/
 └── module-name.controller.spec.ts  # Unit tests
 ```
 
-### 5.3 Frontend Component Structure
+### 6.3 Frontend Component Structure
 
 ```
 components/
@@ -372,7 +703,7 @@ pages/
 │   └── index.ts                  # Barrel export
 ```
 
-### 5.4 Storage Subsystem
+### 6.4 Storage Subsystem
 
 The storage system provides file upload and management capabilities with support for large files through resumable multipart uploads.
 
@@ -474,9 +805,9 @@ apps/api/src/storage/
 
 ---
 
-## 6. Data Architecture
+## 7. Data Architecture
 
-### 6.1 Entity Relationship Diagram
+### 7.1 Entity Relationship Diagram
 
 ```
 ┌────────────────────┐       ┌────────────────────┐
@@ -581,7 +912,7 @@ apps/api/src/storage/
 └────────────────────┘
 ```
 
-### 6.2 JSONB Schema Definitions
+### 7.2 JSONB Schema Definitions
 
 #### User Settings Shape
 
@@ -613,7 +944,7 @@ apps/api/src/storage/
 }
 ```
 
-### 6.3 Database Design Principles
+### 7.3 Database Design Principles
 
 | Principle                 | Implementation                                           |
 | ------------------------- | -------------------------------------------------------- |
@@ -626,9 +957,9 @@ apps/api/src/storage/
 
 ---
 
-## 7. Security Architecture
+## 8. Security Architecture
 
-### 7.1 Authentication Flow
+### 8.1 Authentication Flow
 
 ```
 ┌─────────┐          ┌─────────┐          ┌─────────┐          ┌─────────┐
@@ -675,7 +1006,7 @@ apps/api/src/storage/
      │                    │                    │                    │
 ```
 
-### 7.2 Token Strategy
+### 8.2 Token Strategy
 
 | Token Type        | Storage (Client) | Storage (Server)  | Lifetime | Purpose                  |
 | ----------------- | ---------------- | ----------------- | -------- | ------------------------ |
@@ -689,7 +1020,7 @@ apps/api/src/storage/
 - Refresh token rotation on each use (reuse detection)
 - Database allows server-side revocation
 
-### 7.3 RBAC Model
+### 8.3 RBAC Model
 
 ```
                     ┌─────────────────────────────────────────────┐
@@ -725,7 +1056,7 @@ apps/api/src/storage/
                         └───────────────┘
 ```
 
-### 7.4 Access Control Layers
+### 8.4 Access Control Layers
 
 ```
 Request → Nginx → JwtAuthGuard → RolesGuard → PermissionsGuard → Controller
@@ -742,7 +1073,7 @@ Request → Nginx → JwtAuthGuard → RolesGuard → PermissionsGuard → Contr
             └── Security headers, rate limiting (optional)
 ```
 
-### 7.5 Email Allowlist
+### 8.5 Email Allowlist
 
 Before OAuth authentication completes:
 
@@ -760,9 +1091,9 @@ Before OAuth authentication completes:
 
 ---
 
-## 8. API Architecture
+## 9. API Architecture
 
-### 8.1 Endpoint Categories
+### 9.1 Endpoint Categories
 
 | Category            | Base Path                | Auth Required | Description               |
 | ------------------- | ------------------------ | ------------- | ------------------------- |
@@ -773,7 +1104,7 @@ Before OAuth authentication completes:
 | **System Settings** | `/api/system-settings/*` | Yes (Admin)   | App configuration         |
 | **Allowlist**       | `/api/allowlist/*`       | Yes (Admin)   | Access control            |
 
-### 8.2 Complete Endpoint Reference
+### 9.2 Complete Endpoint Reference
 
 #### Authentication Endpoints
 
@@ -835,7 +1166,7 @@ Before OAuth authentication completes:
 | `GET`  | `/api/health/live`  | Public | Liveness probe         |
 | `GET`  | `/api/health/ready` | Public | Readiness probe (+ DB) |
 
-### 8.3 Response Format
+### 9.3 Response Format
 
 #### Success Response
 
@@ -869,9 +1200,9 @@ Before OAuth authentication completes:
 
 ---
 
-## 9. Frontend Architecture
+## 10. Frontend Architecture
 
-### 9.1 Page Structure
+### 10.1 Page Structure
 
 | Page              | Route             | Auth     | Role  | Purpose                     |
 | ----------------- | ----------------- | -------- | ----- | --------------------------- |
@@ -886,7 +1217,7 @@ Before OAuth authentication completes:
 
 **Note:** The `/testing/login` route is excluded from production builds via `import.meta.env.PROD` check.
 
-### 9.2 Context Providers
+### 10.2 Context Providers
 
 ```tsx
 <App>
@@ -912,7 +1243,7 @@ Before OAuth authentication completes:
 </App>
 ```
 
-### 9.3 Authentication State
+### 10.3 Authentication State
 
 ```typescript
 interface AuthContext {
@@ -926,7 +1257,7 @@ interface AuthContext {
 }
 ```
 
-### 9.4 Protected Routes
+### 10.4 Protected Routes
 
 ```tsx
 <Route
@@ -941,9 +1272,9 @@ interface AuthContext {
 
 ---
 
-## 10. Infrastructure Architecture
+## 11. Infrastructure Architecture
 
-### 10.1 Docker Services
+### 11.1 Docker Services
 
 ```yaml
 # Core Services (base.compose.yml)
@@ -962,7 +1293,7 @@ services:
   clickhouse: # Uptrace storage backend
 ```
 
-### 10.2 Network Topology
+### 11.2 Network Topology
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -995,7 +1326,7 @@ services:
 to a database you provide via the `POSTGRES_*` variables; only
 `infra/compose/test.compose.yml` starts a Postgres container, for tests.
 
-### 10.3 Environment Configuration
+### 11.3 Environment Configuration
 
 Key environment variables (see `infra/compose/.env.example`):
 
@@ -1036,9 +1367,9 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 
 ---
 
-## 11. Observability Architecture
+## 12. Observability Architecture
 
-### 11.1 Signal Types
+### 12.1 Signal Types
 
 | Signal      | Collection                    | Storage            | Purpose                |
 | ----------- | ----------------------------- | ------------------ | ---------------------- |
@@ -1046,7 +1377,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 | **Metrics** | OTEL SDK                      | Uptrace/ClickHouse | Performance monitoring |
 | **Logs**    | Pino structured logs          | Uptrace/ClickHouse | Debugging, audit       |
 
-### 11.2 Trace Propagation
+### 12.2 Trace Propagation
 
 ```
 Request → Nginx → API → Database
@@ -1055,7 +1386,7 @@ Request → Nginx → API → Database
                                   spans: [nginx, api, db-query]
 ```
 
-### 11.3 Log Correlation
+### 12.3 Log Correlation
 
 ```json
 {
@@ -1069,7 +1400,7 @@ Request → Nginx → API → Database
 }
 ```
 
-### 11.4 Health Checks
+### 12.4 Health Checks
 
 | Endpoint            | Purpose              | Checks                  |
 | ------------------- | -------------------- | ----------------------- |
@@ -1078,9 +1409,9 @@ Request → Nginx → API → Database
 
 ---
 
-## 12. Testing Architecture
+## 13. Testing Architecture
 
-### 12.1 Testing Strategy Overview
+### 13.1 Testing Strategy Overview
 
 The project uses a **mocked database approach** for all tests by default. This provides fast, isolated tests without requiring a running PostgreSQL instance.
 
@@ -1111,7 +1442,7 @@ The project uses a **mocked database approach** for all tests by default. This p
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 12.2 Backend Test Structure
+### 13.2 Backend Test Structure
 
 ```
 apps/api/
@@ -1171,7 +1502,7 @@ apps/api/
         └── device-auth.integration.spec.ts
 ```
 
-### 12.3 Backend Mocking Strategy
+### 13.3 Backend Mocking Strategy
 
 #### Prisma Mocking with jest-mock-extended
 
@@ -1249,7 +1580,7 @@ describe('Auth Controller (Integration)', () => {
 });
 ```
 
-### 12.4 Frontend Test Structure
+### 13.4 Frontend Test Structure
 
 ```
 apps/web/src/
@@ -1286,7 +1617,7 @@ apps/web/src/
         └── api.test.ts
 ```
 
-### 12.5 Frontend Mocking Strategy
+### 13.5 Frontend Mocking Strategy
 
 #### MSW (Mock Service Worker)
 
@@ -1371,7 +1702,7 @@ export function renderWithProviders(ui: React.ReactElement, options = {}) {
 }
 ```
 
-### 12.6 Test Commands
+### 13.6 Test Commands
 
 #### Backend
 
@@ -1399,7 +1730,7 @@ npm run test:ui             # Open Vitest UI (browser-based)
 npm run test:ci             # CI mode (coverage + JUnit reporter)
 ```
 
-### 12.7 Test Configuration
+### 13.7 Test Configuration
 
 #### Backend (Jest)
 
@@ -1439,7 +1770,7 @@ export default defineConfig({
 });
 ```
 
-### 12.8 Key Testing Patterns
+### 13.8 Key Testing Patterns
 
 | Pattern               | Backend                           | Frontend                              |
 | --------------------- | --------------------------------- | ------------------------------------- |
@@ -1450,7 +1781,7 @@ export default defineConfig({
 | **Async Handling**    | `async/await` with Jest           | `waitFor()` from RTL                  |
 | **User Interactions** | N/A                               | `userEvent` from @testing-library     |
 
-### 12.9 Important Notes
+### 13.9 Important Notes
 
 1. **No Real Database Required**: All tests run with mocked Prisma - no PostgreSQL needed
 2. **Test File Naming**:
@@ -1463,9 +1794,9 @@ export default defineConfig({
 
 ---
 
-## 13. Agent-Based Development Model
+## 14. Agent-Based Development Model
 
-### 13.1 Specialized Agents
+### 14.1 Specialized Agents
 
 This project uses specialized AI coding agents for different domains:
 
@@ -1477,7 +1808,7 @@ This project uses specialized AI coding agents for different domains:
 | `testing-dev`  | `.claude/agents/testing-dev.md`  | Quality       | Jest, Supertest, Vitest, RTL, type checking      |
 | `docs-dev`     | `.claude/agents/docs-dev.md`     | Documentation | Architecture, API, security docs                 |
 
-### 13.2 Agent Invocation Rules
+### 14.2 Agent Invocation Rules
 
 **MANDATORY**: All development tasks MUST be delegated to the appropriate agent.
 
@@ -1489,7 +1820,7 @@ This project uses specialized AI coding agents for different domains:
 | Write tests      | `testing-dev`  | "Add integration tests for auth"  |
 | Update docs      | `docs-dev`     | "Document new endpoint in API.md" |
 
-### 13.3 Multi-Agent Workflow
+### 14.3 Multi-Agent Workflow
 
 For features spanning multiple domains, invoke agents sequentially:
 
@@ -1503,7 +1834,7 @@ Feature: "Add user notification preferences"
 5. docs-dev      → Update documentation
 ```
 
-### 13.4 Agent Context
+### 14.4 Agent Context
 
 Each agent has full context of:
 
@@ -1513,7 +1844,7 @@ Each agent has full context of:
 - Security requirements
 - Testing standards
 
-### 13.5 Orchestration Responsibilities
+### 14.5 Orchestration Responsibilities
 
 The orchestrating agent (Claude) handles:
 
@@ -1533,9 +1864,9 @@ The orchestrating agent (Claude) handles:
 
 ---
 
-## 14. Development Workflows
+## 15. Development Workflows
 
-### 14.1 Local Development Setup
+### 15.1 Local Development Setup
 
 ```bash
 # 1. Clone repository
@@ -1561,7 +1892,7 @@ exit
 # API reference: http://localhost:3535/api/docs
 ```
 
-### 14.2 Database Changes
+### 15.2 Database Changes
 
 ```bash
 # 1. Modify schema
@@ -1578,7 +1909,7 @@ npm run prisma:generate
 # Edit apps/api/prisma/seed.ts
 ```
 
-### 14.3 Adding New Features
+### 15.3 Adding New Features
 
 1. **Plan**: Identify which agents are needed
 2. **Database**: Schema changes via `database-dev`
@@ -1587,9 +1918,9 @@ npm run prisma:generate
 5. **Testing**: Test coverage via `testing-dev`
 6. **Documentation**: Updates via `docs-dev`
 
-### 14.4 Testing
+### 15.4 Testing
 
-See [Section 12: Testing Architecture](#12-testing-architecture) for comprehensive testing documentation.
+See [Section 13: Testing Architecture](#13-testing-architecture) for comprehensive testing documentation.
 
 ```bash
 # Backend tests (all use mocked database)
@@ -1612,9 +1943,9 @@ cd apps/web && npm run typecheck
 
 ---
 
-## 15. Appendices
+## 16. Appendices
 
-### 15.1 Quick Reference
+### 16.1 Quick Reference
 
 #### Service URLs (Development)
 
@@ -1645,19 +1976,25 @@ cd apps/api && npm test
 cd apps/web && npm test
 ```
 
-### 15.2 Related Documents
+### 16.2 Related Documents
 
-| Document                                                             | Purpose                         |
-| -------------------------------------------------------------------- | ------------------------------- |
-| [System_Specification_Document.md](System_Specification_Document.md) | Full system requirements        |
-| [SECURITY-ARCHITECTURE.md](SECURITY-ARCHITECTURE.md)                 | Detailed security documentation |
-| [API.md](API.md)                                                     | API endpoint reference          |
-| [DEVELOPMENT.md](DEVELOPMENT.md)                                     | Development guide               |
-| [TESTING.md](TESTING.md)                                             | Testing framework guide         |
-| [DEVICE-AUTH.md](DEVICE-AUTH.md)                                     | Device authorization guide      |
-| [CLAUDE.md](../CLAUDE.md)                                            | AI assistant guidance           |
+| Document                                                             | Purpose                                                                                                           |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [VISION.MD](../VISION.MD)                                            | **Start here.** Why Opifex exists and what it deliberately is not — the north star this document does not restate |
+| [docs/adr/](adr/)                                                    | Architecture decision records — the individual decisions behind §3                                                |
+| [PROVENANCE.md](PROVENANCE.md)                                       | The commit trailer vocabulary that makes the Decision→Issue→WorkOrder→PR→Commit chain traversable                 |
+| [RUNBOOK-observation-week.md](RUNBOOK-observation-week.md)           | How to turn the control plane on, stage by stage, and what to read while it runs                                  |
+| [SECURITY-ARCHITECTURE.md](SECURITY-ARCHITECTURE.md)                 | Detailed security documentation (foundation layer: OAuth, JWT, RBAC, allowlist, audit)                            |
+| [API.md](API.md)                                                     | API endpoint reference                                                                                            |
+| [DEVELOPMENT.md](DEVELOPMENT.md)                                     | Development guide                                                                                                 |
+| [TESTING.md](TESTING.md)                                             | Testing framework guide                                                                                           |
+| [DEVICE-AUTH.md](DEVICE-AUTH.md)                                     | Device authorization guide                                                                                        |
+| [personal-access-tokens.md](personal-access-tokens.md)               | Personal access token feature guide                                                                               |
+| [ssl-nginx-setup.md](ssl-nginx-setup.md)                             | Dev-VPS deployment runbook (nginx, SSL, compose)                                                                  |
+| [System_Specification_Document.md](System_Specification_Document.md) | Pre-pivot product spec. Superseded by VISION.MD and this document; kept for history, not for current requirements |
+| [CLAUDE.md](../CLAUDE.md)                                            | AI assistant guidance                                                                                             |
 
-### 15.3 Specification Index
+### 16.3 Specification Index
 
 Implementation specs in `docs/specs/`:
 
@@ -1673,6 +2010,7 @@ Implementation specs in `docs/specs/`:
 
 ## Document History
 
-| Version | Date         | Author       | Changes                                     |
-| ------- | ------------ | ------------ | ------------------------------------------- |
-| 1.0     | January 2026 | AI Assistant | Initial comprehensive architecture document |
+| Version | Date         | Author       | Changes                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------- | ------------ | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | January 2026 | AI Assistant | Initial comprehensive architecture document                                                                                                                                                                                                                                                                                                                                                                                   |
+| 1.1     | August 2026  | AI Assistant | Corrected §1–2 to describe Opifex as an AI software factory rather than only a web application template; added §3 Control Plane Architecture (reconciler, work orders, dispatch, runner seam, run events/watchdog, escalations, supervisor, cockpit); updated §6.1's repository tree and §16.2's related-documents table to include VISION.MD, `docs/adr/`, `PROVENANCE.md` and the observation-week runbook. See issue #304. |
