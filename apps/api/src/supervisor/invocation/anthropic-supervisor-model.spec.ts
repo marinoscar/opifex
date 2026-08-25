@@ -21,6 +21,8 @@ import {
   type SupervisorProposer,
 } from './supervisor-proposer.port';
 import { SupervisorService } from './supervisor.service';
+import { SupervisorSpendCeilingService } from './supervisor-spend-ceiling';
+import { SupervisorSpendLedgerService } from './supervisor-spend-ledger.service';
 
 /**
  * The supervisor's model adapter (ADR-0015, #230).
@@ -492,6 +494,25 @@ async function buildSupervisor(config: Record<string, unknown>) {
         useValue: { collect: jest.fn().mockResolvedValue(snapshotState()) },
       },
       { provide: DecisionLogService, useValue: { record } },
+      // A ceiling with room, and a window with nothing in it. Since ADR-0017
+      // a tick refuses before it reaches the model unless both are present,
+      // and this suite is about which model it reaches — not about the
+      // ceiling, which has its own tests.
+      {
+        provide: SupervisorSpendCeilingService,
+        useValue: { value: { limitUsd: 5, windowDays: 1, malformed: null } },
+      },
+      {
+        provide: SupervisorSpendLedgerService,
+        useValue: {
+          tally: jest.fn().mockResolvedValue({
+            reportedUsd: 0,
+            unpricedCalls: 0,
+            invocations: 0,
+            window: { from: new Date(), to: new Date(), days: 1 },
+          }),
+        },
+      },
       { provide: SUPERVISOR_PROPOSERS, useValue: [askingProposer] },
       supervisorModelProvider(),
       SupervisorService,

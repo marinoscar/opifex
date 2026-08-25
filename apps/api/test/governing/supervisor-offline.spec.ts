@@ -8,6 +8,8 @@ import { decideDispatch } from '../../src/dispatch/dispatch-policy';
 import { DecisionLogService } from '../../src/supervisor/decision-log/decision-log.service';
 import { SnapshotService } from '../../src/supervisor/snapshot/snapshot.service';
 import { SupervisorService } from '../../src/supervisor/invocation/supervisor.service';
+import type { SupervisorSpendCeilingService } from '../../src/supervisor/invocation/supervisor-spend-ceiling';
+import type { SupervisorSpendLedgerService } from '../../src/supervisor/invocation/supervisor-spend-ledger.service';
 import { decideParking } from '../../src/watchdog/blocked-parking';
 import { detectSilentRuns } from '../../src/watchdog/silent-detection';
 
@@ -130,11 +132,39 @@ describe('GOVERNING TEST: the factory runs with the supervisor offline (#94)', (
     const NOW = new Date('2026-08-24T12:00:00.000Z');
 
     /**
-     * Three ways a supervisor can be broken, per #94's fourth criterion.
+     * A spend ceiling the supervisor is nowhere near, and one that is absent.
+     *
+     * Since ADR-0017 the supervisor checks its own ceiling before it does
+     * anything, so every construction below has to say which of the two it is
+     * — and "no ceiling at all" became one of the ways a supervisor can be
+     * broken, which is why it appears in the list below as its own case.
+     */
+    const ceiling = (limitUsd: number | null) =>
+      ({
+        value: { limitUsd, windowDays: 1, malformed: null },
+      }) as unknown as SupervisorSpendCeilingService;
+
+    const ledger = (reportedUsd = 0) =>
+      ({
+        tally: jest.fn().mockResolvedValue({
+          reportedUsd,
+          unpricedCalls: 0,
+          invocations: 0,
+          window: { from: NOW, to: NOW, days: 1 },
+        }),
+      }) as unknown as SupervisorSpendLedgerService;
+
+    /**
+     * Four ways a supervisor can be broken, per #94's fourth criterion.
      *
      * Each is a real `SupervisorService` — not a stub — because the point is
      * that the object EXISTS and is unusable, which is the state a deployment
      * is actually in when the model endpoint is down.
+     *
+     * The fourth was added with ADR-0017 and is named directly by #94: "a
+     * supervisor that errors, stalls, or **exhausts its budget** is covered".
+     * A supervisor refusing every tick on its own spend ceiling is exactly
+     * that, and the factory must not notice.
      */
     function brokenSupervisors(): {
       how: string;
@@ -162,11 +192,23 @@ describe('GOVERNING TEST: the factory runs with the supervisor offline (#94)', (
       return [
         {
           how: 'disabled by configuration',
-          supervisor: new SupervisorService(config(false), snapshots, log),
+          supervisor: new SupervisorService(
+            config(false),
+            snapshots,
+            log,
+            ceiling(5),
+            ledger(),
+          ),
         },
         {
           how: 'enabled but erroring',
-          supervisor: new SupervisorService(config(true), snapshots, log),
+          supervisor: new SupervisorService(
+            config(true),
+            snapshots,
+            log,
+            ceiling(5),
+            ledger(),
+          ),
         },
         {
           how: 'enabled but hanging',
@@ -174,6 +216,28 @@ describe('GOVERNING TEST: the factory runs with the supervisor offline (#94)', (
             config(true),
             snapshots,
             hangingLog,
+            ceiling(5),
+            ledger(),
+          ),
+        },
+        {
+          how: 'enabled with no spend ceiling configured',
+          supervisor: new SupervisorService(
+            config(true),
+            snapshots,
+            log,
+            ceiling(null),
+            ledger(),
+          ),
+        },
+        {
+          how: 'enabled and over its spend ceiling',
+          supervisor: new SupervisorService(
+            config(true),
+            snapshots,
+            log,
+            ceiling(5),
+            ledger(500),
           ),
         },
       ];
@@ -333,22 +397,43 @@ describe('GOVERNING TEST: the factory runs with the supervisor offline (#94)', (
       const record = jest
         .fn()
         .mockResolvedValue({ invocationId: 'inv-1', proposalIds: [] });
-      const supervisor = new SupervisorService(
-        {
-          get: (key: string) =>
-            key === 'supervisor.enabled' ? true : undefined,
-        } as unknown as ConfigService,
-        {
-          collect: jest.fn().mockRejectedValue(new Error('database is down')),
-          render: jest.fn(),
-        } as unknown as SnapshotService,
-        { record } as unknown as DecisionLogService,
-      );
+      const brokenSupervisor = (spendCeiling: SupervisorSpendCeilingService) =>
+        new SupervisorService(
+          {
+            get: (key: string) =>
+              key === 'supervisor.enabled' ? true : undefined,
+          } as unknown as ConfigService,
+          {
+            collect: jest.fn().mockRejectedValue(new Error('database is down')),
+            render: jest.fn(),
+          } as unknown as SnapshotService,
+          { record } as unknown as DecisionLogService,
+          spendCeiling,
+          ledger(),
+        );
 
-      await expect(supervisor.invoke(NOW)).resolves.toBe('inv-1');
+      await expect(brokenSupervisor(ceiling(5)).invoke(NOW)).resolves.toBe(
+        'inv-1',
+      );
 
       expect(record).toHaveBeenCalledTimes(1);
       expect(record.mock.calls[0][0].outcome).toBe('failed');
+      expect(record.mock.calls[0][1] ?? []).toEqual([]);
+
+      // And the ADR-0017 shape of the same property: a supervisor with no
+      // ceiling configured writes ONE row saying so, about itself, and
+      // nothing about any run, work order or escalation. It stops running —
+      // that is the point of the decision — and the factory does not notice.
+      record.mockClear();
+      await expect(brokenSupervisor(ceiling(null)).invoke(NOW)).resolves.toBe(
+        'inv-1',
+      );
+
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(record.mock.calls[0][0].outcome).toBe('skipped_budget');
+      expect(record.mock.calls[0][0].failureReason).toContain(
+        'SUPERVISOR_HARD_SPEND_CEILING_USD',
+      );
       expect(record.mock.calls[0][1] ?? []).toEqual([]);
     });
 

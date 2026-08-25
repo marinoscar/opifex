@@ -10,6 +10,13 @@ import type {
 import { renderSnapshot } from '../snapshot/render-snapshot';
 import { SnapshotService } from '../snapshot/snapshot.service';
 import { assessQuota, type QuotaGateConfig } from './quota-gate';
+import { SupervisorSpendCeilingService } from './supervisor-spend-ceiling';
+import { assessSupervisorSpend, withTickSpend } from './supervisor-spend-gate';
+import {
+  noSupervisorSpendTally,
+  SupervisorSpendLedgerService,
+  type SupervisorSpendTally,
+} from './supervisor-spend-ledger.service';
 import {
   SUPERVISOR_MODEL,
   UnavailableSupervisorModel,
@@ -51,6 +58,18 @@ import {
  * `assessQuota` whether workers are already parked, and skips the tick if they
  * are.
  *
+ * **Refuses to spend without room, or without a ceiling** (#261, ADR-0017).
+ * Checked TWICE, at two different resolutions, and deliberately not inside
+ * `quota-gate.ts` — see `supervisor-spend-gate.ts` for why that file is not
+ * the home for a budget check. Once before the tick begins, earlier than the
+ * quota gate because it needs none of the snapshot state and refusing early
+ * saves a query whose answer cannot change the outcome; then again between
+ * proposers, because a supervisor tick is a short sequence of atomic calls
+ * each priced synchronously on return, which is the one shape a mid-flight
+ * budget check can actually act on. An unset ceiling refuses: ADR-0016
+ * removed the only other spend-adjacent stand-down, and "unset means
+ * unlimited" would be #261 itself restated as a default.
+ *
  * This paragraph used to be headed "Yields quota" and cited VISION §7's "a
  * supervisor competing for the quota it is managing is a bad loop". ADR-0015
  * made that false: the supervisor calls a separately metered API key of its
@@ -79,6 +98,12 @@ export class SupervisorService {
     private readonly config: ConfigService,
     private readonly snapshots: SnapshotService,
     private readonly log: DecisionLogService,
+    // Both REQUIRED, unlike the model and the proposers below. Those are
+    // genuinely optional — the API boots with no supervisor configured — but
+    // a tick that cannot check what it has spent must not run, so there is no
+    // shape of this object that is allowed to be missing its ceiling.
+    private readonly spendCeiling: SupervisorSpendCeilingService,
+    private readonly spendLedger: SupervisorSpendLedgerService,
     @Optional()
     @Inject(SUPERVISOR_MODEL)
     model?: SupervisorModel,
@@ -110,6 +135,41 @@ export class SupervisorService {
         'skipped_disabled',
         'SUPERVISOR_ENABLED is not true.',
       );
+    }
+
+    // BEFORE `snapshots.collect()`, and so before the quota gate. The spend
+    // check needs none of the state the snapshot carries, and a tick already
+    // refused on dollars should not pay for the queries that would tell it
+    // what it is not going to diagnose. The parked-run check still runs after
+    // this one, unchanged — `decideSpendAdmission` sets the same precedent
+    // that a budget-shaped refusal is checked before anything situational.
+    const ceiling = this.spendCeiling.value;
+
+    let tally: SupervisorSpendTally;
+    if (ceiling.limitUsd === null) {
+      // No ceiling, malformed or absent: the verdict is settled by the ceiling
+      // alone, and the tally query could not change it.
+      tally = noSupervisorSpendTally(ceiling.windowDays, startedAt);
+    } else {
+      try {
+        tally = await this.spendLedger.tally(ceiling.windowDays, startedAt);
+      } catch (error) {
+        // Not a budget refusal — a failure to check one. Recorded as `failed`
+        // rather than `skipped_budget` so the log never claims a ceiling was
+        // reached when nobody could read what had been spent. Either way the
+        // tick does not run: an unbounded action that cannot be checked does
+        // not proceed.
+        return this.recordSkip(
+          startedAt,
+          'failed',
+          `Could not read supervisor spend: ${message(error)}`,
+        );
+      }
+    }
+
+    const spend = assessSupervisorSpend(ceiling, tally);
+    if (!spend.admit) {
+      return this.recordSkip(startedAt, 'skipped_budget', spend.reason);
     }
 
     let state;
@@ -152,7 +212,33 @@ export class SupervisorService {
       tokensOutput = add(tokensOutput, response.tokensOutput);
     });
 
+    let stoppedForSpend: string | null = null;
+    let proposersRun = 0;
+
     for (const proposer of this.proposers) {
+      // Not before the FIRST proposer: the pre-tick check above already
+      // answered that question against the same figures, and asking twice
+      // with nothing spent in between would only make the log say "stopped
+      // after 0 of 4" where `skipped_budget` already says it better.
+      if (proposersRun > 0) {
+        const midTick = assessSupervisorSpend(
+          ceiling,
+          // `costUsd` is this tick's KNOWN spend so far; `unpricedCalls` is
+          // what it could not price. Both are already accumulated by the
+          // meter below, which is what makes this check cost nothing.
+          withTickSpend(tally, costUsd ?? 0, unpricedCalls),
+        );
+        if (!midTick.admit) {
+          stoppedForSpend =
+            `Stopped after ${proposersRun} of ${this.proposers.length} proposer(s): ` +
+            midTick.reason;
+          this.logger.warn(stoppedForSpend);
+          break;
+        }
+      }
+
+      proposersRun += 1;
+
       try {
         const drafts = await proposer.propose({
           state,
@@ -174,7 +260,13 @@ export class SupervisorService {
     const draft: InvocationDraft = {
       startedAt,
       finishedAt: new Date(),
-      outcome: anyFailed ? 'partial' : 'completed',
+      // `partial` covers both endings, because it already means "it ran, not
+      // everything in it completed, and what did is recorded" — which is
+      // exactly what a budget-stopped tick is. ADR-0017 declines to mint a
+      // `partial_budget` value and grow this enum once per reason a tick can
+      // end early; what it requires instead is that `failureReason` never
+      // read the same for the two causes.
+      outcome: anyFailed || stoppedForSpend !== null ? 'partial' : 'completed',
       model: this.model.name,
       snapshotText: rendered.text,
       snapshotGeneratedAt: state.generatedAt,
@@ -184,7 +276,7 @@ export class SupervisorService {
       unpricedCalls,
       tokensInput,
       tokensOutput,
-      failureReason: anyFailed ? 'At least one proposer failed.' : null,
+      failureReason: describeEnding(stoppedForSpend, anyFailed),
     };
 
     try {
@@ -219,7 +311,7 @@ export class SupervisorService {
     startedAt: Date,
     outcome: Extract<
       InvocationOutcome,
-      'skipped_disabled' | 'skipped_quota' | 'failed'
+      'skipped_disabled' | 'skipped_quota' | 'skipped_budget' | 'failed'
     >,
     reason: string | null,
   ): Promise<string | null> {
@@ -296,6 +388,29 @@ function meter(
 function add(total: number | null, value: number | null): number | null {
   if (value === null) return total;
   return (total ?? 0) + value;
+}
+
+/**
+ * Why the invocation ended early, in words a reader can act on.
+ *
+ * The two causes must never render alike. Before ADR-0017 there was one
+ * `partial` reason and it was always the literal string "At least one proposer
+ * failed."; a budget stoppage borrowing that sentence would put a reader back
+ * where `quota-gate.spec.ts` was before ADR-0016 gave it a reason-string
+ * assertion — reading a plausible sentence nobody can check against the fact
+ * it claims. When BOTH happened, both are said, in that order: the budget
+ * stoppage is the one that determined what did not run.
+ */
+function describeEnding(
+  stoppedForSpend: string | null,
+  anyFailed: boolean,
+): string | null {
+  if (stoppedForSpend !== null) {
+    return anyFailed
+      ? `${stoppedForSpend} At least one proposer also failed.`
+      : stoppedForSpend;
+  }
+  return anyFailed ? 'At least one proposer failed.' : null;
 }
 
 function message(error: unknown): string {

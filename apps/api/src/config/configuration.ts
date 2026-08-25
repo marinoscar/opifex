@@ -222,6 +222,17 @@ export default () => {
       standDownWhenBlocked:
         process.env.SUPERVISOR_STAND_DOWN_WHEN_BLOCKED !== 'false',
 
+      // SUPERVISOR_HARD_SPEND_CEILING_USD and
+      // SUPERVISOR_HARD_SPEND_CEILING_WINDOW_DAYS are deliberately NOT read
+      // here (#261, ADR-0017). They are read once from `process.env` in
+      // `SupervisorSpendCeilingService`'s constructor, for the same reason
+      // OPIFEX_HARD_SPEND_CEILING_USD is: `ConfigService` has a public
+      // `set()`, so anything reachable through this object is a limit some
+      // code path can raise at runtime -- and VISION §8 is explicit that "a
+      // limit an agent can raise is not a limit". Named here rather than left
+      // absent so a reader who greps this file for the supervisor's settings
+      // finds out where those two live instead of concluding they are unread.
+      //
       // SUPERVISOR_LIVE_RUN_CEILING used to be read here, standing the
       // supervisor down once that many runs were live. ADR-0016 removed it:
       // `runsRunning` does not determine what an invocation costs -- every

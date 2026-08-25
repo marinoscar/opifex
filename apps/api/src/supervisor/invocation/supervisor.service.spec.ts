@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
+import type { HardCeiling } from '../../budget/hard-spend-ceiling';
 import type { DecisionLogService } from '../decision-log/decision-log.service';
 import type { SnapshotService } from '../snapshot/snapshot.service';
 import type { SnapshotInput } from '../snapshot/snapshot.types';
@@ -9,6 +10,11 @@ import {
   type SupervisorModel,
 } from './supervisor-model.port';
 import type { SupervisorProposer } from './supervisor-proposer.port';
+import type { SupervisorSpendCeilingService } from './supervisor-spend-ceiling';
+import type {
+  SupervisorSpendLedgerService,
+  SupervisorSpendTally,
+} from './supervisor-spend-ledger.service';
 
 const NOW = new Date('2026-08-24T12:00:00.000Z');
 
@@ -45,6 +51,36 @@ function configDouble(values: Record<string, unknown> = {}) {
   } as unknown as ConfigService;
 }
 
+/**
+ * A ceiling and a tally, both configured to admit unless a test says otherwise.
+ *
+ * Every test in this file now needs them: since ADR-0017 a tick with no
+ * ceiling does not run at all, so "the default supervisor" is one with a
+ * ceiling it is nowhere near. The tests that care about the ceiling say so by
+ * passing `ceiling` or `tally` explicitly.
+ */
+function ceilingDouble(overrides: Partial<HardCeiling> = {}) {
+  const value: HardCeiling = {
+    limitUsd: 5,
+    windowDays: 1,
+    malformed: null,
+    ...overrides,
+  };
+  return { value } as unknown as SupervisorSpendCeilingService;
+}
+
+function tallyValue(
+  overrides: Partial<SupervisorSpendTally> = {},
+): SupervisorSpendTally {
+  return {
+    reportedUsd: 0,
+    unpricedCalls: 0,
+    invocations: 0,
+    window: { from: new Date(NOW.getTime() - 86_400_000), to: NOW, days: 1 },
+    ...overrides,
+  };
+}
+
 function build(
   options: {
     config?: Record<string, unknown>;
@@ -53,6 +89,9 @@ function build(
     model?: SupervisorModel;
     proposers?: SupervisorProposer[];
     recordRejects?: Error;
+    ceiling?: Partial<HardCeiling>;
+    tally?: Partial<SupervisorSpendTally>;
+    tallyRejects?: Error;
   } = {},
 ) {
   const collect = options.collectRejects
@@ -68,15 +107,22 @@ function build(
   } as unknown as SnapshotService;
   const log = { record } as unknown as DecisionLogService;
 
+  const tally = options.tallyRejects
+    ? jest.fn().mockRejectedValue(options.tallyRejects)
+    : jest.fn().mockResolvedValue(tallyValue(options.tally));
+  const ledger = { tally } as unknown as SupervisorSpendLedgerService;
+
   const service = new SupervisorService(
     configDouble({ 'supervisor.enabled': true, ...options.config }),
     snapshots,
     log,
+    ceilingDouble(options.ceiling),
+    ledger,
     options.model,
     options.proposers,
   );
 
-  return { service, collect, record };
+  return { service, collect, record, tally };
 }
 
 function proposer(
@@ -167,6 +213,219 @@ describe('SupervisorService (#89)', () => {
 
       expect(record.mock.calls[0][0].outcome).toBe('completed');
       expect(propose).toHaveBeenCalled();
+    });
+  });
+
+  describe('its own spend ceiling (#261, ADR-0017)', () => {
+    const askOnce = async (ctx: {
+      model: SupervisorModel;
+      snapshot: string;
+    }) => {
+      await ctx.model.ask({ snapshot: ctx.snapshot, instruction: 'x' });
+      return [];
+    };
+
+    function pricedModel(costUsd: number | null): SupervisorModel {
+      return {
+        name: 'm',
+        ask: jest.fn().mockResolvedValue({
+          text: 'ok',
+          costUsd,
+          tokensInput: 10,
+          tokensOutput: 2,
+        }),
+      };
+    }
+
+    it('refuses the tick when the window is already at the ceiling', async () => {
+      const propose = jest.fn();
+      const { service, record, collect } = build({
+        ceiling: { limitUsd: 5 },
+        tally: { reportedUsd: 5, invocations: 12 },
+        proposers: [proposer('p', propose)],
+      });
+
+      await service.invoke(NOW);
+
+      const draft = record.mock.calls[0][0];
+      expect(draft.outcome).toBe('skipped_budget');
+      expect(draft.failureReason).toContain('$5.00');
+      expect(draft.failureReason).toContain('1d');
+      expect(propose).not.toHaveBeenCalled();
+      // Earlier than the quota gate on purpose: a tick refused on dollars
+      // should not pay for the queries that describe what it will not read.
+      expect(collect).not.toHaveBeenCalled();
+    });
+
+    it('refuses when no ceiling is configured, and says which variable to set', async () => {
+      const { service, record, tally } = build({
+        ceiling: { limitUsd: null },
+      });
+
+      await service.invoke(NOW);
+
+      const draft = record.mock.calls[0][0];
+      expect(draft.outcome).toBe('skipped_budget');
+      expect(draft.failureReason).toContain(
+        'SUPERVISOR_HARD_SPEND_CEILING_USD',
+      );
+      // Nothing to compare a tally against, so nothing asks the database for
+      // one.
+      expect(tally).not.toHaveBeenCalled();
+    });
+
+    it('refuses a malformed ceiling as its own case, not as an absent one', async () => {
+      const { service, record } = build({
+        ceiling: { limitUsd: null, malformed: '5O' },
+      });
+
+      await service.invoke(NOW);
+
+      const draft = record.mock.calls[0][0];
+      expect(draft.outcome).toBe('skipped_budget');
+      expect(draft.failureReason).toContain('"5O"');
+    });
+
+    it('is a different outcome from skipped_quota', async () => {
+      // The two name different facts: one says the factory is parked, the
+      // other says a dollar figure has no room. Waiting fixes only the first.
+      const budget = build({
+        ceiling: { limitUsd: 1 },
+        tally: { reportedUsd: 2 },
+        snapshot: state({ runsBlocked: 3 }),
+      });
+      await budget.service.invoke(NOW);
+
+      const quota = build({ snapshot: state({ runsBlocked: 3 }) });
+      await quota.service.invoke(NOW);
+
+      expect(budget.record.mock.calls[0][0].outcome).toBe('skipped_budget');
+      expect(quota.record.mock.calls[0][0].outcome).toBe('skipped_quota');
+    });
+
+    it('runs the tick when there is headroom', async () => {
+      const propose = jest.fn().mockResolvedValue([]);
+      const { service, record } = build({
+        ceiling: { limitUsd: 5 },
+        tally: { reportedUsd: 4.99 },
+        proposers: [proposer('p', propose)],
+      });
+
+      await service.invoke(NOW);
+
+      expect(record.mock.calls[0][0].outcome).toBe('completed');
+      expect(propose).toHaveBeenCalled();
+    });
+
+    it('stops between proposers once this tick has spent the headroom', async () => {
+      // The check `decideBudgetOverrun` cannot make: each proposer makes at
+      // most one call and it prices synchronously on return, so the ceiling
+      // can be enforced BEFORE the next proposer spends anything.
+      const seen: string[] = [];
+      const p = (name: string) =>
+        proposer(name, async (ctx) => {
+          seen.push(name);
+          await ctx.model.ask({ snapshot: ctx.snapshot, instruction: 'x' });
+          return [];
+        });
+
+      const { service, record } = build({
+        ceiling: { limitUsd: 5 },
+        tally: { reportedUsd: 4.9 },
+        model: pricedModel(0.2),
+        proposers: [p('a'), p('b'), p('c')],
+      });
+
+      await service.invoke(NOW);
+
+      // 'a' ran and took the tally to $5.10; 'b' and 'c' never got the model.
+      expect(seen).toEqual(['a']);
+
+      const draft = record.mock.calls[0][0];
+      expect(draft.outcome).toBe('partial');
+      expect(draft.failureReason).toContain('Stopped after 1 of 3');
+      expect(draft.failureReason).toContain('ceiling');
+    });
+
+    it('reads differently from a proposer failure, and says both when both happened', async () => {
+      const { service, record } = build({
+        ceiling: { limitUsd: 5 },
+        tally: { reportedUsd: 4.9 },
+        model: pricedModel(0.2),
+        proposers: [
+          proposer('boom', async (ctx) => {
+            await ctx.model.ask({ snapshot: ctx.snapshot, instruction: 'x' });
+            throw new Error('boom');
+          }),
+          proposer('never', askOnce),
+        ],
+      });
+
+      await service.invoke(NOW);
+
+      const reason = record.mock.calls[0][0].failureReason;
+      expect(reason).toContain('Stopped after 1 of 2');
+      expect(reason).toContain('At least one proposer also failed.');
+      expect(reason).not.toBe('At least one proposer failed.');
+    });
+
+    it('does not count an unpriced call as zero, and does not stop on it alone', async () => {
+      // An unpriced call contributed real money nothing could convert. It must
+      // not read as free, and it must not take the supervisor down either —
+      // that would turn "Anthropic shipped a model the table lacks" into an
+      // indefinite outage.
+      const propose = jest.fn().mockResolvedValue([]);
+      const { service, record } = build({
+        ceiling: { limitUsd: 5 },
+        tally: { reportedUsd: 1, unpricedCalls: 7, invocations: 4 },
+        model: pricedModel(null),
+        proposers: [proposer('a', askOnce), proposer('b', propose)],
+      });
+
+      await service.invoke(NOW);
+
+      const draft = record.mock.calls[0][0];
+      expect(draft.outcome).toBe('completed');
+      expect(propose).toHaveBeenCalled();
+      expect(draft.costUsd).toBeNull();
+      expect(draft.unpricedCalls).toBe(1);
+    });
+
+    it('names the unknown part when it refuses, so the figure reads as a floor', async () => {
+      const { service, record } = build({
+        ceiling: { limitUsd: 5 },
+        tally: { reportedUsd: 5, unpricedCalls: 3, invocations: 9 },
+      });
+
+      await service.invoke(NOW);
+
+      expect(record.mock.calls[0][0].failureReason).toContain(
+        'floor, not a total',
+      );
+    });
+
+    it('measures the window the ceiling names, at the instant of the tick', async () => {
+      const { service, tally } = build({ ceiling: { windowDays: 30 } });
+
+      await service.invoke(NOW);
+
+      expect(tally).toHaveBeenCalledWith(30, NOW);
+    });
+
+    it('records failed, not skipped_budget, when the spend cannot be read at all', async () => {
+      // A ceiling that cannot be checked still stops the tick, but the log
+      // must not claim a ceiling was reached when nobody could read what had
+      // been spent.
+      const { service, record, collect } = build({
+        tallyRejects: new Error('database is down'),
+      });
+
+      await expect(service.invoke(NOW)).resolves.toBe('inv-1');
+
+      const draft = record.mock.calls[0][0];
+      expect(draft.outcome).toBe('failed');
+      expect(draft.failureReason).toContain('database is down');
+      expect(collect).not.toHaveBeenCalled();
     });
   });
 
