@@ -369,4 +369,213 @@ describe('ReconcilerTask', () => {
       await expect(run()).resolves.toBeUndefined();
     });
   });
+
+  /**
+   * #320: the null/`[]` boundary on `executionFailures`, which is the whole
+   * fix. `null` means no acting-phase executor ran at all this tick; `[]`
+   * means one ran and reported nothing wrong. Flattening the two together —
+   * writing `[]` whenever nothing failed, whether or not anything acted —
+   * would turn "never tried" into a clean bill of health nobody earned.
+   */
+  describe('the null/[] boundary on executionFailures', () => {
+    const ADD_LABEL_ACTION = {
+      type: 'add-mirror-label',
+      repository: 'acme/app',
+      issueNumber: 312,
+      label: 'factory/dispatched',
+    };
+
+    it('(a) records [] — not null — when an executor ran with rejections and no failures', async () => {
+      // Spec feedback ran (it always answers when there is a rejection) and
+      // reported nothing wrong: the acting phase HAS an answer, so the column
+      // must say so with `[]`, not stay `null`.
+      tick.mockResolvedValue(
+        tickRecord({ rejections: [REJECTION], actions: [] }),
+      );
+
+      await run();
+
+      expect(recordExecution).toHaveBeenCalledWith(
+        'tick-uuid',
+        expect.objectContaining({ executionFailures: [] }),
+      );
+    });
+
+    it('(b) records null, not [], when neither executor ran even though dispatch issued writes', async () => {
+      // Dispatch writes (branches, authorization records) move `writesIssued`
+      // without either acting-phase executor ever being called. The column
+      // must stay null: nothing here has an opinion on what dispatch did.
+      drain.mockImplementation(async () => {
+        writesIssued += 1;
+        return {
+          dispatched: 1,
+          stillQueued: 0,
+          observed: 0,
+          failed: 0,
+          unrebuildable: 0,
+          repositoriesDisabled: 0,
+        };
+      });
+      tick.mockResolvedValue(tickRecord({ actions: [], rejections: [] }));
+
+      await run();
+
+      expect(execute).not.toHaveBeenCalled();
+      expect(report).not.toHaveBeenCalled();
+      expect(recordExecution).toHaveBeenCalledWith('tick-uuid', {
+        writesIssued: 1,
+        executionFailures: null,
+      });
+    });
+
+    it('(c) carries a mirror-label failure through normalized', async () => {
+      listObserved.mockResolvedValue([
+        { owner: 'acme', name: 'app', mirrorLabelsEnabled: true },
+      ]);
+      execute.mockResolvedValue({
+        executed: 0,
+        noops: 0,
+        suppressed: 0,
+        failures: [
+          { action: ADD_LABEL_ACTION, reason: 'label action carried no label' },
+        ],
+      });
+      tick.mockResolvedValue(
+        tickRecord({
+          actions: [ADD_LABEL_ACTION] as unknown as TickRecord['actions'],
+        }),
+      );
+
+      await run();
+
+      expect(recordExecution).toHaveBeenCalledWith(
+        'tick-uuid',
+        expect.objectContaining({
+          executionFailures: [
+            {
+              source: 'mirror-label',
+              actionType: 'add-mirror-label',
+              repository: 'acme/app',
+              issueNumber: 312,
+              reason: 'label action carried no label',
+            },
+          ],
+        }),
+      );
+    });
+
+    it('(d) concatenates failures from BOTH executors into one array', async () => {
+      listObserved.mockResolvedValue([
+        { owner: 'acme', name: 'app', mirrorLabelsEnabled: true },
+      ]);
+      report.mockResolvedValue({
+        posted: 0,
+        alreadyTold: 0,
+        suppressed: 0,
+        failures: [
+          {
+            issueNumber: 312,
+            repository: 'acme/app',
+            reason: '502 from GitHub',
+          },
+        ],
+      });
+      execute.mockResolvedValue({
+        executed: 0,
+        noops: 0,
+        suppressed: 0,
+        failures: [{ action: ADD_LABEL_ACTION, reason: 'GitHub said 403' }],
+      });
+      tick.mockResolvedValue(
+        tickRecord({
+          rejections: [REJECTION],
+          actions: [ADD_LABEL_ACTION] as unknown as TickRecord['actions'],
+        }),
+      );
+
+      await run();
+
+      expect(recordExecution).toHaveBeenCalledWith(
+        'tick-uuid',
+        expect.objectContaining({
+          executionFailures: [
+            {
+              source: 'spec-feedback',
+              actionType: 'post-spec-feedback',
+              repository: 'acme/app',
+              issueNumber: 312,
+              reason: '502 from GitHub',
+            },
+            {
+              source: 'mirror-label',
+              actionType: 'add-mirror-label',
+              repository: 'acme/app',
+              issueNumber: 312,
+              reason: 'GitHub said 403',
+            },
+          ],
+        }),
+      );
+    });
+
+    /**
+     * (e) — the load-bearing case. The gate (`acting.ran`) must be set only
+     * when `SpecFeedbackExecutor.report` RETURNS, not when it is CALLED. If a
+     * refactor moved the flag to the point of the call, a thrown executor
+     * would still report `acting.ran = true`, and a crash would be recorded
+     * as `[]` — a clean bill of health nobody earned, on the exact tick that
+     * most needs `null` to say "nothing here can be trusted".
+     */
+    it('(e) stays null — not [] — when specFeedback.report REJECTS outright', async () => {
+      // A write issued elsewhere (dispatch) forces `recordExecution` past its
+      // `issued === 0 && !acting.ran` early return, so what is asserted here
+      // is squarely the gate on `executionFailures`, not whether the method
+      // was called at all.
+      drain.mockImplementation(async () => {
+        writesIssued += 1;
+        return {
+          dispatched: 1,
+          stillQueued: 0,
+          observed: 0,
+          failed: 0,
+          unrebuildable: 0,
+          repositoriesDisabled: 0,
+        };
+      });
+      report.mockRejectedValue(new Error('GitHub outage'));
+      tick.mockResolvedValue(
+        tickRecord({ rejections: [REJECTION], actions: [] }),
+      );
+
+      await run();
+
+      expect(report).toHaveBeenCalled();
+      expect(recordExecution).toHaveBeenCalledWith('tick-uuid', {
+        writesIssued: 1,
+        executionFailures: null,
+      });
+    });
+  });
+
+  /**
+   * #320: before this fix, `recordExecution` (then `recordWritesIssued`)
+   * returned early whenever `issued === 0`, full stop — so a tick with
+   * rejections and an acting phase that ran, but issued no GitHub write at
+   * all, never stamped anything back onto its row. That is the behaviour
+   * change most likely to surprise someone reading this code cold: the gate
+   * is now `issued === 0 && !acting.ran`, not `issued === 0` alone.
+   */
+  it('stamps the row even when a tick with rejections issued zero writes', async () => {
+    tick.mockResolvedValue(
+      tickRecord({ rejections: [REJECTION], actions: [] }),
+    );
+
+    await run();
+
+    expect(recordExecution).toHaveBeenCalledTimes(1);
+    expect(recordExecution).toHaveBeenCalledWith('tick-uuid', {
+      writesIssued: 0,
+      executionFailures: [],
+    });
+  });
 });
