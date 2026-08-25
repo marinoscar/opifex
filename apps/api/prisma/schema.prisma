@@ -1886,6 +1886,23 @@ model SupervisorInvocation {
   tokensInput  Int?     @map("tokens_input")
   tokensOutput Int?     @map("tokens_output")
 
+  /// How many model calls in this invocation priced at null (#282).
+  ///
+  /// `costUsd` alone cannot say. A tick where one proposer's call priced and
+  /// another's did not sums only the KNOWN part, and the result is
+  /// indistinguishable from a tick where every call priced and happened to
+  /// total that figure - which is the unpriced call being read as free, the
+  /// exact reading `model-pricing.ts` refuses to allow.
+  ///
+  /// Above zero, `costUsd` is a FLOOR rather than a total. That is the shape
+  /// `SpendLedgerService` already uses for `unboundedRuns`, so both budget
+  /// surfaces say "unknown" the same way.
+  ///
+  /// Zero on every row written before this column existed. Nothing backfills
+  /// it: a count nobody measured is not evidence, and the rows that predate
+  /// the fix are silent about exactly the thing it records.
+  unpricedCalls Int @default(0) @map("unpriced_calls")
+
   /// Why it failed or was skipped. Null for a clean invocation.
   failureReason String? @map("failure_reason")
 
