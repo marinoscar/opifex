@@ -137,33 +137,46 @@ cp .env.example .env
 chmod 600 .env
 
 # Generate two DIFFERENT secrets — never reuse another app's
-openssl rand -base64 32     # -> JWT_SECRET
+openssl rand -base64 32     # -> JWT_SECRET (44 chars, clears the 32-char floor)
 openssl rand -base64 32     # -> COOKIE_SECRET
 ```
 
+`JWT_SECRET` is not optional here or anywhere: the API refuses to start
+without one of at least 32 characters (#278), and the startup failure names
+every invalid variable at once. `COOKIE_SECRET` is optional — cookies fall
+back to signing with `JWT_SECRET` when it is unset — but if you set one it is
+held to the same 32-character floor.
+
+`POSTGRES_PASSWORD` has no equivalent enforcement on this host. The boot-time
+check (#299) only fires when `NODE_ENV=production`, and per the table below
+this deployment runs `NODE_ENV=development` for the Vite dev server — so a
+copied default here would boot silently instead of failing loudly. Copy the
+real password from another app's `.env`, not `.env.example`'s `postgres`;
+nothing on this host will catch it if you don't.
+
 `.env.example` documents every variable. The ones that must change for this host:
 
-| Variable                                                  | Value                                                  | Where it comes from                         |
-| --------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------- |
-| `COMPOSE_PROJECT_NAME`                                    | `opifex`                                               | literal — **mandatory**, see below          |
-| `NGINX_PORT`                                              | `8328`                                                 | literal, after the port check               |
-| `NODE_ENV`                                                | `development`                                          | literal (Vite dev server)                   |
-| `APP_URL`                                                 | `https://opifex.dev.marin.cr`                          | literal                                     |
-| `CORS_ORIGIN`                                             | `https://opifex.dev.marin.cr`                          | literal                                     |
-| `POSTGRES_HOST`                                           | `postgres`                                             | literal — devnet DNS                        |
-| `POSTGRES_USER`                                           | `admin`                                                | shared PostgreSQL user                      |
-| `POSTGRES_PASSWORD`                                       | —                                                      | copy from another app's `.env` on this host |
-| `POSTGRES_DB`                                             | `opifex`                                               | literal                                     |
-| `POSTGRES_SSL`                                            | `false`                                                | literal — same Docker network               |
-| `JWT_SECRET`                                              | —                                                      | **generate**                                |
-| `COOKIE_SECRET`                                           | —                                                      | **generate** (a second, different one)      |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`               | —                                                      | copy from the shared OAuth client           |
-| `GOOGLE_CALLBACK_URL`                                     | `https://opifex.dev.marin.cr/api/auth/google/callback` | literal                                     |
-| `INITIAL_ADMIN_EMAIL`                                     | your Google address                                    | first login with it becomes Admin           |
-| `TEST_AUTH_ENABLED`                                       | `false`                                                | literal — **security-critical**, see below  |
-| `S3_BUCKET`                                               | `marin-opifex`                                         | literal                                     |
-| `S3_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | —                                                      | copy from the shared AWS credentials        |
-| `OTEL_ENABLED`                                            | `false`                                                | literal — no collector in this stack        |
+| Variable                                                  | Value                                                  | Where it comes from                                                            |
+| --------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `COMPOSE_PROJECT_NAME`                                    | `opifex`                                               | literal — **mandatory**, see below                                             |
+| `NGINX_PORT`                                              | `8328`                                                 | literal, after the port check                                                  |
+| `NODE_ENV`                                                | `development`                                          | literal (Vite dev server)                                                      |
+| `APP_URL`                                                 | `https://opifex.dev.marin.cr`                          | literal                                                                        |
+| `CORS_ORIGIN`                                             | `https://opifex.dev.marin.cr`                          | literal                                                                        |
+| `POSTGRES_HOST`                                           | `postgres`                                             | literal — devnet DNS                                                           |
+| `POSTGRES_USER`                                           | `admin`                                                | shared PostgreSQL user                                                         |
+| `POSTGRES_PASSWORD`                                       | —                                                      | copy from another app's `.env` on this host — **not enforced here**, see below |
+| `POSTGRES_DB`                                             | `opifex`                                               | literal                                                                        |
+| `POSTGRES_SSL`                                            | `false`                                                | literal — same Docker network                                                  |
+| `JWT_SECRET`                                              | —                                                      | **generate — mandatory, ≥32 chars, enforced at boot**                          |
+| `COOKIE_SECRET`                                           | —                                                      | **generate** (a second, different one; optional but same 32-char floor if set) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`               | —                                                      | copy from the shared OAuth client                                              |
+| `GOOGLE_CALLBACK_URL`                                     | `https://opifex.dev.marin.cr/api/auth/google/callback` | literal                                                                        |
+| `INITIAL_ADMIN_EMAIL`                                     | your Google address                                    | first login with it becomes Admin                                              |
+| `TEST_AUTH_ENABLED`                                       | `false`                                                | literal — **security-critical**, see below                                     |
+| `S3_BUCKET`                                               | `marin-opifex`                                         | literal                                                                        |
+| `S3_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | —                                                      | copy from the shared AWS credentials                                           |
+| `OTEL_ENABLED`                                            | `false`                                                | literal — no collector in this stack                                           |
 
 > **`COMPOSE_PROJECT_NAME` is not optional.** Compose derives the project name
 > from the directory holding the compose file, which is `compose` for every app

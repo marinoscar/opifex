@@ -1009,10 +1009,14 @@ APP_URL=http://localhost:3535
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_USER=postgres
+# Required only when NODE_ENV=production: the API refuses to start on a
+# default or empty value there (#299). Outside production the default below
+# applies unchecked. See apps/api/src/config/env.validation.ts.
 POSTGRES_PASSWORD=postgres
 POSTGRES_DB=appdb
 
-# JWT
+# JWT — required, no default: the API refuses to start without one of at
+# least 32 characters (#278). See apps/api/src/config/env.validation.ts.
 JWT_SECRET=<min-32-character-secret>
 JWT_ACCESS_TTL_MINUTES=15
 JWT_REFRESH_TTL_DAYS=14

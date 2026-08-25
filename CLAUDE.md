@@ -503,7 +503,7 @@ Key variables (see `infra/compose/.env.example` for full list):
 - `POSTGRES_HOST` - Database hostname (default: localhost)
 - `POSTGRES_PORT` - Database port (default: 5432)
 - `POSTGRES_USER` - Database user (default: postgres)
-- `POSTGRES_PASSWORD` - Database password (default: postgres)
+- `POSTGRES_PASSWORD` - Database password (default: `postgres`). **Required and enforced at boot in production only** (#299): the API refuses to start if `NODE_ENV=production` and the value is unset, empty, or still the `postgres` default — that last check is the one that does the work, since `cp infra/compose/.env.example infra/compose/.env` (the setup step above) ships that exact default. Outside production the default applies with no enforcement, deliberately, so `docker compose up` on a laptop stays frictionless. Unlike `JWT_SECRET` there is no minimum length: this is a password an existing database already has, not one generated for the occasion. See `apps/api/src/config/env.validation.ts`.
 - `POSTGRES_DB` - Database name (default: appdb)
 - `POSTGRES_SSL` - Enable SSL connection (default: false)
 
@@ -511,7 +511,8 @@ Note: `DATABASE_URL` is constructed automatically from these variables at runtim
 
 **Authentication:**
 
-- `JWT_SECRET` - JWT signing secret (min 32 chars)
+- `JWT_SECRET` - JWT signing secret. **Required and enforced at boot** (#278): the API refuses to start without one of at least 32 characters, and the startup failure names every invalid variable at once rather than stopping at the first. `openssl rand -base64 32` produces 44 characters, comfortably over the floor. See `apps/api/src/config/env.validation.ts` for why this one variable is a hard startup failure when a missing database (#161) or missing Google credentials (#138) deliberately are not: without a signing secret every authorization decision the process makes is void, so there is nothing left that is safe to serve by staying up.
+- `COOKIE_SECRET` - Optional; `main.ts` signs cookies with `COOKIE_SECRET || JWT_SECRET`. When set, it must clear the same 32-character floor as `JWT_SECRET` or the API refuses to start.
 - `JWT_ACCESS_TTL_MINUTES` - Access token TTL (default: 15)
 - `JWT_REFRESH_TTL_DAYS` - Refresh token TTL (default: 14)
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` - Google OAuth credentials
