@@ -27,7 +27,7 @@ export class DeviceSessionDto {
     description: 'Client information',
     required: false,
   })
-  clientInfo?: Record<string, any>;
+  clientInfo?: Record<string, unknown>;
 
   @ApiProperty({
     description: 'When the device was authorized',

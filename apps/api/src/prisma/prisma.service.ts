@@ -4,7 +4,7 @@ import {
   OnModuleDestroy,
   Logger,
 } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 /**
@@ -164,7 +164,7 @@ export class PrismaService
     // gets its eventual queries logged in development.
     if (process.env.NODE_ENV === 'development') {
       // @ts-expect-error - Prisma event typing
-      this.$on('query', (e: any) => {
+      this.$on('query', (e: Prisma.QueryEvent) => {
         this.logger.debug(`Query: ${e.query}`);
         this.logger.debug(`Duration: ${e.duration}ms`);
       });

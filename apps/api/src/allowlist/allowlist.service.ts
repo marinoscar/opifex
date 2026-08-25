@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AddEmailDto } from './dto/add-email.dto';
 import { AllowlistQueryDto } from './dto/allowlist-query.dto';
@@ -23,7 +24,7 @@ export class AllowlistService {
     const skip = (page - 1) * pageSize;
 
     // Build where clause
-    const where: any = {};
+    const where: Prisma.AllowedEmailWhereInput = {};
 
     if (search) {
       where.email = { contains: search, mode: 'insensitive' };
@@ -212,7 +213,12 @@ export class AllowlistService {
         action,
         targetType,
         targetId,
-        meta: meta as any,
+        // Asserted, not converted: `Record<string, unknown>` cannot be proven
+        // assignable to Prisma's `InputJsonObject` because `unknown` is not
+        // `InputJsonValue`, and the callers pass DTO instances that have no
+        // implicit index signature. The assertion still constrains the target
+        // to a JSON object — unlike the `as any` it replaces (#186).
+        meta: meta as Prisma.InputJsonObject,
       },
     });
   }

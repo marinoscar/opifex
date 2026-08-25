@@ -14,6 +14,7 @@ import { extname } from 'node:path';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import type { StorageObject } from '@prisma/client';
 import { STORAGE_PROVIDER } from '../providers/storage-provider.interface';
 import type { StorageProvider } from '../providers/storage-provider.interface';
 import { InitUploadDto, InitUploadResponseDto } from './dto/init-upload.dto';
@@ -386,7 +387,7 @@ export class ObjectsService {
     };
 
     // Build orderBy clause
-    const orderBy: any = {};
+    const orderBy: Prisma.StorageObjectOrderByWithRelationInput = {};
     if (sortBy === 'createdAt') {
       orderBy.createdAt = sortOrder;
     } else if (sortBy === 'name') {
@@ -531,7 +532,7 @@ export class ObjectsService {
   private async getObjectWithAuthCheck(
     id: string,
     userId: string,
-  ): Promise<any> {
+  ): Promise<StorageObject> {
     const object = await this.prisma.storageObject.findUnique({
       where: { id },
     });
@@ -551,7 +552,7 @@ export class ObjectsService {
   /**
    * Map Prisma model to response DTO
    */
-  private mapToResponseDto(obj: any): ObjectResponseDto {
+  private mapToResponseDto(obj: StorageObject): ObjectResponseDto {
     return {
       id: obj.id,
       name: obj.name,

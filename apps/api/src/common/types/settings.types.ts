@@ -9,8 +9,16 @@ import type {
 
 /**
  * User settings schema - stored in user_settings.value JSONB
+ *
+ * DELIBERATELY a `type`, not an `interface` (#186). Prisma's `InputJsonValue`
+ * is an index-signature type, and TypeScript only gives an *implicit* index
+ * signature to object type aliases — never to interfaces, because an interface
+ * can be reopened later with a non-JSON member. Declaring these as interfaces
+ * is what forced the `value: … as any` casts on every settings write; as type
+ * aliases the values are structurally assignable and `tsc` checks the shape
+ * against the column for real. Do not convert back.
  */
-export interface UserSettingsValue {
+export type UserSettingsValue = {
   theme: 'light' | 'dark' | 'system';
   profile: {
     displayName?: string;
@@ -33,8 +41,11 @@ export interface UserSettingsValue {
 
 /**
  * System settings schema - stored in system_settings.value JSONB
+ *
+ * A `type` rather than an `interface` for the same reason as
+ * `UserSettingsValue` above — see that comment.
  */
-export interface SystemSettingsValue {
+export type SystemSettingsValue = {
   ui: {
     allowUserThemeOverride: boolean;
   };

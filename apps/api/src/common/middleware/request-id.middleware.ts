@@ -31,11 +31,12 @@ export class RequestIdMiddleware implements NestMiddleware {
     const activeSpan = trace.getSpan(context.active());
     const spanContext = activeSpan?.spanContext();
 
-    // Attach to request (cast to any to add custom properties)
-    (req as any).requestId = requestId;
+    // The parameter type already declares these custom properties, so no
+    // cast is needed to set them (#186).
+    req.requestId = requestId;
     if (spanContext) {
-      (req as any).traceId = spanContext.traceId;
-      (req as any).spanId = spanContext.spanId;
+      req.traceId = spanContext.traceId;
+      req.spanId = spanContext.spanId;
     }
 
     // Set response headers using Node.js API

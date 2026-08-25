@@ -10,6 +10,26 @@ import { randomBytes, createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { DeviceCodeStatus } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
+
+/**
+ * Narrow a `client_info` JSON column back to the object shape the write path
+ * put there, instead of asserting it (#186).
+ *
+ * The column is `Json?`, so its read type admits arrays, scalars and SQL
+ * NULL — none of which this service ever writes (`generateDeviceCode` stores
+ * `clientInfo || {}`). Checking rather than casting keeps that assumption
+ * stated in code: anything that is not a JSON object reads back as absent,
+ * which is exactly what the optional `clientInfo?` field on the response DTOs
+ * already promises callers.
+ */
+function toClientInfo(
+  value: Prisma.JsonValue | null,
+): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value
+    : undefined;
+}
 
 /**
  * Service for handling Device Authorization Flow (RFC 8628)
@@ -33,7 +53,13 @@ export class DeviceAuthService {
   /**
    * Generate a new device code pair
    */
-  async generateDeviceCode(clientInfo?: Record<string, any>) {
+  /**
+   * `Prisma.InputJsonObject` rather than `Record<string, unknown>`: this value
+   * goes straight into the `client_info` JSON column, and `unknown` is not
+   * something Prisma will accept there. Stating the column's contract on the
+   * parameter is what lets the write below need no cast (#186).
+   */
+  async generateDeviceCode(clientInfo?: Prisma.InputJsonObject) {
     const expiryMinutes = this.configService.get<number>(
       'deviceAuth.expiryMinutes',
       15,
@@ -249,7 +275,7 @@ export class DeviceAuthService {
     return {
       verificationUri,
       userCode: record.userCode,
-      clientInfo: record.clientInfo as Record<string, any> | undefined,
+      clientInfo: toClientInfo(record.clientInfo),
       expiresAt: record.expiresAt.toISOString(),
     };
   }
@@ -344,7 +370,7 @@ export class DeviceAuthService {
         id: session.id,
         userCode: session.userCode,
         status: session.status,
-        clientInfo: session.clientInfo as Record<string, any> | undefined,
+        clientInfo: toClientInfo(session.clientInfo),
         createdAt: session.createdAt.toISOString(),
         expiresAt: session.expiresAt.toISOString(),
       })),
