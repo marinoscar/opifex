@@ -767,6 +767,8 @@ model Run {
   runner      Runner       @relation(fields: [runnerKey], references: [key], onDelete: Restrict)
   events      RunEvent[]
   escalations Escalation[]
+  /// Periods this run made no progress, for VISION §10 metric 2 (#232).
+  deadIntervals DeadInterval[]
 
   @@index([workOrderId])
   // The watchdog's whole query: live runs ordered by how long they have been
@@ -848,6 +850,164 @@ model RunAttempt {
   @@index([runId])
   @@index([outcome])
   @@map("run_attempts")
+}
+
+/// What KIND of non-progress an interval records (#232).
+///
+/// Two values rather than one, because VISION §9 is emphatic that its three
+/// failure modes stay distinct — *"conflating them is the most common
+/// supervision bug"* — and a single `dead` flag would erase exactly that
+/// distinction at the moment it becomes a number on a dashboard. A stalled
+/// hour is a supervision failure; a parked hour is a scheduling constraint the
+/// system is handling. They sum into one metric and they mean opposite things
+/// to the operator reading it, so the sum has to be decomposable back.
+enum DeadIntervalKind {
+  /// Silent past the threshold its runner's declared fidelity sets
+  /// (`watchdog/silent-detection.ts`). Nothing is coming; a human or a kill is
+  /// the only way out.
+  stalled
+  /// Parked on a structured block with a reset time (#56). Supposed to be
+  /// quiet, and expected to resume without anyone involved.
+  parked
+}
+
+/// How an interval of non-progress ENDED.
+///
+/// Null while it is still open, and open is a real state rather than a missing
+/// value — see `ended_at` on {@link DeadInterval}.
+///
+/// The three ends are not equivalent and are not folded together:
+/// `resumed` time was recovered, `concluded` time never was, and
+/// `quarantined` time was handed to a human. An aggregate that could not tell
+/// them apart would report the same number for a factory that recovers every
+/// stall and one that abandons every stall.
+enum DeadIntervalEnd {
+  /// The run started reporting again. That time was lost and then recovered.
+  resumed
+  /// The run reached `succeeded` or `failed` without ever resuming.
+  concluded
+  /// Policy quarantined it. By VISION §8 it cannot clear its own quarantine,
+  /// so the interval ends here and whatever the quarantine costs afterwards is
+  /// a different question this table deliberately does not answer.
+  quarantined
+}
+
+/// One period during which a run made no progress — VISION §10's metric 2.
+///
+/// > | 2 | **Dead time per day** — hours parked or stalled | Direct measure of
+/// > recovered productivity |
+///
+/// ## Stored, not derived — and the reason is correctness, not cost
+///
+/// The cheap argument for storing is that summing a few hundred rows beats
+/// scanning `run_events`. True, and not the reason.
+///
+/// The reason is that the START of an interval is a JUDGEMENT, not a fact
+/// sitting in the event stream. A four-minute gap is a stall for a runner
+/// declaring `full` streaming fidelity (90s threshold) and entirely normal for
+/// one declaring `none` (90 minutes) — `watchdog/silent-detection.ts` decides
+/// which, against a threshold that comes from a capability manifest the
+/// operator can change. Re-deriving intervals at query time would therefore
+/// re-judge HISTORY against TODAY'S thresholds: retune `SILENCE_THRESHOLDS_MS`
+/// and last week's dead time silently changes. A trend metric whose past moves
+/// when you turn a knob is not a trend.
+///
+/// The END is a judgement too. *"The run resumed"* means the watchdog judged it
+/// and found nothing wrong, which is a conclusion about a run, not the
+/// existence of some row. Deriving it would mean reimplementing the detector in
+/// SQL, and a second implementation of a rule is a second implementation that
+/// drifts.
+///
+/// So the interval is written down at the moment it is judged, by the
+/// component that judged it, and never recomputed.
+///
+/// ## One row per interval, not per run
+///
+/// #232 is explicit: *"one interval per stall, not one per run, or a run that
+/// stalled twice reports only its last."* A run may hold at most one OPEN
+/// interval at a time and any number of closed ones.
+///
+/// ## Parked time counts, and that is VISION's answer rather than a shortcut
+///
+/// The honest tension: a run `blocked` on a rate limit with a dated resume is
+/// the system WORKING, and counting its hours as dead could make a healthy
+/// factory on a rate-limited day look broken.
+///
+/// It counts anyway, for three reasons that all point the same way.
+///
+///  1. **VISION §10 defines the metric as "hours parked OR stalled".** The
+///     cockpit tile already renders that sentence as its definition. Shipping a
+///     number that excluded parking under a label that promises to include it
+///     is exactly the substitution `cockpit/metrics.service.ts` refuses in
+///     prose.
+///  2. **VISION says it twice more, in the two places it argues from.** §1's
+///     origin story is *"an agent hits a rate limit at 2pm. I find out at 6pm.
+///     Four hours dead"* — parked hours, called dead. §4 says an agent *"parked
+///     awaiting an answer while its operator sleeps is exactly the dead time
+///     this project exists to eliminate."*
+///  3. **Excluding it makes the metric gameable in the worst direction.** If
+///     parked time were free, a factory that parked everything and shipped
+///     nothing would score a perfect zero.
+///
+/// What #56 actually recovers is not the park; it is the part of the park that
+/// used to run from the reset time until a human noticed. That recovery shows
+/// up here as parked intervals getting SHORTER, which is the metric moving the
+/// right way — so counting parked time reports the improvement rather than
+/// hiding it.
+///
+/// `kind` keeps the two separable, and the metric states its split so an
+/// operator can always see which half of a bad day was supervision and which
+/// was quota.
+model DeadInterval {
+  id    String @id @default(uuid()) @db.Uuid
+  runId String @map("run_id") @db.Uuid
+
+  kind DeadIntervalKind
+
+  /// When progress actually stopped — NOT when it was noticed.
+  ///
+  /// For a stall this is `SilenceVerdict.progressStoppedAt`: the `occurredAt`
+  /// of the last event of any source before the silence, the same instant
+  /// `Escalation.progressStoppedAt` records. For a park it is the `occurredAt`
+  /// of the `run.blocked` event.
+  ///
+  /// Sharing a start with `Escalation` is where the two metrics fork, and the
+  /// fork is the whole point: metric 1 measures from here to `delivered_at`
+  /// (how fast a human was told), metric 2 measures from here to `ended_at`
+  /// (how long the factory was down). Same instant, different questions, and
+  /// a row that tried to serve both would answer neither.
+  startedAt DateTime @map("started_at") @db.Timestamptz
+
+  /// When it ended. NULL means the run is still stalled or still parked.
+  ///
+  /// #232 requires the open case be explicit rather than silently dropped, and
+  /// this is where that is stated: an OPEN interval is counted, clipped at the
+  /// end of whatever window is being asked about.
+  ///
+  /// It is not a special case in the arithmetic and that is deliberate. Every
+  /// interval is clipped to the window — a stall that began three days before
+  /// the window contributes only its in-window part too — so an open interval
+  /// is just one whose end is at or beyond the window's end. Counting it as
+  /// zero would report a factory that is dead RIGHT NOW as perfectly healthy,
+  /// which is the precise failure this whole table exists to prevent.
+  endedAt DateTime? @map("ended_at") @db.Timestamptz
+  /// Why it ended. NULL exactly when `ended_at` is NULL.
+  endedBy DeadIntervalEnd? @map("ended_by")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  // The ledger's own write query: "the open interval for this run, if any".
+  // `ended_at` second because the reconcile pass always knows the run.
+  @@index([runId, endedAt])
+  // Metric 2's window scan. One row per stall or park rather than one per
+  // event, so this table is smaller than `run_events` by the ratio of events
+  // to stalls — which is what makes #232's "without scanning run_events"
+  // acceptance criterion true.
+  @@index([startedAt])
+  @@map("dead_intervals")
 }
 
 // =============================================================================
