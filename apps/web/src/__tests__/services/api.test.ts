@@ -676,16 +676,17 @@ describe('ApiService', () => {
 /**
  * The cockpit endpoints (epic #19).
  *
- * ⚠️ None of these four exist in `apps/api` yet, and nothing in the running app
- * calls them — `COCKPIT_ENDPOINTS[…].available` is `false` for all of them, and
- * every cockpit hook reads that into `usePolledResource`'s `enabled`.
+ * All four now exist in `apps/api` and the running app calls them —
+ * `COCKPIT_ENDPOINTS[…].available` is `true` for every one, and each cockpit
+ * hook reads that into `usePolledResource`'s `enabled`.
  *
- * They are tested anyway, against MSW stand-ins, for the same reason they are
- * declared: this suite is what turns four typed function signatures into a
- * SPECIFICATION of the endpoints — request path, query string, `{ data }`
- * unwrapping, abort-signal forwarding — rather than a guess about them. The day
- * the API lands, a mismatch shows up here and not in a component reading
- * `undefined`.
+ * They were tested BEFORE that, against the same MSW stand-ins, for the same
+ * reason they were declared early: this suite is what turns four typed function
+ * signatures into a SPECIFICATION of the endpoints — request path, query
+ * string, `{ data }` unwrapping, abort-signal forwarding — rather than a guess
+ * about them. When the API landed, the mismatches showed up here and not in a
+ * component reading `undefined`. The assertions have not changed meaning now
+ * that a real server is on the other side; they are what pins the client to it.
  */
 describe('Cockpit API', () => {
   beforeEach(() => {
