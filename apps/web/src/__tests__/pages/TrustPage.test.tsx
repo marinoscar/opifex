@@ -155,10 +155,12 @@ function stateFixture(overrides: Partial<PromotionState> = {}): PromotionState {
     changedAt: new Date(Date.now() - 7 * DAY).toISOString(),
     changeReason: null,
     changeDetail: null,
+    changedById: null,
     evidence: null,
     currentEvidence: evidenceFixture(),
     requirement: 'Needs 10 more human decisions before a rate can be judged.',
     wouldChange: null,
+    manualHoldUntil: null,
     promotedAt: null,
     demotedAt: null,
     demotionCount: 0,
@@ -214,6 +216,10 @@ function ladderFixture(
       demotionRate: 0.5,
       demotionMinSample: 5,
       regressionWindowDays: 14,
+      // The term a hand-demotion holds the rung for. The dialog and the
+      // captions read it from HERE — a `14` written into the app would be a
+      // second copy of the policy, correct until the day it was not.
+      manualHoldDays: 14,
     },
     states: [OBSERVE_STATE, PROMOTED_STATE],
     ...overrides,
@@ -638,6 +644,77 @@ describe('TrustPage', () => {
       ).not.toBeInTheDocument();
     });
 
+    it('marks a class under a standing manual hold, with the date it lifts', async () => {
+      // An operator looking at the ladder a week later should not have to
+      // remember that they demoted this. Without the chip a held class is
+      // indistinguishable from one the ladder itself put on `measure`.
+      const heldUntil = new Date(Date.now() + 9 * DAY).toISOString();
+      serveLadder(
+        ladderFixture({
+          enabled: true,
+          states: [
+            stateFixture({
+              actionClass: 'runner-restart',
+              actionClassTitle: 'Runner restart',
+              rung: 'measure',
+              changeReason: 'demoted_manually',
+              manualHoldUntil: heldUntil,
+            }),
+            OBSERVE_STATE,
+          ],
+        }),
+      );
+      render(<TrustPage />, { wrapperOptions: { user: mockAdminUser } });
+      fireEvent.click(screen.getByRole('tab', { name: 'Promotion ladder' }));
+
+      await ladderPanel().findByText('Runner restart');
+      const cards = ladderPanel().getAllByTestId('promotion-state');
+      const held = cards.find(
+        (card) => card.getAttribute('data-action-class') === 'runner-restart',
+      )!;
+      const unheld = cards.find(
+        (card) => card.getAttribute('data-action-class') === 're-dispatch',
+      )!;
+
+      const chip = within(held).getByTestId('manual-hold');
+      // The END DATE, not a duration and not a bare "Held": a hold whose term
+      // is invisible is a demotion that un-does itself on a timer.
+      expect(chip).toHaveTextContent(
+        `Held until ${new Date(heldUntil).toLocaleString(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })}`,
+      );
+      expect(
+        within(unheld).queryByTestId('manual-hold'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('does not mark a class whose hold has already lapsed', async () => {
+      // `manualHoldUntil` is never cleared, so a past instant is the ordinary
+      // resting state of any class that was ever demoted by hand. A component
+      // treating non-null as "held" would show a standing hold over a class
+      // the ladder has had back for a month.
+      serveLadder(
+        ladderFixture({
+          enabled: true,
+          states: [
+            stateFixture({
+              rung: 'measure',
+              manualHoldUntil: new Date(Date.now() - 2 * DAY).toISOString(),
+            }),
+          ],
+        }),
+      );
+      render(<TrustPage />, { wrapperOptions: { user: mockAdminUser } });
+      fireEvent.click(screen.getByRole('tab', { name: 'Promotion ladder' }));
+
+      await ladderPanel().findByText('Re-dispatch after transient failure');
+      expect(
+        ladderPanel().queryByTestId('manual-hold'),
+      ).not.toBeInTheDocument();
+    });
+
     it('says a forecast will not be acted on while the ladder is off', async () => {
       serveLadder(
         ladderFixture({
@@ -658,86 +735,127 @@ describe('TrustPage', () => {
   // -------------------------------------------------------------------------
 
   describe('manual demotion', () => {
-    async function openLadderAndDemote() {
+    /** The hold the API resolves. A FUTURE instant, as a real one always is. */
+    const HOLD_UNTIL = new Date(Date.now() + 14 * DAY).toISOString();
+    const HOLD_TEXT = new Date(HOLD_UNTIL).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+
+    function serveDemotion(
+      overrides: Record<string, unknown> = {},
+      onCall?: () => void,
+    ) {
+      server.use(
+        http.post(`${API}/promotion/states/:actionClass/demote`, () => {
+          onCall?.();
+          return HttpResponse.json({
+            data: {
+              state: { ...PROMOTED_STATE, rung: 'measure' },
+              grantsSuspended: 1,
+              notified: true,
+              manualHoldUntil: HOLD_UNTIL,
+              // FALSE on every successful demotion now that the hold is
+              // recorded. Still computed API-side rather than asserted.
+              rungMayBeRestoredByLadder: false,
+              ...overrides,
+            },
+            meta: { timestamp: new Date().toISOString() },
+          });
+        }),
+      );
+    }
+
+    async function openDemoteDialog() {
       fireEvent.click(screen.getByRole('tab', { name: 'Promotion ladder' }));
       await ladderPanel().findByText('Runner restart');
       fireEvent.click(
         ladderPanel().getByRole('button', { name: 'Demote this class' }),
       );
-      fireEvent.click(
-        within(await screen.findByRole('dialog')).getByRole('button', {
-          name: 'Demote',
-        }),
-      );
+      return within(await screen.findByRole('dialog'));
     }
 
-    it('tells the operator when the rung may be restored by the ladder', async () => {
-      // TRUE is the COMMON case and the known limitation #101 names: the
-      // suspension is durable, the rung is not. An operator not told this
-      // would reasonably conclude the button did nothing.
-      server.use(
-        http.post(`${API}/promotion/states/:actionClass/demote`, () =>
-          HttpResponse.json({
-            data: {
-              state: { ...PROMOTED_STATE, rung: 'measure' },
-              grantsSuspended: 2,
-              notified: true,
-              rungMayBeRestoredByLadder: true,
-            },
-            meta: { timestamp: new Date().toISOString() },
-          }),
-        ),
+    async function openLadderAndDemote() {
+      const dialog = await openDemoteDialog();
+      fireEvent.click(dialog.getByRole('button', { name: 'Demote' }));
+    }
+
+    it('states the term BEFORE the operator confirms', async () => {
+      // An operator told only afterwards has already formed a belief about how
+      // long their judgement lasts that the banner then has to correct. The
+      // number is the API's `manualHoldDays`, not a constant in this app.
+      render(<TrustPage />, { wrapperOptions: { user: mockAdminUser } });
+      const dialog = await openDemoteDialog();
+
+      expect(dialog.getByTestId('demote-hold-term')).toHaveTextContent(
+        'The rung is held for 14 days.',
       );
+      expect(dialog.getByText(/Nothing lifts the hold early/i)).toBeVisible();
+      // The old promise — that the next evaluation puts the rung straight
+      // back — is exactly what #244 fixed, and must not survive here.
+      expect(
+        dialog.queryByText(/next hourly evaluation will put it back/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it('reads the hold term from the API rather than hardcoding 14', async () => {
+      serveLadder(
+        ladderFixture({
+          thresholds: { ...ladderFixture().thresholds, manualHoldDays: 21 },
+        }),
+      );
+      render(<TrustPage />, { wrapperOptions: { user: mockAdminUser } });
+      const dialog = await openDemoteDialog();
+
+      expect(dialog.getByTestId('demote-hold-term')).toHaveTextContent(
+        'The rung is held for 21 days.',
+      );
+    });
+
+    it('names the date the hold lifts, and no longer says the rung may come back', async () => {
+      // The fix, from the operator's side: a confirmation with a term, in
+      // place of a warning that the control half-worked.
+      serveDemotion({ grantsSuspended: 2 });
 
       render(<TrustPage />, { wrapperOptions: { user: mockAdminUser } });
       await openLadderAndDemote();
 
       const outcome = await screen.findByTestId('demotion-outcome');
       expect(outcome).toHaveTextContent('2 trust grants suspended.');
-      expect(
-        within(outcome).getByTestId('rung-may-be-restored'),
-      ).toHaveTextContent(/next hourly evaluation is likely to put it back/i);
-    });
-
-    it('does not claim the rung may come back when the API says it will not', async () => {
-      server.use(
-        http.post(`${API}/promotion/states/:actionClass/demote`, () =>
-          HttpResponse.json({
-            data: {
-              state: { ...PROMOTED_STATE, rung: 'measure' },
-              grantsSuspended: 1,
-              notified: true,
-              rungMayBeRestoredByLadder: false,
-            },
-            meta: { timestamp: new Date().toISOString() },
-          }),
-        ),
+      expect(within(outcome).getByTestId('manual-hold')).toHaveTextContent(
+        `The rung is held until ${HOLD_TEXT}.`,
       );
-
-      render(<TrustPage />, { wrapperOptions: { user: mockAdminUser } });
-      await openLadderAndDemote();
-
-      const outcome = await screen.findByTestId('demotion-outcome');
-      expect(outcome).toHaveTextContent('1 trust grant suspended.');
+      expect(outcome).not.toHaveTextContent(/may not stick/i);
+      expect(outcome).not.toHaveTextContent(/likely to put it back/i);
       expect(
         within(outcome).queryByTestId('rung-may-be-restored'),
       ).not.toBeInTheDocument();
     });
 
-    it('reports a failed notification without pretending the demotion failed', async () => {
-      server.use(
-        http.post(`${API}/promotion/states/:actionClass/demote`, () =>
-          HttpResponse.json({
-            data: {
-              state: { ...PROMOTED_STATE, rung: 'measure' },
-              grantsSuspended: 1,
-              notified: false,
-              rungMayBeRestoredByLadder: false,
-            },
-            meta: { timestamp: new Date().toISOString() },
-          }),
-        ),
+    it('still reports the hold failing, if the API ever says it is', async () => {
+      // `rungMayBeRestoredByLadder` is FALSE on every successful demotion now,
+      // so this branch is dead in practice — and stays, because the API
+      // computes the field from the ladder's own rules rather than asserting
+      // it. True means the hold is not working, which is a real finding, and a
+      // client that dropped the branch would show nothing on the day it broke.
+      serveDemotion({ rungMayBeRestoredByLadder: true });
+
+      render(<TrustPage />, { wrapperOptions: { user: mockAdminUser } });
+      await openLadderAndDemote();
+
+      const outcome = await screen.findByTestId('demotion-outcome');
+      // The term is still stated: the demotion did happen and the hold was
+      // still placed.
+      expect(within(outcome).getByTestId('manual-hold')).toHaveTextContent(
+        HOLD_TEXT,
       );
+      expect(
+        within(outcome).getByTestId('rung-may-be-restored'),
+      ).toHaveTextContent(/despite the hold/i);
+    });
+
+    it('reports a failed notification without pretending the demotion failed', async () => {
+      serveDemotion({ notified: false });
 
       render(<TrustPage />, { wrapperOptions: { user: mockAdminUser } });
       await openLadderAndDemote();

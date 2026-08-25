@@ -28,6 +28,7 @@ const demoted: ManualDemotionResult = {
   } as ManualDemotionResult['state'],
   grantsSuspended: 2,
   notified: true,
+  manualHoldUntil: '2026-09-06T10:00:00.000Z',
   rungMayBeRestoredByLadder: true,
 };
 
@@ -154,10 +155,11 @@ describe('useClassDemotion', () => {
     vi.restoreAllMocks();
   });
 
-  it('carries the whole result through, including the ladder caveat', async () => {
-    // `rungMayBeRestoredByLadder` must reach the component untouched: it is
-    // the known limitation an operator has to be told about, and a hook that
-    // reduced the result to a boolean would drop it.
+  it('carries the whole result through, hold and ladder caveat included', async () => {
+    // `manualHoldUntil` and `rungMayBeRestoredByLadder` must both reach the
+    // component untouched: the first is the TERM of the operator's decision
+    // and the second reports the hold failing, and a hook that reduced the
+    // result to a boolean would drop both.
     const demote = vi
       .spyOn(api, 'demoteActionClass')
       .mockResolvedValue(demoted);
