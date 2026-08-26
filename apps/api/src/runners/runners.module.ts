@@ -40,10 +40,11 @@ import { RunPollerTask } from './run-poller.task';
     // the fleet, and the loop that observes it is the registration tick — the
     // one loop that runs on every deployment whatever the enable flags say.
     FleetStateService,
-    // Unconditional, unlike `RunPollerTask` below: registration must converge
-    // even where every enable flag is off, because an empty fleet table is
-    // exactly the state an operator needs resolved before turning them on
-    // (#162).
+    // Registration must converge even where every enable flag is off, because
+    // an empty fleet table is exactly the state an operator needs resolved
+    // before turning them on (#162). `RunPollerTask` below now also registers
+    // unconditionally (#343), but it SKIPS while no runner is enabled, so this
+    // still could not be folded into it.
     RunnerRegistrationTask,
     RunPollerService,
     RunPollerTask,

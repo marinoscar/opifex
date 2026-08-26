@@ -60,10 +60,9 @@ import { PERMISSION_MODES } from '../../runners/claude-code-local/claude-code-in
 // `reload` states the contract each key MUST have once its consumers read
 // through `OperatorSettingsService`. For most keys that is what the consumer
 // already does. For a few it is not YET: `github.*` is frozen in
-// `GitHubHttpService`'s constructor until #341 resolves it per use,
-// `reconciler.enabled` is read once in `onModuleInit` until #343 registers the
-// interval unconditionally, and the supervisor model settings are read by a
-// provider factory until #344 binds the adapter unconditionally. Those issues
+// `GitHubHttpService`'s constructor until #341 resolves it per use, and the
+// supervisor model settings are read by a provider factory until #344 binds
+// the adapter unconditionally. Those issues
 // exist BECAUSE the value declared here is the one an operator is owed; a key
 // whose consumer cannot honour it is a bug in the consumer, not a licence to
 // weaken the declaration. Keys where the freeze is inherent — not incidental —
@@ -446,10 +445,12 @@ export const OPERATOR_SETTINGS = {
     default: false,
     secret: false,
     // A gate, read at the moment it gates: registration refreshes
-    // (runner-registration.service.ts:536) and, after #343 registers the
-    // interval unconditionally, the poll tick (run-poller.task.ts:44). Nothing
-    // holds a copy — turning it off makes the runner undispatchable at once,
-    // though agents already running are not killed by it.
+    // (runner-registration.service.ts), the dispatch admission path, and the
+    // poll tick — which since #343 registers its interval unconditionally is
+    // reachable by the same flip as the other two, rather than admitting work
+    // no poller exists to conclude. Nothing holds a copy: turning it off makes
+    // the runner undispatchable at once, though agents already running are not
+    // killed by it.
     reload: 'live',
     group: 'runner',
     label: 'Local Claude Code runner enabled',
@@ -692,9 +693,10 @@ export const OPERATOR_SETTINGS = {
     envVar: 'RECONCILER_ENABLED',
     default: false,
     secret: false,
-    // #343. Read per tick at reconciler.service.ts:629; the boot-time read at
-    // reconciler.task.ts:95 that decides whether to register an interval at
-    // all is what #343 removes, precisely so this can be true.
+    // Read per tick, in two places: `ReconcilerTask.runOnce` gates the whole
+    // loop on it, and `reconciler.service.ts` records `skipped-disabled`
+    // behind it. The interval itself is registered unconditionally (#343), so
+    // nothing holds a boot-time copy of this.
     reload: 'live',
     group: 'reconciler',
     label: 'Reconciler enabled',
@@ -707,14 +709,15 @@ export const OPERATOR_SETTINGS = {
     min: 5_000,
     max: 3_600_000,
     secret: false,
-    // The period is fixed when `setInterval` is registered
-    // (reconciler.task.ts:109). Changing a live interval means deleting and
-    // re-registering it, which is a different operation from reading a value —
-    // and #343 makes the interval unconditional, not re-registerable.
-    reload: 'restart',
+    // `setInterval` fixes its period at the call that created it, so this is
+    // the one key here a check inside the callback cannot honour. #343 makes
+    // `ReconcilerTask` subscribe to `onChange` and delete/re-register the
+    // named interval when this moves, behind an in-process mutex — so it is
+    // live, at the cost of the machinery that key alone needs.
+    reload: 'live',
     group: 'reconciler',
     label: 'Reconcile interval (ms)',
-    help: 'How often the tick runs. VISION §13: start with polling, add webhooks only when tick latency demonstrably hurts. With ETags an unchanged repository costs no rate-limit budget. The timer is registered at this period when the process starts, so a change needs a restart.',
+    help: 'How often the tick runs. VISION §13: start with polling, add webhooks only when tick latency demonstrably hurts. With ETags an unchanged repository costs no rate-limit budget. A change re-registers the timer, so it takes effect from the next tick — one tick may still fire on the old period, and a tick already running is left alone to finish.',
   }),
 
   'reconciler.logRetentionDays': integerSetting({

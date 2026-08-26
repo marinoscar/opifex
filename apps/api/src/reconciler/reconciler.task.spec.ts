@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
 import { DeadTimeService } from '../dead-time/dead-time.service';
@@ -7,7 +8,10 @@ import { GitHubWriteService } from '../github/write/github-write.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
 import { EscalationDispatcher } from '../notifications/escalation-dispatcher.service';
 import { RepositoriesService } from '../repositories/repositories.service';
-import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
+import {
+  makeOperatorSettings,
+  type FakeOperatorSettingsService,
+} from '../settings/operator-settings/operator-settings.test-double';
 import { WatchdogService } from '../watchdog/watchdog.service';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
 import { SpecFeedbackExecutor } from './execute/spec-feedback.executor';
@@ -65,49 +69,54 @@ describe('ReconcilerTask', () => {
   /** Stands in for the write service's monotonic issued-writes counter. */
   let writesIssued: number;
   let task: ReconcilerTask;
+  let settings: FakeOperatorSettingsService;
+  let addInterval: jest.Mock;
+  let deleteInterval: jest.Mock;
+  let doesExist: jest.Mock;
+  /**
+   * What the registry currently holds, keyed by name.
+   *
+   * A real map rather than bare spies, because the two properties #343 has to
+   * hold are properties of the REGISTRY, not of the call counts:
+   * `SchedulerRegistry.addInterval` throws on a duplicate name and
+   * `deleteInterval` throws on a name it does not hold, so spies that accepted
+   * anything would let a double registration — the exact bug the mutex exists
+   * to prevent — pass silently. Clearing the timers also keeps an interval
+   * from holding Jest's event loop open and turning a pass into a hang.
+   */
+  let registered: Map<string, NodeJS.Timeout>;
 
   /** `runOnce` is private and is what the interval calls. */
   const run = () => (task as unknown as { runOnce(): Promise<void> }).runOnce();
 
-  beforeEach(() => {
-    tick = jest.fn().mockResolvedValue(tickRecord());
-    report = jest.fn().mockResolvedValue({
-      posted: 0,
-      alreadyTold: 0,
-      suppressed: 0,
-      failures: [],
-    });
-    execute = jest.fn().mockResolvedValue({
-      executed: 0,
-      noops: 0,
-      suppressed: 0,
-      failures: [],
-    });
-    drain = jest.fn().mockResolvedValue({
-      dispatched: 0,
-      stillQueued: 0,
-      observed: 0,
-      failed: 0,
-      unrebuildable: 0,
-      repositoriesDisabled: 0,
-    });
-    listObserved = jest.fn().mockResolvedValue([]);
-    recordDeadTime = jest.fn().mockResolvedValue({
-      opened: 0,
-      resumed: 0,
-      concluded: 0,
-      quarantined: 0,
-      open: 0,
-    });
-    recordExecution = jest.fn().mockResolvedValue(undefined);
-    writesIssued = 0;
+  /**
+   * Let a tick the fake clock just started get as far as it can.
+   *
+   * `advanceTimersByTime` is synchronous and the interval callback is not: it
+   * awaits the liveness sweep and the watchdog before it ever reaches
+   * `tick()`. Without draining the microtask queue, an assertion made straight
+   * after advancing the clock is asserting about a tick that has not begun —
+   * which passes for the wrong reason on `not.toHaveBeenCalled` and fails for
+   * the wrong reason on everything else.
+   */
+  const flush = async () => {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  };
 
-    task = new ReconcilerTask(
-      makeOperatorSettings(),
+  /**
+   * Construct the task against the CURRENT `settings` double.
+   *
+   * Extracted so a spec that needs a different enablement or period can
+   * replace `settings` and rebuild, rather than reaching into a task that
+   * has already read them.
+   */
+  function rebuild(): ReconcilerTask {
+    return new ReconcilerTask(
+      settings,
       {
-        addInterval: jest.fn(),
-        doesExist: jest.fn(),
-        deleteInterval: jest.fn(),
+        addInterval,
+        doesExist,
+        deleteInterval,
       } as unknown as SchedulerRegistry,
       { tick } as unknown as ReconcilerService,
       { execute } as unknown as MirrorLabelExecutor,
@@ -158,6 +167,340 @@ describe('ReconcilerTask', () => {
       } as unknown as GitHubWriteService,
       { recordExecution } as unknown as ReconcileLogService,
     );
+  }
+
+  beforeEach(() => {
+    tick = jest.fn().mockResolvedValue(tickRecord());
+    report = jest.fn().mockResolvedValue({
+      posted: 0,
+      alreadyTold: 0,
+      suppressed: 0,
+      failures: [],
+    });
+    execute = jest.fn().mockResolvedValue({
+      executed: 0,
+      noops: 0,
+      suppressed: 0,
+      failures: [],
+    });
+    drain = jest.fn().mockResolvedValue({
+      dispatched: 0,
+      stillQueued: 0,
+      observed: 0,
+      failed: 0,
+      unrebuildable: 0,
+      repositoriesDisabled: 0,
+    });
+    listObserved = jest.fn().mockResolvedValue([]);
+    recordDeadTime = jest.fn().mockResolvedValue({
+      opened: 0,
+      resumed: 0,
+      concluded: 0,
+      quarantined: 0,
+      open: 0,
+    });
+    recordExecution = jest.fn().mockResolvedValue(undefined);
+    writesIssued = 0;
+
+    registered = new Map();
+    addInterval = jest.fn((name: string, handle: NodeJS.Timeout) => {
+      if (registered.has(name)) {
+        throw new Error(
+          `Interval with the given name (${name}) already exists`,
+        );
+      }
+      registered.set(name, handle);
+    });
+    deleteInterval = jest.fn((name: string) => {
+      const handle = registered.get(name);
+      if (!handle) throw new Error(`No interval was found with the given name`);
+      clearInterval(handle);
+      registered.delete(name);
+    });
+    doesExist = jest.fn((_type: string, name: string) => registered.has(name));
+
+    // ON, deliberately and out loud. `reconciler.enabled` defaults to FALSE in
+    // the registry, and since #343 moved the gate into `runOnce` every
+    // assertion in this file about what a tick does would otherwise pass by
+    // proving that nothing happened.
+    settings = makeOperatorSettings({
+      overrides: { 'reconciler.enabled': true },
+    });
+
+    task = rebuild();
+  });
+
+  afterEach(() => {
+    for (const handle of registered.values()) clearInterval(handle);
+    registered.clear();
+    jest.useRealTimers();
+  });
+
+  describe('registering the interval', () => {
+    it('registers it even when the reconciler is disabled', async () => {
+      // #343. The old shape registered NOTHING when the flag was off, which
+      // made the interval's existence a second copy of the enablement state —
+      // one `onModuleInit` runs too early to ever revise, so a flip had
+      // nothing to turn on until somebody restarted the process.
+      settings = makeOperatorSettings({
+        overrides: { 'reconciler.enabled': false },
+      });
+      const disabled = rebuild();
+
+      disabled.onModuleInit();
+
+      expect(registered.has('reconciler-tick')).toBe(true);
+    });
+
+    it('registers at the configured period, not at a hardcoded one', async () => {
+      jest.useFakeTimers();
+      settings.setOverride('reconciler.intervalMs', 45_000);
+      // Built after the override so the task reads 45s at `onModuleInit` and
+      // this asserts about the FIRST registration rather than a
+      // re-registration.
+      const built = rebuild();
+      built.onModuleInit();
+
+      jest.advanceTimersByTime(44_999);
+      await flush();
+      expect(tick).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(1);
+      await flush();
+      expect(tick).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      [true, 'ENABLED'],
+      [false, 'DISABLED'],
+    ])(
+      'states the enablement state of the loop in the boot line (%s)',
+      (enabled, expected) => {
+        // The per-tick skip logs at `debug`, so this line is the only place an
+        // operator is told whether the loop that just registered will do
+        // anything — which is what answers the superseded comment's objection
+        // without keeping a second copy of the state.
+        settings = makeOperatorSettings({
+          overrides: { 'reconciler.enabled': enabled },
+        });
+        const built = rebuild();
+        const log = jest
+          .spyOn(Logger.prototype, 'log')
+          .mockImplementation(() => {});
+        try {
+          built.onModuleInit();
+
+          expect(log).toHaveBeenCalledTimes(1);
+          expect(log.mock.calls[0][0]).toContain(expected);
+        } finally {
+          log.mockRestore();
+        }
+      },
+    );
+
+    it('stops listening for changes once the module is destroyed', () => {
+      task.onModuleInit();
+      task.onModuleDestroy();
+      addInterval.mockClear();
+
+      settings.setOverride('reconciler.intervalMs', 30_000);
+
+      // A change arriving during or after teardown must not re-register an
+      // interval nothing will ever delete.
+      expect(addInterval).not.toHaveBeenCalled();
+      expect(registered.size).toBe(0);
+    });
+  });
+
+  describe('a period change while the process is running', () => {
+    it('leaves exactly one interval registered', () => {
+      task.onModuleInit();
+
+      settings.setOverride('reconciler.intervalMs', 30_000);
+
+      // The load-bearing assertion, and the reason the fake registry throws
+      // the way the real one does: `addInterval` refuses a duplicate name, so
+      // a re-registration that forgot to delete first would throw, and one
+      // that deleted without re-adding would leave the reconciler with no
+      // timer at all. Both are one interval away from correct.
+      expect(registered.size).toBe(1);
+      expect(deleteInterval).toHaveBeenCalledWith('reconciler-tick');
+      expect(addInterval).toHaveBeenCalledTimes(2);
+    });
+
+    it('actually fires on the new period', async () => {
+      // Re-registering is only worth the machinery if the new timer is the one
+      // that fires. The default is 60s; after the change a 5s advance must be
+      // enough, and it is not without a real delete-and-re-add.
+      jest.useFakeTimers();
+      task.onModuleInit();
+
+      settings.setOverride('reconciler.intervalMs', 5_000);
+
+      jest.advanceTimersByTime(5_000);
+      await flush();
+      expect(tick).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores a change announcement that did not move the period', () => {
+      // The emitter carries KEYS, not values, and an operator can PATCH the
+      // period they already had. Re-registering on that would restart the
+      // countdown, so a script writing the same value every 30 seconds could
+      // hold off a 60-second tick forever.
+      task.onModuleInit();
+      addInterval.mockClear();
+
+      settings.setOverride(
+        'reconciler.intervalMs',
+        settings.get('reconciler.intervalMs'),
+      );
+
+      expect(addInterval).not.toHaveBeenCalled();
+      expect(deleteInterval).not.toHaveBeenCalled();
+    });
+
+    it('ignores changes to other keys, including enablement', () => {
+      // Enablement is honoured by the check inside `runOnce`. Re-registering
+      // on it would put back the second copy of the enablement state that
+      // #343 removed — and a rapid off/on/off must still leave exactly one
+      // interval behind, not three and not zero.
+      task.onModuleInit();
+      addInterval.mockClear();
+
+      settings.setOverride('reconciler.enabled', false);
+      settings.setOverride('reconciler.enabled', true);
+      settings.setOverride('reconciler.enabled', false);
+
+      expect(addInterval).not.toHaveBeenCalled();
+      expect(deleteInterval).not.toHaveBeenCalled();
+      expect(registered.size).toBe(1);
+    });
+
+    it('leaves exactly one interval after a burst of period changes', () => {
+      task.onModuleInit();
+
+      settings.setOverride('reconciler.intervalMs', 10_000);
+      settings.setOverride('reconciler.intervalMs', 20_000);
+      settings.setOverride('reconciler.intervalMs', 10_000);
+
+      expect(registered.size).toBe(1);
+    });
+
+    it('re-registers once, at the newest value, when a change arrives mid-change', () => {
+      // The mutex, exercised through the one door that can reach it: a change
+      // listener that fires while `applyIntervalPeriod` is between its delete
+      // and its add. The registry is HTTP-concurrent, and `addInterval` throws
+      // on a duplicate name — so the second entrant must queue rather than
+      // interleave, and must not be DROPPED either, or the interval would be
+      // left running at a period nobody asked for.
+      task.onModuleInit();
+
+      deleteInterval.mockImplementationOnce((name: string) => {
+        const handle = registered.get(name);
+        if (handle) clearInterval(handle);
+        registered.delete(name);
+        // Re-entrant, from inside the critical section.
+        settings.setOverride('reconciler.intervalMs', 25_000);
+      });
+
+      settings.setOverride('reconciler.intervalMs', 15_000);
+
+      expect(registered.size).toBe(1);
+      // Two adds: the first pass registers 15s, and the coalescing pass
+      // re-reads and lands on the value that arrived while it was working.
+      const periods = addInterval.mock.calls.map(([, handle]) =>
+        Number((handle as unknown as { _idleTimeout: number })._idleTimeout),
+      );
+      expect(periods[periods.length - 1]).toBe(25_000);
+    });
+
+    it('does not orphan a tick that is already in flight', async () => {
+      // `clearInterval` cancels future firings and has no opinion about a
+      // callback that has already started — but only because `runOnce` keeps
+      // everything it needs in locals. A tick interrupted mid-flight would
+      // lose the write count and the acting phase it is holding, which is the
+      // one thing on that path that must never be dropped: a write that
+      // happened and was not logged.
+      jest.useFakeTimers();
+      task.onModuleInit();
+
+      let release: (() => void) | undefined;
+      tick.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            release = () => resolve(tickRecord());
+          }),
+      );
+
+      jest.advanceTimersByTime(60_000);
+      await flush();
+      expect(release).toBeDefined();
+
+      // The period moves out from under the tick that is still awaiting.
+      settings.setOverride('reconciler.intervalMs', 5_000);
+      expect(registered.size).toBe(1);
+
+      writesIssued = 3;
+      release?.();
+      // Let the in-flight tick finish its remaining awaits.
+      await flush();
+
+      expect(recordExecution).toHaveBeenCalledWith(
+        'tick-uuid',
+        expect.objectContaining({ writesIssued: 3 }),
+      );
+    });
+  });
+
+  describe('the enablement gate', () => {
+    it('does not tick at all while the reconciler is disabled', async () => {
+      // The gate covers the WHOLE loop, not just the projection. None of the
+      // sweeps, escalations, notifications or the dispatch drain ran at all
+      // while a disabled reconciler registered no interval, and #343 is not
+      // entitled to turn them on for every deployment that has it off.
+      settings.setOverride('reconciler.enabled', false);
+
+      await run();
+
+      expect(tick).not.toHaveBeenCalled();
+      expect(drain).not.toHaveBeenCalled();
+      expect(recordExecution).not.toHaveBeenCalled();
+    });
+
+    it('logs the skip at debug, not at log', async () => {
+      settings.setOverride('reconciler.enabled', false);
+      const log = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => {});
+      const debug = jest
+        .spyOn(Logger.prototype, 'debug')
+        .mockImplementation(() => {});
+      try {
+        await run();
+
+        expect(debug).toHaveBeenCalledTimes(1);
+        expect(log).not.toHaveBeenCalled();
+      } finally {
+        log.mockRestore();
+        debug.mockRestore();
+      }
+    });
+
+    it('is re-read every firing, so a runtime enable ticks without a restart', async () => {
+      jest.useFakeTimers();
+      settings.setOverride('reconciler.enabled', false);
+      task.onModuleInit();
+
+      jest.advanceTimersByTime(60_000);
+      await flush();
+      expect(tick).not.toHaveBeenCalled();
+
+      settings.setOverride('reconciler.enabled', true);
+
+      jest.advanceTimersByTime(60_000);
+      await flush();
+      expect(tick).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('the dispatch queue', () => {

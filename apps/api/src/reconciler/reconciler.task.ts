@@ -12,7 +12,10 @@ import { EscalationsService } from '../escalations/escalations.service';
 import { GitHubWriteService } from '../github/write/github-write.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
 import { EscalationDispatcher } from '../notifications/escalation-dispatcher.service';
-import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
+import {
+  OperatorSettingsService,
+  type OperatorSettingsChange,
+} from '../settings/operator-settings/operator-settings.service';
 import { tallyCoverage } from '../watchdog/check-coverage';
 import {
   WatchdogService,
@@ -67,6 +70,49 @@ interface ActingPhase {
  *
  * `SchedulerRegistry` is part of the `@nestjs/schedule` already wired at the
  * root, so this adds no dependency.
+ *
+ * ## Why the interval is registered even when the reconciler is off (#343)
+ *
+ * This method used to decide once, at boot, whether to call `setInterval` at
+ * all, and argued for it: a disabled reconciler that still wakes every 60
+ * seconds to decide it is disabled shows up in every profile and every log,
+ * and invites the question of whether it is really off. That argument was
+ * correct for exactly as long as enablement could only change at boot. In that
+ * world "off" is fixed for the life of the process, and never registering the
+ * interval is strictly better than registering one that immediately no-ops.
+ *
+ * `reconciler.enabled` is a live managed key now (ADR-0018 §5), and the
+ * argument inverts. `onModuleInit` runs exactly once. An interval created only
+ * there, conditioned on the value at that instant, has no way to come into
+ * existence later — so a flip that turns the reconciler on has nothing to turn
+ * on, silently, until somebody restarts. Worse, the interval's presence or
+ * absence is then a SECOND copy of the enablement state, one that can disagree
+ * with the first for as long as the process stays up. State in two places is
+ * exactly what makes an operator unable to say which one is true, which is the
+ * doubt the old comment set out to avoid — reached by the other road.
+ *
+ * So the interval is registered unconditionally and the check moves inside
+ * {@link runOnce}, re-read on every firing. This is not a new shape for this
+ * codebase: `supervisor.task.ts` registers its `@Cron` at class-definition
+ * time and checks enablement in the handler, and `daily-brief.task.ts` and
+ * `reconcile-log.cleanup.task.ts` do the same. Only the two `setInterval`
+ * tasks ever took the other branch.
+ *
+ * The cost is real and is accepted rather than hidden: a deployment that never
+ * turns the reconciler on now runs a no-op callback every `intervalMs`. The
+ * skip logs at `debug` so it costs no attention, and the enablement state is
+ * stated once in the boot line below — which answers the old comment's
+ * objection without keeping a second copy of the state.
+ *
+ * ## Why a period change re-registers, and enablement does not
+ *
+ * `setInterval` fixes its period at the call that created it, so
+ * `reconciler.intervalMs` — also a managed key — cannot be honoured by a
+ * check inside the callback the way enablement can. It is the one key here
+ * that has to reach back into `SchedulerRegistry`, and it does so by
+ * subscribing to {@link OperatorSettingsService.onChange}. Enablement
+ * deliberately does NOT: re-registering on a flag flip would put the two
+ * copies of the enablement state back, which is the bug this file just closed.
  */
 @Injectable()
 export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
@@ -91,26 +137,79 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     private readonly log: ReconcileLogService,
   ) {}
 
+  /**
+   * The period the interval currently in the registry was created with.
+   *
+   * The only reason a copy of a managed value is held on the instance: it is
+   * not the source of truth for the setting, it is a record of what was
+   * actually handed to `setInterval`, which nothing else can report. It is
+   * what makes a change detectable and, just as importantly, a NON-change
+   * ignorable — see {@link applyIntervalPeriod}.
+   */
+  private registeredIntervalMs: number | undefined;
+
+  /** Detaches the settings listener. Undefined before init, after destroy. */
+  private unsubscribe: (() => void) | undefined;
+
+  /**
+   * The in-process mutex around the delete/add pair in
+   * {@link applyIntervalPeriod}, and the coalescing flag that goes with it.
+   *
+   * The write path is HTTP-concurrent and `SchedulerRegistry.addInterval`
+   * throws on a duplicate name, so a second re-registration that began between
+   * this one's `deleteInterval` and its `addInterval` would either throw or
+   * leave two live timers behind the one name. The critical section is
+   * synchronous today, which on a single-threaded runtime is already atomic —
+   * the flag is what keeps that true if a future edit introduces an `await`
+   * into it, or if a listener ever re-enters the emitter.
+   *
+   * `pending` rather than a plain "already running, give up": dropping the
+   * second change would leave the interval running at a period nobody asked
+   * for, which is the same class of stale-copy bug this whole file is fixing.
+   * The loop re-reads the current value on each pass, so N overlapping changes
+   * collapse to at most one extra re-registration at the newest value.
+   */
+  private reregistering = false;
+  private reregisterPending = false;
+
   onModuleInit(): void {
-    // #343 removes this boot-time gate so the interval is registered
-    // unconditionally and `reconciler.enabled` can be honoured per tick, which
-    // is what the registry already declares. Until then this stays a
-    // boot-time decision and the read simply moves to the resolver.
-    const enabled = this.settings.get('reconciler.enabled');
+    // Unconditional. Whether the reconciler is enabled is decided in
+    // `runOnce`, on every firing — see the class comment for why this is no
+    // longer a boot-time decision.
+    this.registerInterval(this.settings.get('reconciler.intervalMs'));
 
-    if (!enabled) {
-      // No interval is registered at all, rather than one that returns early.
-      // A disabled reconciler that still wakes every 60 seconds to decide it
-      // is disabled shows up in every profile and every log, and invites the
-      // question of whether it is really off.
-      this.logger.log(
-        'Reconciler is DISABLED (RECONCILER_ENABLED is not true)',
-      );
-      return;
+    // The period cannot be honoured by a check inside the callback, so it is
+    // the one key here that listens. Subscribed AFTER the first registration,
+    // so a change that lands during boot cannot re-register an interval that
+    // does not exist yet.
+    this.unsubscribe = this.settings.onChange((change) =>
+      this.onSettingsChanged(change),
+    );
+
+    // The one place the enablement state of this loop is reported, which is
+    // what lets the per-tick skip stay at `debug`.
+    this.logger.log(
+      `Reconciler tick registered every ${this.registeredIntervalMs}ms; ` +
+        (this.settings.get('reconciler.enabled')
+          ? 'the reconciler is ENABLED'
+          : 'the reconciler is DISABLED, so every tick will skip until it is enabled'),
+    );
+  }
+
+  onModuleDestroy(): void {
+    // Unsubscribed FIRST. A change that arrives while the module is being torn
+    // down must not re-register an interval nothing will ever delete.
+    this.unsubscribe?.();
+    this.unsubscribe = undefined;
+
+    if (this.scheduler.doesExist('interval', INTERVAL_NAME)) {
+      this.scheduler.deleteInterval(INTERVAL_NAME);
     }
+    this.registeredIntervalMs = undefined;
+  }
 
-    const intervalMs = this.settings.get('reconciler.intervalMs');
-
+  /** Create the timer and put it in the registry under {@link INTERVAL_NAME}. */
+  private registerInterval(intervalMs: number): void {
     const handle = setInterval(() => {
       // Deliberately not awaited: `setInterval` cannot await, and the lease is
       // what makes a slow tick safe. If this one runs long, the next fires,
@@ -120,13 +219,74 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     }, intervalMs);
 
     this.scheduler.addInterval(INTERVAL_NAME, handle);
-    this.logger.log(`Reconciler tick registered every ${intervalMs}ms`);
+    this.registeredIntervalMs = intervalMs;
   }
 
-  onModuleDestroy(): void {
+  /**
+   * React to a settings change.
+   *
+   * ONLY `reconciler.intervalMs`. `reconciler.enabled` is deliberately absent:
+   * it is honoured by the check in `runOnce`, and re-registering on it would
+   * restore the second copy of the enablement state that #343 removed.
+   */
+  private onSettingsChanged(change: OperatorSettingsChange): void {
+    if (!change.keys.includes('reconciler.intervalMs')) return;
+    this.reregisterInterval();
+  }
+
+  /** The mutex. See {@link reregistering}. */
+  private reregisterInterval(): void {
+    if (this.reregistering) {
+      this.reregisterPending = true;
+      return;
+    }
+
+    this.reregistering = true;
+    try {
+      do {
+        this.reregisterPending = false;
+        this.applyIntervalPeriod();
+      } while (this.reregisterPending);
+    } finally {
+      this.reregistering = false;
+    }
+  }
+
+  /**
+   * Move the interval onto the currently configured period.
+   *
+   * Guarded by `doesExist` before deleting rather than assuming the timer is
+   * there: `onModuleDestroy` may have removed it, and `deleteInterval` throws
+   * on a name it does not hold — a throw here would escape into the settings
+   * emitter and be reported as a failure of somebody else's write.
+   *
+   * A tick already in flight is NOT affected. `clearInterval` cancels future
+   * firings and has no opinion about a callback that has already started, and
+   * `runOnce` keeps everything it needs — including the write counter it
+   * deltas and the acting phase it records — in locals. So the in-flight tick
+   * runs to completion and still writes its row, on the schedule it started
+   * under; only the next firing uses the new period.
+   */
+  private applyIntervalPeriod(): void {
+    const intervalMs = this.settings.get('reconciler.intervalMs');
+
+    // A change announcement is not proof the value moved: the emitter carries
+    // keys, not values, and an operator can PATCH the period it already had.
+    // Re-registering on that would reset the countdown, so a repeated write
+    // could hold off the tick indefinitely.
+    if (intervalMs === this.registeredIntervalMs) return;
+
+    const previous = this.registeredIntervalMs;
+
     if (this.scheduler.doesExist('interval', INTERVAL_NAME)) {
       this.scheduler.deleteInterval(INTERVAL_NAME);
     }
+
+    this.registerInterval(intervalMs);
+
+    this.logger.log(
+      `Reconciler tick re-registered every ${intervalMs}ms (was ${previous}ms)`,
+    );
   }
 
   /**
@@ -500,6 +660,27 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
   }
 
   private async runOnce(): Promise<void> {
+    // Re-read every firing. This is the half of #343 that makes the flag live:
+    // the interval always exists, and this is what decides whether it does
+    // anything.
+    //
+    // It gates the WHOLE loop, not just the projection. `ReconcilerService`
+    // has its own check and would return `skipped-disabled` on its own, but
+    // the liveness sweep, the watchdog, escalations, dead time, notification
+    // dispatch, spec feedback and the dispatch drain all hang off this method
+    // too — and none of them ran at all while a disabled reconciler registered
+    // no interval. Gating only the projection would silently turn the whole
+    // rest of that list on for every deployment that has the reconciler off,
+    // which is not a change #343 is entitled to make.
+    if (!this.settings.get('reconciler.enabled')) {
+      // `debug`, not `log`. A disabled deployment now ticks every `intervalMs`
+      // forever; an INFO line each time is how a log stops being read, and
+      // this one competes with the escalations that matter. The state an
+      // operator needs is stated once, in the boot line.
+      this.logger.debug('Reconciler tick skipped: the reconciler is disabled');
+      return;
+    }
+
     // Read before anything runs, and compared after everything has. See
     // `recordExecution` for why this is a delta over the write service
     // rather than a sum of what the executors returned.
