@@ -92,6 +92,35 @@ describe('OperatorSettingsService', () => {
       expect(settings.get('runners.claudeCodeLocal.committerName')).toBe(
         'Opifex Factory',
       );
+
+      // UNSET, not "supplied and rejected". Both give the same value, so
+      // asserting the value alone cannot tell them apart — and the difference
+      // is a log line accusing the operator of a misconfiguration they did not
+      // make, every time the API boots with a commented-out variable.
+      const resolved = settings.resolve('github.userAgent');
+      expect(resolved.source).toBe('default');
+      expect(resolved.invalid).toBeUndefined();
+    });
+
+    it('treats an empty variable as unset even where empty is a legal value', () => {
+      // `github.token` and the fallback webhook accept '' as "not configured",
+      // so for these two an empty variable would otherwise parse SUCCESSFULLY
+      // and resolve from the environment layer. It must still read as unset,
+      // or the layer below it — the database overlay in #339 — could never be
+      // reached by a deployment whose .env still carries `GITHUB_TOKEN=`.
+      const settings = withEnv({
+        GITHUB_TOKEN: '',
+        NOTIFY_FALLBACK_WEBHOOK_URL: '   ',
+      });
+
+      expect(settings.resolve('github.token')).toEqual({
+        key: 'github.token',
+        value: '',
+        source: 'default',
+      });
+      expect(settings.resolve('notifications.fallbackWebhookUrl').source).toBe(
+        'default',
+      );
     });
 
     it('trims a value that a .env file left padded', () => {
