@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 
+import { buildChildEnvironment } from './child-environment';
+
 /**
  * ADR 0006, made concrete.
  *
@@ -53,7 +55,14 @@ export interface SpawnRequest {
   command: string;
   args: readonly string[];
   cwd: string;
-  /** Merged over `process.env`. A key set to `undefined` is removed. */
+  /**
+   * Merged over the ALLOWLISTED inheritance, not over `process.env`.
+   *
+   * See `child-environment.ts`: the child inherits only the handful of
+   * variables named there, and these are added on top. Values here are trusted
+   * because a caller constructs them; the API's own environment is not. A key
+   * set to `undefined` is removed.
+   */
   env?: NodeJS.ProcessEnv;
   /** Written to the child's stdin, which is then closed. */
   stdin?: string;
@@ -409,7 +418,26 @@ export class ChildProcessSupervisor {
   start(request: SpawnRequest): SupervisedProcess {
     const child = spawn(request.command, [...request.args], {
       cwd: request.cwd,
-      env: { ...process.env, ...request.env },
+      // NOT `{ ...process.env, ...request.env }` (#334). The API process holds
+      // JWT_SECRET, POSTGRES_PASSWORD and GITHUB_TOKEN, and spreading them
+      // here handed an autonomous agent the means to mint an admin token and
+      // to reach the database behind the control plane supervising it.
+      //
+      // The filtering is applied HERE, unconditionally, rather than being
+      // something each caller opts into on the request. The supervisor is
+      // generic process machinery and knows nothing about Claude Code — but
+      // this is not a fact about Claude Code, it is a fact about what THIS
+      // process is holding, and this line is the only place in the codebase
+      // that reads `process.env` on a spawn path. An opt-in policy fails open:
+      // the next `supervisor.start()` call written by someone who did not read
+      // this file would inherit everything, silently. That is the same
+      // argument `run-command.ts` already makes for routing git and the
+      // `--version` probe through this one spawn rather than a second one —
+      // one audited path, not two.
+      //
+      // The list itself, and why it must be an allowlist, live in
+      // `child-environment.ts`.
+      env: buildChildEnvironment(request.env),
       // The whole point. `detached` makes the child a process-group leader,
       // which is what gives `kill(-pid, …)` a group to signal. Without it,
       // cancellation reaches one process and orphans its children.

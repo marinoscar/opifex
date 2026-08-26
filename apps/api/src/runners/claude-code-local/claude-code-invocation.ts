@@ -151,10 +151,13 @@ export function buildPrompt(workOrder: WorkOrderSpec): string {
 }
 
 /**
- * The environment a run gets on top of the API's own.
+ * The environment a run gets on top of what it inherits.
  *
- * Narrow on purpose. The child inherits `process.env` (it needs PATH, HOME and
- * whatever authenticates the CLI), and everything added here is either a
+ * Narrow on purpose, and narrower than it reads: what it is "on top of" is NOT
+ * `process.env`. Since #334 the child inherits only the names in
+ * `process/child-environment.ts` — PATH, HOME, locale, and the variable that
+ * authenticates the CLI — so the API's secrets are absent from the agent's
+ * environment rather than merely unmentioned here. Everything added below is a
  * correlation id or a thing that must be off.
  */
 export function buildInvocationEnv(
