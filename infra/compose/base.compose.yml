@@ -53,6 +53,38 @@ services:
     # dev/prod.compose.yml, where `environment:` takes precedence over env_file.
     env_file:
       - .env
+    # -------------------------------------------------------------------------
+    # Runner state that must outlive an image rebuild (#327)
+    # -------------------------------------------------------------------------
+    # Declared in base rather than per mode: a rebuild discards the container's
+    # writable layer identically in development and production.
+    #
+    # The workspace root is where RunWorkspaceService builds idempotency. #18's
+    # exit criterion is that "re-running the same work order is idempotent — the
+    # runner checks whether its branch already exists before doing anything",
+    # and finding an existing workspace at the right commit is what makes a
+    # re-submit a REUSE rather than a second clone. Without this volume every
+    # recovery becomes a full re-clone, at exactly the moment recovery is most
+    # likely to be wanted: a rebuild is what an operator does when something is
+    # already wrong.
+    #
+    # Interpolated from the same variable the API reads, with the same default
+    # as configuration.ts, so changing RUNNER_WORKSPACE_ROOT in .env moves both
+    # the mount and the code that writes to it. Hardcoding the path here would
+    # let the two silently disagree, and the symptom would be a workspace root
+    # that is simply not persisted.
+    #
+    # WHAT THIS DOES NOT BUY: a live run does not survive a restart. ADR-0008
+    # makes the agents children of the API process, so restarting this container
+    # still kills every run in flight. The volume preserves the checkout, not
+    # the work.
+    volumes:
+      - runner-workspaces:${RUNNER_WORKSPACE_ROOT:-/var/tmp/opifex/workspaces}
+      # The CLI's own state under $HOME (/root in this image) — history and
+      # caches. Lesser stakes than the workspace root: with credentials supplied
+      # by environment (#326) nothing load-bearing lives here, so losing it
+      # costs cache warmth rather than the ability to authenticate.
+      - runner-claude-home:/root/.claude
     networks:
       - app-network
       # Shared external network carrying the central postgres container
@@ -69,6 +101,16 @@ services:
       dockerfile: apps/web/Dockerfile
     networks:
       - app-network
+
+# =============================================================================
+# Volumes
+# =============================================================================
+# Named rather than bind-mounted: nothing here is meant to be edited from the
+# host, and a bind mount would put the agent's checkouts into somebody's home
+# directory by accident.
+volumes:
+  runner-workspaces:
+  runner-claude-home:
 
 # =============================================================================
 # Networks
