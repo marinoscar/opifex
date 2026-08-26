@@ -673,12 +673,13 @@ export const OPERATOR_SETTINGS = {
     min: 1,
     max: 20,
     secret: false,
-    // #342. Read once in the reconciler's constructor today
-    // (reconciler.service.ts:94) with a real reason: the projection is pure
-    // and a value that changed mid-tick would make two identical observations
-    // produce different desired states. Snapshotted once per TICK instead of
-    // once per process preserves that reason and still lets the next tick see
-    // a change.
+    // #342. The reconciler used to read this once in its CONSTRUCTOR, with a
+    // real reason: the projection is pure and a value that changed mid-tick
+    // would make two identical observations produce different desired states.
+    // It is now snapshotted once per TICK (`ReconcilerService.snapshotSettings`),
+    // which keeps that reason and still lets the next tick see a change —
+    // `RunSummaryService` reads the same key live, so the two agree to within
+    // one tick interval rather than until the next restart.
     reload: 'live',
     group: 'dispatch',
     label: 'Attempts per work order',
