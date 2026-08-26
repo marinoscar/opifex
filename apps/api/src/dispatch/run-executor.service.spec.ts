@@ -511,7 +511,11 @@ describe('RunExecutorService', () => {
       } as unknown as ClaudeCodeLocalRunner;
       Object.defineProperty(runner, 'key', { value: 'claude-code-local' });
       const prisma = {
-        run: { create: runCreate, delete: runDelete, updateMany: runUpdateMany },
+        run: {
+          create: runCreate,
+          delete: runDelete,
+          updateMany: runUpdateMany,
+        },
         workOrder: { update: workOrderUpdate },
       } as unknown as PrismaService;
 
