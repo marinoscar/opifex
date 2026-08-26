@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { RUNNER_CAPABILITY_MODEL_TIERS } from '../contracts/generated';
 import { PrismaService } from '../prisma/prisma.service';
 import { meterQuotaPosition, type MeterWindow } from '../quota/quota-window';
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import type { BlockedReason } from '../run-events/run-event.types';
 import type {
   ModelTier,
@@ -66,7 +66,7 @@ export class DispatchService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
   ) {}
 
   /**
@@ -92,11 +92,14 @@ export class DispatchService {
     ]);
 
     const decision = decideDispatch({ needs, identity, modelTier }, pool, {
-      globalMaxConcurrent:
-        this.config.get<number | null>('dispatch.maxConcurrent') ?? null,
+      // The registry's default IS `null`, and its nullable schema is what
+      // keeps "no ceiling" a real value rather than the string `'undefined'`
+      // ADR-0018 records `ConfigService.set()` producing.
+      globalMaxConcurrent: this.settings.get('dispatch.maxConcurrent'),
       globalLiveRuns,
-      allowPreviewWithoutGaFallback:
-        this.config.get<boolean>('dispatch.allowPreviewRunner') === true,
+      allowPreviewWithoutGaFallback: this.settings.get(
+        'dispatch.allowPreviewRunner',
+      ),
     });
 
     // Logged at `log` for a dispatch and `warn` for a queue: a work order that

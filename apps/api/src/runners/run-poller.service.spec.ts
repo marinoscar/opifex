@@ -1,11 +1,14 @@
 import { EscalationsService } from '../escalations/escalations.service';
-import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import type { QuotaService } from '../quota/quota.service';
 import {
   RunEventsService,
   type IngestResult,
 } from '../run-events/run-events.service';
+import {
+  makeOperatorSettings,
+  type FakeOperatorSettingsService,
+} from '../settings/operator-settings/operator-settings.test-double';
 import { SILENCE_THRESHOLDS_MS } from '../watchdog/silent-detection';
 import { FakeRunner } from './fake-runner';
 import {
@@ -60,15 +63,11 @@ describe('RunPollerService', () => {
     ...overrides,
   });
 
-  let config: ConfigService;
+  let settings: FakeOperatorSettingsService;
   let raiseFrom: jest.Mock;
   let findUnique: jest.Mock;
-  let defaultTimeoutMinutes: number | null = null;
-  let graceMinutes = 2;
 
   beforeEach(() => {
-    defaultTimeoutMinutes = null;
-    graceMinutes = 2;
     ingest = jest.fn(async (_runId, events: unknown[]) => ({
       accepted: events.length,
       duplicates: 0,
@@ -95,25 +94,25 @@ describe('RunPollerService', () => {
     } as unknown as PrismaService;
     const runEvents = { ingest } as unknown as RunEventsService;
 
-    // Deadline config the deadline pass (#180) reads. Defaulted generously so
-    // every pre-existing test in this file keeps testing polling rather than
-    // silently exercising a cancellation -- the same care the executor spec
-    // takes with the spend gate.
-    config = {
-      get: (key: string) =>
-        key === 'runners.claudeCodeLocal.defaultTimeoutMinutes'
-          ? defaultTimeoutMinutes
-          : key === 'runners.deadlineGraceMinutes'
-            ? graceMinutes
-            : undefined,
-    } as unknown as ConfigService;
+    // Deadline settings the deadline pass (#180) reads. Both are stated
+    // explicitly rather than inherited from the registry: the registry's own
+    // default ceiling is 60 minutes, and every pre-existing test in this file
+    // is about polling rather than cancellation -- the same care the executor
+    // spec takes with the spend gate. `settings` is the double, so a test that
+    // needs a different ceiling flips it the way an operator would.
+    settings = makeOperatorSettings({
+      overrides: {
+        'runners.claudeCodeLocal.defaultTimeoutMinutes': null,
+        'runners.deadlineGraceMinutes': 2,
+      },
+    });
 
     raiseFrom = jest.fn().mockResolvedValue({ raised: 1, deduplicated: 0 });
     recordQuota = jest.fn().mockResolvedValue(1);
     poller = new RunPollerService(
       prisma,
       runEvents,
-      config,
+      settings,
       { raiseFrom } as unknown as EscalationsService,
       { record: recordQuota } as unknown as QuotaService,
     );
@@ -595,7 +594,7 @@ describe('RunPollerService', () => {
     });
 
     it('uses the configured default when the order names no ceiling', async () => {
-      defaultTimeoutMinutes = 5;
+      settings.setOverride('runners.claudeCodeLocal.defaultTimeoutMinutes', 5);
       findMany.mockResolvedValue([liveRun(HOUR_AGO, null)]);
       const runner = stubRunner();
       poller.track(RUN_ID, runner, handle());
@@ -607,7 +606,10 @@ describe('RunPollerService', () => {
     it('leaves an unbounded run running, however long it has been going', async () => {
       // No ceiling on the order and no default configured is a deliberate
       // operator choice, per RUNNER_DEFAULT_TIMEOUT_MINUTES' own docs.
-      defaultTimeoutMinutes = null;
+      settings.setOverride(
+        'runners.claudeCodeLocal.defaultTimeoutMinutes',
+        null,
+      );
       findMany.mockResolvedValue([liveRun(HOUR_AGO, null)]);
       const runner = stubRunner();
       poller.track(RUN_ID, runner, handle());

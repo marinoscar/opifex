@@ -1,7 +1,6 @@
-import { ConfigService } from '@nestjs/config';
-
 import { PrismaService } from '../prisma/prisma.service';
 import type { RunnerCapabilities } from '../runners/runner.types';
+import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import type { RunnerQuotaPosition } from './dispatch-policy';
 import {
   DispatchService,
@@ -101,7 +100,9 @@ describe('DispatchService', () => {
   function build(maxConcurrent: number | null = null) {
     service = new DispatchService(
       prisma as unknown as PrismaService,
-      new ConfigService({ dispatch: { maxConcurrent } }),
+      makeOperatorSettings({
+        overrides: { 'dispatch.maxConcurrent': maxConcurrent },
+      }),
     );
     jest.spyOn(service['logger'], 'log').mockImplementation(() => undefined);
     jest.spyOn(service['logger'], 'warn').mockImplementation(() => undefined);

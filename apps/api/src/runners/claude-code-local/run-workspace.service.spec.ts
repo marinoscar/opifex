@@ -1,10 +1,11 @@
-import { ConfigService } from '@nestjs/config';
 import { execFile } from 'node:child_process';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
+import type { OperatorSettingsOverrides } from '../../settings/operator-settings/operator-settings.registry';
+import { makeOperatorSettings } from '../../settings/operator-settings/operator-settings.test-double';
 import {
   GIT_TOKEN_ENV_VAR,
   RunWorkspaceService,
@@ -39,20 +40,22 @@ describe('RunWorkspaceService', () => {
     return stdout.trim();
   }
 
-  function build(overrides: Record<string, unknown> = {}): RunWorkspaceService {
-    const values: Record<string, unknown> = {
-      'runners.claudeCodeLocal.workspaceRoot': workspaceRoot,
-      'runners.claudeCodeLocal.gitBinary': 'git',
-      'runners.claudeCodeLocal.gitRemoteBaseUrl': `file://${scratch}`,
-      'runners.claudeCodeLocal.committerName': 'Opifex Factory',
-      'runners.claudeCodeLocal.committerEmail': 'factory@opifex.local',
-      'github.token': 'ghp_fake_token_for_tests',
-      ...overrides,
-    };
-    const config = {
-      get: (key: string) => values[key],
-    } as unknown as ConfigService;
-    return new RunWorkspaceService(config);
+  function build(
+    overrides: OperatorSettingsOverrides = {},
+  ): RunWorkspaceService {
+    return new RunWorkspaceService(
+      makeOperatorSettings({
+        overrides: {
+          'runners.claudeCodeLocal.workspaceRoot': workspaceRoot,
+          'runners.claudeCodeLocal.gitBinary': 'git',
+          'runners.claudeCodeLocal.gitRemoteBaseUrl': `file://${scratch}`,
+          'runners.claudeCodeLocal.committerName': 'Opifex Factory',
+          'runners.claudeCodeLocal.committerEmail': 'factory@opifex.local',
+          'github.token': 'ghp_fake_token_for_tests',
+          ...overrides,
+        },
+      }),
+    );
   }
 
   const request = () => ({
@@ -369,7 +372,10 @@ describe('RunWorkspaceService', () => {
       // A public repository clones without one, and pushing is the step that
       // should fail visibly — not this, refusing to start a run that might
       // never have needed a token.
-      const anonymous = build({ 'github.token': undefined });
+      // Empty, not absent: empty IS the registry's default for this key, and
+      // it is what an operator clearing the field in the Control Center lands
+      // on.
+      const anonymous = build({ 'github.token': '' });
       const workspace = await anonymous.provision(request());
 
       expect(workspace.headCommit).toBe(baseCommit);

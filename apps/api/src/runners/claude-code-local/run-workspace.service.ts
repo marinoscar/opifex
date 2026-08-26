@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { mkdir, rm, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
+import { OperatorSettingsService } from '../../settings/operator-settings/operator-settings.service';
 import { ChildProcessSupervisor } from '../process/child-process-supervisor';
 import {
   describeFailure,
@@ -65,12 +65,14 @@ export class RunWorkspaceService {
   private readonly logger = new Logger(RunWorkspaceService.name);
   private readonly supervisor = new ChildProcessSupervisor();
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly settings: OperatorSettingsService) {}
 
   private get root(): string {
-    return resolve(
-      this.config.get<string>('runners.claudeCodeLocal.workspaceRoot')!,
-    );
+    // Re-read per call, as before. The registry declares this key `restart`
+    // anyway — changing it while runs are live orphans their workspaces where
+    // nothing can find or reap them — so the per-call read is not a promise
+    // that moving it is safe.
+    return resolve(this.settings.get('runners.claudeCodeLocal.workspaceRoot'));
   }
 
   /** Absolute path for an identity, whether or not it exists yet. */
@@ -284,7 +286,7 @@ export class RunWorkspaceService {
    * long as the child does.
    */
   private async configureCredentials(dir: string): Promise<void> {
-    const token = this.config.get<string>('github.token');
+    const token = this.settings.get('github.token');
     if (!token) {
       // Not fatal. A public repository clones anonymously, and pushing is the
       // step that will fail — visibly, with a git error — rather than this
@@ -317,12 +319,8 @@ export class RunWorkspaceService {
    * with a human having written the code.
    */
   private async configureCommitter(dir: string): Promise<void> {
-    const name = this.config.get<string>(
-      'runners.claudeCodeLocal.committerName',
-    )!;
-    const email = this.config.get<string>(
-      'runners.claudeCodeLocal.committerEmail',
-    )!;
+    const name = this.settings.get('runners.claudeCodeLocal.committerName');
+    const email = this.settings.get('runners.claudeCodeLocal.committerEmail');
     await this.expect(
       dir,
       ['config', '--local', 'user.name', name],
@@ -336,15 +334,15 @@ export class RunWorkspaceService {
   }
 
   private remoteUrl(repository: { owner: string; name: string }): string {
-    const base = this.config
-      .get<string>('runners.claudeCodeLocal.gitRemoteBaseUrl')!
+    const base = this.settings
+      .get('runners.claudeCodeLocal.gitRemoteBaseUrl')
       .replace(/\/+$/, '');
     return `${base}/${repository.owner}/${repository.name}.git`;
   }
 
   private async git(cwd: string, args: string[]): Promise<CommandResult> {
     return runCommand(this.supervisor, {
-      command: this.config.get<string>('runners.claudeCodeLocal.gitBinary')!,
+      command: this.settings.get('runners.claudeCodeLocal.gitBinary'),
       args,
       cwd,
       env: {
@@ -355,7 +353,7 @@ export class RunWorkspaceService {
         GIT_TERMINAL_PROMPT: '0',
         GIT_PAGER: 'cat',
         GIT_OPTIONAL_LOCKS: '0',
-        [GIT_TOKEN_ENV_VAR]: this.config.get<string>('github.token') ?? '',
+        [GIT_TOKEN_ENV_VAR]: this.settings.get('github.token'),
       },
     });
   }

@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { isAvailable } from '../dispatch/dispatch-policy';
 import { toCapabilities } from '../dispatch/dispatch.service';
 import { EscalationsService } from '../escalations/escalations.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import { REGISTRATION_INTERVAL_MS } from './runner-registration.service';
 
 /**
@@ -234,7 +234,7 @@ export class FleetStateService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
     private readonly escalations: EscalationsService,
   ) {}
 
@@ -493,7 +493,7 @@ export class FleetStateService {
   }
 
   private get dispatchEnabled(): boolean {
-    return this.config.get<boolean>('dispatch.enabled') === true;
+    return this.settings.get('dispatch.enabled');
   }
 }
 

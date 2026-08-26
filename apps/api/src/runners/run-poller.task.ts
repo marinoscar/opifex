@@ -4,9 +4,9 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import { POLL_INTERVAL_MS, RunPollerService } from './run-poller.service';
 
 const INTERVAL_NAME = 'run-poller-tick';
@@ -35,13 +35,15 @@ export class RunPollerTask implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RunPollerTask.name);
 
   constructor(
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
     private readonly scheduler: SchedulerRegistry,
     private readonly poller: RunPollerService,
   ) {}
 
   onModuleInit(): void {
-    if (this.config.get<boolean>('runners.claudeCodeLocal.enabled') !== true) {
+    // #343 removes this boot-time gate so the interval is registered
+    // unconditionally. Until then the read simply moves to the resolver.
+    if (!this.settings.get('runners.claudeCodeLocal.enabled')) {
       // No interval at all rather than one that wakes to decide it is off —
       // the same argument the reconciler makes, and the same reason: a
       // disabled loop that still appears in every profile invites the question

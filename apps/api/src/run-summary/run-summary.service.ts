@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { GitHubWriteService } from '../github/write/github-write.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import { DecisionLogService } from '../supervisor/decision-log/decision-log.service';
 import { composeRunSummary, type RunSummaryFacts } from './run-summary';
 
@@ -35,7 +35,7 @@ export class RunSummaryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly writes: GitHubWriteService,
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
     /**
      * Read-only access to the decision log, for the supervisor's diagnosis
      * (#92).
@@ -124,7 +124,7 @@ export class RunSummaryService {
       runId: run.id,
       workOrderIdentity: run.workOrder.identity,
       attempt: run.workOrder.attempt,
-      retryCeiling: this.config.get<number>('dispatch.retryCeiling') ?? 3,
+      retryCeiling: this.settings.get('dispatch.retryCeiling'),
       runnerKey: run.runnerKey,
       runnerVersion: run.runner.version,
       status: run.status,

@@ -1,11 +1,11 @@
 import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 
 import {
   RUN_EVENT_SCHEMA_VERSION,
   type RunEventPayload,
 } from '../../run-events/run-event.types';
+import { OperatorSettingsService } from '../../settings/operator-settings/operator-settings.service';
 import {
   ChildProcessSupervisor,
   type SupervisedProcess,
@@ -24,7 +24,6 @@ import {
   buildInvocationArgs,
   buildInvocationEnv,
   buildPrompt,
-  PERMISSION_MODES,
   type PermissionMode,
 } from './claude-code-invocation';
 import { RunWorkspaceService } from './run-workspace.service';
@@ -88,7 +87,7 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
   private observedVersion: string | null = null;
 
   constructor(
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
     private readonly workspaces: RunWorkspaceService,
   ) {}
 
@@ -175,9 +174,7 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
       cwd: workspace.dir,
       env: buildInvocationEnv(workOrder),
       stdin: buildPrompt(workOrder),
-      killGraceMs: this.config.get<number>(
-        'runners.claudeCodeLocal.killGraceMs',
-      ),
+      killGraceMs: this.settings.get('runners.claudeCodeLocal.killGraceMs'),
       onLine: (line) => {
         run.linesObserved += 1;
         run.lastOutputAt = new Date();
@@ -773,11 +770,11 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
   }
 
   private get binary(): string {
-    return this.config.get<string>('runners.claudeCodeLocal.binary')!;
+    return this.settings.get('runners.claudeCodeLocal.binary');
   }
 
   private get maxConcurrency(): number {
-    return this.config.get<number>('runners.claudeCodeLocal.maxConcurrency')!;
+    return this.settings.get('runners.claudeCodeLocal.maxConcurrency');
   }
 
   /**
@@ -790,10 +787,7 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
    * unbounded run looks like when it wedges.
    */
   private get defaultTimeoutMinutes(): number | null {
-    const configured = this.config.get<number | null>(
-      'runners.claudeCodeLocal.defaultTimeoutMinutes',
-    );
-    return configured ?? null;
+    return this.settings.get('runners.claudeCodeLocal.defaultTimeoutMinutes');
   }
 
   /**
@@ -806,21 +800,11 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
    * notice. Widening it is a deliberate act by an operator who has read that.
    */
   private get permissionMode(): PermissionMode {
-    const configured = this.config.get<string>(
-      'runners.claudeCodeLocal.permissionMode',
-    );
-    if (
-      configured &&
-      (PERMISSION_MODES as readonly string[]).includes(configured)
-    ) {
-      return configured as PermissionMode;
-    }
-    if (configured) {
-      this.logger.warn(
-        `Unknown permission mode "${configured}"; falling back to acceptEdits`,
-      );
-    }
-    return 'acceptEdits';
+    // The validate-or-fall-back-to-acceptEdits dance that used to live here is
+    // now the registry's: `runners.claudeCodeLocal.permissionMode` is an enum
+    // over the same `PERMISSION_MODES`, so an unrecognized value resolves to
+    // the declared default and the resolver logs which variable was rejected.
+    return this.settings.get('runners.claudeCodeLocal.permissionMode');
   }
 }
 

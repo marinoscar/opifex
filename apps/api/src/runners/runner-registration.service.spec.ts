@@ -1,8 +1,8 @@
 import { Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { ContractValidator } from '../contracts/contract-validator';
 import { PrismaService } from '../prisma/prisma.service';
+import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import { ClaudeCodeLocalRunner } from './claude-code-local/claude-code-local.runner';
 import {
   REGISTRATION_INTERVAL_MS,
@@ -114,12 +114,11 @@ describe('RunnerRegistrationService', () => {
   ) {
     prisma = buildPrisma();
 
-    const config = {
-      get: (key: string) =>
-        key === 'runners.claudeCodeLocal.enabled'
-          ? (options.enabled ?? true)
-          : undefined,
-    } as unknown as ConfigService;
+    const settings = makeOperatorSettings({
+      overrides: {
+        'runners.claudeCodeLocal.enabled': options.enabled ?? true,
+      },
+    });
 
     const runner = {
       capabilities: jest.fn(async () => {
@@ -131,7 +130,7 @@ describe('RunnerRegistrationService', () => {
       }),
     } as unknown as ClaudeCodeLocalRunner;
 
-    return new RunnerRegistrationService(prisma, config, runner, contracts);
+    return new RunnerRegistrationService(prisma, settings, runner, contracts);
   }
 
   describe('the double publishes what it declares', () => {
@@ -291,15 +290,17 @@ describe('RunnerRegistrationService', () => {
       });
     });
 
-    it('treats anything other than true as off', async () => {
-      const config = { get: () => undefined } as unknown as ConfigService;
+    it('is off when nothing enables it', async () => {
+      // No override and a hermetic environment: the `false` here is the
+      // REGISTRY's declared default, which is where "anything other than true
+      // is off" now lives (see `booleanSetting` in the registry).
       const runner = {
         capabilities: jest.fn(async () => CAPABILITIES),
       } as unknown as ClaudeCodeLocalRunner;
 
       await new RunnerRegistrationService(
         buildPrisma(),
-        config,
+        makeOperatorSettings(),
         runner,
         contracts,
       ).onModuleInit();
@@ -640,16 +641,16 @@ describe('RunnerRegistrationService', () => {
       // signature, so suppression never hides a change an operator would act
       // on.
       const logger = spyOnLogger();
-      const config = {
-        get: () => true,
-      } as unknown as ConfigService;
+      const settings = makeOperatorSettings({
+        overrides: { 'runners.claudeCodeLocal.enabled': true },
+      });
       let version = '2.1.240';
       const runner = {
         capabilities: jest.fn(async () => capabilitiesOf({ version })),
       } as unknown as ClaudeCodeLocalRunner;
       const service = new RunnerRegistrationService(
         buildPrisma(),
-        config,
+        settings,
         runner,
         contracts,
       );
