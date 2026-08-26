@@ -1,9 +1,15 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 
 import type { HardCeiling } from '../../budget/hard-spend-ceiling';
+import { OperatorSettingsService } from '../../settings/operator-settings/operator-settings.service';
 
 /**
- * The supervisor's own hard spend ceiling (#261, ADR-0017).
+ * The supervisor's own hard spend ceiling (#261, #345, ADR-0017, ADR-0018 §6).
  *
  * ## Why this is not `OPIFEX_HARD_SPEND_CEILING_USD`
  *
@@ -20,16 +26,30 @@ import type { HardCeiling } from '../../budget/hard-spend-ceiling';
  * — `HardSpendCeilingService` keeps meaning exactly one thing everywhere it
  * appears, and a reader never has to ask "which ceiling".
  *
- * ## Why this does not go through `ConfigService`, either
+ * ## The guarantee is access control now, not absence
  *
- * The same reason the dispatch ceiling does not, and it is worth restating
- * rather than cross-referencing, because the value is what it protects.
- * `ConfigService` has a public `set()`, and `system_settings` is a JSONB row an
- * Admin can `PATCH` over HTTP. VISION §8: "a limit an agent can raise is not a
- * limit." So `process.env` is read once, here, in the constructor, into a
- * `readonly` field with no setter anywhere in this class. Raising it takes an
- * operator changing the environment and restarting the process — an act
- * outside the running system, which is the point.
+ * This header used to say that `process.env` was read once, in the
+ * constructor, into a `readonly` field with no setter anywhere in the class,
+ * and that raising the ceiling therefore took an operator changing the
+ * environment and restarting the process. That is no longer true, and ADR-0018
+ * §6 is where the reversal is argued rather than here — the same argument, in
+ * the same words, for both ceilings, so this file cross-references it instead
+ * of restating half of it and drifting from the other half.
+ *
+ * The short version: the guarantee moved from **structural** (no setter exists
+ * anywhere in the process, so there is nothing inside it to compromise) to
+ * **access-controlled** (a setter exists — `PATCH /api/operator-settings` —
+ * and the agent provably cannot reach it). That is a real downgrade, and it is
+ * only defensible because the agent subprocess inherits no credential to
+ * authenticate with (#334) and this write path refuses any credential that
+ * cannot prove a human was present (#346). Either one missing invalidates the
+ * decision rather than merely weakening it. VISION §8's "a limit an agent can
+ * raise is not a limit" is unchanged and still holds: no trust grant, no
+ * promoted action class and no agent-reachable path moves this number, and
+ * `autonomy/never-trustable.ts` refuses a `budget-config-write` effect
+ * whatever the class registry says. Every change is filed in `audit_events` by
+ * the write path that makes it — which the old design could not offer, because
+ * there was nothing to record.
  *
  * ## Unset refuses, and that is a behaviour change with a name
  *
@@ -40,18 +60,31 @@ import type { HardCeiling } from '../../budget/hard-spend-ceiling';
  * limit. "Unset means unlimited" is therefore not a neutral default here — it
  * is that bug, restated as a default. A deployment running a supervisor today
  * with no ceiling configured stops running one the moment this ships, and
- * stays stopped until `SUPERVISOR_HARD_SPEND_CEILING_USD` is set. That is the
- * hole being closed, not a regression to soften, and `announce()` below is
- * what makes sure the operator can see it happen rather than infer it from
- * silence.
+ * stays stopped until `SUPERVISOR_HARD_SPEND_CEILING_USD` is set — or, since
+ * #345, until an admin sets it from the Control Center. That is the hole being
+ * closed, not a regression to soften, and `announce()` below is what makes
+ * sure the operator can see it happen rather than infer it from silence.
  */
 
-/** The only name that sets the supervisor's ceiling. Nothing else may. */
+/**
+ * The environment variable the supervisor's ceiling falls back to.
+ *
+ * No longer "the only name that sets it": since #345 it is the middle layer of
+ * `default -> env -> database row`, and a row written from the Control Center
+ * wins over it. It is still the only *variable*, and a deployment that sets it
+ * and never opens the Control Center behaves exactly as it did before.
+ */
 export const SUPERVISOR_SPEND_CEILING_ENV = 'SUPERVISOR_HARD_SPEND_CEILING_USD';
 
-/** The only name that sets the window that ceiling is measured over. */
+/** The variable the window falls back to, on the same three-layer terms. */
 export const SUPERVISOR_SPEND_CEILING_WINDOW_ENV =
   'SUPERVISOR_HARD_SPEND_CEILING_WINDOW_DAYS';
+
+/** The managed keys this ceiling resolves through. */
+export const SUPERVISOR_SPEND_CEILING_KEYS = [
+  'supervisor.hardSpendCeilingUsd',
+  'supervisor.hardSpendCeilingWindowDays',
+] as const;
 
 /**
  * The default window: ONE day, where dispatch's ceiling defaults to thirty.
@@ -141,24 +174,49 @@ function positiveIntOr(raw: string | undefined, fallback: number): number {
 }
 
 /**
- * Holds the supervisor's ceiling for the lifetime of the process.
+ * Holds the supervisor's ceiling, and re-reads it whenever an operator moves
+ * it.
  *
- * No setter, no mutable field, and `process.env` is read exactly once, so
- * mutating `process.env` after boot cannot move it either.
+ * The same shape as `HardSpendCeilingService`, deliberately, and for the same
+ * reasons its class doc gives at length: `refresh()` is the only mutator, it
+ * takes no argument so that nothing holding this instance can name a number,
+ * and it is called from three places — the constructor (so a boot log states
+ * the ceiling even when only the environment layer answers), `onModuleInit`
+ * (because providers are constructed before the resolver loads its overlay),
+ * and the change listener (which is what makes a live edit take effect).
  */
 @Injectable()
-export class SupervisorSpendCeilingService {
+export class SupervisorSpendCeilingService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(SupervisorSpendCeilingService.name);
 
-  private readonly ceiling: HardCeiling;
+  /** Mutable since #345 — see the class doc. `value` hands out a copy. */
+  private ceiling: HardCeiling;
 
-  // `@Optional()` so Nest passes nothing and the default wins: the container
-  // has no `NodeJS.ProcessEnv` to resolve, and the parameter exists only so a
-  // test can hand this class an environment without mutating the process's.
-  // Nothing in the running system passes it.
-  constructor(@Optional() env: NodeJS.ProcessEnv = process.env) {
-    this.ceiling = parseSupervisorCeiling(env);
-    this.announce(env['SUPERVISOR_ENABLED'] === 'true');
+  /** Detaches the settings listener. Undefined before init, after destroy. */
+  private unsubscribe: (() => void) | undefined;
+
+  // The `@Optional() env: NodeJS.ProcessEnv` parameter this class used to take
+  // is gone. It existed so a spec could hand this class an environment without
+  // mutating the process's; `makeOperatorSettings({ env })` does that now, and
+  // does it for the whole resolution chain rather than for one layer of it.
+  constructor(private readonly settings: OperatorSettingsService) {
+    this.ceiling = this.read();
+    this.announce();
+
+    this.unsubscribe = this.settings.onChange((change) => {
+      if (change.keys.some((key) => keyOfThisCeiling(key))) this.refresh();
+    });
+  }
+
+  onModuleInit(): void {
+    this.refresh();
+  }
+
+  onModuleDestroy(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = undefined;
   }
 
   /** The ceiling in force. A copy, so a caller cannot mutate the held value. */
@@ -166,8 +224,42 @@ export class SupervisorSpendCeilingService {
     return { ...this.ceiling };
   }
 
+  /** Take whatever the resolver now says, and announce it if it moved. */
+  refresh(): HardCeiling {
+    const next = this.read();
+    const moved =
+      next.limitUsd !== this.ceiling.limitUsd ||
+      next.windowDays !== this.ceiling.windowDays ||
+      next.malformed !== this.ceiling.malformed;
+
+    this.ceiling = next;
+    if (moved) this.announce();
+
+    return this.value;
+  }
+
   /**
-   * Say at boot what the ceiling is, including when there isn't one.
+   * The resolver's answer, run through the same parser as the environment's.
+   *
+   * Handed to `parseSupervisorCeiling` in the shape it already takes rather
+   * than interpreted here, so that the malformed / absent / fail-closed rules
+   * have exactly one implementation on both layers — which is also what keeps
+   * the parity assertion against `parseHardCeiling` meaningful.
+   */
+  private read(): HardCeiling {
+    return parseSupervisorCeiling({
+      [SUPERVISOR_SPEND_CEILING_ENV]: this.settings.get(
+        'supervisor.hardSpendCeilingUsd',
+      ),
+      [SUPERVISOR_SPEND_CEILING_WINDOW_ENV]: String(
+        this.settings.get('supervisor.hardSpendCeilingWindowDays'),
+      ),
+    });
+  }
+
+  /**
+   * Say what the ceiling is, at boot and on every change, including when there
+   * isn't one.
    *
    * Three cases, mirroring `HardSpendCeilingService.announce()`: malformed is
    * an ERROR, because it is the case where somebody believed they had set a
@@ -177,13 +269,14 @@ export class SupervisorSpendCeilingService {
    * log line stating the figure, because a safety limit nobody can see the
    * state of is one an operator will assume is working.
    *
-   * Silent unless `SUPERVISOR_ENABLED` is true. A deployment that never turned
-   * the supervisor on does not need an hourly reminder to configure a ceiling
-   * for a feature it is not running — a boot warning about a setting nobody
-   * chose teaches operators to skim warnings.
+   * Silent unless the supervisor is enabled, and that is now read through the
+   * resolver like everything else rather than off a raw environment variable —
+   * a deployment that never turned the supervisor on does not need a reminder
+   * to configure a ceiling for a feature it is not running, and a boot warning
+   * about a setting nobody chose teaches operators to skim warnings.
    */
-  private announce(supervisorEnabled: boolean): void {
-    if (!supervisorEnabled) return;
+  private announce(): void {
+    if (!this.settings.get('supervisor.enabled')) return;
 
     const { limitUsd, windowDays, malformed } = this.ceiling;
 
@@ -208,8 +301,14 @@ export class SupervisorSpendCeilingService {
 
     this.logger.log(
       `Supervisor spend ceiling: $${limitUsd} per ${windowDays} day(s). Separate from the ` +
-        `dispatch ceiling, and it cannot be raised at runtime by any setting, endpoint or ` +
-        `trust grant.`,
+        `dispatch ceiling, and it cannot be raised by any trust grant, promoted action class ` +
+        `or agent-reachable path — only by a signed-in admin, interactively, on the record ` +
+        `(ADR-0018 §6).`,
     );
   }
+}
+
+/** Whether a changed managed key is one of this ceiling's two. */
+function keyOfThisCeiling(key: string): boolean {
+  return (SUPERVISOR_SPEND_CEILING_KEYS as readonly string[]).includes(key);
 }
