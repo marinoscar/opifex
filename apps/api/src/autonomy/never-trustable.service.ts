@@ -55,7 +55,8 @@ export type NeverTrustableVerdict =
  * Thin by design. All of the judgement is in `never-trustable.ts`, which reads
  * no configuration and can be tested without a container; this class exists to
  * supply the one value that guard needs from the outside world — the #65 hard
- * ceiling, which is held in `readonly` fields with no setter — and to add the
+ * ceiling, which since #345 an admin can move through an audited, interactive
+ * write and nothing else can (ADR-0018 §6) — and to add the
  * audit row ADR-0013 requires, because "a refusal that is silently dropped
  * at the boundary makes that signal invisible at the exact moment it would
  * matter most: repeated attempts are how a misbehaving proposer or a promotion

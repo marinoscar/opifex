@@ -256,16 +256,26 @@ describe('decideSpendAdmission', () => {
       expect(verdict.reason).toContain('3 run(s)');
     });
 
-    it('says the ceiling cannot be raised, on every refusal that is about money', () => {
+    it('says who can raise the ceiling, on every refusal that is about money', () => {
       // The operator's next move on hitting a limit is to look for the knob.
       // The message has to answer that before they go looking.
+      //
+      // This used to assert 'cannot be raised at runtime', which was true
+      // while the ceiling was frozen at boot with no setter. #345 made it
+      // false, and a refusal that told an operator there was no knob while one
+      // sat in the Control Center would be a lie told at the moment they are
+      // most likely to believe it. What the message must still say — and this
+      // asserts both halves, so dropping either fails — is that nothing an
+      // agent holds can raise it.
       const verdict = decideSpendAdmission(
         ceiling(10),
         tally({ totalUsd: 10 }),
         order(),
       );
 
-      expect(verdict.reason).toContain('cannot be raised at runtime');
+      expect(verdict.reason).toContain('No trust grant');
+      expect(verdict.reason).toContain('signed-in admin');
+      expect(verdict.reason).not.toContain('cannot be raised at runtime');
     });
   });
 });

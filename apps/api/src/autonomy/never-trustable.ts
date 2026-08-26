@@ -503,10 +503,18 @@ function spendRefusalReason(usd: number, ceiling: HardCeiling): string | null {
   if (usd > ceiling.limitUsd) {
     // `>` and not `>=`: a spend of exactly the ceiling is at the ceiling, not
     // above it, and "ceiling" is the word VISION §8 uses.
+    //
+    // The sentence used to end "configuration may only lower it, and only by
+    // restarting the process". That stopped being true in #345: an admin can
+    // raise it from the Control Center. What did NOT change is the half this
+    // message is actually about — no grant raises it — so the correction names
+    // who can, rather than dropping the claim and leaving an operator who has
+    // just been refused to go looking for the knob on their own.
     return (
       `Refused: spend of $${usd} exceeds the hard ceiling of ` +
-      `$${ceiling.limitUsd}. No grant raises it (VISION §8); configuration ` +
-      'may only lower it, and only by restarting the process (#65).'
+      `$${ceiling.limitUsd}. No trust grant, promoted action class or agent ` +
+      'raises it (VISION §8); only a signed-in admin can, interactively, on ' +
+      'the record (ADR-0018 §6).'
     );
   }
 

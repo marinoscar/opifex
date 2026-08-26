@@ -109,13 +109,19 @@ describe('assessSupervisorSpend (#261)', () => {
       expect(verdict.reason).toContain('20 invocation(s)');
     });
 
-    it('says the ceiling cannot be raised at runtime', () => {
+    it('says who can raise the ceiling, and who cannot', () => {
+      // See `spend-admission.spec.ts` for why this no longer asserts "cannot
+      // be raised at runtime": #345 made that sentence false, and a refusal
+      // that claims there is no knob while one sits in the Control Center is a
+      // lie told at the moment an operator is most likely to believe it.
       const verdict = assessSupervisorSpend(
         ceiling(),
         tally({ reportedUsd: 6 }),
       );
 
-      expect(verdict.reason).toContain('cannot be raised at runtime');
+      expect(verdict.reason).toContain('No trust grant');
+      expect(verdict.reason).toContain('signed-in admin');
+      expect(verdict.reason).not.toContain('cannot be raised at runtime');
     });
 
     it('refuses a ceiling of zero, which is an instruction and not an absence', () => {
