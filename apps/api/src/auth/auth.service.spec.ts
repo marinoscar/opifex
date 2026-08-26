@@ -702,6 +702,57 @@ describe('AuthService', () => {
       });
     });
 
+    /**
+     * The bypass this closes, in one request (#346).
+     *
+     * `InteractiveSessionGuard` refuses a device-flow access token. Without
+     * these two behaviours, a holder of one would call `POST /api/auth/refresh`
+     * and be handed a fresh access token with no device marker on it — the
+     * guard would be decorative, and nothing would look wrong.
+     */
+    describe('credential kind survives rotation (#346)', () => {
+      const deviceToken = 'dvc_a_device_flow_refresh_token';
+
+      beforeEach(() => {
+        mockPrisma.refreshToken.findUnique.mockResolvedValue(
+          mockRefreshToken as any,
+        );
+        mockPrisma.refreshToken.update.mockResolvedValue({} as any);
+        mockPrisma.refreshToken.create.mockResolvedValue({} as any);
+      });
+
+      it('mints a device-code access token from a device-flow refresh token', async () => {
+        await service.refreshAccessToken(deviceToken);
+
+        expect(mockJwtService.sign).toHaveBeenCalledWith(
+          expect.objectContaining({ cred: 'device-code' }),
+          expect.anything(),
+        );
+      });
+
+      it('keeps the device prefix on the rotated refresh token', async () => {
+        // Otherwise the laundering is only postponed by one rotation.
+        const result = await service.refreshAccessToken(deviceToken);
+
+        expect(result.refreshToken?.startsWith('dvc_')).toBe(true);
+      });
+
+      it('mints an interactive access token from an unprefixed refresh token', async () => {
+        await service.refreshAccessToken('an-ordinary-login-refresh-token');
+
+        expect(mockJwtService.sign).toHaveBeenCalledWith(
+          expect.objectContaining({ cred: 'interactive' }),
+          expect.anything(),
+        );
+      });
+
+      it('does not prefix the rotated token of an ordinary login', async () => {
+        const result = await service.refreshAccessToken('an-ordinary-token');
+
+        expect(result.refreshToken?.startsWith('dvc_')).toBe(false);
+      });
+    });
+
     it('should store token as hash (not plaintext)', async () => {
       mockPrisma.refreshToken.findUnique.mockResolvedValue(
         mockRefreshToken as any,
