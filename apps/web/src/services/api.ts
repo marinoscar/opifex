@@ -224,6 +224,10 @@ import type {
 } from '../types/trust';
 import type { FleetHealth, ReadinessHealth } from '../types/health';
 import type {
+  OperatorSettingsDocument,
+  OperatorSettingsPatch,
+} from '../types/operatorSettings';
+import type {
   MetricsSummary,
   QueueEntry,
   RunDetail,
@@ -1213,4 +1217,48 @@ export function trustErrorDetails(error: unknown): TrustErrorDetails {
   const details = error.details;
   if (typeof details !== 'object' || details === null) return {};
   return details as TrustErrorDetails;
+}
+
+// ---------------------------------------------------------------------------
+// The Control Center's operator settings (#348, epic #332)
+// ---------------------------------------------------------------------------
+
+/**
+ * `GET /operator-settings` — the whole registry, resolved.
+ *
+ * Nothing is filtered or reshaped on the way through, deliberately. The
+ * sections are generated from what this returns, so a key added to
+ * `operator-settings.registry.ts` reaches the screen without a frontend
+ * change; a client-side allowlist of known keys would put that promise back
+ * where the epic took it from.
+ */
+export async function getOperatorSettings(
+  signal?: AbortSignal,
+): Promise<OperatorSettingsDocument> {
+  return api.get<OperatorSettingsDocument>('/operator-settings', { signal });
+}
+
+/**
+ * `PATCH /operator-settings` — the changed keys, and only those.
+ *
+ * The sparseness is a correctness requirement rather than an economy: an
+ * absent row means "fall through to the environment", so a body carrying every
+ * rendered key would materialise today's defaults into rows and freeze this
+ * deployment against every later change to a default. `useOperatorSettings`
+ * computes the diff; this function does not add to it.
+ *
+ * `If-Match` carries the document `revision` from the read the operator was
+ * looking at, so a concurrent change answers 409 rather than being silently
+ * overwritten. A null revision means the overlay never loaded — the header is
+ * then omitted, since sending a number we do not have would be a lie about
+ * what was read, and the API's own 409 for that case is the honest answer.
+ */
+export async function patchOperatorSettings(
+  changes: OperatorSettingsPatch,
+  revision: number | null,
+): Promise<OperatorSettingsDocument> {
+  return api.patch<OperatorSettingsDocument>('/operator-settings', changes, {
+    headers:
+      revision === null ? undefined : { 'If-Match': revision.toString() },
+  });
 }
