@@ -49,6 +49,7 @@ import { InterfaceSection } from '../components/controlcenter/InterfaceSection';
 import { PlannedSectionPanel } from '../components/controlcenter/PlannedSectionPanel';
 import { ReadinessSection } from '../components/controlcenter/ReadinessSection';
 import { RepositoriesSection } from '../components/controlcenter/RepositoriesSection';
+import { SettingsSectionContainer } from '../components/controlcenter/SettingsSectionContainer';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import {
   CONTROL_CENTER_SECTIONS,
@@ -212,6 +213,8 @@ function ControlCenter({
               canWrite={canWrite}
               isSaving={isSaving}
               onSaveThemePolicy={saveThemePolicy}
+              onSaved={setSavedMessage}
+              onSaveError={setSaveError}
               onNavigateToSection={goToSection}
             />
           </Box>
@@ -255,6 +258,8 @@ function SectionBody({
   canWrite,
   isSaving,
   onSaveThemePolicy,
+  onSaved,
+  onSaveError,
   onNavigateToSection,
 }: {
   section: ControlCenterSection;
@@ -266,6 +271,9 @@ function SectionBody({
   canWrite: boolean;
   isSaving: boolean;
   onSaveThemePolicy: (allowUserThemeOverride: boolean) => Promise<void>;
+  /** The page owns the snackbars; a section reports through these. */
+  onSaved: (message: string) => void;
+  onSaveError: (message: string) => void;
   onNavigateToSection: (key: ControlCenterSectionKey) => void;
 }) {
   if (section.status === 'planned') {
@@ -291,6 +299,18 @@ function SectionBody({
       // and `RepositoriesController` enforces this one. An administrator here
       // may hold neither, one, or both.
       return <RepositoriesSection canWrite={canWriteRepositories} />;
+    case 'settings':
+      return (
+        <SettingsSectionContainer
+          canWrite={canWrite}
+          // The same fleet read the Readiness chain is drawn from, rather than
+          // a second poll: two observations of the same fact taken at two
+          // instants, on one screen, is the drift this section exists against.
+          fleet={readiness.fleet}
+          onSaved={onSaved}
+          onSaveError={onSaveError}
+        />
+      );
     case 'interface':
       if (!settings) {
         return (

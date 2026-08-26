@@ -124,7 +124,7 @@ export const CONTROL_CENTER_SECTIONS: readonly ControlCenterSection[] = [
       'GitHub, timeouts — with its configured value beside the value in ' +
       'force, and what a change actually does.',
     Icon: TuneIcon,
-    status: 'planned',
+    status: 'live',
     issue: 348,
     phase: PHASE,
   },
