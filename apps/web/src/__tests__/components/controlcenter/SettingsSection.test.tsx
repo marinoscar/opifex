@@ -256,6 +256,51 @@ describe('SettingsSection', () => {
       expect(seen.body).toEqual({ 'github.requestTimeoutMs': null });
     });
 
+    it('stores an explicit null as the string null, not as the revert', async () => {
+      // Clearing a ceiling of 4 means "no ceiling", which is a stored value.
+      // The revert is JSON null and deletes the row; the two are opposite
+      // intentions and the API distinguishes them by exactly this.
+      serve(
+        operatorSettingsFixture({
+          settings: OPERATOR_SETTINGS_FIXTURE.map((entry) =>
+            entry.key === 'dispatch.maxConcurrent' && !entry.secret
+              ? { ...entry, value: 4, source: 'database' as const }
+              : entry,
+          ),
+        }),
+      );
+      const seen = recordPatch();
+      const user = userEvent.setup();
+      renderSection();
+
+      const card = await row('dispatch.maxConcurrent');
+      await user.clear(
+        within(card).getByLabelText('Maximum concurrent dispatches'),
+      );
+      await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+      await waitFor(() => expect(seen.body).not.toBeNull());
+      expect(seen.body).toEqual({ 'dispatch.maxConcurrent': 'null' });
+    });
+
+    it('drops the draft once the API has answered with a new document', async () => {
+      recordPatch();
+      const user = userEvent.setup();
+      renderSection();
+
+      const card = await row('runners.claudeCodeLocal.enabled');
+      await user.click(within(card).getByRole('switch'));
+      expect(screen.getByText(/1 key will be sent/i)).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+      // The response is the registry re-resolved, so every draft against the
+      // previous document is spent. Re-seeded during render, not in an effect.
+      await waitFor(() =>
+        expect(screen.getByText('No changes to send.')).toBeInTheDocument(),
+      );
+    });
+
     it('offers no revert for a key that has no stored row to delete', async () => {
       renderSection();
 
