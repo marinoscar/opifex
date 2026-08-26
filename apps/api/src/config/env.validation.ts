@@ -71,6 +71,34 @@ import { z } from 'zod';
  */
 
 /**
+ * WHY OPIFEX_SETTINGS_ENCRYPTION_KEY IS NOT VALIDATED HERE AT ALL (#337)
+ * ---------------------------------------------------------------------------
+ * The data key that encrypts operator-supplied credentials at rest is absent
+ * from this file on purpose, and a reader who arrives after epic #332 has
+ * moved real credentials into the database is expected to think that must be
+ * an oversight. It is not.
+ *
+ * Apply the test this file already uses. Without the key, is the rest of the
+ * service still telling the truth? Yes, and demonstrably so: every existing
+ * endpoint answers exactly as before, secret READS fall back to the
+ * environment variables they already used, and secret WRITES are refused with
+ * a 503 that names this variable. Nothing is quietly accepted, nothing is
+ * quietly weakened. That is the #138/#161 shape, not the #278 one.
+ *
+ * The asymmetry argument lands the same way. `JWT_SECRET`'s fallback was
+ * silent and inbound; a missing settings key is loud and produces a refusal
+ * the operator sees on their first attempt to store a credential. It is
+ * self-announcing, so it does not earn a startup failure.
+ *
+ * An INVALID key — set but not 32 bytes — is treated identically rather than
+ * being upgraded to a boot failure, which is the part most likely to be
+ * re-litigated. Splitting them would mean a typo'd key kills the process while
+ * a missing one does not, so the more careful operator gets the worse outcome.
+ * `common/crypto/secret-box.ts` reports both through the same path, naming the
+ * decoded length when that is the problem.
+ */
+
+/**
  * Documented in CLAUDE.md, `infra/compose/.env.example` and
  * docs/SECURITY-ARCHITECTURE.md since long before it was enforced anywhere.
  * `openssl rand -base64 32` produces 44 characters, so the documented way of
