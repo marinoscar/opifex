@@ -1356,6 +1356,52 @@ access to us. #278 is the serious one.
 would not close the gap, it would only force every developer to type the same
 weak password explicitly.
 
+#### The agent subprocess is outside this trust boundary (#334)
+
+Every secret in the table above lives in the API process's environment. Since
+#61 that process also **spawns coding agents as children** — `claude`, and the
+`git` invocations that provision their workspaces — and a child inherits its
+parent's environment by default. Until #334 it did: the supervisor spawned with
+`{ ...process.env, ...request.env }`, so an autonomous agent could read
+`JWT_SECRET` and mint itself an admin token against the control plane
+supervising it, or read `POSTGRES_PASSWORD` and reach the database directly,
+behind every guard in sections 1–4 of this document.
+
+**The agent is now a separate trust domain.** `apps/api/src/runners/process/child-environment.ts`
+names the variables a child may inherit, and `ChildProcessSupervisor.start()`
+builds the spawn environment from that list and nothing else. Concretely:
+
+| Carried through                                                              | Not carried through                                                                                     |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `PATH`, `HOME`, `SHELL`, `TZ`, `LANG`/`LANGUAGE`/`LC_ALL`/`LC_CTYPE`         | `JWT_SECRET`, `COOKIE_SECRET`, `POSTGRES_*`, `DATABASE_URL`, `GOOGLE_CLIENT_SECRET`                     |
+| `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY` — what authenticates the CLI | `GITHUB_TOKEN`, `SUPERVISOR_MODEL_API_KEY`, and the runner's own limits (`CLAUDE_CODE_MAX_CONCURRENCY`) |
+| Whatever a caller passes explicitly on the spawn request                     | Anything else the API process happens to be holding, now or in future                                   |
+
+This is an **allowlist, and a denylist would not have been acceptable**. A
+denylist has to name every secret that will ever exist: each variable added to
+`.env.example` from then on is exposed by default and stays exposed until
+somebody remembers to update it, and the failure is silent, because a leaked
+variable changes no behaviour anyone would notice. The allowlist fails the
+other way — a variable an agent genuinely needs and nobody listed shows up as a
+run that does not work, on the first dispatch. The names are whole names rather
+than prefixes: a `CLAUDE_CODE_*` rule would also carry the runner's own
+concurrency and spend limits into the process those limits exist to constrain,
+which VISION §8 lists alongside credentials as never trustable regardless of
+any grant.
+
+Two things deliberately still reach a child, both because a caller hands them
+over rather than because they are inherited:
+
+- **`OPIFEX_GIT_TOKEN`** — `RunWorkspaceService` passes it per `git` command,
+  and the workspace's credential helper reads it from the environment
+  specifically so the token is never an argv element (world-readable through
+  `ps`) nor a literal in `.git/config` (which outlives the run in a directory
+  the agent can read). `GITHUB_TOKEN` itself is not inherited; the same value
+  arrives under a name the agent's own environment never carries by accident.
+- **The CLI credential** — without it every run fails at authentication, and
+  fails deceptively: `claude --version` succeeds unauthenticated, so the runner
+  would go on registering itself as healthy.
+
 **Generate Secrets:**
 
 ```bash
