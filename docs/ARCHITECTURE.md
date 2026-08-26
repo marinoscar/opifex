@@ -1204,16 +1204,16 @@ Before OAuth authentication completes:
 
 ### 10.1 Page Structure
 
-| Page              | Route             | Auth     | Role  | Purpose                     |
-| ----------------- | ----------------- | -------- | ----- | --------------------------- |
-| Login             | `/login`          | Public   | -     | OAuth provider selection    |
-| Auth Callback     | `/auth/callback`  | Public   | -     | Token handling              |
-| Home              | `/`               | Required | Any   | Dashboard                   |
-| User Settings     | `/settings`       | Required | Any   | User preferences            |
-| System Settings   | `/admin/settings` | Required | Admin | App configuration           |
-| User Management   | `/admin/users`    | Required | Admin | User/allowlist mgmt         |
-| Device Activation | `/device`         | Required | Any   | Device auth approval        |
-| Test Login        | `/testing/login`  | Public   | -     | Test auth bypass (dev only) |
+| Page              | Route             | Auth     | Role  | Purpose                                                                                                                                                                                                |
+| ----------------- | ----------------- | -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Login             | `/login`          | Public   | -     | OAuth provider selection                                                                                                                                                                               |
+| Auth Callback     | `/auth/callback`  | Public   | -     | Token handling                                                                                                                                                                                         |
+| Home              | `/`               | Required | Any   | Dashboard                                                                                                                                                                                              |
+| User Settings     | `/settings`       | Required | Any   | User preferences                                                                                                                                                                                       |
+| Control Center    | `/admin/settings` | Required | Admin | Readiness, interface policy, operator settings, credentials, repositories and change history — see [`operator-configuration.md`](operator-configuration.md) and `apps/web/src/config/controlCenter.ts` |
+| User Management   | `/admin/users`    | Required | Admin | User/allowlist mgmt                                                                                                                                                                                    |
+| Device Activation | `/device`         | Required | Any   | Device auth approval                                                                                                                                                                                   |
+| Test Login        | `/testing/login`  | Public   | -     | Test auth bypass (dev only)                                                                                                                                                                            |
 
 **Note:** The `/testing/login` route is excluded from production builds via `import.meta.env.PROD` check.
 
@@ -1612,7 +1612,7 @@ apps/web/src/
     ├── pages/
     │   ├── LoginPage.test.tsx
     │   ├── UserSettingsPage.test.tsx
-    │   └── SystemSettingsPage.test.tsx
+    │   └── ControlCenterPage.test.tsx
     └── services/
         └── api.test.ts
 ```

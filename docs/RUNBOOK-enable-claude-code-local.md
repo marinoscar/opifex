@@ -27,6 +27,15 @@ is routed to it:
 | `CLAUDE_CODE_LOCAL_ENABLED` | Whether this runner is _dispatchable_      |
 | `DISPATCH_ENABLED`          | Whether the queue drains to **any** runner |
 
+> **Both are now flipped from the Control Center, not `.env`.** Since epic
+> #332, `CLAUDE_CODE_LOCAL_ENABLED` (`runners.claudeCodeLocal.enabled`) and
+> `DISPATCH_ENABLED` (`dispatch.enabled`) are operator-managed keys with
+> `live` reload — an Admin toggles them at `/admin/settings` → Configuration
+> and the next dispatch decision honours it, no restart. The `.env` values
+> below still exist and still matter as the floor a fresh container boots on,
+> but they are no longer the recommended way to make this specific change.
+> See [`docs/operator-configuration.md`](operator-configuration.md).
+
 Availability is a third, separate thing, and it is **observed rather than
 configured**: the runner probes `claude --version` and reports what it found.
 That is why step 3 below is worth doing while dispatch is still off — the fleet
@@ -68,6 +77,14 @@ observed — see step 3, where it shows up as a fact in the fleet.
 
 ## Step 2 — the credential
 
+**Still a `.env` edit, not a Control Center one.** `CLAUDE_CODE_OAUTH_TOKEN`
+is a registered secret key (`runners.claudeCodeLocal.oauthToken`), but the
+Control Center screen that would let you paste a credential into a form —
+Credentials — is issue #349 and has not shipped; it shows as "planned" at
+`/admin/settings` today. `ANTHROPIC_API_KEY` is not a managed key at all and
+is env-only, permanently. So both rows below are still `.env`, the same as
+before this epic.
+
 **A container cannot complete an interactive `claude auth login`.** The credential
 has to arrive through the environment, and it needs no wiring beyond `.env`:
 `base.compose.yml` loads the whole file with `env_file`, and both variable names
@@ -108,14 +125,10 @@ the failure table.
 
 ## Step 3 — enable the runner, with dispatch still off
 
-```bash
-# in infra/compose/.env
-CLAUDE_CODE_LOCAL_ENABLED=true
-DISPATCH_ENABLED=false          # leave it
-```
+First, confirm the fleet with nothing flipped yet — no `.env` edit, no restart,
+just the container as it already booted:
 
 ```bash
-docker compose -f base.compose.yml -f prod.compose.yml up -d api
 curl -s https://<your-host>/api/health/ready | jq .data.info.fleet
 ```
 
@@ -165,13 +178,38 @@ Three places now agree — the installed binary, the health payload and the
 persisted manifest. If they disagree, registration has not re-run; it converges on
 a 60-second tick (#276), so wait one before investigating.
 
-After the flag, `enabled` and `dispatchable` should both read `1`.
+Now flip the runner on. From the Control Center: `/admin/settings` →
+**Configuration** → the **Runner** group → _Local Claude Code runner
+enabled_ → switch it on → Save. Or, scripted, with an access token minted by
+an interactive login — this endpoint refuses a personal access token or a
+device-flow token outright, see
+[`personal-access-tokens.md`](personal-access-tokens.md):
+
+```bash
+curl -X PATCH https://<your-host>/api/operator-settings \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"runners.claudeCodeLocal.enabled": true}'
+```
+
+`runners.claudeCodeLocal.enabled` has `live` reload — nothing here needs a
+restart or even a wait for the next poll tick; re-run the health check
+immediately:
+
+```bash
+curl -s https://<your-host>/api/health/ready | jq .data.info.fleet
+```
+
+`enabled` and `dispatchable` should both now read `1`, with `available`
+unchanged from step 1 — enablement and availability are still two different
+facts, only one of which you just changed.
 
 ---
 
 ## Step 4 — hand off
 
-Only now set `DISPATCH_ENABLED=true`, and go to
+Only now flip `dispatch.enabled` — the same way, from Configuration or via
+`PATCH /api/operator-settings` — and go to
 [`RUNBOOK-observation-week.md`](RUNBOOK-observation-week.md). That runbook owns
 what to watch once work is actually moving; this one is finished when the fleet
 says the container is capable.

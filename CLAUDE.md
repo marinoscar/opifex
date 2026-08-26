@@ -492,6 +492,28 @@ The application uses an **email allowlist** to restrict access to pre-authorized
 
 Key variables (see `infra/compose/.env.example` for full list):
 
+**Operator-managed settings (epic #332) — read this before editing GitHub,
+dispatch, runner, reconciler, supervisor, promotion or notification
+variables below.** GitHub, dispatch, the `claude-code-local` runner, the
+reconciler, the AI supervisor, the promotion ladder and notifications are
+**no longer env-only**. Each of those 39 keys now resolves
+`default → env → database row`, with a database row (set from
+`/admin/settings` → Configuration) outranking whatever `.env` says — so
+editing one of those variables and restarting can appear to do nothing if an
+Admin has ever overridden that key from the Control Center. The env value
+listed below and in `.env.example` is still real: it is the floor a fresh
+install runs on and the fallback if the database overlay is unavailable, but
+it is no longer the last word on a deployment that has touched the Control
+Center. The three secret keys in that set (`GITHUB_TOKEN`,
+`CLAUDE_CODE_OAUTH_TOKEN`, `SUPERVISOR_MODEL_API_KEY`) are the one exception
+still requiring a plain `.env` edit, because the UI that would let an Admin
+rotate them from a form (Credentials, #349) has not shipped. See
+[`docs/operator-configuration.md`](docs/operator-configuration.md) for the
+full resolution order, reload semantics, and what to do if
+`OPIFEX_SETTINGS_ENCRYPTION_KEY` is lost. The variables listed below this
+point — application, database, JWT/session, OAuth — are unaffected by any of
+this; they remain env-only, set once per deployment.
+
 **Application:**
 
 - `NODE_ENV` - Environment (development/production)
@@ -539,10 +561,58 @@ Note: `DATABASE_URL` is constructed automatically from these variables at runtim
 
 ### Adding a New Setting
 
-1. Update Zod schema for validation
-2. Add migration if schema structure changes
-3. Update TypeScript types
-4. Add frontend UI if user-facing
+There are two different kinds of "setting" in this codebase, and which one
+you are adding decides where it is declared. Adding it in the wrong place —
+or adding a second declaration of something the first place already
+describes — is the exact mistake epic #332 exists to stop repeating: the
+`system_settings` shape it replaced was hand-copied across six files today,
+and none of them agreed for long.
+
+**An operator-managed tunable** — a dispatch/runner/reconciler/GitHub/
+supervisor/promotion/notification knob an Admin configures for the
+deployment, not a per-user preference:
+
+1. Declare it **once**, in
+   `apps/api/src/settings/operator-settings/operator-settings.registry.ts` —
+   `envVar`, a schema built from one of that file's `*Setting()` helpers,
+   `default`, `secret`, `reload`, `group`, `label`, `help` and, if changing it
+   can spend money or widen a boundary, `dangerous: true`. The TypeScript
+   type is derived from the schema via `z.infer`; do not hand-write a
+   parallel type.
+2. Delete the corresponding line from `configuration.ts` and its call site —
+   `OperatorSettingsService` must become the only way to read this value. A
+   key read from both places is the two-sources-of-truth bug this migration
+   exists to close, one key at a time (ADR-0018 §1).
+3. If the consuming code reads the value more than once per unit of work
+   (a tick, a spawn, a request), decide and state which `reload` semantics it
+   actually has — `live`, `next-unit`, or `restart` — by reading what the
+   consumer does, not by guessing from how the value sounds. See
+   `docs/operator-configuration.md`'s worked examples for what separates the
+   three.
+4. Add it to `.env.example`, annotated like its neighbours: what it does, and
+   that it is now a floor/fallback rather than the control surface.
+5. Nothing is needed on the frontend. `apps/web/src/components/controlcenter/SettingsSection.tsx`
+   and `SettingRow.tsx` render every registry entry from
+   `GET /api/operator-settings` with no hand-listed field set — a key added
+   to the registry appears on the Control Center's Configuration section with
+   the right control, bounds and chips automatically.
+6. Add or extend `operator-settings.registry.spec.ts`'s parity assertions and
+   the relevant service/controller specs.
+
+**A per-user or application-wide UI preference** — the existing
+`user_settings` / `system_settings` JSONB documents (theme, profile,
+`ui.allowUserThemeOverride`, feature flags):
+
+1. Update the Zod schema in `apps/api/src/common/schemas/` for validation —
+   remembering that file's own rule: no `.default()` on a namespace schema,
+   ever, because a persisted default freezes today's value and hides a later
+   change to the built-in one from every user who has ever touched an
+   unrelated field.
+2. Add a migration if the schema's _structure_ changes.
+3. Update TypeScript types.
+4. Add frontend UI if user-facing — for application-wide policy, that is the
+   Control Center's Interface section (`InterfaceSection.tsx`), not
+   Configuration.
 
 ## Specialized Subagents (MANDATORY)
 
