@@ -17,6 +17,64 @@ export interface TickRejection extends RejectedIssue {
 }
 
 /**
+ * The settings one tick computes against, read once before it begins.
+ *
+ * ## The invariant is the old one; the scope is not
+ *
+ * `ReconcilerService` used to read these in its CONSTRUCTOR, and the reason it
+ * gave was right about what it was protecting: the projection is pure and
+ * takes them as inputs, so a value that changed underneath a tick would make
+ * two identical observations produce different desired states. That invariant
+ * is kept here in full — **one tick's computation must never see two different
+ * values for the same key.**
+ *
+ * What changed is the scope that invariant was given. "At construction" freezes
+ * a value for the entire life of the process — every tick from boot to restart,
+ * not just one — which is strictly stronger than the argument needs: nothing
+ * requires `retryCeiling` to agree between tick 100 and tick 101, only within
+ * the computation of tick 100. It is also exactly the promise that makes a
+ * value impossible to edit at runtime, since one that can only change at boot
+ * cannot be changed without one (ADR-0018 §4, which supersedes the scope and
+ * keeps the argument).
+ *
+ * The shape is the one `DispatchService.decide` already uses for its clock:
+ *
+ * > The one clock reading on this path. `decideDispatch` is pure and has no
+ * > now of its own, so every time comparison the decision depends on happens
+ * > here, against this instant, and the policy receives already-settled facts.
+ * > — `dispatch.service.ts:83-86`
+ */
+export interface TickSettings {
+  /**
+   * Attempts a work order gets before quarantine (#66).
+   *
+   * `RunSummaryService.postOne` reads the same key, live, on every call. While
+   * this was frozen at construction the two could disagree for as long as the
+   * process stayed up — the summary rendering "1 of 7" against a ceiling the
+   * quarantine logic still held at 3. Reading it per tick bounds that
+   * disagreement to one tick interval, which is the whole benefit tick-scoping
+   * buys over freezing it at boot.
+   */
+  retryCeiling: number;
+  /** GitHub budget held back for the operator's own use (VISION §11, #40). */
+  rateLimitReserve: number;
+  /**
+   * Whether GitHub writes were permitted for the window this tick ran in.
+   *
+   * Recorded, never READ by the tick: this service cannot write, which is the
+   * property VISION §12's observation week rests on. It is on the record
+   * because the record IS that week's deliverable rather than a debugging aid,
+   * and a tick that cannot state the mode it ran under produces evidence that
+   * has to be corroborated from somewhere else — a container log, a `.env`
+   * file as it stood at the time — to mean anything. With it, `actionsExecuted:
+   * 0` next to `writesEnabled: false` is a self-contained statement; without
+   * it, the zero could as easily mean the switch was on and there was nothing
+   * to do.
+   */
+  writesEnabled: boolean;
+}
+
+/**
  * What one tick did, recorded whether or not it found anything to do.
  *
  * #45 requires duration and outcome be recorded so tick latency is measurable —
@@ -50,6 +108,14 @@ export interface TickRecord {
   allFromCache: boolean;
   /** Rate-limit budget remaining when the tick finished, if known. */
   rateLimitRemaining: number | null;
+  /**
+   * The settings this tick computed against, read once before it began.
+   *
+   * Part of the record and not of the service, so that reviewing a tick answers
+   * "what was it configured to do" from the tick itself. See {@link
+   * TickSettings} for why the unit of coherence is one tick.
+   */
+  settings: TickSettings;
   /**
    * What the tick computed SHOULD be true, one entry per repository observed.
    *

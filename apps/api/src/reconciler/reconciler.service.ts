@@ -27,6 +27,7 @@ import type {
   TickRecord,
   TickOutcome,
   TickRejection,
+  TickSettings,
 } from './reconciler.types';
 import { summarizeChecks } from './projection/check-verdict';
 import { TickLeaseService } from './tick-lease.service';
@@ -66,10 +67,6 @@ import { WorkOrderProjectionService } from '../work-orders/work-order-projection
 @Injectable()
 export class ReconcilerService {
   private readonly logger = new Logger(ReconcilerService.name);
-  /** Attempts a work order gets before quarantine (#66). */
-  private readonly retryCeiling: number;
-
-  private readonly rateLimitFloor: number;
 
   /** The most recent tick, for the health endpoint and for #50 to persist. */
   private lastTick: TickRecord | null = null;
@@ -84,17 +81,7 @@ export class ReconcilerService {
     private readonly prisma: PrismaService,
     private readonly log: ReconcileLogService,
     private readonly workOrders: WorkOrderProjectionService,
-  ) {
-    this.rateLimitFloor = this.settings.get('github.rateLimitReserve');
-
-    // Read once at construction, like the rate-limit floor: the projection is
-    // pure and takes this as an input, so a value that changed between ticks
-    // would make two identical observations produce different desired states.
-    // #342 moves both to a per-TICK snapshot, which keeps that reason and
-    // still lets the next tick see a change; migrating the read here without
-    // moving it is deliberate.
-    this.retryCeiling = this.settings.get('dispatch.retryCeiling');
-  }
+  ) {}
 
   get lastTickRecord(): TickRecord | null {
     return this.lastTick;
@@ -137,28 +124,73 @@ export class ReconcilerService {
   private async runTick(): Promise<TickRecord> {
     const startedAt = new Date();
 
+    // The one settings reading on this path, and the reason it is here rather
+    // than in the constructor: see `TickSettings`. Every decision this tick
+    // makes is taken against this snapshot, so the projection — which is pure
+    // and takes these as inputs — receives already-settled facts, exactly as
+    // `DispatchService.decide` hands `decideDispatch` a single `now`.
+    //
+    // Read BEFORE the enablement check, so that even a tick which does nothing
+    // records the configuration it declined under.
+    const settings = this.snapshotSettings();
+
     if (!this.enabled) {
-      return this.finish(startedAt, 'skipped-disabled', nothingObserved());
+      return this.finish(
+        startedAt,
+        'skipped-disabled',
+        nothingObserved(),
+        settings,
+      );
     }
 
     // Checked BEFORE taking the lease: a tick that cannot afford to read
     // should not also block the next one from trying.
     if (!this.http.canSpend()) {
       this.logger.warn(
-        `Reconciler tick skipped: GitHub budget at or below the reserve of ${this.rateLimitFloor}`,
+        `Reconciler tick skipped: GitHub budget at or below the reserve of ` +
+          `${settings.rateLimitReserve}`,
       );
-      return this.finish(startedAt, 'skipped-rate-limited', nothingObserved());
+      return this.finish(
+        startedAt,
+        'skipped-rate-limited',
+        nothingObserved(),
+        settings,
+      );
     }
 
-    const outcome = await this.lease.withLease(() => this.observeAll());
+    const outcome = await this.lease.withLease(() => this.observeAll(settings));
 
     if (!outcome.acquired) {
-      return this.finish(startedAt, 'skipped-locked', nothingObserved());
+      return this.finish(
+        startedAt,
+        'skipped-locked',
+        nothingObserved(),
+        settings,
+      );
     }
 
     const status: TickOutcome =
       outcome.result.failures.length > 0 ? 'partial' : 'completed';
-    return this.finish(startedAt, status, outcome.result);
+    return this.finish(startedAt, status, outcome.result, settings);
+  }
+
+  /**
+   * Every managed setting this tick's computation depends on, in one read.
+   *
+   * Taken once per tick and threaded onward as a value, rather than re-read
+   * where each is used. Re-reading would reintroduce the exact fault the old
+   * constructor-scoped fields were defending against — two identical
+   * observations producing different desired states because the ceiling moved
+   * between the projection and the diff — while the per-tick boundary keeps
+   * that defence and still lets the next tick see an operator's edit, with no
+   * restart. `TickSettings` carries the full argument.
+   */
+  private snapshotSettings(): TickSettings {
+    return {
+      retryCeiling: this.settings.get('dispatch.retryCeiling'),
+      rateLimitReserve: this.settings.get('github.rateLimitReserve'),
+      writesEnabled: this.settings.get('github.writesEnabled'),
+    };
   }
 
   /**
@@ -168,8 +200,13 @@ export class ReconcilerService {
    * against a shared rate-limit budget (VISION §11) for no wall-clock benefit
    * a reconciler cares about — a tick that takes four seconds instead of one
    * is fine, and one that trips a secondary rate limit is not.
+   *
+   * Takes the tick's settings rather than reading them: every repository in
+   * one sweep must be projected against the same ceiling, or a `PATCH` landing
+   * mid-sweep would quarantine the repositories at the end of the list under
+   * rules the ones at the front never saw.
    */
-  private async observeAll(): Promise<SweepResult> {
+  private async observeAll(settings: TickSettings): Promise<SweepResult> {
     const repositories = await this.repositories.listObserved();
     const failures: TickFailure[] = [];
     const projections: DesiredState[] = [];
@@ -229,7 +266,7 @@ export class ReconcilerService {
             result.issues,
             workOrders,
           ),
-          retryCeiling: this.retryCeiling,
+          retryCeiling: settings.retryCeiling,
         };
 
         const projection = projectDesiredState(state);
@@ -575,6 +612,7 @@ export class ReconcilerService {
     startedAt: Date,
     outcome: TickOutcome,
     sweep: SweepResult,
+    settings: TickSettings,
   ): TickRecord {
     const {
       observed: repositoriesObserved,
@@ -595,6 +633,7 @@ export class ReconcilerService {
       failures,
       allFromCache,
       rateLimitRemaining: this.rateLimit.snapshot()?.remaining ?? null,
+      settings,
       projections,
       workOrdersCreated,
       rejections,
