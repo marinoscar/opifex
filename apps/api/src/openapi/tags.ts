@@ -99,6 +99,21 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
           'Deployment-wide configuration, stored as a JSON document. Readable by any signed-in user; ' +
           'writable only with `system_settings:write`.',
       },
+      {
+        name: 'Operator Settings',
+        description:
+          'The Control Center: every operator-managed key with its resolved value, where that value ' +
+          'came from (`default`, `env` or `database`), and whether a change is live, applies to new ' +
+          'work only, or needs a restart. Secrets are never returned — only whether one is set, a ' +
+          'masked hint, and when it was last written. Also the Test probes, which exercise a ' +
+          'credential for real rather than assuming it works.',
+      },
+      {
+        name: 'Audit Events',
+        description:
+          'What was done, by whom, and to what. The read side of the log every mutating service ' +
+          'already writes to; filterable by `targetType`, and served with its metadata redacted.',
+      },
     ],
   },
   {
