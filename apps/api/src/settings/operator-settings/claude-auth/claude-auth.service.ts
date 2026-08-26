@@ -188,7 +188,7 @@ export class ClaudeAuthService implements OnModuleDestroy {
     // missing subscription for a perfectly good account, every time.
     session.codeOffset = session.output.length;
 
-    const sent = session.process?.write(`${code}\r`) ?? false;
+    const sent = await this.sendCode(session, code);
 
     if (!sent) {
       // The child died between the URL and the paste. Its own output is the
@@ -282,6 +282,58 @@ export class ClaudeAuthService implements OnModuleDestroy {
   }
 
   /**
+   * Put the code at the prompt and then press Enter — two writes, never one.
+   *
+   * ## Why one write does not work
+   *
+   * The CLI's input layer treats a single chunk above roughly 63 bytes as
+   * PASTED TEXT rather than as keystrokes, and a paste carries no Enter: a
+   * trailing `\r` in the same chunk is absorbed into the pasted content and
+   * the code sits at the prompt, echoed but unsubmitted, until the exchange
+   * ceiling fires. Measured against the real `claude` 2.1.246 with a
+   * deliberately invalid code, which answers `status code 400` within a
+   * second when it is really submitted (#389):
+   *
+   * | code length      | `write(code + "\r")` submits? |
+   * | ---------------- | ----------------------------- |
+   * | 56, 60, 62       | yes                           |
+   * | 64, 65, 80, 92   | NO                            |
+   *
+   * Real authorization codes are around 92 characters. That is the whole bug:
+   * every test passed with a short code and every real sign-in hung.
+   *
+   * ## Why bracketed paste, and not just two plain writes
+   *
+   * `write(code)` then `write("\r")` was verified to work at 92 characters
+   * too, so the split alone is sufficient. The code is wrapped in bracketed-
+   * paste markers anyway because that is what a real terminal sends for a
+   * paste and what this CLI explicitly asks for — `ESC[?2004h` appears in its
+   * own output — and because it states the boundary in the bytes themselves
+   * rather than relying on the two writes staying two chunks all the way down
+   * (a Node pipe into `script(1)` into a pty is three buffers that may
+   * coalesce). The intent is then legible at the call site: this is a paste,
+   * and THEN a keypress.
+   *
+   * Do not simplify this back into one write.
+   */
+  private async sendCode(session: LiveSession, code: string): Promise<boolean> {
+    const pasted =
+      session.process?.write(`${PASTE_START}${code}${PASTE_END}`) ?? false;
+
+    if (!pasted) return false;
+
+    // The gap is what makes the Enter its own chunk rather than the tail of
+    // the paste, and it is the arrangement the #389 probe verified against the
+    // real CLI. It is a pause between two writes to a terminal, not a poll
+    // interval: long enough that `script(1)` reads the paste before the Enter
+    // arrives, short enough to be invisible next to the vendor round trip that
+    // follows it.
+    await this.sleep(this.enterKeyDelayMs);
+
+    return session.process?.write(ENTER) ?? false;
+  }
+
+  /**
    * Everything the CLI has printed, accumulated, with the URL picked out of it.
    *
    * Bounded: a CLI stuck in a repaint loop must not turn a stalled sign-in
@@ -325,7 +377,9 @@ export class ClaudeAuthService implements OnModuleDestroy {
 
     if (settled === 'ready') return;
 
-    this.finish(session, 'failed', settled ?? 'timed_out');
+    // `cli_no_url`, not `timed_out`: nobody has been asked for a code yet, so
+    // nothing about this is an operator running out of time (#389).
+    this.finish(session, 'failed', settled ?? 'cli_no_url');
   }
 
   /** Resolve when a token appears, a failure is recognisable, or time is up. */
@@ -350,8 +404,13 @@ export class ClaudeAuthService implements OnModuleDestroy {
     });
 
     if (settled !== 'ready') {
-      this.logFailure(session, settled ?? 'timed_out');
-      this.finish(session, 'failed', settled ?? 'timed_out');
+      // The ceiling here is the CLI failing to answer a code it accepted —
+      // a fault in this flow — and NOT the session's ten minutes elapsing,
+      // which is `expireIfDue`'s business and keeps `timed_out`. Reporting
+      // both as an expiry is what hid #389 for as long as it was hidden.
+      const reason = settled ?? 'cli_no_response';
+      this.logFailure(session, reason);
+      this.finish(session, 'failed', reason);
       return;
     }
 
@@ -538,6 +597,16 @@ export class ClaudeAuthService implements OnModuleDestroy {
   /** How long the vendor exchange gets after the code goes in. */
   protected readonly exchangeTimeoutMs: number = 90_000;
 
+  /**
+   * The pause between pasting the code and pressing Enter. See {@link sendCode}.
+   *
+   * 150 ms because that is what the #389 probe used against the real CLI, not
+   * because anything measured a floor. It is a seam so that a spec can shorten
+   * it, and so that the number has one home rather than being inlined at the
+   * one place it is used.
+   */
+  protected readonly enterKeyDelayMs: number = 150;
+
   protected readonly pollIntervalMs: number = 100;
 
   protected now(): number {
@@ -558,6 +627,17 @@ export class ClaudeAuthService implements OnModuleDestroy {
  */
 const PTY_COLUMNS = 400;
 const PTY_ROWS = 200;
+
+/**
+ * Bracketed paste, `ESC[200~ … ESC[201~`, and the Enter that follows it.
+ *
+ * Written as escapes rather than literal bytes so the source stays greppable,
+ * for the same reason `claude-cli-output.ts` writes its patterns that way.
+ */
+const PASTE_START = '\x1b[200~';
+const PASTE_END = '\x1b[201~';
+/** Carriage return, which is what a terminal sends for the Enter key. */
+const ENTER = '\r';
 
 /** Ceiling on the accumulated transcript. A repaint loop is not a leak. */
 const OUTPUT_LIMIT_BYTES = 256 * 1024;
