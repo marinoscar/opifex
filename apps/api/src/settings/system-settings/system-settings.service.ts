@@ -8,6 +8,7 @@ import {
   SystemSettingsValue,
 } from '../../common/types/settings.types';
 import { systemSettingsSchema } from '../../common/schemas/settings.schema';
+import { redactSettingsMeta } from '../../common/crypto/redact';
 
 const SETTINGS_KEY = 'global';
 
@@ -223,12 +224,30 @@ export class SystemSettingsService {
         action,
         targetType: 'system_settings',
         targetId,
+        // REDACTED HERE, at the single choke point, rather than at each of the
+        // two callers (#337).
+        //
+        // Both of them — `replaceSettings` and `patchSettings` — hand over the
+        // ENTIRE new settings document. That is harmless today, because the
+        // document holds a theme flag and a feature map. It stops being
+        // harmless the moment epic #332 puts an operator credential into a
+        // settings document: this line would write it to `audit_events.meta`
+        // in plaintext, and the audit log is the one table nobody is allowed
+        // to go back and rewrite. A redaction added after that point protects
+        // the next write and none of the ones already on disk, so the only
+        // moment this is free is before there is anything to leak.
+        //
+        // Placed in the helper and not at the call sites so that a third
+        // caller added later inherits it. Forgetting it would produce no
+        // error, no failing test and no symptom — exactly the class of gap
+        // that survives review.
+        //
         // Asserted, not converted: `Record<string, unknown>` cannot be proven
         // assignable to Prisma's `InputJsonObject` because `unknown` is not
         // `InputJsonValue`, and the callers pass DTO instances that have no
         // implicit index signature. The assertion still constrains the target
         // to a JSON object — unlike the `as any` it replaces (#186).
-        meta: meta as Prisma.InputJsonObject,
+        meta: redactSettingsMeta(meta) as Prisma.InputJsonObject,
       },
     });
   }

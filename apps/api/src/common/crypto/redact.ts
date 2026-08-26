@@ -110,6 +110,13 @@ const SECRET_NAME_FRAGMENTS: readonly string[] = [
   'encryptionkey',
   'accesskey',
   'authorization',
+  // The stored envelope's own field names (#336). A ciphertext is not a
+  // plaintext and an attacker who has the audit log still needs the data key
+  // — but there is no reason for a log to carry the encrypted form of a
+  // credential either, and a value that never appears is a value that cannot
+  // be waiting in a backup for the day the key leaks.
+  'ciphertext',
+  'encrypted',
 ];
 
 function normaliseFieldName(name: string): string {

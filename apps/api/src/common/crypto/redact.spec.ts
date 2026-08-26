@@ -112,6 +112,18 @@ describe('redactSettingsMeta', () => {
     );
   });
 
+  it("masks the stored envelope's own field names", () => {
+    const redacted = redactSettingsMeta({
+      valueCiphertext: 'qafoDtMZReubIWIeDQ2eR+QN3oXSK5+ihkVb7j/GoEln',
+      encryptedValue: 'qafoDtMZReubIWIeDQ2eR+QN3oXSK5+ihkVb7j/GoEln',
+    });
+
+    expect(redacted).toEqual({
+      valueCiphertext: `${MASK}oEln`,
+      encryptedValue: `${MASK}oEln`,
+    });
+  });
+
   it('does not mask fields whose names merely contain "key"', () => {
     // Over-masking is invisible: a masked `keyVersion` looks exactly like a
     // masked credential, and the audit log quietly stops being readable.
