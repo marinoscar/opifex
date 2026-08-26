@@ -454,6 +454,28 @@ describe('OperatorSettingsService: the database overlay (#339)', () => {
       expect(settings.get('dispatch.maxConcurrent')).toBe(11);
     });
 
+    it('says so when the overlay comes back, and warns again if it goes away twice', async () => {
+      // The once-per-reason rule would otherwise swallow every outage after
+      // the first, so an overlay that flaps would go quiet.
+      const log = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+      const prisma = new FakePrisma();
+      prisma.down = 'connection refused';
+      const { settings } = makeService({ prisma });
+      await settings.onModuleInit();
+      expect(warn).toHaveBeenCalledTimes(1);
+
+      prisma.down = null;
+      await settings.refresh();
+      expect(log.mock.calls.flat().join(' ')).toContain('readable again');
+
+      prisma.down = 'connection refused again';
+      await settings.refresh();
+
+      expect(warn).toHaveBeenCalledTimes(2);
+    });
+
     it('names the warning in the log too, so a boot without one is diagnosable', async () => {
       const prisma = new FakePrisma();
       prisma.down = 'connection refused';
@@ -569,6 +591,34 @@ describe('OperatorSettingsService: the database overlay (#339)', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.rows.size).toBe(0);
       expect(prisma.revision).toBe(0n);
+    });
+
+    it('never echoes a rejected SECRET back in the error message', async () => {
+      // A 400 body and the log line behind it are both places a mistyped
+      // credential would otherwise come to rest in the clear.
+      const { settings } = makeService();
+      await settings.refresh();
+
+      // An ARRAY, deliberately: every string parses for a secret key (they all
+      // allow empty), and `String({...})` is '[object Object]', which would
+      // make this assertion pass no matter what the message said.
+      // `String(['ghp_...'])` is the credential itself.
+      await expect(
+        settings.set('github.token', ['ghp_thewholewrongthing'], null),
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: expect.not.stringContaining('ghp_thewholewrongthing'),
+        }) as Error,
+      );
+    });
+
+    it('still echoes a rejected NON-secret, because that is most of the diagnosis', async () => {
+      const { settings } = makeService();
+      await settings.refresh();
+
+      await expect(
+        settings.set('reconciler.intervalMs', 'soonish', null),
+      ).rejects.toThrow(/soonish/);
     });
 
     it('refuses a key that is not in the registry', async () => {

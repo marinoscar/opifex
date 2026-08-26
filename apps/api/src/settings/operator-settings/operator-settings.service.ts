@@ -404,6 +404,22 @@ export class OperatorSettingsService implements OnModuleInit {
       next.set(row.key, toOverlayEntry(row));
     }
 
+    if (
+      this.overlayState.status === 'unavailable' &&
+      this.warned.has('overlay')
+    ) {
+      // Only when an outage was actually reported, so an ordinary boot does
+      // not announce a recovery from nothing. The flag is cleared as well as
+      // logged, so a LATER outage warns again rather than being swallowed by
+      // the once-per-reason rule — an overlay that flaps must not go quiet
+      // after its first trip.
+      this.warned.delete('overlay');
+      this.logger.log(
+        'The operator settings overlay is readable again; stored overrides ' +
+          'are back in force.',
+      );
+    }
+
     const changed = diffOverlays(this.overlayRows, next);
 
     this.overlayRows = next;
@@ -459,8 +475,15 @@ export class OperatorSettingsService implements OnModuleInit {
     const parsed = parseOperatorSetting(key, value);
 
     if (!parsed.ok) {
+      // The rejected value is echoed back for a non-secret, because "what you
+      // sent" is most of the diagnosis — and is NEVER echoed for a secret. A
+      // 400 body and the log line behind it are both places a mistyped
+      // credential would otherwise come to rest in the clear, and the operator
+      // typing it already knows what they typed.
       throw new BadRequestException(
-        `${String(value)} is not a valid value for ${key}: ${parsed.error}`,
+        definition.secret
+          ? `The value supplied for ${key} is not valid: ${parsed.error}`
+          : `${String(value)} is not a valid value for ${key}: ${parsed.error}`,
       );
     }
 
