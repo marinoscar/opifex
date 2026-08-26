@@ -111,11 +111,17 @@ export class SupervisorService {
     @Inject(SUPERVISOR_PROPOSERS)
     proposers?: SupervisorProposer[],
   ) {
-    // Optional with an explicit default rather than a required binding: the
-    // API must boot with no supervisor configured, exactly as it boots with no
-    // GitHub token. The default REFUSES rather than pretending, so a
-    // deployment that thinks it has a supervisor and does not finds out from
-    // the log rather than from a month of empty evidence.
+    // Optional with an explicit default rather than a required binding. Since
+    // #344 `SupervisorModule` binds an adapter unconditionally, so through the
+    // module this fallback is unreachable — the adapter itself refuses per
+    // call when no key is configured, and reports the same `'none'` name this
+    // default does. What keeps it is construction WITHOUT the module: the
+    // governing test `test/governing/supervisor-offline.spec.ts` builds this
+    // service with five arguments to prove the factory runs with the
+    // supervisor offline, and a required binding would make that property
+    // harder to state rather than easier. The default REFUSES rather than
+    // pretending, so a deployment that thinks it has a supervisor and does not
+    // finds out from the log rather than from a month of empty evidence.
     this.model = model ?? new UnavailableSupervisorModel();
     this.proposers = proposers ?? [];
   }

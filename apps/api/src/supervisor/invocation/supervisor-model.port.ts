@@ -6,17 +6,19 @@
  * which vendor answers. This interface is what a supervisor adapter
  * implements, and nothing outside `invocation/` may name a model provider.
  *
- * ## Why there is no adapter in this PR
+ * ## Why there was no adapter when this file was written
  *
- * There is no model client in this repository yet, and inventing one to have
- * something to call would be worse than the absence: an adapter nobody has
- * pointed at a real endpoint is untested plumbing that reads as a working
+ * There was no model client in the repository, and inventing one to have
+ * something to call would have been worse than the absence: an adapter nobody
+ * has pointed at a real endpoint is untested plumbing that reads as a working
  * feature. VISION §3.7 is explicit about not building the second thing before
  * it is needed.
  *
- * So the seam ships with `UnavailableSupervisorModel` bound by default, and it
- * says so out loud — every invocation records `skipped_disabled` with the
- * reason, in the log, where it is visible. A supervisor that appears to be
+ * So the seam shipped with `UnavailableSupervisorModel` in place, and it said
+ * so out loud — every invocation recorded the refusal, in the log, where it is
+ * visible. ADR-0015 then supplied the Anthropic adapter, and #344 binds it
+ * unconditionally; a deployment with no API key gets the same refusal from the
+ * adapter itself, recorded the same way. A supervisor that appears to be
  * running and is not is exactly the failure the decision log exists to make
  * impossible.
  */
@@ -78,12 +80,19 @@ export interface SupervisorModel {
 }
 
 /**
- * The default binding: no adapter is configured.
+ * The default when no adapter is bound at all.
  *
  * Throws rather than returning empty text. An empty answer would be recorded
  * as a supervisor that ran and had nothing to say, which is a lie the approval
  * rate would then average over — and #90 is explicit that "declined" must mean
  * the supervisor LOOKED and declined.
+ *
+ * Since #344 `SupervisorModule` always binds `AnthropicSupervisorModel`, so
+ * this is no longer what an unconfigured DEPLOYMENT gets — the adapter refuses
+ * per call instead, and deliberately reports the same `'none'` name so the
+ * decision-log row is unchanged. What still reaches this class is a
+ * `SupervisorService` constructed outside the module, which is how the
+ * governing tests state "the factory runs with the supervisor offline".
  */
 export class UnavailableSupervisorModel implements SupervisorModel {
   readonly name = 'none';

@@ -755,9 +755,10 @@ export const OPERATOR_SETTINGS = {
     default: '',
     allowEmpty: true,
     secret: true,
-    // #344. Today the key's presence decides whether an adapter is BOUND at
-    // all (anthropic-supervisor-model.ts:223), which makes setting it later a
-    // restart. Binding the adapter unconditionally is what makes this live.
+    // Live since #344. The key's presence used to decide whether an adapter
+    // was BOUND at all, which made setting it later a restart; the adapter is
+    // now bound unconditionally and resolves this key per call, so the next
+    // invocation uses what is set here.
     reload: 'live',
     group: 'supervisor',
     label: 'Supervisor model API key',
