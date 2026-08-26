@@ -301,6 +301,49 @@ describe('SettingsSection', () => {
       );
     });
 
+    it('shows the key as coming from the environment once the revert lands', async () => {
+      // The API re-resolves after the write and this renders THAT, rather than
+      // inferring what a deleted row falls back to. What `GITHUB_REQUEST_TIMEOUT_MS`
+      // says is not knowable here, which is the whole reason for re-reading.
+      server.use(
+        http.patch(`${API_BASE}/operator-settings`, () =>
+          HttpResponse.json({
+            data: operatorSettingsFixture({
+              revision: 8,
+              settings: OPERATOR_SETTINGS_FIXTURE.map((entry) =>
+                entry.key === 'github.requestTimeoutMs' && !entry.secret
+                  ? {
+                      ...entry,
+                      value: 10000,
+                      source: 'env' as const,
+                      updatedAt: null,
+                    }
+                  : entry,
+              ),
+            }),
+          }),
+        ),
+      );
+      const user = userEvent.setup();
+      renderSection();
+
+      const card = await row('github.requestTimeoutMs');
+      expect(within(card).getByText('overridden here')).toBeInTheDocument();
+
+      await user.click(
+        within(card).getByRole('button', { name: /revert to environment/i }),
+      );
+      await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+      await waitFor(() =>
+        expect(
+          within(screen.getByLabelText('github.requestTimeoutMs')).getByText(
+            'from environment',
+          ),
+        ).toBeInTheDocument(),
+      );
+    });
+
     it('offers no revert for a key that has no stored row to delete', async () => {
       renderSection();
 
