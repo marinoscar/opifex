@@ -185,7 +185,7 @@ describe('NavigationRail', () => {
         screen.queryByRole('link', { name: 'User Management' }),
       ).not.toBeInTheDocument();
       expect(
-        screen.queryByRole('link', { name: 'System Settings' }),
+        screen.queryByRole('link', { name: 'Control Center' }),
       ).not.toBeInTheDocument();
     });
 
@@ -198,7 +198,7 @@ describe('NavigationRail', () => {
       render(<NavigationRail />);
 
       expect(
-        screen.getByRole('link', { name: 'System Settings' }),
+        screen.getByRole('link', { name: 'Control Center' }),
       ).toBeInTheDocument();
       expect(
         screen.queryByRole('link', { name: 'User Management' }),
@@ -214,7 +214,7 @@ describe('NavigationRail', () => {
         screen.getByRole('link', { name: 'User Management' }),
       ).toBeInTheDocument();
       expect(
-        screen.queryByRole('link', { name: 'System Settings' }),
+        screen.queryByRole('link', { name: 'Control Center' }),
       ).not.toBeInTheDocument();
     });
   });
@@ -238,7 +238,7 @@ describe('NavigationRail', () => {
         screen.getByRole('link', { name: 'User Management' }),
       ).toHaveAttribute('href', '/admin/users');
       expect(
-        screen.getByRole('link', { name: 'System Settings' }),
+        screen.getByRole('link', { name: 'Control Center' }),
       ).toHaveAttribute('href', '/admin/settings');
     });
 
@@ -279,7 +279,7 @@ describe('NavigationRail', () => {
         .getAllByRole('link')
         .filter((link) => link.getAttribute('aria-current') === 'page');
       expect(current).toHaveLength(1);
-      expect(current[0]).toHaveAccessibleName('System Settings');
+      expect(current[0]).toHaveAccessibleName('Control Center');
     });
 
     it('marks nothing active on a route no destination owns', () => {

@@ -372,7 +372,7 @@ describe('BottomNav', () => {
         within(sheet).queryByRole('link', { name: 'User Management' }),
       ).not.toBeInTheDocument();
       expect(
-        within(sheet).queryByRole('link', { name: 'System Settings' }),
+        within(sheet).queryByRole('link', { name: 'Control Center' }),
       ).not.toBeInTheDocument();
     });
 
@@ -389,7 +389,7 @@ describe('BottomNav', () => {
       });
 
       expect(
-        within(sheet).getByRole('link', { name: 'System Settings' }),
+        within(sheet).getByRole('link', { name: 'Control Center' }),
       ).toBeInTheDocument();
       expect(
         within(sheet).queryByRole('link', { name: 'User Management' }),

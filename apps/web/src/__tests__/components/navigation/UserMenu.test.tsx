@@ -221,7 +221,7 @@ describe('UserMenu', () => {
         expect(screen.getByRole('menu')).toBeInTheDocument();
       });
       expect(
-        screen.queryByRole('menuitem', { name: 'System Settings' }),
+        screen.queryByRole('menuitem', { name: 'Control Center' }),
       ).not.toBeInTheDocument();
       expect(
         screen.queryByRole('menuitem', { name: 'User Management' }),
@@ -240,7 +240,7 @@ describe('UserMenu', () => {
       });
 
       expect(
-        screen.queryByRole('menuitem', { name: /system settings/i }),
+        screen.queryByRole('menuitem', { name: /control center/i }),
       ).not.toBeInTheDocument();
     });
   });
