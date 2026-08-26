@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -378,6 +378,54 @@ describe('RunWorkspaceService', () => {
         'utf8',
       );
       expect(gitConfig).not.toContain('credential');
+    }, 30_000);
+
+    it('still hands git the token, now that the child inherits an allowlist', async () => {
+      // #334 stopped the supervisor spreading process.env into its children,
+      // and GITHUB_TOKEN is deliberately not on the inheritance allowlist. The
+      // credential helper written into .git/config above reads
+      // $OPIFEX_GIT_TOKEN, so if this service's per-command `env` stopped
+      // arriving, every clone of a private repository and every push would
+      // fail — at the end of a paid-for run, and only against a real remote,
+      // which is why this asserts the environment rather than the outcome.
+      //
+      // Observed by standing in for the git binary: the config value is a
+      // path, and the first thing `provision` runs is `git init`. It records
+      // the environment it was given and fails, which the service reports as a
+      // WorkspaceError.
+      const probe = join(scratch, 'git-probe.sh');
+      const dump = join(scratch, 'git-probe.env.json');
+      await rm(dump, { force: true });
+      await writeFile(
+        probe,
+        [
+          '#!/bin/sh',
+          // The interpreter is named absolutely, so this fixture proves
+          // something about OPIFEX_GIT_TOKEN rather than about PATH.
+          `${process.execPath} -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify(process.env))' ${dump}`,
+          'exit 1',
+          '',
+        ].join('\n'),
+        { mode: 0o755 },
+      );
+      await chmod(probe, 0o755);
+
+      const leaked = process.env.JWT_SECRET;
+      const probed = build({ 'runners.claudeCodeLocal.gitBinary': probe });
+      await expect(probed.provision(request())).rejects.toThrow(WorkspaceError);
+
+      const childEnv = JSON.parse(await readFile(dump, 'utf8')) as Record<
+        string,
+        string
+      >;
+      expect(childEnv[GIT_TOKEN_ENV_VAR]).toBe('ghp_fake_token_for_tests');
+      // The rest of the per-command environment travels the same road: each of
+      // these is a hang that would present as a silent run.
+      expect(childEnv.GIT_TERMINAL_PROMPT).toBe('0');
+      expect(childEnv.GIT_PAGER).toBe('cat');
+      // And the filtering is real on this path too, not only the agent's.
+      expect(leaked).toBeDefined();
+      expect(childEnv.JWT_SECRET).toBeUndefined();
     }, 30_000);
 
     it('points the origin remote at the configured base URL', async () => {

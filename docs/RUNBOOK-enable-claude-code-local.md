@@ -70,8 +70,12 @@ observed — see step 3, where it shows up as a fact in the fleet.
 
 **A container cannot complete an interactive `claude auth login`.** The credential
 has to arrive through the environment, and it needs no wiring beyond `.env`:
-`buildInvocationEnv()` adds only correlation variables and lets the child inherit
-`process.env`, and `base.compose.yml` loads the whole file with `env_file`.
+`base.compose.yml` loads the whole file with `env_file`, and both variable names
+below are on the agent subprocess's inheritance allowlist
+(`apps/api/src/runners/process/child-environment.ts`). Nothing else in `.env`
+reaches the agent — since #334 the child gets that allowlist rather than the
+API's whole environment, so `JWT_SECRET`, `POSTGRES_PASSWORD` and `GITHUB_TOKEN`
+are absent from it.
 
 Pick exactly one, and understand which pool you are spending from:
 
