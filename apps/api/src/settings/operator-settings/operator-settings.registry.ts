@@ -77,17 +77,19 @@ import { PERMISSION_MODES } from '../../runners/claude-code-local/claude-code-in
 //
 // The four hard spend ceilings — OPIFEX_HARD_SPEND_CEILING_USD,
 // OPIFEX_HARD_SPEND_CEILING_WINDOW_DAYS, SUPERVISOR_HARD_SPEND_CEILING_USD and
-// SUPERVISOR_HARD_SPEND_CEILING_WINDOW_DAYS — are absent for a DIFFERENT and
-// much stronger reason. `budget/hard-spend-ceiling.ts:5-20` reads them from
-// `process.env` into `readonly` fields with no setter anywhere, specifically so
-// that no runtime path to a higher ceiling exists: VISION §8, "a limit an agent
-// can raise is not a limit". Making them settable reverses that guarantee from
-// structural to access-controlled, which is only defensible once BOTH
-// containment barriers land (#334's environment scrub and #346's refusal of
-// non-interactive credentials). That is #345's job, taken deliberately, with an
-// ADR. It must never happen by someone adding four plausible-looking lines to
-// this list — so `operator-settings.registry.spec.ts` asserts all four names
-// are absent and will fail the build if they appear.
+// SUPERVISOR_HARD_SPEND_CEILING_WINDOW_DAYS — WERE absent for a different and
+// much stronger reason, and are present now. Until #345 they were read from
+// `process.env` into `readonly` fields with no setter anywhere, so that no
+// runtime path to a higher ceiling existed at all: VISION §8, "a limit an agent
+// can raise is not a limit". #345 made them managed keys deliberately, under
+// ADR-0018 §6, which is where the reversal is argued — the guarantee moved from
+// structural (no setter exists) to access-controlled (a setter exists and the
+// agent provably cannot reach it), and that is a real downgrade, named as one.
+// It was only defensible once BOTH containment barriers landed: #334's scrub of
+// the agent subprocess's environment, and #346's refusal of non-interactive
+// credentials on this write path. `operator-settings.registry.spec.ts` used to
+// assert all four names were absent; it now asserts they are present AND marked
+// `dangerous`, and says why it changed.
 //
 // =============================================================================
 
@@ -687,6 +689,78 @@ export const OPERATOR_SETTINGS = {
   }),
 
   // -------------------------------------------------------------------------
+  // The dispatch hard spend ceiling (#65, #345, ADR-0018 §6)
+  //
+  // These two were absent from this registry on purpose until #345, and the
+  // header above still says what the absence was protecting. What changed is
+  // NOT the risk — ADR-0018 §6 is explicit that "both were right about the
+  // risk they were defending against, and nothing about that risk has
+  // changed" — but which guarantee holds it off. It was structural: no setter
+  // existed anywhere in the process, for anyone, so there was nothing inside
+  // the process to compromise. It is now access-controlled: the only write
+  // path is `PATCH /api/operator-settings`, which needs `system_settings:write`
+  // AND an interactive session — #346 refuses a personal access token or a
+  // device token whatever permissions it carries — while the agent subprocess
+  // inherits no credential to authenticate with in the first place (#334).
+  // Both barriers are preconditions of this decision, not defence in depth:
+  // ADR-0018 §6 says either one missing invalidates it rather than merely
+  // weakening it.
+  //
+  // WHY THE DOLLAR FIGURE IS DECLARED AS A STRING AND NOT A NUMBER
+  //
+  // `parseHardCeiling` distinguishes THREE states where a number can carry
+  // only two: a figure, an UNSET ceiling, and a MALFORMED one — a value
+  // somebody set and mistyped. The third is the operator-facing signal the
+  // whole mechanism turns on. Unset and malformed both refuse to spend, and
+  // only one of them means somebody believed they had set a limit, so the
+  // refusal quotes the offending text back at them. A numeric schema here
+  // would reject `50O` at the registry, resolve the key to its default, and
+  // replace that text with "expected number" — trading the most specific
+  // diagnostic in the system for a generic one, and collapsing malformed into
+  // unset at exactly the layer built to keep them apart. So the registry
+  // carries the raw string and `parseHardCeiling` stays the single parser of
+  // record. It is the one key shape here that deliberately validates less than
+  // it could, and `hard-spend-ceiling.ts` is where the validation lives.
+  // -------------------------------------------------------------------------
+
+  'dispatch.hardSpendCeilingUsd': stringSetting({
+    envVar: 'OPIFEX_HARD_SPEND_CEILING_USD',
+    default: '',
+    allowEmpty: true,
+    secret: false,
+    // `HardSpendCeilingService` holds no boot-time copy since #345 — it
+    // re-reads on every change this service announces. What a lowered ceiling
+    // cannot do is stop a run that is already spending, because the gate is at
+    // admission and a dispatched agent is not recalled. That gap is
+    // 'next-unit', the same one `dispatch.maxConcurrent` declares.
+    reload: 'next-unit',
+    group: 'dispatch',
+    label: 'Hard spend ceiling (USD)',
+    dangerous: true,
+    help: 'The most the factory may spend on runs per window, and the limit no trust grant may raise (VISION §8). Empty means NO ceiling is configured, which refuses every dispatch rather than permitting unlimited spend — an unset ceiling is not an unlimited one. Anything that is not a non-negative number is reported as malformed and also refuses, because somebody who mistyped a ceiling believes they set one. Lowering it binds the next dispatch, not a run already under way.',
+  }),
+
+  'dispatch.hardSpendCeilingWindowDays': integerSetting({
+    envVar: 'OPIFEX_HARD_SPEND_CEILING_WINDOW_DAYS',
+    // `DEFAULT_CEILING_WINDOW_DAYS`. Not imported: `hard-spend-ceiling.ts`
+    // reads this registry through `OperatorSettingsService`, so importing its
+    // constant back into the registry would close an import cycle through the
+    // resolver. `operator-settings.registry.spec.ts` pins the two together
+    // instead, which is drift-proof without the cycle.
+    default: 30,
+    // No maximum, matching `positiveIntOr`: any positive integer is a window
+    // somebody may mean, and a cap here would silently substitute 30 for a
+    // deliberate 400 rather than refusing it.
+    min: 1,
+    secret: false,
+    reload: 'next-unit',
+    group: 'dispatch',
+    label: 'Hard spend ceiling window (days)',
+    dangerous: true,
+    help: 'The rolling window the ceiling is measured over. Thirty days by default, because a ceiling with no window is a lifetime cap that stops the factory permanently the first time it is reached and can only be recovered from by raising the limit. Shortening the window makes the same figure permit more spend per month, so it is as much a budget change as the figure is.',
+  }),
+
+  // -------------------------------------------------------------------------
   // Reconciler (epic #16)
   // -------------------------------------------------------------------------
 
@@ -836,6 +910,45 @@ export const OPERATOR_SETTINGS = {
     group: 'supervisor',
     label: 'Stand down while runs are blocked',
     help: 'Skip supervisor invocations while any run is parked on a rate limit. A parked worker is evidence that everything the supervisor exists to advise about has stopped moving, and diagnosis nobody can act on is worth waiting on.',
+  }),
+
+  // -------------------------------------------------------------------------
+  // The supervisor's own hard spend ceiling (#261, #345, ADR-0017, ADR-0018 §6)
+  //
+  // A SECOND ceiling, deliberately, and ADR-0017 argues why at length: folding
+  // supervisor spend into the dispatch figure would stand the supervisor down
+  // once workers had spent close to it, which is precisely the moment the one
+  // component whose job is noticing unusual spend needs to be running. The
+  // access-control argument above applies here unchanged.
+  // -------------------------------------------------------------------------
+
+  'supervisor.hardSpendCeilingUsd': stringSetting({
+    envVar: 'SUPERVISOR_HARD_SPEND_CEILING_USD',
+    default: '',
+    allowEmpty: true,
+    secret: false,
+    // Checked between proposers inside `SupervisorService.invoke()`, so a
+    // lowered ceiling stops the next proposer rather than the one already
+    // talking to the model.
+    reload: 'next-unit',
+    group: 'supervisor',
+    label: 'Supervisor hard spend ceiling (USD)',
+    dangerous: true,
+    help: 'The most supervision may spend per window, on the separately metered model key (ADR-0015). Empty means no ceiling is configured, and the supervisor then does not run at all: every tick records a skipped_budget row instead. That is the hole #261 closed, not a regression — SUPERVISOR_ENABLED plus a model key used to be sufficient to spend without limit. Separate from the dispatch ceiling on purpose, so a busy factory cannot silence the thing watching it spend.',
+  }),
+
+  'supervisor.hardSpendCeilingWindowDays': integerSetting({
+    envVar: 'SUPERVISOR_HARD_SPEND_CEILING_WINDOW_DAYS',
+    // `DEFAULT_SUPERVISOR_CEILING_WINDOW_DAYS`, pinned in the registry spec
+    // rather than imported — see the dispatch window above for why.
+    default: 1,
+    min: 1,
+    secret: false,
+    reload: 'next-unit',
+    group: 'supervisor',
+    label: 'Supervisor ceiling window (days)',
+    dangerous: true,
+    help: 'ONE day by default, where the dispatch ceiling defaults to thirty, because supervisor spend is near-constant per tick and set almost entirely by which model SUPERVISOR_MODEL_NAME names. A month-long window would be slow to catch a switch to a model fifteen times the rate, and slow to recover — leaving the supervisor dark for up to a month is the "absent when things are going wrong" failure this ceiling exists to avoid, self-inflicted.',
   }),
 
   // -------------------------------------------------------------------------

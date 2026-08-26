@@ -1,4 +1,14 @@
 import {
+  DEFAULT_CEILING_WINDOW_DAYS,
+  HARD_SPEND_CEILING_ENV,
+  HARD_SPEND_CEILING_WINDOW_ENV,
+} from '../../budget/hard-spend-ceiling';
+import {
+  DEFAULT_SUPERVISOR_CEILING_WINDOW_DAYS,
+  SUPERVISOR_SPEND_CEILING_ENV,
+  SUPERVISOR_SPEND_CEILING_WINDOW_ENV,
+} from '../../supervisor/invocation/supervisor-spend-ceiling';
+import {
   OPERATOR_SETTINGS,
   OPERATOR_SETTING_GROUPS,
   OPERATOR_SETTING_KEYS,
@@ -179,41 +189,109 @@ describe('operator settings registry', () => {
     expect(new Set(envVars).size).toBe(envVars.length);
   });
 
+  describe('the hard spend ceilings (#345, ADR-0018 §6)', () => {
+    // -----------------------------------------------------------------------
+    // WHY THIS TEST NOW ASSERTS THE OPPOSITE OF WHAT IT USED TO.
+    //
+    // Until #345 this block asserted that these four names were ABSENT from
+    // the registry, and it was a guard rather than a description: the ceilings
+    // were read from `process.env` into `readonly` fields with no setter
+    // anywhere, so that no runtime path to a higher ceiling existed — VISION
+    // §8, "a limit an agent can raise is not a limit" — and four
+    // plausible-looking lines added to the registry would have reversed that
+    // silently. The comment said so, and said the reversal would happen only
+    // in #345, deliberately, with an ADR, and only once both containment
+    // barriers landed.
+    //
+    // That is what happened. #334 removed the credentials from the agent
+    // subprocess's environment, #346 made this write path refuse any
+    // credential that cannot prove a human was present, and ADR-0018 §6
+    // records the trade: the guarantee moved from structural to
+    // access-controlled, which is a real downgrade and is named as one. The
+    // guard did its job — it made the reversal a deliberate act with a
+    // paper trail instead of an accident.
+    //
+    // So the assertion inverts rather than disappearing. These four keys are
+    // the ones whose presence a reviewer most needs to see asserted, and what
+    // matters about them now is that they are marked `dangerous`, that they
+    // still resolve through the parser that keeps malformed and unset apart,
+    // and that their declarations have not drifted from the constants
+    // `hard-spend-ceiling.ts` and `supervisor-spend-ceiling.ts` argue for.
+    // -----------------------------------------------------------------------
+    const ceilings = [
+      ['dispatch.hardSpendCeilingUsd', 'OPIFEX_HARD_SPEND_CEILING_USD'],
+      [
+        'dispatch.hardSpendCeilingWindowDays',
+        'OPIFEX_HARD_SPEND_CEILING_WINDOW_DAYS',
+      ],
+      ['supervisor.hardSpendCeilingUsd', 'SUPERVISOR_HARD_SPEND_CEILING_USD'],
+      [
+        'supervisor.hardSpendCeilingWindowDays',
+        'SUPERVISOR_HARD_SPEND_CEILING_WINDOW_DAYS',
+      ],
+    ] as const;
+
+    it.each(ceilings)('declares %s, reading %s', (key, envVar) => {
+      expect(OPERATOR_SETTING_KEYS).toContain(key);
+      expect(OPERATOR_SETTINGS[key].envVar).toBe(envVar);
+    });
+
+    it.each(ceilings)('marks %s dangerous', (key) => {
+      // The one field that decides whether the Control Center asks twice
+      // before moving it. A ceiling that changed like a log level would be a
+      // budget change dressed as a preference.
+      expect(OPERATOR_SETTINGS[key].dangerous).toBe(true);
+      expect(OPERATOR_SETTINGS[key].secret).toBe(false);
+    });
+
+    it('declares the two dollar figures as strings, so malformed survives', () => {
+      // Not fussiness about types. `parseHardCeiling` reports a value somebody
+      // set and mistyped as `malformed`, quoting it back; a numeric schema
+      // here would reject it at the registry and resolve the key to its
+      // default, which is indistinguishable from nobody having set one.
+      expect(OPERATOR_SETTINGS['dispatch.hardSpendCeilingUsd'].kind).toBe(
+        'string',
+      );
+      expect(OPERATOR_SETTINGS['supervisor.hardSpendCeilingUsd'].kind).toBe(
+        'string',
+      );
+
+      expect(
+        parseOperatorSetting('dispatch.hardSpendCeilingUsd', '50O'),
+      ).toEqual({ ok: true, value: '50O' });
+      expect(
+        parseOperatorSetting('supervisor.hardSpendCeilingUsd', '50O'),
+      ).toEqual({ ok: true, value: '50O' });
+    });
+
+    it('has not drifted from the window defaults the ceiling files argue for', () => {
+      // The registry cannot import these constants — `hard-spend-ceiling.ts`
+      // reads the registry through the resolver, so the import would close a
+      // cycle — so the pinning happens here, as it already does for
+      // `runners.deadlineGraceMinutes` in the governing spec.
+      expect(
+        OPERATOR_SETTINGS['dispatch.hardSpendCeilingWindowDays'].default,
+      ).toBe(DEFAULT_CEILING_WINDOW_DAYS);
+      expect(
+        OPERATOR_SETTINGS['supervisor.hardSpendCeilingWindowDays'].default,
+      ).toBe(DEFAULT_SUPERVISOR_CEILING_WINDOW_DAYS);
+
+      expect(OPERATOR_SETTINGS['dispatch.hardSpendCeilingUsd'].envVar).toBe(
+        HARD_SPEND_CEILING_ENV,
+      );
+      expect(
+        OPERATOR_SETTINGS['dispatch.hardSpendCeilingWindowDays'].envVar,
+      ).toBe(HARD_SPEND_CEILING_WINDOW_ENV);
+      expect(OPERATOR_SETTINGS['supervisor.hardSpendCeilingUsd'].envVar).toBe(
+        SUPERVISOR_SPEND_CEILING_ENV,
+      );
+      expect(
+        OPERATOR_SETTINGS['supervisor.hardSpendCeilingWindowDays'].envVar,
+      ).toBe(SUPERVISOR_SPEND_CEILING_WINDOW_ENV);
+    });
+  });
+
   describe('keys that must never be in this registry', () => {
-    // -----------------------------------------------------------------------
-    // THIS TEST IS A GUARD, NOT A DESCRIPTION.
-    //
-    // `budget/hard-spend-ceiling.ts:5-20` reads the ceiling from `process.env`
-    // once, into `readonly` fields with no setter anywhere, SPECIFICALLY so
-    // that no runtime path to a higher ceiling exists — VISION §8, "a limit an
-    // agent can raise is not a limit". Adding any of these four here would
-    // give a settings endpoint a path to that limit and quietly reverse a
-    // guarantee the system states in prose.
-    //
-    // They DO become editable, in #345, deliberately, with an ADR and only
-    // once both containment barriers land (#334's environment scrub and #346's
-    // refusal of non-interactive credentials). If you are here because this
-    // test failed: that is the conversation to have, not a line to delete.
-    // -----------------------------------------------------------------------
-    const forbidden = [
-      'OPIFEX_HARD_SPEND_CEILING_USD',
-      'OPIFEX_HARD_SPEND_CEILING_WINDOW_DAYS',
-      'SUPERVISOR_HARD_SPEND_CEILING_USD',
-      'SUPERVISOR_HARD_SPEND_CEILING_WINDOW_DAYS',
-    ];
-
-    it.each(forbidden)('does not declare %s', (envVar) => {
-      expect(entries.map(([, def]) => def.envVar)).not.toContain(envVar);
-      expect(OPERATOR_SETTING_KEYS).not.toContain(envVar);
-    });
-
-    it('declares no spend ceiling under any other name either', () => {
-      for (const [key, def] of entries) {
-        expect(def.envVar).not.toContain('SPEND_CEILING');
-        expect(key.toLowerCase()).not.toContain('spendceiling');
-      }
-    });
-
     it('declares nothing epic #332 puts out of scope', () => {
       const outOfScope = [
         'POSTGRES_',
