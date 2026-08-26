@@ -37,8 +37,10 @@ import {
 } from '@mui/material';
 
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { ClaudeAuthPanel } from './ClaudeAuthPanel';
 import { SecretCredentialCard } from './SecretCredentialCard';
 import { SpendCeilingsPanel } from './SpendCeilingsPanel';
+import { supportsGuidedSignIn } from '../../config/claudeAuth';
 import type {
   ProbeDescriptor,
   ProbeObservation,
@@ -69,6 +71,14 @@ export interface CredentialsSectionProps {
   spendIsLoading: boolean;
   spendProblem: CeilingSpendProblem | null;
   onSave: (patch: OperatorSettingsPatch) => Promise<void>;
+  /**
+   * Re-read the document after a guided sign-in wrote a credential (#386).
+   *
+   * Separate from `onSave` because nothing was patched from here: the API
+   * sealed the token itself at the end of the sign-in, so there is no body to
+   * send and nothing to diff — only a document that is now out of date.
+   */
+  onConnected: () => void;
 }
 
 export function CredentialsSection({
@@ -85,6 +95,7 @@ export function CredentialsSection({
   spendIsLoading,
   spendProblem,
   onSave,
+  onConnected,
 }: CredentialsSectionProps) {
   if (isLoading) {
     return <LoadingSpinner />;
@@ -156,6 +167,16 @@ export function CredentialsSection({
             runningProbe={runningProbe}
             onRunProbe={onRunProbe}
             onSave={onSave}
+            guidedSignIn={
+              supportsGuidedSignIn(entry.key) ? (
+                <ClaudeAuthPanel
+                  configured={entry.configured}
+                  canStart={canWrite && canWriteSecret}
+                  storageConfigured={document.secretStorage.configured}
+                  onConnected={onConnected}
+                />
+              ) : undefined
+            }
           />
         ))}
       </Stack>

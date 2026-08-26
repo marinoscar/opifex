@@ -267,14 +267,18 @@ function credentialStep(inputs: ReadinessInputs): ReadinessStep {
       label: 'Set and test the Claude credential',
       section: 'credentials',
       today:
-        'The Credentials section stores the token and tests it with a real ' +
-        'non-interactive invocation — the only check that distinguishes a ' +
-        'working credential from a CLI that answers --version without one. ' +
-        'CLAUDE_CODE_OAUTH_TOKEN (your subscription quota) or ' +
-        'ANTHROPIC_API_KEY (per-token billing) in infra/compose/.env is ' +
-        'still the layer underneath, and still needs a container recreate. ' +
-        'This step reports what /health/ready observed and does not run the ' +
-        'probe itself, so it stays "not yet verifiable" here (#349).',
+        'Connect on the Claude credential signs in to a Claude account for ' +
+        'you and seals the token it produces — no shell, no TTY, no .env ' +
+        'edit (#386). A token you already hold can still be pasted there ' +
+        'instead. Either way the Credentials section then tests it with a ' +
+        'real non-interactive invocation, which is the only check that ' +
+        'distinguishes a working credential from a CLI that answers ' +
+        '--version without one. CLAUDE_CODE_OAUTH_TOKEN (your subscription ' +
+        'quota) or ANTHROPIC_API_KEY (per-token billing) in ' +
+        'infra/compose/.env remains the layer underneath, and that one still ' +
+        'needs a container recreate. This step reports what /health/ready ' +
+        'observed and does not run the probe itself, so it stays "not yet ' +
+        'verifiable" here (#349).',
     },
   };
 }

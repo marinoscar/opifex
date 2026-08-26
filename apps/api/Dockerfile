@@ -43,6 +43,27 @@ RUN apk add --no-cache openssl openssl-dev
 # worse problem than a slower rebuild.
 RUN apk add --no-cache git
 
+# `util-linux`, for `script(1)` — the only pty this image has (#386).
+#
+# `claude setup-token` REFUSES to run without a terminal: with stdin on a pipe
+# it dies with `the input device is not a TTY`, prints no authorize URL, and
+# exits. The API process has no terminal of its own and never will — it is
+# started by an init system, not a shell — so "just spawn it" cannot work here.
+#
+# Node has no pty. The two ways to get one are `node-pty`, a native addon that
+# drags a full compiler toolchain into this image and has to be rebuilt for
+# every Node bump, and `script -qec "<cmd>" /dev/null`, which allocates a pty
+# in about a millisecond and is a 2 MB package. Verified from inside this
+# container, spawned from a parent with no TTY at all: the second one captures
+# the authorize URL correctly. So this is that package.
+#
+# Alpine currently pulls `util-linux-misc` in as a transitive dependency, which
+# is exactly why it is named here explicitly rather than left to luck: an
+# incidental dependency that disappears in a base-image bump would take the
+# Connect-your-Claude-account flow with it, and the failure would surface as
+# `ENOENT: script` on an operator's first click.
+RUN apk add --no-cache util-linux
+
 # Unpinned by default, which is defensible only because the version is OBSERVED
 # rather than assumed: `probeVersion()` runs `claude --version` and the
 # registration tick writes what it actually reported into `runner_capabilities`,

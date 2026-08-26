@@ -1,5 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
+import { ClaudeAuthController } from './claude-auth/claude-auth.controller';
+import { ClaudeAuthService } from './claude-auth/claude-auth.service';
 import { OperatorSettingsController } from './operator-settings.controller';
 import { OperatorSettingsRefreshTask } from './operator-settings-refresh.task';
 import { OperatorSettingsEnvDisagreementService } from './operator-settings.env-disagreement';
@@ -39,11 +41,15 @@ import { OperatorProbesService } from './probes/operator-probes.service';
  */
 @Global()
 @Module({
-  controllers: [OperatorSettingsController],
+  controllers: [OperatorSettingsController, ClaudeAuthController],
   providers: [
     OperatorSettingsService,
     OperatorSettingsRefreshTask,
     OperatorProbesService,
+    // Not exported either, and for a stronger version of the same reason: it
+    // spawns a process that mints a credential. The only thing that should be
+    // able to reach it is the endpoint an operator clicks (#386).
+    ClaudeAuthService,
     // Not exported and injected by nothing: its whole job happens in its
     // constructor, and Nest instantiates it because it is a provider of a
     // module that is loaded. `RetiredSupervisorConfigService` is registered

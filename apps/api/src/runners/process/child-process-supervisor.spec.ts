@@ -199,6 +199,114 @@ describe('ChildProcessSupervisor', () => {
     });
   });
 
+  describe('an interactive child (#386)', () => {
+    it('keeps stdin open so a later answer can reach the child', async () => {
+      // The property `claude setup-token` needs and no other caller does: the
+      // child asks a question, and the answer arrives minutes later. With the
+      // default (close stdin at spawn) this child reads EOF, prints
+      // `saw:` and exits — so the assertion below is about the flag, not
+      // about echo working.
+      const lines: string[] = [];
+      const proc = start({
+        command: NODE,
+        args: [
+          '-e',
+          'process.stdin.setEncoding("utf8");' +
+            'process.stdin.on("data",(d)=>{console.log("saw:"+d.trim());' +
+            'process.exit(0)});',
+        ],
+        cwd,
+        keepStdinOpen: true,
+        onLine: (line) => lines.push(line),
+      });
+
+      // A real gap, on purpose. A child that had been given EOF at spawn
+      // would already be gone by now.
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(proc.isAlive()).toBe(true);
+
+      expect(proc.write('answer\n')).toBe(true);
+
+      await proc.waitForExit();
+      expect(lines).toEqual(['saw:answer']);
+    });
+
+    it('closes a held-open stdin on request', async () => {
+      const proc = start({
+        command: NODE,
+        args: [
+          '-e',
+          'process.stdin.resume();' +
+            'process.stdin.on("end",()=>{console.log("eof");process.exit(0)});',
+        ],
+        cwd,
+        keepStdinOpen: true,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(proc.isAlive()).toBe(true);
+
+      proc.closeStdin();
+
+      await expect(proc.waitForExit()).resolves.toMatchObject({ exitCode: 0 });
+    });
+
+    it('reports a write to a child that has already gone, without throwing', async () => {
+      // Cancel races the operator's paste, and an exception on that path
+      // would take down the control plane the supervisor exists to protect.
+      const proc = start({
+        command: NODE,
+        args: ['-e', 'process.exit(0)'],
+        cwd,
+        keepStdinOpen: true,
+      });
+
+      await proc.waitForExit();
+
+      expect(() => proc.write('too late\n')).not.toThrow();
+      expect(proc.write('too late\n')).toBe(false);
+    });
+
+    it('hands over raw chunks, escapes and all, before any line splitting', async () => {
+      // `onLine` splits on newlines, strips a `\r` and drops empty lines,
+      // which destroys exactly the bytes a terminal parser matches on. This
+      // writes a cursor-positioning escape with no trailing newline at all —
+      // the shape `onLine` would hold back until exit.
+      const chunks: Array<[string, string]> = [];
+      const proc = start({
+        command: NODE,
+        args: ['-e', String.raw`process.stdout.write("a\u001b[9Gb\r\r\n")`],
+        cwd,
+        onChunk: (chunk, stream) => chunks.push([stream, chunk]),
+      });
+
+      await proc.waitForExit();
+      await waitUntil(() => chunks.length > 0);
+
+      expect(chunks.map(([stream]) => stream)).toContain('stdout');
+      expect(chunks.map(([, chunk]) => chunk).join('')).toBe(
+        'a\u001b[9Gb\r\r\n',
+      );
+    });
+
+    it('survives a chunk handler that throws, and reports it', async () => {
+      const errors: Error[] = [];
+      const proc = start({
+        command: NODE,
+        args: ['-e', 'process.stdout.write("boom\\n")'],
+        cwd,
+        onChunk: () => {
+          throw new Error('handler exploded');
+        },
+        onError: (error) => errors.push(error),
+      });
+
+      await expect(proc.waitForExit()).resolves.toMatchObject({ exitCode: 0 });
+      await waitUntil(() => errors.length > 0);
+      expect(errors[0]?.message).toBe('handler exploded');
+    });
+  });
+
   describe('stdin and cwd', () => {
     it('writes stdin and closes it', async () => {
       const lines: string[] = [];

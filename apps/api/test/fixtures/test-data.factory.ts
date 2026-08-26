@@ -59,6 +59,21 @@ export const mockPermissions = {
     name: 'allowlist:write',
     description: 'Modify allowlist',
   },
+  /**
+   * The second permission a secret write needs (#338, epic #332).
+   *
+   * `prisma/seed.ts` has granted this to Admin since #338 shipped; this
+   * fixture had not caught up, so every mock Admin was silently LESS
+   * privileged than a real one. That is the quiet kind of fixture drift: a
+   * spec asserting a 403 on a secret-write route passed for the wrong reason
+   * — the permission guard refused it before the check actually under test
+   * ever ran.
+   */
+  operatorSettingsWriteSecret: {
+    id: randomUUID(),
+    name: 'operator_settings:write_secret',
+    description: 'Write a secret operator setting',
+  },
 };
 
 export const mockRoles = {
@@ -352,6 +367,7 @@ export const rolePermissionsMap = {
     mockPermissions.rbacManage,
     mockPermissions.allowlistRead,
     mockPermissions.allowlistWrite,
+    mockPermissions.operatorSettingsWriteSecret,
   ],
   contributor: [
     mockPermissions.userSettingsRead,
