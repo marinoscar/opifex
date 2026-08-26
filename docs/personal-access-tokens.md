@@ -82,7 +82,7 @@ response = requests.get(
 )
 ```
 
-PATs work on all authenticated API endpoints. The request is authorized using the roles and permissions of the user who created the token.
+PATs work on almost all authenticated API endpoints, authorized using the roles and permissions of the user who created the token — with one deliberate exception: `PATCH /api/operator-settings` (the Control Center's write path, [`operator-configuration.md`](operator-configuration.md)) refuses any non-interactive credential, PAT or device-flow token alike, with a `403` naming the reason, even for an Admin-scoped token that carries every permission the endpoint checks. `GET /api/operator-settings` has no such restriction — reading configuration is not the thing being guarded against. See `apps/api/src/auth/guards/interactive-session.guard.ts` and ADR-0018 §6: these settings hold budget, quota and credential configuration, and a token usable with nobody at a keyboard is indistinguishable, in an audit row, from the admin who created it acting deliberately.
 
 ---
 
@@ -251,3 +251,4 @@ Authorization: Bearer <token>
 **Scope:**
 
 - PATs carry the full permissions of the user who created them. A token created by an Admin user can perform Admin-level operations. Prefer using Contributor or Viewer accounts for automated access when full Admin permissions are not required.
+- One endpoint is refused regardless of permissions: `PATCH /api/operator-settings`. See [Using a Token](#using-a-token) above.

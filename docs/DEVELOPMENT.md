@@ -64,6 +64,16 @@ This application uses **Fastify** as the HTTP adapter, not Express. This has imp
    # Edit .env with your Google OAuth credentials and other settings
    ```
 
+   `.env` still holds everything that is genuinely set once per deployment —
+   the database, JWT/session secrets, OAuth credentials. It is also, as of
+   epic #332, the **floor** for a separate set of operator-managed tunables
+   (GitHub, dispatch, the runner, the reconciler, the supervisor, promotion,
+   notifications): those resolve `default → env → database row` at runtime,
+   and once an Admin has touched one from `/admin/settings` → Configuration,
+   the database row wins over anything written here until it is cleared. See
+   [`docs/operator-configuration.md`](./operator-configuration.md) before
+   assuming a `.env` edit to one of those variables took effect.
+
 3. **Start development environment**
 
    ```bash
@@ -714,6 +724,7 @@ const response = await request(app.getHttpServer())
 - [Passport.js Documentation](http://www.passportjs.org/)
 - [Project SECURITY-ARCHITECTURE.md](./SECURITY-ARCHITECTURE.md)
 - [Project TESTING.md](./TESTING.md)
+- [Project operator-configuration.md](./operator-configuration.md)
 
 ---
 

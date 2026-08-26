@@ -61,29 +61,38 @@ Generate the Web Push key pair — no account, no third party, one command:
 npx web-push generate-vapid-keys
 ```
 
-The settings that matter for this week:
+The settings that matter for this week. Two groups, and they are configured
+differently since epic #332 — see
+[`docs/operator-configuration.md`](operator-configuration.md) if the
+distinction below is unfamiliar:
 
 ```bash
-# Read GitHub. Write nothing.
+# Still .env — GITHUB_TOKEN is a registered secret key, but the Control
+# Center screen that would let you set one from a form (Credentials, #349)
+# has not shipped, so this one is still a plain .env edit for now.
 GITHUB_TOKEN=ghp_...
-GITHUB_WRITES_ENABLED=false      # leave it false for the whole week
 
-# The control loop. This is the switch you are here to flip.
-RECONCILER_ENABLED=true
-RECONCILER_INTERVAL_MS=60000
-RECONCILER_LOG_RETENTION_DAYS=14 # longer than the week, on purpose
-
-# Reach your phone.
+# Also still .env — neither is a managed key at all.
 VAPID_PUBLIC_KEY=...             # from the command above
 VAPID_PRIVATE_KEY=...
 VAPID_SUBJECT=mailto:you@example.com
-
-# See the traces. Optional.
-OTEL_ENABLED=true
+OTEL_ENABLED=true                # optional, see the traces
 ```
 
+**Leave `.env`'s reconciler and GitHub-writes variables at their defaults —
+`RECONCILER_ENABLED=false` (unset), `RECONCILER_INTERVAL_MS=60000` (unset),
+`RECONCILER_LOG_RETENTION_DAYS=14` (unset), `GITHUB_WRITES_ENABLED=false`
+(unset).** All four are now operator-managed keys (`reconciler.enabled`,
+`reconciler.intervalMs`, `reconciler.logRetentionDays`,
+`github.writesEnabled`), editable live from `/admin/settings` →
+Configuration once the container is up — §2 below turns the control loop on
+that way instead of by baking it into `.env` before the first boot, which
+doubles as proof that the live toggle actually works before you rely on it
+for anything else this week.
+
 **Retention is 14 days deliberately.** A one-week window pruned at seven days is
-half-gone on the day you sit down to review it.
+half-gone on the day you sit down to review it. It stays a code default here
+because 14 already matches the registry's own default — nothing to set.
 
 ---
 
@@ -97,15 +106,37 @@ docker compose -f base.compose.yml -f dev.compose.yml up -d
 docker compose -f base.compose.yml -f dev.compose.yml -f otel.compose.yml up -d
 ```
 
-Confirm the loop registered — this line is the whole point:
+Confirm the loop registered — this line is the whole point, and with
+`RECONCILER_ENABLED` left unset it says so honestly:
 
 ```
-LOG [ReconcilerTask] Reconciler tick registered every 60000ms
+LOG [ReconcilerTask] Reconciler tick registered every 60000ms; the reconciler is DISABLED, so every tick will skip until it is enabled
 ```
 
-If instead you see `Reconciler is DISABLED`, `RECONCILER_ENABLED` is not the
-literal string `true`. The comparison is deliberately strict, so an unset,
-misspelled or empty value all mean off.
+The interval is registered either way now (#343) — a disabled reconciler
+still wakes every `intervalMs` to confirm it has nothing to do, logged at
+`debug` so it costs no attention. What differs with enablement is entirely
+inside that one line.
+
+Now turn it on, live, from the Control Center: `/admin/settings` →
+**Configuration** → the **Reconciler** group → _Reconciler enabled_ →
+switch it on → Save. `reconciler.enabled` has `live` reload, so this takes
+effect on the very next scheduled tick — up to a minute away, never a
+restart, and **no second log line confirms it**; the boot line above only
+prints once, at startup. Confirm the toggle actually took instead by reading
+the tick log itself once a tick has had time to run:
+
+```bash
+curl 'http://localhost:3535/api/reconciler/ticks?pageSize=1' \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+While disabled, `runOnce()` returns before `ReconcilerService.tick()` is ever
+called, so **no row is written at all** — an empty response here while
+`reconciler.enabled` reads `false` is expected, not a bug. The proof the flip
+landed is a **new row appearing** after the next scheduled tick — its
+`repositoriesObserved` will read `0` until §4 registers one, and that is
+still the tick running, not a failure.
 
 You should also see, if you have not set the VAPID keys:
 
@@ -342,8 +373,11 @@ depend on the OTEL stack running.
 Do it in stages, and let each one sit before the next:
 
 1. **Mirror labels on, one repository.**
-   `PATCH /api/repositories/{id}` with `{"mirrorLabelsEnabled": true}`, and set
-   `GITHUB_WRITES_ENABLED=true`. Both must be on for a label to be written. This
+   `PATCH /api/repositories/{id}` with `{"mirrorLabelsEnabled": true}`, and
+   turn on `github.writesEnabled` — `/admin/settings` → Configuration → the
+   **GitHub** group → _GitHub writes enabled_ → Save. (It is `live` reload,
+   same as everything flipped earlier in this runbook; no restart, no
+   `.env` edit.) Both must be on for a label to be written. This
    is the first time Opifex touches GitHub — proving the write path before
    dispatch is switched on is the entire reason labels come first.
 2. **Watch the labels.** `factory/dispatched`, `factory/blocked`,
@@ -363,15 +397,15 @@ Do it in stages, and let each one sit before the next:
 
 ## Troubleshooting
 
-| Symptom                                                  | Cause                                                                                                              |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `Reconciler is DISABLED`                                 | `RECONCILER_ENABLED` is not the literal `true`                                                                     |
-| `OAuth2Strategy requires a clientID option`              | #138 — set the Google variables                                                                                    |
-| Ticks recorded, `repositoriesObserved: 0`                | No repository has `observeEnabled`                                                                                 |
-| `skipped-locked` in the tick log                         | Another instance holds the advisory lease. Expected if two are running; the design, not a race                     |
-| Escalations raised, none delivered                       | Check `failureReason` — it names which of three problems: no VAPID keys, no devices, or every device rejecting     |
-| Notification shows but the escalation stays `dispatched` | The device's receipt did not reach the server. It flips to `failed` after `NOTIFY_RECEIPT_TIMEOUT_MS`              |
-| Rate limit exhausted                                     | `GITHUB_RATE_LIMIT_RESERVE` holds requests back for interactive use; raise it if you also hit the API from a shell |
+| Symptom                                                  | Cause                                                                                                                                                                          |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Boot line says `the reconciler is DISABLED`              | `reconciler.enabled` resolves to `false` — check `/admin/settings` → Configuration (or `GET /api/operator-settings`) for its `source`; a stored `database` row outranks `.env` |
+| `OAuth2Strategy requires a clientID option`              | #138 — set the Google variables                                                                                                                                                |
+| Ticks recorded, `repositoriesObserved: 0`                | No repository has `observeEnabled`                                                                                                                                             |
+| `skipped-locked` in the tick log                         | Another instance holds the advisory lease. Expected if two are running; the design, not a race                                                                                 |
+| Escalations raised, none delivered                       | Check `failureReason` — it names which of three problems: no VAPID keys, no devices, or every device rejecting                                                                 |
+| Notification shows but the escalation stays `dispatched` | The device's receipt did not reach the server. It flips to `failed` after `NOTIFY_RECEIPT_TIMEOUT_MS`                                                                          |
+| Rate limit exhausted                                     | `GITHUB_RATE_LIMIT_RESERVE` holds requests back for interactive use; raise it if you also hit the API from a shell                                                             |
 
 ## What this week cannot tell you
 
