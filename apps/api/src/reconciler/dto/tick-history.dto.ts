@@ -39,6 +39,30 @@ export const tickRecordSchema = z.object({
   actionsExecuted: z.number().int(),
   allFromCache: z.boolean(),
   rateLimitRemaining: z.number().int().nullable(),
+  /**
+   * The tick-scoped settings snapshot this tick actually ran under — `{
+   * retryCeiling, rateLimitReserve, writesEnabled }` — read once at the top
+   * of `tick()` rather than frozen at process construction, so it is safe to
+   * compare across ticks: two rows can legitimately disagree on
+   * `retryCeiling` if the setting changed between them, and that disagreement
+   * is the point, not a bug (#342).
+   *
+   * `null` means this tick predates the column, never "the defaults" and
+   * never "whatever the setting is now" — neither is what that tick actually
+   * ran under. `.describe`, not just the comment, for the same OpenAPI
+   * reason `executionFailures` below carries one.
+   */
+  settings: z
+    .unknown()
+    .nullable()
+    .describe(
+      'The tick-scoped settings snapshot this tick ran under — { retryCeiling, ' +
+        'rateLimitReserve, writesEnabled } — read once at the top of tick() rather than frozen ' +
+        'at process construction, so two rows can legitimately disagree on retryCeiling if the ' +
+        'setting changed between them. null means this tick predates the column: it is not the ' +
+        'defaults and not the current live value, since neither is what that tick actually ran ' +
+        'under.',
+    ),
   /** Repositories that could not be OBSERVED, `[{ repository, reason }]`. */
   failures: z.unknown(),
   /**

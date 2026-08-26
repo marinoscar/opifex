@@ -115,11 +115,13 @@ export interface TickRecord {
    * "what was it configured to do" from the tick itself. See {@link
    * TickSettings} for why the unit of coherence is one tick.
    *
-   * **In memory only, so far.** `reconcile_ticks` has no column to hold it, so
-   * this does not survive `ReconcileLogService.record` and is not on the
-   * `/reconciler/ticks` responses — a reader of the persisted log still cannot
-   * tell which ceiling or which write mode a tick ran under. Closing that needs
-   * a migration, which is why it is not done here; #342 records the gap.
+   * Persisted on `reconcile_ticks.settings` by `ReconcileLogService.record`
+   * and returned as-is on both `GET /reconciler/ticks` and
+   * `GET /reconciler/ticks/:id` (#342), so a reviewer can answer "which
+   * ceiling, and was writing even on" from the row alone. A tick recorded
+   * before that migration has `null` in the column — read the Prisma model's
+   * comment on `settings` before treating that `null` as a value rather than
+   * as "not recorded".
    */
   settings: TickSettings;
   /**

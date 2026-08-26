@@ -46,8 +46,11 @@ export class ReconcilerController {
       'value means something is enabled that should not be. It is not a subset of ' +
       "actionsComputed. executionFailures says which of a tick's own acting-phase writes went " +
       'wrong and why — null when no executor ran at all on that tick, [] when one ran and ' +
-      'reported nothing, so the two are not interchangeable. Use actionsOnly=true to skip the ' +
-      'quiet ticks, which are the great majority.',
+      'reported nothing, so the two are not interchangeable. settings is the retryCeiling, ' +
+      'rateLimitReserve and writesEnabled this tick actually ran under, read once at the top of ' +
+      'the tick rather than frozen at process start — null there means the row predates the ' +
+      'column, not that defaults applied. Use actionsOnly=true to skip the quiet ticks, which ' +
+      'are the great majority.',
   })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
@@ -70,7 +73,10 @@ export class ReconcilerController {
       'stored only when there was something to review. executionFailures is null for a tick ' +
       'whose acting-phase executors never ran, which is different from [], meaning they ran and ' +
       "nothing failed. It covers the reconciler's own writes — mirror labels and spec-feedback " +
-      "comments — and not dispatch's, whose failures are recorded on the run.",
+      "comments — and not dispatch's, whose failures are recorded on the run. settings carries " +
+      'the retryCeiling, rateLimitReserve and writesEnabled this tick was configured with when ' +
+      'it ran, so the mode a tick actually ran under is answerable from this row alone — null ' +
+      'there means the tick predates the column, not that defaults applied.',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiDataResponse(TickRecordDto, { description: 'The tick' })
