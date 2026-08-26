@@ -210,6 +210,17 @@ export class OperatorSettingsService implements OnModuleInit {
   private overlayRows = new Map<OperatorSettingKey, OverlayEntry>();
 
   /**
+   * When each stored row was last written (#338).
+   *
+   * A SEPARATE map rather than a field on `OverlayEntry`, because the entry is
+   * what the resolver reads and the test double supplies — and a double that
+   * had to invent an `updatedAt` for an override nobody wrote would be stating
+   * a fact it does not have. Absent here simply means "no row", which is the
+   * same thing `overlayRows` already means.
+   */
+  private overlayWrittenAt = new Map<OperatorSettingKey, Date>();
+
+  /**
    * What the most recent refresh announced, so a write can tell whether its
    * own key was already covered. Reset to empty by a failed refresh, because
    * a previous pass's change set says nothing about this one.
@@ -339,6 +350,21 @@ export class OperatorSettingsService implements OnModuleInit {
   }
 
   /**
+   * When this key's stored override was last written, or null if it has none.
+   *
+   * For the settings API (#338), which reports `updatedAt` beside every key —
+   * and which for a SECRET has nothing else honest to show: the value is never
+   * returned, so "when was this last rotated" is most of what an operator can
+   * actually be told about a credential slot.
+   *
+   * Null covers both "no row" and "the overlay has never loaded". The two are
+   * distinguishable from `overlay().status`, which the same response carries.
+   */
+  storedAt(key: OperatorSettingKey): Date | null {
+    return this.overlayWrittenAt.get(key) ?? null;
+  }
+
+  /**
    * Re-read the whole overlay from the database.
    *
    * Called at boot, by the 15s loop, and after every successful write. Never
@@ -360,6 +386,7 @@ export class OperatorSettingsService implements OnModuleInit {
       secretIv: string | null;
       secretAuthTag: string | null;
       secretKeyVersion: number | null;
+      updatedAt: Date;
     }>;
     let revisionRow: { revision: bigint } | null;
 
@@ -375,6 +402,7 @@ export class OperatorSettingsService implements OnModuleInit {
             secretIv: true,
             secretAuthTag: true,
             secretKeyVersion: true,
+            updatedAt: true,
           },
         }),
         this.prisma.operatorSettingsRevision.findUnique({
@@ -387,6 +415,7 @@ export class OperatorSettingsService implements OnModuleInit {
     }
 
     const next = new Map<OperatorSettingKey, OverlayEntry>();
+    const nextWrittenAt = new Map<OperatorSettingKey, Date>();
 
     for (const row of rows) {
       if (!isOperatorSettingKey(row.key)) {
@@ -402,6 +431,7 @@ export class OperatorSettingsService implements OnModuleInit {
       }
 
       next.set(row.key, toOverlayEntry(row));
+      nextWrittenAt.set(row.key, row.updatedAt);
     }
 
     if (
@@ -423,6 +453,7 @@ export class OperatorSettingsService implements OnModuleInit {
     const changed = diffOverlays(this.overlayRows, next);
 
     this.overlayRows = next;
+    this.overlayWrittenAt = nextWrittenAt;
     this.lastRefreshChanged = changed;
     this.overlayState = {
       status: 'loaded',

@@ -127,6 +127,14 @@ const PERMISSIONS = [
     name: 'approvals:decide',
     description: 'Approve or deny a single pending action',
   },
+  // Defence in depth for the Control Center's credential fields (#338, epic
+  // #332). The real containment is #334 plus #346; this only stops
+  // `system_settings:write` — a permission granted to tune timeouts — from
+  // also being enough to replace the GitHub token or the Anthropic key.
+  {
+    name: 'operator_settings:write_secret',
+    description: 'Store or rotate a secret operator setting',
+  },
 ] as const;
 
 // Role to permissions mapping
@@ -170,6 +178,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // nobody else.
     'approvals:read',
     'approvals:decide',
+    // Admin only, and deliberately absent from `contributor` below: a
+    // contributor runs the factory, and rotating the credentials the factory
+    // acts WITH is a different authority from operating it.
+    'operator_settings:write_secret',
   ],
   contributor: [
     'user_settings:read',

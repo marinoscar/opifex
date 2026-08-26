@@ -1,8 +1,10 @@
 import { Global, Module } from '@nestjs/common';
 
+import { OperatorSettingsController } from './operator-settings.controller';
 import { OperatorSettingsRefreshTask } from './operator-settings-refresh.task';
 import { OperatorSettingsEnvDisagreementService } from './operator-settings.env-disagreement';
 import { OperatorSettingsService } from './operator-settings.service';
+import { OperatorProbesService } from './probes/operator-probes.service';
 
 /**
  * The operator settings read and write path (#335, #339, epic #332).
@@ -23,16 +25,25 @@ import { OperatorSettingsService } from './operator-settings.service';
  * this module in isolation still gets a working env-only resolver rather than
  * an unresolvable dependency.
  *
- * ## What is deliberately not here yet
+ * ## Why the controller lives here and not in `SettingsModule`
  *
- * No controller: #338 adds the endpoints on top of the `set`/`clear`/`overlay`
- * surface this issue lands.
+ * `SettingsModule` holds the two JSONB-document settings services, which share
+ * a shape with each other and nothing with this one. The Control Center's
+ * endpoints are a thin surface over `OperatorSettingsService`'s own
+ * `resolve`/`set`/`clear`/`overlay`, and every one of them would have to
+ * import this module to reach it — so they sit beside it.
+ *
+ * `OperatorProbesService` is deliberately NOT exported. It spends real money
+ * and acts outwardly; the only thing that should be able to reach it is the
+ * endpoint an operator presses (#338).
  */
 @Global()
 @Module({
+  controllers: [OperatorSettingsController],
   providers: [
     OperatorSettingsService,
     OperatorSettingsRefreshTask,
+    OperatorProbesService,
     // Not exported and injected by nothing: its whole job happens in its
     // constructor, and Nest instantiates it because it is a provider of a
     // module that is loaded. `RetiredSupervisorConfigService` is registered

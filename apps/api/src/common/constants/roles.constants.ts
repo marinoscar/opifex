@@ -149,6 +149,31 @@ export const PERMISSIONS = {
    */
   APPROVALS_READ: 'approvals:read',
   APPROVALS_DECIDE: 'approvals:decide',
+
+  /**
+   * Writing a SECRET operator setting (#338, epic #332).
+   *
+   * Defence in depth, and nothing more. This permission is not the control
+   * that keeps an agent away from the GitHub token and the Anthropic key —
+   * #334's allowlisted subprocess environment is (the agent never holds a
+   * credential it could authenticate this call with), and #346's refusal of
+   * non-interactive credentials on the settings write path is (an Admin-scoped
+   * PAT cannot reach it even if one leaks). ADR-0018 §6 is explicit that both
+   * of those are preconditions, and that either one missing "is sufficient to
+   * invalidate this decision, not merely weaken it".
+   *
+   * What this string buys on top of those is one thing they do not: an
+   * operator can hold `system_settings:write` — enough to change a timeout, a
+   * concurrency ceiling, a poll interval — without thereby being able to
+   * REPLACE the credentials the factory acts with. Rotating a token is a
+   * different act from tuning a knob, and collapsing the two would force the
+   * ordinary one to carry the dangerous one's authority, which is the same
+   * argument `trust:grant` and `escalations:acknowledge` are already split on.
+   *
+   * Non-secret writes stay on `system_settings:write`. A secret write requires
+   * BOTH, checked together — see `OperatorSettingsController.patch`.
+   */
+  OPERATOR_SETTINGS_WRITE_SECRET: 'operator_settings:write_secret',
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
