@@ -315,11 +315,22 @@ export const DESTINATIONS: readonly Destination[] = [
   },
   {
     key: 'system',
-    label: 'System Settings',
-    compactLabel: 'System',
+    // Renamed with the page it points at (#347, epic #332). `/admin/settings`
+    // is no longer three tabs of application settings: it is where an operator
+    // reads what this deployment is configured to do, what it is observed to
+    // be doing, and the difference. The KEY stays `system` and the PATH stays
+    // `/admin/settings` — a rename that moved either would orphan every
+    // bookmark and every reference in this file's own test.
+    label: 'Control Center',
+    compactLabel: 'Control',
     Icon: AdminIcon,
     path: '/admin/settings',
     section: 'admin',
+    // Still `system_settings:read`, still the string
+    // `system-settings.controller.ts` enforces. The Control Center's other
+    // sections will read operator settings behind their own permission, and
+    // that will be a CONTENT gate inside the page — a destination gate is
+    // about reachability, and the readiness chain is worth reaching on its own.
     permission: 'system_settings:read',
     status: 'live',
   },

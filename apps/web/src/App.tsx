@@ -31,7 +31,10 @@ const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
 const CostPage = lazy(() => import('./pages/CostPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const UserSettingsPage = lazy(() => import('./pages/UserSettingsPage'));
-const SystemSettingsPage = lazy(() => import('./pages/SystemSettingsPage'));
+// `/admin/settings` — the Control Center (#347, epic #332). It replaced
+// `SystemSettingsPage` at the same route rather than beside it: two settings
+// screens would be two answers to "where is this configured".
+const ControlCenterPage = lazy(() => import('./pages/ControlCenterPage'));
 const UserManagementPage = lazy(() => import('./pages/UserManagementPage'));
 
 // Test login page (development only)
@@ -186,7 +189,7 @@ function AppRoutes() {
                       permission="system_settings:read"
                       fallback={<Navigate to="/" replace />}
                     >
-                      <SystemSettingsPage />
+                      <ControlCenterPage />
                     </RequirePermission>
                   }
                 />
