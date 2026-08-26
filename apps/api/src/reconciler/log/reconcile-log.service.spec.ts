@@ -127,6 +127,47 @@ describe('ReconcileLogService', () => {
       await expect(service.record(tick())).resolves.toBe('tick-uuid');
     });
 
+    it('always records the settings snapshot, unconditionally, same as failures', async () => {
+      // No quiet-tick carve-out here (#342): unlike `projections`/`actions`,
+      // every tick captured a snapshot by the time it reaches `record`, so
+      // there is nothing to withhold.
+      const settings = { retryCeiling: 7, rateLimitReserve: 250, writesEnabled: true };
+      await service.record(tick({ actions: [], failures: [], settings }));
+
+      const [{ data }] = prisma.reconcileTick.create.mock.calls[0];
+      expect(data.settings).toEqual(settings);
+    });
+
+    it('records the snapshot the record was given, not some other one', async () => {
+      // The persisted value has to track the CALL's own settings, not a
+      // shared default the helper fixture happens to reuse everywhere else in
+      // this file.
+      await service.record(
+        tick({
+          settings: { retryCeiling: 1, rateLimitReserve: 5, writesEnabled: false },
+        }),
+      );
+      const [{ data: first }] = prisma.reconcileTick.create.mock.calls[0];
+
+      await service.record(
+        tick({
+          settings: { retryCeiling: 9, rateLimitReserve: 500, writesEnabled: true },
+        }),
+      );
+      const [{ data: second }] = prisma.reconcileTick.create.mock.calls[1];
+
+      expect(first.settings).toEqual({
+        retryCeiling: 1,
+        rateLimitReserve: 5,
+        writesEnabled: false,
+      });
+      expect(second.settings).toEqual({
+        retryCeiling: 9,
+        rateLimitReserve: 500,
+        writesEnabled: true,
+      });
+    });
+
     it('serialises Dates inside the payload into readable ISO strings', async () => {
       await service.record(tick({ actions: [ACTION] }));
 
@@ -311,6 +352,70 @@ describe('ReconcileLogService', () => {
 
       expect(tick?.executionFailures).toEqual([]);
       expect(tick?.executionFailures).not.toBeNull();
+    });
+  });
+
+  /**
+   * #342, at the same boundary the block above covers for
+   * `executionFailures`: `toResponse` must carry `settings` through
+   * untouched, `null` included, since `null` here means "this row predates
+   * the column" and coercing it to any object — even `{}` — would assert a
+   * configuration that row never actually recorded.
+   */
+  describe('settings reaching the response (toResponse)', () => {
+    function dbRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'tick-uuid',
+        startedAt: new Date('2026-08-21T10:00:00Z'),
+        finishedAt: new Date('2026-08-21T10:00:01Z'),
+        durationMs: 1000,
+        outcome: 'completed',
+        repositoriesObserved: 1,
+        actionsComputed: 1,
+        actionsExecuted: 1,
+        allFromCache: false,
+        rateLimitRemaining: 4999,
+        settings: { retryCeiling: 3, rateLimitReserve: 100, writesEnabled: false },
+        failures: [],
+        executionFailures: null,
+        projections: null,
+        actions: null,
+        ...overrides,
+      };
+    }
+
+    it('history: passes a populated settings column through untouched', async () => {
+      const settings = { retryCeiling: 5, rateLimitReserve: 200, writesEnabled: true };
+      prisma.reconcileTick.findMany.mockResolvedValue([dbRow({ settings })]);
+
+      const { items } = await service.history({ page: 1, pageSize: 25 });
+
+      expect(items[0]!.settings).toEqual(settings);
+    });
+
+    it('history: passes a null settings column through as null, not a default', async () => {
+      prisma.reconcileTick.findMany.mockResolvedValue([dbRow({ settings: null })]);
+
+      const { items } = await service.history({ page: 1, pageSize: 25 });
+
+      expect(items[0]!.settings).toBeNull();
+    });
+
+    it('findById: passes a populated settings column through untouched', async () => {
+      const settings = { retryCeiling: 5, rateLimitReserve: 200, writesEnabled: true };
+      prisma.reconcileTick.findUnique.mockResolvedValue(dbRow({ settings }));
+
+      const tick = await service.findById('tick-uuid');
+
+      expect(tick?.settings).toEqual(settings);
+    });
+
+    it('findById: passes a null settings column through as null, not a default', async () => {
+      prisma.reconcileTick.findUnique.mockResolvedValue(dbRow({ settings: null }));
+
+      const tick = await service.findById('tick-uuid');
+
+      expect(tick?.settings).toBeNull();
     });
   });
 
