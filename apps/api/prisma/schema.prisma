@@ -44,6 +44,7 @@ model User {
   trustGrantsRevoked          TrustGrant[]          @relation("TrustGrantsRevoked")
   approvalRequestsDecided     ApprovalRequest[]     @relation("ApprovalRequestsDecided")
   promotionStatesChanged      PromotionState[]      @relation("PromotionStateChangedBy")
+  operatorSettingsUpdated     OperatorSetting[]     @relation("OperatorSettingsUpdater")
 
   @@map("users")
 }
@@ -2779,4 +2780,128 @@ model PromotionState {
   /// "What did this user demote" - the query `changedById` exists for.
   @@index([changedById])
   @@map("promotion_states")
+}
+
+// =============================================================================
+// Operator Settings (epic #332, #336)
+// =============================================================================
+//
+// Durable storage for operator-managed configuration - the Claude credential,
+// dispatch/runner enablement, per-repository writes, budget ceilings - that
+// #332's Control Center lets an operator set from `/admin/settings` instead
+// of hand-editing `infra/compose/.env` and recreating containers.
+//
+// Deliberately NOT `system_settings.value`. `PUT /api/system-settings` runs
+// `systemSettingsSchema.parse()`, which strips unknown keys, so an operator
+// setting folded into that document would be silently deleted the next time
+// anyone saved the system-settings form. A separate table makes that
+// structurally impossible instead of relying on nobody pressing the button.
+
+/// One operator-managed configuration key, matching a key in the registry
+/// `apps/api/src/operator-settings/*` (#335) reads against.
+///
+/// `value` and the four `secret*` columns are two mutually exclusive ways of
+/// storing the same slot: a plain `Json` value for non-secret settings (a
+/// concurrency ceiling, a boolean flag), or an AES-256-GCM ciphertext
+/// (#337) for anything that must not sit in the database, or in
+/// `audit_events.meta`, in the clear. A row is never both, and never
+/// neither - see `operator_settings_value_xor_secret_check` below.
+///
+/// ## Why the CHECK constraint instead of application-level validation alone
+///
+/// A row that is both is ambiguous about which one wins on read, and a row
+/// that is neither is a key with nothing in it - not "unset" (that is the
+/// ABSENCE of a row, which is how `OperatorSettingsResolver` falls through to
+/// `.env`; see the seed comment below) but a meaningless present row. Two
+/// service call sites (the plain-value writer and the secret writer in #339)
+/// are exactly two places this invariant could be violated by a bug in
+/// either one, and a database constraint is the one guarantee neither call
+/// site individually can undermine.
+///
+/// The constraint itself is written by hand in
+/// `prisma/migrations/20260907120000_operator_settings/migration.sql`,
+/// because Prisma's schema language cannot express a multi-column CHECK.
+/// This is the first CHECK constraint in this schema -
+/// `20260829120000_dead_intervals/migration.sql` explicitly avoided one on
+/// the grounds that Prisma cannot express it and `migrate diff` would then
+/// show permanent drift against a schema it can never fully describe. That
+/// tradeoff is accepted here anyway: `dead_intervals.ended_by` was enforced
+/// by "the single writer" being the only thing allowed to touch the table,
+/// which does not hold for a table two independent write paths (plain
+/// values, secrets) reach through an HTTP PATCH. The drift is real and
+/// permanent; it is the cheaper failure mode than a corrupt settings row an
+/// operator cannot see until the resolver reads it wrong.
+model OperatorSetting {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// A registry key, e.g. `github.token` or `dispatch.maxConcurrent` - unique
+  /// so a lookup by key is a point read, not a scan.
+  key String @unique
+
+  /// Set for non-secret settings. NULL when this row holds a secret instead.
+  value Json?
+
+  /// The four columns below are set together, only for secrets (#337's
+  /// AES-256-GCM box), and NULL together otherwise - enforced by the same
+  /// CHECK constraint as the `value` exclusivity, not by four separate
+  /// nullability rules that could drift apart.
+  secretCiphertext String? @map("secret_ciphertext")
+  secretIv         String? @map("secret_iv")
+  secretAuthTag    String? @map("secret_auth_tag")
+  /// Which encryption key encrypted this row, so the key can be rotated
+  /// without a flag day: old rows keep decrypting under the version they were
+  /// written with until something rewrites them.
+  secretKeyVersion Int? @map("secret_key_version")
+
+  /// Bumped on every write to this key. Distinct from
+  /// `OperatorSettingsRevision.revision`: this is per-key optimistic
+  /// concurrency (the same shape as `SystemSettings.version` and
+  /// `UserSettings.version`); that is a document-level counter over the
+  /// whole collection, for `If-Match` on the list endpoint.
+  version Int @default(1)
+
+  updatedByUserId String?  @map("updated_by_user_id") @db.Uuid
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  updatedByUser User? @relation("OperatorSettingsUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@map("operator_settings")
+}
+
+/// A single row: the document-level version for the whole `operator_settings`
+/// collection, so `GET /api/operator-settings` can hand back an `ETag` and
+/// `PATCH` can require `If-Match` against it - one number covering every key,
+/// the way `SystemSettings.version`/`UserSettings.version` cover one row each
+/// and `OperatorSetting.version` covers one key each.
+///
+/// `id Int @id @default(1)`, with `CHECK (id = 1)` hand-written in the
+/// migration, rather than a UUID primary key with a well-known constant, or a
+/// schema with no primary key at all (Prisma requires one). An `Int` fixed at
+/// 1 is self-documenting at a glance in any client that lists rows - "id: 1"
+/// reads as "the one row" the way a UUID never would - and the CHECK makes a
+/// second row (`id = 2`, say) fail at the database rather than merely be
+/// unreachable through the ORM's `findUnique({ where: { id: 1 } })` call
+/// sites, which do not stop a stray `INSERT` from another script.
+///
+/// The row is created BY THE MIGRATION (`INSERT ... VALUES (1, 0, ...)`), not
+/// lazily on first write - see the seed comment below for why lazy creation
+/// is the wrong shape here: the resolver's fallback-to-env behaviour depends
+/// on `operator_settings` rows being individually absent, but the revision
+/// counter is not a per-key row - it is the collection's own version, and a
+/// collection with zero keys set still has a version (0) the first `GET`
+/// must be able to report.
+model OperatorSettingsRevision {
+  id Int @id @default(1)
+
+  /// Starts at 0. `BigInt` rather than `Int`: this increments on every write
+  /// to any operator setting, and #332's Control Center is meant to be used,
+  /// not merely provisioned once - overflow on an `Int` after two billion
+  /// writes is a bound worth not having to think about again.
+  revision BigInt @default(0)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("operator_settings_revision")
 }
