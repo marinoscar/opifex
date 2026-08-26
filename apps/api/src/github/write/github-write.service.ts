@@ -57,7 +57,6 @@ export interface WriteResult {
 @Injectable()
 export class GitHubWriteService {
   private readonly logger = new Logger(GitHubWriteService.name);
-  private readonly writesEnabled: boolean;
 
   /**
    * How many write requests have left this process since boot.
@@ -75,21 +74,27 @@ export class GitHubWriteService {
     private readonly http: GitHubHttpService,
     private readonly settings: OperatorSettingsService,
   ) {
-    // Read once at construction, as before. #341 owns making the kill switch
-    // resolve per write — the epic's exit criterion that "toggling writes
-    // actually changes behaviour rather than logging as though it did" is that
-    // issue's, not this one's.
-    this.writesEnabled = this.settings.get('github.writesEnabled');
-
-    if (!this.writesEnabled) {
+    // The boot line still reports the posture the process STARTS in, which is
+    // the thing an operator reads a startup log for. It is not the value any
+    // write consults — `guardedWrite` resolves that per call.
+    if (!this.enabled) {
       this.logger.log(
         'GitHub writes are DISABLED (GITHUB_WRITES_ENABLED=false) - writes will be recorded, not performed',
       );
     }
   }
 
+  /**
+   * The kill switch, read live (#341).
+   *
+   * A kill switch you have to restart to pull is not a kill switch: frozen at
+   * construction, flipping GitHub writes in the Control Center would appear to
+   * work and change nothing. There is exactly one consumer that matters —
+   * `guardedWrite` — and it reads through here, so "enabled" cannot report one
+   * thing while writes do another.
+   */
   get enabled(): boolean {
-    return this.writesEnabled;
+    return this.settings.get('github.writesEnabled');
   }
 
   /**
@@ -302,7 +307,20 @@ export class GitHubWriteService {
   ): Promise<WriteResult> {
     const descriptor: WriteActionDescriptor = WRITE_ACTIONS[action];
 
-    if (!this.writesEnabled) {
+    // Read HERE, per call, not captured at construction (#341). The mid-flight
+    // window this opens is asymmetric and safe in both directions:
+    //
+    //   on -> off, after this line: the write is already on its way out and
+    //     completes. It degrades to nothing worse than one more write than the
+    //     operator wanted, and the very next call takes the `performed: false`
+    //     path below — which is fully formed and exercised every day of the
+    //     observation week, not a branch that has never run.
+    //   off -> on, just before this line: the write performed is one an
+    //     operator authorised seconds earlier, deliberately.
+    //
+    // Neither direction can produce a half-recorded write, because the record
+    // is built from `descriptor` and the arguments, both settled before this.
+    if (!this.enabled) {
       // Not an error and not silence: the diff log IS the deliverable of the
       // observation week (VISION §12), so a suppressed write must produce a
       // record as complete as a performed one.
