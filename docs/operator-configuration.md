@@ -62,29 +62,77 @@ header names what stayed out and why:
 with several sections, selected by `?section=`, declared in
 `apps/web/src/config/controlCenter.ts`:
 
-| Section           | What it is                                                                                                                                                              | Status             |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| **Readiness**     | The chain from an installed binary to a repository the factory may work in, each step showing what was actually observed. Landing section.                              | live (#347)        |
-| **Interface**     | Application-wide UI policy — `ui.allowUserThemeOverride` and friends — stored in `system_settings`, a different document from everything else on this page (see below). | live (#347)        |
-| **Configuration** | Every operator-managed key from the registry, generated — not hand-listed — from `GET /api/operator-settings`. This is the screen this document is mostly about.        | live (#348)        |
-| **Credentials**   | The Claude credential, the GitHub token and the spend ceilings, stored encrypted, shown masked, and tested rather than assumed.                                         | **planned** (#349) |
-| **Repositories**  | The enablement ladder — register, observe, then dispatch.                                                                                                               | live (#350)        |
-| **History**       | Who changed which setting, when, and what it was before.                                                                                                                | **planned** (#351) |
+| Section           | What it is                                                                                                                                                                                            | Status            |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| **Readiness**     | The chain from an installed binary to a repository the factory may work in, each step showing what was actually observed. Landing section.                                                            | live (#347)       |
+| **Interface**     | Application-wide UI policy — `ui.allowUserThemeOverride` and friends — stored in `system_settings`, a different document from everything else on this page (see below).                               | live (#347)       |
+| **Configuration** | Every operator-managed key from the registry, generated — not hand-listed — from `GET /api/operator-settings`. This is the screen this document is mostly about.                                      | live (#348)       |
+| **Credentials**   | The Claude credential, the GitHub token and the spend ceilings, stored encrypted, shown masked, and tested rather than assumed. Also where a Claude subscription is connected without a shell (#386). | live (#349, #386) |
+| **Repositories**  | The enablement ladder — register, observe, then dispatch.                                                                                                                                             | live (#350)       |
+| **History**       | Who changed which setting, when, and what it was before.                                                                                                                                              | live (#351)       |
 
-**Configuration and Credentials are not the same screen, and the difference
-matters right now.** `GET /api/operator-settings` already returns every
-managed key, secrets included, and the Configuration section already renders
-a row for each one — but a secret row is read-only there: it shows
-`configured`, `source`, a masked `hint` and `updatedAt`, never a value, and
-offers no field to type a new one into (`apps/web/src/components/controlcenter/SettingRow.tsx`).
-The API can already accept a secret write — `PATCH /api/operator-settings`
-with `operator_settings:write_secret` — but the form that would let an
-operator do that from the browser is Credentials, and Credentials has not
-shipped. **Until #349 ships, `github.token`, `runners.claudeCodeLocal.oauthToken`
-and `supervisor.model.apiKey` are still set the old way: edit `.env` and
-restart.** Everything else — every non-secret key across GitHub, the runner,
-dispatch, the reconciler, the supervisor, promotion and notifications — is
-editable today, live, from Configuration.
+**Configuration and Credentials are not the same screen, and the split is
+deliberate.** `GET /api/operator-settings` returns every managed key, secrets
+included, and the Configuration section renders a row for each one — but a
+secret row is read-only there: it shows `configured`, `source`, a masked
+`hint` and `updatedAt`, never a value, and offers no field to type a new one
+into (`apps/web/src/components/controlcenter/SettingRow.tsx`). Rotating a
+credential is a different act from tuning a knob, and it lives on Credentials,
+where it needs `operator_settings:write_secret` **and** an interactive session
+on top of `system_settings:write`.
+
+All three secrets — `github.token`, `runners.claudeCodeLocal.oauthToken` and
+`supervisor.model.apiKey` — are set from Credentials now (#349). No `.env`
+edit, no restart.
+
+**The Claude subscription token additionally has a Connect flow, because it is
+the one credential you cannot paste from memory (#386).** It comes out of
+`claude setup-token`, which needs a TTY, which used to mean getting a shell
+into the API container — the exact `.env`-editing loop this epic exists to end,
+and the step operators were most likely to give up on, because it is the first
+one and the least like anything else in the product. Credentials now runs that
+CLI for you:
+
+| Endpoint                                                   | What it does                                                                               |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `POST /api/operator-settings/claude-auth/start`            | Starts `claude setup-token` on a pseudo-terminal and returns the OAuth `url` it prints.    |
+| `GET /api/operator-settings/claude-auth/{sessionId}`       | Polls it. `awaiting_code` → `exchanging` → `completed`, or `failed`/`cancelled`/`expired`. |
+| `POST /api/operator-settings/claude-auth/{sessionId}/code` | Writes the pasted code to the CLI's stdin and finishes the exchange.                       |
+| `DELETE /api/operator-settings/claude-auth/{sessionId}`    | Cancels, and kills the CLI's process group.                                                |
+
+You open the URL, sign in to the Claude account whose subscription should pay
+for automated runs, authorise, and paste the code back. **The token is never
+returned to the browser.** It goes from the CLI's stdout straight into
+`runners.claudeCodeLocal.oauthToken` through the same sealed write a manual
+entry uses, so History records it as `set` and the Readiness step flips; the
+response says `configured: true` and nothing more.
+
+Three things worth knowing before clicking it:
+
+- **One sign-in at a time.** A second `start` while one is live answers `409`
+  and names the session to cancel. Two concurrent flows would each mint a real
+  token against your account and one would be thrown away.
+- **A session expires after ten minutes and accepts exactly one code.** The
+  authorization code the browser hands you is itself only good for a few
+  minutes, so keep the two tabs side by side. A rejected code ends the session
+  — start a new one rather than retrying, because the challenge is spent.
+- **A personal access token cannot do this**, no matter what permissions it
+  carries. The route requires an interactive session (#346), and finishing the
+  flow needs a human in a browser regardless.
+
+The failures are told apart rather than collapsed into "authentication
+failed": a wrong or expired code, an account that cannot issue a subscription
+token (no plan, on hold, or an organisation that has turned off Claude Code
+access), a missing CLI, a missing pseudo-terminal, and a session nobody
+answered in time each get their own message and their own remedy.
+
+`ANTHROPIC_API_KEY` — the per-token billing alternative — is deliberately NOT
+part of this. It is a different credential with a different cost model, is not
+a managed key, and stays env-only.
+
+Everything else — every non-secret key across GitHub, the runner, dispatch,
+the reconciler, the supervisor, promotion and notifications — is editable from
+Configuration.
 
 **Interface is a different document from Configuration, and collapsing them
 would be wrong.** Interface reads and writes `system_settings`, the JSONB
@@ -302,8 +350,8 @@ that sentence matters beyond this section.
 
 ## Secrets at rest, and `OPIFEX_SETTINGS_ENCRYPTION_KEY`
 
-A secret written through the settings API (today: only by direct API call —
-see the Credentials caveat above) is never stored in the clear. It is sealed
+A secret written through the settings API — from Credentials, or by a direct
+API call — is never stored in the clear. It is sealed
 with AES-256-GCM (`apps/api/src/common/crypto/secret-box.ts`), with the
 setting key itself bound in as additional authenticated data — so a
 ciphertext copied from one slot to another (`github.token`'s row pasted into
@@ -361,16 +409,16 @@ issue new credentials instead:**
 
 1. Set (or restore) a working `OPIFEX_SETTINGS_ENCRYPTION_KEY` — a new one is
    fine; there is nothing left to be compatible with.
-2. Delete the stored rows for every secret key that fails to open. Today,
-   before Credentials (#349) ships, that means a direct `DELETE FROM
-operator_settings WHERE key IN (...)` or the equivalent `PATCH` with the
-   key set to `null` (which is `OperatorSettingsService.clear()` — see
+2. Delete the stored rows for every secret key that fails to open — the Clear
+   action on Credentials, or a `PATCH /api/operator-settings` with the key set
+   to `null` (which is `OperatorSettingsService.clear()` — see
    [Resolution order](#resolution-order-default--env--db-row)). Clearing the
    row reverts that key to whatever `.env` currently holds, or to "not
    configured" if `.env` holds nothing either.
-3. **Issue new credentials at the provider** — a new fine-grained GitHub
-   token, a fresh `claude setup-token`, a new Anthropic API key — and store
-   them again, either via `.env` (today) or via Credentials once it ships.
+3. **Issue new credentials at the provider** and store them again from
+   Credentials: a new fine-grained GitHub token, a new Anthropic API key, and,
+   for the Claude subscription, the Connect flow above rather than a hand-run
+   `claude setup-token`.
    The old ones cannot be recovered from the encrypted rows, and rotating the
    provider-side credential is the only way to be certain the one that is now
    unreadable cannot be used by anyone who does have a copy of the ciphertext

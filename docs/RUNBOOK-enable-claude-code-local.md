@@ -77,49 +77,79 @@ observed — see step 3, where it shows up as a fact in the fleet.
 
 ## Step 2 — the credential
 
-**Still a `.env` edit, not a Control Center one.** `CLAUDE_CODE_OAUTH_TOKEN`
-is a registered secret key (`runners.claudeCodeLocal.oauthToken`), but the
-Control Center screen that would let you paste a credential into a form —
-Credentials — is issue #349 and has not shipped; it shows as "planned" at
-`/admin/settings` today. `ANTHROPIC_API_KEY` is not a managed key at all and
-is env-only, permanently. So both rows below are still `.env`, the same as
-before this epic.
+**No shell, and no `.env` edit.** This step used to be the one place this
+runbook told you to get a terminal inside a container, because
+`claude setup-token` refuses to run without a TTY. Since #386 the API runs that
+CLI for you, on a pseudo-terminal it allocates itself, and seals the result
+straight into `runners.claudeCodeLocal.oauthToken`.
 
-**A container cannot complete an interactive `claude auth login`.** The credential
-has to arrive through the environment, and it needs no wiring beyond `.env`:
-`base.compose.yml` loads the whole file with `env_file`, and both variable names
-below are on the agent subprocess's inheritance allowlist
-(`apps/api/src/runners/process/child-environment.ts`). Nothing else in `.env`
-reaches the agent — since #334 the child gets that allowlist rather than the
-API's whole environment, so `JWT_SECRET`, `POSTGRES_PASSWORD` and `GITHUB_TOKEN`
-are absent from it.
+First decide which pool you are spending from, because the two answers are
+different credentials with different failure modes:
 
-Pick exactly one, and understand which pool you are spending from:
+| Credential                                                 | Spends                   | The cost                                                                                                                                                            |
+| ---------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude subscription (`runners.claudeCodeLocal.oauthToken`) | Your Claude subscription | Automated runs compete with **your own interactive use** for one quota — VISION §11. `CLAUDE_CODE_MAX_CONCURRENCY` is what leaves you room.                         |
+| `ANTHROPIC_API_KEY`                                        | Per-token API billing    | No quota contention; lands on the hard spend ceiling (#65) instead, which can only be applied to the **next** attempt because the CLI reports cost once at the end. |
 
-| Variable                  | Spends                   | The cost                                                                                                                                                            |
-| ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLAUDE_CODE_OAUTH_TOKEN` | Your Claude subscription | Automated runs compete with **your own interactive use** for one quota — VISION §11. `CLAUDE_CODE_MAX_CONCURRENCY` is what leaves you room.                         |
-| `ANTHROPIC_API_KEY`       | Per-token API billing    | No quota contention; lands on the hard spend ceiling (#65) instead, which can only be applied to the **next** attempt because the CLI reports cost once at the end. |
+`ANTHROPIC_API_KEY` is not a managed key and stays an `.env` edit,
+permanently — it is a different credential with a different cost model, and
+#386 deliberately left it alone. If that is the one you want, set it in `.env`,
+recreate the container, and skip to the verification below.
 
-A subscription token comes from `claude setup-token` on a machine where you are
-already logged in. Neither variable is defaulted in `.env.example`, deliberately:
-which quota an autonomous agent spends is an operator's decision, not something to
-inherit from an example file.
+For the subscription token:
 
-Verify it **directly**, inside the container, and do not skip this:
+1. Open `/admin/settings` → **Credentials** and press **Connect Claude
+   account**. You need an interactive sign-in and
+   `operator_settings:write_secret`; a personal access token is refused, and
+   would not be able to finish the flow anyway.
+2. The page shows an OAuth URL. Open it — in the same browser or another one —
+   and sign in to the Claude account whose subscription should pay for
+   automated runs.
+3. Authorise, copy the code the page hands back, and paste it into the field.
+
+Keep the two tabs side by side: the code expires within a few minutes, the
+sign-in session expires after ten, and it accepts exactly one code. A rejected
+code ends the session — start a new one rather than retrying, because the
+authorization challenge is spent.
+
+**Observable:** the row for the Claude credential reads `configured` with a
+masked hint and a `database` source, and History records an
+`operator_settings:set` for `runners.claudeCodeLocal.oauthToken`. The token
+itself is never shown, in that response or any other — it goes from the CLI's
+standard output into the encrypted column and nowhere else.
+
+If it fails, the message says which of five things went wrong rather than
+"authentication failed":
+
+| Message says                     | What to do                                                                                                      |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| The code was rejected            | Start again and paste the whole code straight away. If it was definitely fresh, check the account's plan next.  |
+| The account cannot issue a token | The Claude account has no active plan, is on hold, or belongs to an org that has disabled Claude Code access.   |
+| The CLI could not be run         | `runners.claudeCodeLocal.binary` is wrong, or step 1 above was skipped. **Test CLI** on the same page confirms. |
+| No pseudo-terminal               | The image is missing `script(1)` from `util-linux`. Rebuild the API image.                                      |
+| The sign-in expired              | Nothing was changed. Start again with the browser tab already open.                                             |
+
+**Then verify the credential for real, and do not skip this.** "Configured" and
+"works" are different claims, and this is the step that closes the gap — press
+**Test credential** on the Credentials page, which makes one real, billed
+`claude --print` invocation. Or, equivalently, from a shell:
 
 ```bash
 docker exec opifex-api-1 sh -lc 'cd /tmp && claude -p --output-format=text "reply with the single word: ok"'
 ```
 
 Anything other than a normal completion here — an auth prompt, a 401, a hang —
-means the credential did not arrive, and **step 3 will not tell you that**. See
+means the credential is not usable, and **step 3 will not tell you that**: the
+runner probes `claude --version`, which succeeds with no credential at all. See
 the failure table.
 
 > **Not exercised on the reference deployment.** Everything else in this runbook
 > was run and its output pasted verbatim; this step was not, because it needs a
-> real credential and putting one on a host is the operator's call. The command
-> above is the check to run, not a transcript of one.
+> real Claude account and authorising one is the operator's call. The flow's
+> URL capture, code submission, sealing, failure branches and teardown are
+> covered by tests against a fake CLI on a real pseudo-terminal
+> (`apps/api/src/settings/operator-settings/claude-auth/`); a completed
+> exchange against the vendor is the one part only a live run proves.
 
 ---
 
