@@ -333,6 +333,62 @@ describe('ClaudeCodeLocalRunner', () => {
       expect(argv).not.toContain('Add a health endpoint');
     }, 30_000);
 
+    it("gives the agent its credential and none of the API's secrets", async () => {
+      // #334, end to end through submit(). The unit tests in
+      // child-environment.spec.ts say what the allowlist contains; this says
+      // what the CLI actually receives once the runner, buildInvocationEnv()
+      // and the supervisor have each had a turn — a correct allowlist that
+      // some layer overwrote would pass those and fail this.
+      //
+      // Both directions matter and they fail differently. Losing the
+      // credential breaks EVERY run, and breaks it deceptively, because
+      // `claude --version` still succeeds unauthenticated so the runner keeps
+      // registering itself healthy. Keeping JWT_SECRET hands the agent a
+      // signing key for the control plane supervising it.
+      const previous = {
+        CLAUDE_CODE_OAUTH_TOKEN: process.env.CLAUDE_CODE_OAUTH_TOKEN,
+        POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD,
+        A_VARIABLE_NOBODY_LISTED: process.env.A_VARIABLE_NOBODY_LISTED,
+      };
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = 'sk-ant-oat-for-this-test';
+      process.env.POSTGRES_PASSWORD = 'leaked-postgres-password';
+      process.env.A_VARIABLE_NOBODY_LISTED = 'inherited-by-accident';
+
+      try {
+        const binary = await fakeClaude(
+          'env',
+          `${process.execPath} -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify(process.env))' "${binDir}/env.json"`,
+        );
+        const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+        const handle = await runner.submit(workOrder());
+        await drainUntilTerminal(runner, handle);
+
+        const childEnv = JSON.parse(
+          await readFile(join(binDir, 'env.json'), 'utf8'),
+        ) as Record<string, string>;
+
+        expect(childEnv.CLAUDE_CODE_OAUTH_TOKEN).toBe(
+          'sk-ant-oat-for-this-test',
+        );
+        expect(childEnv.JWT_SECRET).toBeUndefined();
+        expect(childEnv.POSTGRES_PASSWORD).toBeUndefined();
+        // The allowlist test: a name no denylist would have contained.
+        expect(childEnv.A_VARIABLE_NOBODY_LISTED).toBeUndefined();
+        // And the correlation variables still arrive, so a run can still say
+        // which work order it is.
+        expect(childEnv.OPIFEX_WORK_ORDER).toBe(
+          'wo_acme-widgets_42_abc1234_a1',
+        );
+        expect(childEnv.CI).toBe('true');
+      } finally {
+        for (const [name, was] of Object.entries(previous)) {
+          if (was === undefined) delete process.env[name];
+          else process.env[name] = was;
+        }
+      }
+    }, 30_000);
+
     it('is idempotent on identity — a re-submit returns the running handle', async () => {
       // #18: two agents on one branch is not a slow path, it is a corrupted
       // one — they would race each other's commits.

@@ -382,6 +382,132 @@ describe('ChildProcessSupervisor', () => {
     });
   });
 
+  /**
+   * #334, against a real child's real `process.env`.
+   *
+   * The allowlist itself is exercised as a pure function in
+   * `child-environment.spec.ts`. What is in question HERE is whether the
+   * supervisor applies it on the one line that spawns — a function that
+   * returns the right object and a spawn that ignores it look identical from
+   * the unit test, and the version of this code that leaked every secret would
+   * have passed one.
+   */
+  describe('the child environment', () => {
+    /** Reads one variable out of a real child, or `null` if it is unset. */
+    async function childValueOf(
+      name: string,
+      env?: NodeJS.ProcessEnv,
+    ): Promise<string | null> {
+      const lines: string[] = [];
+      const proc = start({
+        command: NODE,
+        args: [
+          '-e',
+          `process.stdout.write(JSON.stringify(process.env[${JSON.stringify(name)}] ?? null) + "\\n")`,
+        ],
+        cwd,
+        env,
+        onLine: (line) => lines.push(line),
+      });
+
+      await proc.waitForExit();
+      return JSON.parse(lines[0]) as string | null;
+    }
+
+    /** Sets a variable on THIS process for one test, then puts it back. */
+    function withParentEnv(vars: Record<string, string>): void {
+      const previous: Record<string, string | undefined> = {};
+      beforeEach(() => {
+        for (const [name, value] of Object.entries(vars)) {
+          previous[name] = process.env[name];
+          process.env[name] = value;
+        }
+      });
+      afterEach(() => {
+        for (const [name, was] of Object.entries(previous)) {
+          if (was === undefined) delete process.env[name];
+          else process.env[name] = was;
+        }
+      });
+    }
+
+    describe('secrets the API process holds', () => {
+      // JWT_SECRET is already real here — test/setup.ts loads .env.test, and
+      // #278 makes the suite unable to boot without one. The rest are set for
+      // the duration of these tests under their production names.
+      withParentEnv({
+        POSTGRES_PASSWORD: 'leaked-postgres-password',
+        GITHUB_TOKEN: 'ghp_leaked_github_token',
+        SUPERVISOR_MODEL_API_KEY: 'sk-ant-leaked-supervisor-key',
+      });
+
+      it('does not hand the agent JWT_SECRET', async () => {
+        // The sharpest one: with it the agent mints an admin token and calls
+        // the control plane that is supervising it.
+        expect(process.env.JWT_SECRET).toBeDefined(); // the leak is available
+        expect(await childValueOf('JWT_SECRET')).toBeNull();
+      });
+
+      it('does not hand the agent POSTGRES_PASSWORD', async () => {
+        expect(await childValueOf('POSTGRES_PASSWORD')).toBeNull();
+      });
+
+      it('does not hand the agent GITHUB_TOKEN', async () => {
+        // Note this is not the same as the agent having no git access: the
+        // workspace's credential helper reads OPIFEX_GIT_TOKEN, which
+        // RunWorkspaceService passes explicitly per command.
+        expect(await childValueOf('GITHUB_TOKEN')).toBeNull();
+      });
+
+      it('does not hand the agent SUPERVISOR_MODEL_API_KEY', async () => {
+        expect(await childValueOf('SUPERVISOR_MODEL_API_KEY')).toBeNull();
+      });
+    });
+
+    describe('an allowlist, not a denylist', () => {
+      withParentEnv({
+        A_VARIABLE_NOBODY_LISTED: 'inherited-by-accident',
+        OPIFEX_SETTING_github_token: 'from-a-future-settings-resolver',
+      });
+
+      it('does not pass through an arbitrary inherited variable', async () => {
+        // This is the test that tells the two apart. Four `delete` statements
+        // would satisfy every assertion above and fail this one, and #332's
+        // dotted-path keys are exactly the names such a denylist would miss.
+        expect(await childValueOf('A_VARIABLE_NOBODY_LISTED')).toBeNull();
+        expect(await childValueOf('OPIFEX_SETTING_github_token')).toBeNull();
+      });
+    });
+
+    describe('what the agent still needs', () => {
+      withParentEnv({
+        CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-for-this-test',
+      });
+
+      it('passes the credential that authenticates the CLI', async () => {
+        // Not a nicety: without it every run fails at auth, while
+        // `claude --version` keeps reporting the runner healthy.
+        expect(await childValueOf('CLAUDE_CODE_OAUTH_TOKEN')).toBe(
+          'sk-ant-oat-for-this-test',
+        );
+      });
+
+      it('passes PATH, so the child can find anything at all', async () => {
+        expect(await childValueOf('PATH')).toBe(process.env.PATH);
+      });
+
+      it('passes a caller-supplied variable the allowlist does not name', async () => {
+        // OPIFEX_GIT_TOKEN's shape: handed over deliberately rather than
+        // inherited, and therefore not subject to the inheritance filter.
+        expect(
+          await childValueOf('OPIFEX_GIT_TOKEN', {
+            OPIFEX_GIT_TOKEN: 'ghp_handed_over',
+          }),
+        ).toBe('ghp_handed_over');
+      });
+    });
+  });
+
   describe('stderr', () => {
     it('keeps stderr for a failure reason', async () => {
       const proc = start({
