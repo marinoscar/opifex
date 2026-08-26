@@ -22,6 +22,7 @@ import { http, HttpResponse } from 'msw';
 
 import { render, mockAdminUser } from '../utils/test-utils';
 import { server } from '../mocks/server';
+import { operatorSettingsFixture } from '../mocks/operatorSettings';
 import ControlCenterPage from '../../pages/ControlCenterPage';
 
 vi.mock('../../hooks/useSystemSettings', () => ({
@@ -273,6 +274,48 @@ describe('ControlCenterPage', () => {
         'aria-selected',
         'true',
       );
+    });
+
+    it('renders the Configuration section from the operator settings API', async () => {
+      const user = userEvent.setup();
+      render(<ControlCenterPage />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
+      await awaitPage();
+
+      await user.click(screen.getByRole('tab', { name: 'Configuration' }));
+
+      // A row from the MSW fixture, addressed by the key the API returned —
+      // the section is generated from the response, so this is the response.
+      expect(
+        await screen.findByLabelText('github.requestTimeoutMs'),
+      ).toBeInTheDocument();
+    });
+
+    it('does not read the operator settings until that section is opened', async () => {
+      // The same reasoning that splits the permission gate from the page body:
+      // a request nobody's screen is showing the answer to should not be made.
+      let reads = 0;
+      server.use(
+        http.get(`${API_BASE}/operator-settings`, () => {
+          reads += 1;
+          return HttpResponse.json({ data: operatorSettingsFixture() });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(<ControlCenterPage />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
+      await awaitPage();
+      await screen.findAllByRole('listitem');
+
+      expect(reads).toBe(0);
+
+      await user.click(screen.getByRole('tab', { name: 'Configuration' }));
+      await screen.findByLabelText('github.requestTimeoutMs');
+
+      expect(reads).toBe(1);
     });
 
     it('renders a planned section as not built, naming its issue', async () => {
