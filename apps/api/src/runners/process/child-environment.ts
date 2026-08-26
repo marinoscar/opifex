@@ -24,7 +24,13 @@
  *     leaked variable changes no behaviour anyone would notice.
  *  2. Epic #332 moves settings into the database behind a resolver with
  *     dotted-path keys (`github.token`). Whatever name-mangling reaches the
- *     environment then, no denylist written today contains it.
+ *     environment then, no denylist written today contains it. ADR-0018 is
+ *     concrete about the mechanism: `ConfigService.set()` writes its value
+ *     into `process.env` under the dotted path, "readable by anything in the
+ *     process that reads `process.env` directly, including a child process
+ *     spawned with an inherited environment" — and it names this file as one
+ *     of the two things that make its own "provably cannot reach it" claim
+ *     true rather than false.
  *
  * An allowlist fails the other way: a variable the agent genuinely needs and
  * that nobody added shows up as a run that does not work, immediately, on the
