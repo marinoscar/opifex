@@ -143,6 +143,8 @@ export interface OperatorSettingDefinition<T> {
   readonly min?: number;
   readonly max?: number;
   readonly values?: readonly string[];
+  /** For string settings, the shape the value has to have. */
+  readonly format?: 'url' | 'email';
 }
 
 /** Any definition, for code that iterates the registry without caring about T. */
@@ -279,6 +281,7 @@ function stringSetting(
 
   return {
     ...rest,
+    format,
     kind: 'string',
     nullable: false,
     schema: z.string().trim().pipe(body),
