@@ -17,6 +17,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { OperatorSettingsModule } from './settings/operator-settings/operator-settings.module';
 import { SettingsModule } from './settings/settings.module';
 import { HealthModule } from './health/health.module';
 import { AllowlistModule } from './allowlist/allowlist.module';
@@ -87,6 +88,11 @@ import { validateEnv } from './config/env.validation';
     AuthModule,
     UsersModule,
     SettingsModule,
+    // Operator-managed configuration (#335, epic #332). Global, and nothing
+    // reads it yet: #340-#344 migrate the consumers off `ConfigService`. It is
+    // registered now so the provider exists for the endpoints (#338) and the
+    // database overlay (#339) to build on rather than arriving with them.
+    OperatorSettingsModule,
     HealthModule,
     AllowlistModule,
     DeviceAuthModule,
