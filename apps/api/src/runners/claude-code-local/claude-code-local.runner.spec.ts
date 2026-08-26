@@ -371,6 +371,9 @@ describe('ClaudeCodeLocalRunner', () => {
         expect(childEnv.CLAUDE_CODE_OAUTH_TOKEN).toBe(
           'sk-ant-oat-for-this-test',
         );
+        // HOME too: the CLI keeps its state under $HOME/.claude, which
+        // base.compose.yml mounts a named volume for.
+        expect(childEnv.HOME).toBe(process.env.HOME);
         expect(childEnv.JWT_SECRET).toBeUndefined();
         expect(childEnv.POSTGRES_PASSWORD).toBeUndefined();
         // The allowlist test: a name no denylist would have contained.
