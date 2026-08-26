@@ -39,7 +39,8 @@ export function CredentialsSectionContainer({
   canWriteSecret,
   onSaved,
 }: CredentialsSectionContainerProps) {
-  const { document, isLoading, error, isSaving, save } = useOperatorSettings();
+  const { document, isLoading, error, isSaving, save, refresh } =
+    useOperatorSettings();
   const probes = useCredentialProbes();
   const spend = useCeilingSpend();
 
@@ -71,6 +72,19 @@ export function CredentialsSectionContainer({
     [document, save, spend, onSaved],
   );
 
+  // Nothing was patched from here: the guided sign-in seals the token
+  // server-side, so the only thing this side owes is a re-read. The document
+  // is re-fetched rather than edited in place for the same reason a save
+  // takes the API's re-resolved response — what the key now resolves to is
+  // the API's answer to compute.
+  const handleConnected = useCallback(() => {
+    void refresh();
+    onSaved(
+      'Claude subscription connected. The token was sealed by the API and ' +
+        'never reached this browser; the card below is the API re-read.',
+    );
+  }, [refresh, onSaved]);
+
   const runProbe = useCallback(
     (descriptor: ProbeDescriptor) => {
       void probes.run(descriptor, document?.settings ?? []);
@@ -93,6 +107,7 @@ export function CredentialsSectionContainer({
       spendIsLoading={spend.isLoading}
       spendProblem={spend.problem}
       onSave={handleSave}
+      onConnected={handleConnected}
     />
   );
 }

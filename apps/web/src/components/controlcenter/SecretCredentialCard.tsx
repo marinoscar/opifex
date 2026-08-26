@@ -27,7 +27,7 @@
  * conclusion being wrong is the whole incident.
  */
 
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import {
   Alert,
   AlertTitle,
@@ -81,6 +81,17 @@ export interface SecretCredentialCardProps {
   onRunProbe: (descriptor: ProbeDescriptor) => void;
   /** Sends the one-key patch. Rejects with the API's own refusal. */
   onSave: (patch: OperatorSettingsPatch) => Promise<void>;
+  /**
+   * A way of obtaining this credential other than typing it in — today, the
+   * Claude sign-in (#386).
+   *
+   * A slot rather than a flag, and it renders ABOVE the Replace field without
+   * disabling it. Which secrets have one is not derivable from the API's
+   * response — it is a fact about what this app can drive — so the decision
+   * is made once in `CredentialsSection` from `config/claudeAuth.ts`, and
+   * this card stays a renderer of whatever the registry publishes.
+   */
+  guidedSignIn?: ReactNode;
 }
 
 export function SecretCredentialCard({
@@ -94,6 +105,7 @@ export function SecretCredentialCard({
   runningProbe,
   onRunProbe,
   onSave,
+  guidedSignIn,
 }: SecretCredentialCardProps) {
   const [intent, setIntent] = useState<SecretIntent | null>(null);
   // Whether the field is empty — NOT what is in it. See the header.
@@ -257,6 +269,8 @@ export function SecretCredentialCard({
           the authority to replace what the factory acts with.
         </Alert>
       )}
+
+      {guidedSignIn}
 
       {intent === null ? (
         <Stack
