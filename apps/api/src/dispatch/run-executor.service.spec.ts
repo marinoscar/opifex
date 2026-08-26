@@ -493,6 +493,63 @@ describe('RunExecutorService', () => {
 
       expect(result.outcome).toBe('observed');
     });
+
+    it('dispatches for real on the very next call once the flag is turned on, with no restart (#352)', async () => {
+      // The runtime-flip acceptance criterion: `dispatch.enabled` is `reload:
+      // 'live'` (registry.ts), and `this.enabled` is read per call
+      // (`run-executor.service.ts:272`) rather than cached anywhere. Proving
+      // that requires the SAME executor instance, holding the SAME settings
+      // double, seeing the flag change between two calls -- a fresh `build()`
+      // per call would only prove the constructor reads the flag, which is a
+      // strictly weaker claim than "no restart required".
+      const settings = makeOperatorSettings({
+        overrides: { 'dispatch.enabled': false },
+      });
+      const runner = {
+        submit,
+        capabilities: jest.fn().mockResolvedValue(CAPABILITIES),
+      } as unknown as ClaudeCodeLocalRunner;
+      Object.defineProperty(runner, 'key', { value: 'claude-code-local' });
+      const prisma = {
+        run: { create: runCreate, delete: runDelete, updateMany: runUpdateMany },
+        workOrder: { update: workOrderUpdate },
+      } as unknown as PrismaService;
+
+      const flippable = new RunExecutorService(
+        prisma,
+        settings,
+        { decide } as unknown as DispatchService,
+        { write } as unknown as WorkOrderRecordsService,
+        { track } as unknown as RunPollerService,
+        runner,
+        ceilingOf(ceiling),
+        ledgerOf(tally),
+      );
+
+      const before = await flippable.dispatchWorkOrder({
+        workOrder: workOrder(),
+        workOrderId: WORK_ORDER_ID,
+      });
+
+      // Observable behaviour, not the getter: nothing outward happened.
+      expect(before.outcome).toBe('observed');
+      expect(runCreate).not.toHaveBeenCalled();
+      expect(submit).not.toHaveBeenCalled();
+
+      settings.setOverride('dispatch.enabled', true);
+
+      const after = await flippable.dispatchWorkOrder({
+        workOrder: workOrder(),
+        workOrderId: WORK_ORDER_ID,
+      });
+
+      // Observable behaviour changed: a run was actually created and the
+      // runner was actually asked to run it -- not merely that
+      // `settings.get('dispatch.enabled')` now returns `true`.
+      expect(after.outcome).toBe('dispatched');
+      expect(runCreate).toHaveBeenCalledTimes(1);
+      expect(submit).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('when something fails after the run row exists', () => {
