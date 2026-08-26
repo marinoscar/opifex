@@ -371,15 +371,23 @@ and it says so rather than treating the trade as already safe:
   describes would exist in name only.
 
 **Both preconditions are named explicitly because either one missing is sufficient to
-invalidate this decision, not merely weaken it.** Until both land, this ADR's own
-migration of the two ceilings must not ship: `hard-spend-ceiling.ts` and
-`supervisor-spend-ceiling.ts` keep reading `process.env` directly, with no setter, exactly
-as ADR-0017 built them, and their existing header comments remain true. Everything else
-ADR-0017 decided — the separate ceiling, the tally scoped to `SupervisorInvocation` only,
-the separate pure gate function, the one-day default window, unset-refuses, the
-between-proposers check inside `SupervisorService.invoke()` — is untouched by this ADR.
-Only the _source_ the value is read from, and the fact that a write path exists at all,
-changes, and only once #334 and #346 are both in force.
+invalidate this decision, not merely weaken it.** That condition is now satisfied: #334
+merged, and #346 merged with `auth/guards/interactive-session.guard.ts` refusing any
+credential on the settings write path that cannot prove a human was present, whatever
+permissions it carries. #345 is where the migration itself landed — both ceilings resolve
+through `OperatorSettingsService`, both follow a change without a restart, and every
+change is filed in `audit_events` by the write path that makes it.
+
+The condition this paragraph set is spent, but it is not deleted, because it is the
+record of what had to be true before the reversal was allowed to ship. If either barrier
+is ever removed, this decision goes with it: the ceilings do not quietly revert to being
+merely RBAC-gated, they revert to `process.env` with no setter, which is what
+`hard-spend-ceiling.ts` and `supervisor-spend-ceiling.ts` were before and what their
+headers describe as the guarantee that was given up. Everything else ADR-0017 decided —
+the separate ceiling, the tally scoped to `SupervisorInvocation` only, the separate pure
+gate function, the one-day default window, unset-refuses, the between-proposers check
+inside `SupervisorService.invoke()` — is untouched by this ADR. Only the _source_ the
+value is read from, and the fact that a write path exists at all, changed.
 
 **This creates a new effect this codebase has no name for yet, and closing that gap is
 part of implementing this decision, not a later cleanup.** ADR-0013's `Effect` union —
@@ -447,9 +455,12 @@ it does not make the edit, per the instruction under which it was written, and t
 should decide whether the VISION.MD change belongs in this PR or a PR of its own.
 
 **The migration is only as safe as its two preconditions, and this ADR does not build
-them.** #334 and #346 are named, not implemented, here. Shipping point 6 before either
-lands would ship the exact vulnerability VISION §8's clause exists to prevent, under the
-appearance of an access-controlled guarantee that is not actually in force yet.
+them.** #334 and #346 are named, not implemented, here; both have since landed, and #345
+shipped point 6 on the strength of them. Shipping point 6 before either had landed would
+have shipped the exact vulnerability VISION §8's clause exists to prevent, under the
+appearance of an access-controlled guarantee that was not actually in force — and the
+same is true of any future change that weakens either barrier while leaving the ceilings
+writable.
 
 ## Alternatives considered
 
