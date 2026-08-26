@@ -222,6 +222,7 @@ import type {
   TrustGrantFilters,
   TrustGrantListItem,
 } from '../types/trust';
+import type { FleetHealth, ReadinessHealth } from '../types/health';
 import type {
   MetricsSummary,
   QueueEntry,
@@ -283,6 +284,62 @@ export async function getRepositories(
     query ? `/repositories?${query}` : '/repositories',
     { signal },
   );
+}
+
+// ---------------------------------------------------------------------------
+// The Control Center's readiness chain (#347, epic #332)
+// ---------------------------------------------------------------------------
+
+/**
+ * `GET /health/ready` — the readiness probe, read for its fleet entry.
+ *
+ * Public on the API, and called here anyway with the normal client so a 503
+ * arrives as an `ApiError` like everything else. Readiness only goes red on
+ * the DATABASE indicator; an empty or disabled fleet is reported and stays
+ * green, deliberately (see `FleetIndicator`). So a throw from this call means
+ * the control plane could not reach its own database — which is worth saying
+ * out loud rather than rendering as an empty chain.
+ */
+export async function getReadinessHealth(
+  signal?: AbortSignal,
+): Promise<ReadinessHealth> {
+  return api.get<ReadinessHealth>('/health/ready', { signal });
+}
+
+/**
+ * The fleet entry out of a readiness payload, or null if it is not there.
+ *
+ * `info` carries the indicators that are up and `details` carries all of them,
+ * so on a red readiness the fleet is only in `details`. Reading `info` first
+ * and falling back is what keeps the fleet visible on the one screen where a
+ * database outage would otherwise blank it.
+ */
+export function fleetFromReadiness(
+  health: ReadinessHealth | null,
+): FleetHealth | null {
+  const entry = health?.info?.fleet ?? health?.details?.fleet;
+  return entry ? (entry as unknown as FleetHealth) : null;
+}
+
+/**
+ * How many repositories are registered, and how many may be dispatched into.
+ *
+ * TWO requests with `pageSize: 1` rather than one that pages through them:
+ * `total` is what the question needs and the endpoint already computes it, so
+ * counting rows in the browser would be both slower and wrong past the first
+ * page. Requires `projects:read`, which an operator holding only
+ * `system_settings:read` may not have — the caller renders that refusal as
+ * "not verifiable with this account" rather than as zero.
+ */
+export async function getRepositoryEnablementCounts(
+  signal?: AbortSignal,
+): Promise<{ registered: number; dispatchEnabled: number }> {
+  const [all, dispatchable] = await Promise.all([
+    getRepositories({ pageSize: 1 }, signal),
+    getRepositories({ pageSize: 1, dispatchEnabled: true }, signal),
+  ]);
+
+  return { registered: all.total, dispatchEnabled: dispatchable.total };
 }
 
 /** `GET /cost/summary` — spend over a window, with the ceiling beside it. */
