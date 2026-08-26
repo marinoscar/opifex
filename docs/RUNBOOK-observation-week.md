@@ -17,6 +17,13 @@ _"a notification reaches a phone."_ Those are observations, not features.
 
 ## Before you start
 
+> **First:** this runbook assumes the fleet already reports a runner that is
+> `available: true`. Getting there — the binaries, the credential, and the two
+> enable flags in the right order — is
+> [`RUNBOOK-enable-claude-code-local.md`](RUNBOOK-enable-claude-code-local.md).
+> Start there if `/api/health/ready` shows an `unavailableReason`, or if you have
+> not chosen which quota the agent spends.
+
 You need:
 
 |                                                  | Why                                                              |
