@@ -22,6 +22,38 @@ WORKDIR /app
 RUN apk add --no-cache openssl openssl-dev
 
 # -----------------------------------------------------------------------------
+# The runner's two binaries (#325)
+# -----------------------------------------------------------------------------
+# ADR-0008 makes `claude-code-local` a CHILD PROCESS of the API process, so
+# "where Opifex runs" and "where Claude Code runs" are the same container by
+# construction. Both binaries must be on this image's PATH, or the runner
+# registers itself unavailable and every work order queues behind it.
+#
+# `git` is the blocker that fires FIRST, and it is the less obvious of the two.
+# RunWorkspaceService shells out to it for clone, checkout, `git config` and
+# commit, so a run dies at workspace provisioning before the CLI is ever
+# invoked. Installing only `claude` would move the failure, not fix it.
+#
+# Installed here in `base` rather than repeated in `development` and
+# `production`, and the trade-off is deliberate. Repeating the install caches
+# better -- a CLI bump would not invalidate the deps stage's `npm ci` -- but it
+# lets the two images drift to different CLI versions, and the capability
+# manifest records the OBSERVED version as a fact about the fleet. Two
+# environments quietly disagreeing about which agent version did the work is a
+# worse problem than a slower rebuild.
+RUN apk add --no-cache git
+
+# Unpinned by default, which is defensible only because the version is OBSERVED
+# rather than assumed: `probeVersion()` runs `claude --version` and the
+# registration tick writes what it actually reported into `runner_capabilities`,
+# so drift surfaces in the fleet instead of silently changing what does the
+# work. A deployment that wants a reproducible image pins it:
+#
+#   docker compose build --build-arg CLAUDE_CODE_VERSION=2.1.246 api
+ARG CLAUDE_CODE_VERSION=latest
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+# -----------------------------------------------------------------------------
 # Dependencies stage
 # -----------------------------------------------------------------------------
 FROM base AS deps
