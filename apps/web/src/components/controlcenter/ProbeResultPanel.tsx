@@ -23,9 +23,11 @@
  * ## Money is stated before the click, not after
  *
  * The two probes that make a real billed call say so next to their button, and
- * the allowance the API reports is rendered with every result. Before the
- * first result the screen says it does not know how much is left, because it
- * does not: the limit is server policy and nothing publishes it in advance.
+ * that same block becomes the allowance the API reported as soon as there is a
+ * result to read one off — in ONE place rather than twice, so the number an
+ * operator acts on has a single home. Before the first result the screen says
+ * it does not know how much is left, because it does not: the limit is server
+ * policy and nothing publishes it in advance.
  */
 
 import {
@@ -154,17 +156,6 @@ export function ProbeResultPanel({
               {new Date(observation.outcome.result.checkedAt).toLocaleString()}
             </Typography>
           )}
-
-          {observation.outcome.state === 'answered' &&
-            observation.outcome.result.rateLimit && (
-              <Typography
-                variant="caption"
-                component="p"
-                color="text.secondary"
-              >
-                {rateLimitSentence(observation.outcome.result.rateLimit)}
-              </Typography>
-            )}
         </Alert>
       )}
     </Box>

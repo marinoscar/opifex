@@ -57,6 +57,7 @@ import {
   CEILING_DEFINITIONS,
   ceilingInForce,
   classifyCeiling,
+  classifyWindow,
   describeCeilingChange,
   describeClassification,
   type CeilingChange,
@@ -81,8 +82,6 @@ export interface SpendCeilingsPanelProps {
   spendProblem: CeilingSpendProblem | null;
   /** Sends the ceiling keys and nothing else. */
   onSave: (patch: OperatorSettingsPatch) => Promise<void>;
-  /** Notes an unsaved edit, so a probe answer about it can be marked stale. */
-  onPendingKeysChange?: (keys: string[]) => void;
 }
 
 type Draft = Record<string, string>;
@@ -173,6 +172,7 @@ export function SpendCeilingsPanel({
           // nothing rather than a broken panel.
           if (!usd || !window) return null;
 
+          const windowValue = classifyWindow(draft[definition.windowKey] ?? '');
           const changes = [
             describeCeilingChange(
               definition,
@@ -243,7 +243,12 @@ export function SpendCeilingsPanel({
                   disabled={!canWrite || isSaving}
                   size="small"
                   fullWidth
-                  helperText="Rolling window, in days. Shortening it lets the same figure permit more spend per month."
+                  error={!windowValue.ok}
+                  helperText={
+                    windowValue.ok
+                      ? 'Rolling window, in days. Shortening it lets the same figure permit more spend per month.'
+                      : windowValue.problem
+                  }
                   slotProps={{ htmlInput: { inputMode: 'numeric', min: 1 } }}
                 />
               </Stack>
@@ -270,7 +275,12 @@ export function SpendCeilingsPanel({
                 <Button
                   variant="contained"
                   size="small"
-                  disabled={!canWrite || isSaving || changes.length === 0}
+                  disabled={
+                    !canWrite ||
+                    isSaving ||
+                    changes.length === 0 ||
+                    !windowValue.ok
+                  }
                   onClick={() => setConfirming({ definition, changes })}
                 >
                   Change this ceiling

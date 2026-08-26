@@ -461,15 +461,15 @@ describe('SettingsSection', () => {
   });
 
   describe('Secrets', () => {
-    it('renders a secret read-only, with the mask and the issue that fixes it', async () => {
+    it('renders a secret read-only, with the mask and where rotation lives', async () => {
       renderSection();
 
       const card = await row('github.token');
-      expect(
-        within(card).getByText('****************cdef'),
-      ).toBeInTheDocument();
+      expect(within(card).getByText('********cdef')).toBeInTheDocument();
       expect(within(card).queryByRole('textbox')).not.toBeInTheDocument();
-      expect(within(card).getByText(/#349/)).toBeInTheDocument();
+      // #349 landed, so the row points at the section that owns rotation
+      // rather than at an issue number.
+      expect(within(card).getByText(/Credentials/)).toBeInTheDocument();
       expect(
         within(card).queryByRole('button', { name: /revert to environment/i }),
       ).not.toBeInTheDocument();

@@ -32,6 +32,18 @@ import type {
   OperatorSettingsDocument,
 } from '../../types/operatorSettings';
 
+/**
+ * The masked hint, exactly as `maskSecret` in
+ * `apps/api/src/common/crypto/redact.ts` builds it: a FIXED-WIDTH eight-
+ * asterisk mask (its length says nothing about the value's) followed by the
+ * last four characters, and nothing at all for a value under sixteen
+ * characters. A fixture that invented a longer mask would let a component be
+ * written against a shape the API does not produce.
+ */
+export function maskedHint(value: string): string {
+  return value.length < 16 ? '********' : `********${value.slice(-4)}`;
+}
+
 /** The keys the fixture carries, in the order the API lists them. */
 export const OPERATOR_SETTINGS_FIXTURE: OperatorSetting[] = [
   {
@@ -49,7 +61,7 @@ export const OPERATOR_SETTINGS_FIXTURE: OperatorSetting[] = [
     constraints: {},
     secret: true,
     configured: true,
-    hint: '****************cdef',
+    hint: '********cdef',
   },
   {
     key: 'github.requestTimeoutMs',
@@ -134,7 +146,7 @@ export const OPERATOR_SETTINGS_FIXTURE: OperatorSetting[] = [
     constraints: {},
     secret: true,
     configured: true,
-    hint: '********************wxyz',
+    hint: '********wxyz',
   },
   {
     key: 'runners.claudeCodeLocal.binary',
