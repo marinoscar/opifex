@@ -142,7 +142,12 @@ describe('Operator settings writes require an interactive session (#346)', () =>
         .send(BODY)
         .expect(403);
 
-      expect(response.body.message).toContain('a personal access token');
+      // The whole phrase: the generic half of the refusal names both kinds it
+      // refuses, so the bare noun matches even when the message has stopped
+      // saying which credential was actually presented.
+      expect(response.body.message).toContain(
+        'Refused: PATCH /api/operator-settings from a personal access token.',
+      );
       expect(response.body.message).toContain('VISION §8');
       expect(prismaMock.operatorSetting.upsert).not.toHaveBeenCalled();
     });
@@ -186,7 +191,9 @@ describe('Operator settings writes require an interactive session (#346)', () =>
         .send(BODY)
         .expect(403);
 
-      expect(response.body.message).toContain('a device-flow token');
+      expect(response.body.message).toContain(
+        'Refused: PATCH /api/operator-settings from a device-flow token.',
+      );
       expect(response.body.message).toContain('VISION §8');
       expect(prismaMock.operatorSetting.upsert).not.toHaveBeenCalled();
     });

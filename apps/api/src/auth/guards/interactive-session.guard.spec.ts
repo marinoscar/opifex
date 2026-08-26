@@ -121,8 +121,15 @@ describe('InteractiveSessionGuard (#346)', () => {
         )
       ).message;
 
-      expect(message).toContain('PATCH /api/operator-settings');
-      expect(message).toContain('a personal access token');
+      // The whole phrase, not just the noun. The generic half of this message
+      // mentions both a personal access token and a device-flow token as the
+      // things it refuses, so `toContain('a personal access token')` passes
+      // even when the message has stopped naming the credential actually
+      // presented — found by breaking that line and watching this test go on
+      // passing.
+      expect(message).toContain(
+        'Refused: PATCH /api/operator-settings from a personal access token.',
+      );
       expect(message).toContain('budget, quota and credential configuration');
       expect(message).toContain('VISION §8');
       expect(message).toContain(
@@ -139,7 +146,9 @@ describe('InteractiveSessionGuard (#346)', () => {
         patchRequest({ credentialKind: 'device-code' }),
       );
 
-      expect(refusal.message).toContain('a device-flow token');
+      expect(refusal.message).toContain(
+        'Refused: PATCH /api/operator-settings from a device-flow token.',
+      );
     });
 
     it('is built by a pure function, so it can be asserted without a request', () => {
