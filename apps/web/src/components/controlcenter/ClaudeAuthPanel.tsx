@@ -449,8 +449,9 @@ export function ClaudeAuthPanel({
                   </Typography>
                   <LinearProgress sx={{ my: 1.5 }} />
                   <Typography variant="body2" color="text.secondary">
-                    The exchange can take up to ninety seconds. Leave this open
-                    — closing it now cancels the sign-in.
+                    The exchange can take up to ninety seconds. Leave this open;
+                    Cancel is unavailable until it settles, because killing the
+                    CLI mid-exchange loses a token that has already been minted.
                   </Typography>
                 </Box>
               )}
