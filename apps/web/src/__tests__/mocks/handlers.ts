@@ -38,6 +38,91 @@ const mockSystemSettings = {
   version: 1,
 };
 
+/**
+ * `GET /api/audit-events`, as the API really serialises it (#338, #351).
+ *
+ * The rows below are the SERVER's shape, not an echo of a request: the
+ * envelope is `{ data: { items, total, page, pageSize, totalPages } }` from
+ * `TransformInterceptor` plus the flat pagination the service returns, and
+ * each `meta` is what `redactSettingsMeta` leaves behind — including the
+ * detail that a masked value keeps its last four characters
+ * (`maskSecret`, `REVEALED_SUFFIX_LENGTH`). A fixture that masked to a bare
+ * `********` would let the UI pass a test it fails against the real API.
+ */
+export const mockAuditEvents = [
+  {
+    id: '00000000-0000-4000-8000-0000000000a1',
+    action: 'operator_settings:set',
+    targetType: 'operator_settings',
+    targetId: 'github.token',
+    actorUserId: 'admin-user-id',
+    actor: {
+      id: 'admin-user-id',
+      email: 'admin@example.com',
+      displayName: 'Admin User',
+    },
+    // `from` was null (no row yet) and masks to the bare mask; `to` is a
+    // sealed token and keeps its last four characters.
+    meta: {
+      key: 'github.token',
+      from: '********',
+      to: '********Ly5Hs',
+      fromSource: 'env',
+      toSource: 'database',
+    },
+    createdAt: '2026-08-26T10:05:00.000Z',
+  },
+  {
+    id: '00000000-0000-4000-8000-0000000000a2',
+    action: 'operator_settings:set',
+    targetType: 'operator_settings',
+    targetId: 'dispatch.enabled',
+    actorUserId: 'admin-user-id',
+    actor: {
+      id: 'admin-user-id',
+      email: 'admin@example.com',
+      displayName: 'Admin User',
+    },
+    meta: {
+      key: 'dispatch.enabled',
+      from: false,
+      to: true,
+      fromSource: 'default',
+      toSource: 'database',
+    },
+    createdAt: '2026-08-26T10:00:00.000Z',
+  },
+  {
+    id: '00000000-0000-4000-8000-0000000000a3',
+    action: 'operator_settings:clear',
+    targetType: 'operator_settings',
+    targetId: 'runners.claudeCodeLocal.oauthToken',
+    // A person did this and the account has since been deleted:
+    // `onDelete: SetNull` on the relation, the id still on the row.
+    actorUserId: 'deleted-user-id',
+    actor: null,
+    meta: {
+      key: 'runners.claudeCodeLocal.oauthToken',
+      from: '********pJ4c',
+      to: '********',
+      fromSource: 'database',
+      toSource: 'env',
+    },
+    createdAt: '2026-08-26T09:30:00.000Z',
+  },
+  {
+    id: '00000000-0000-4000-8000-0000000000a4',
+    action: 'allowlist:add',
+    targetType: 'allowed_email',
+    targetId: '00000000-0000-4000-8000-0000000000b1',
+    // Nothing human did it — a different fact from a deleted actor.
+    actorUserId: null,
+    actor: null,
+    meta: { email: 'newcomer@example.com' },
+    createdAt: '2026-08-25T08:00:00.000Z',
+  },
+];
+
 const mockProviders = [{ name: 'google', authUrl: '/api/auth/google' }];
 
 export const handlers = [
@@ -339,6 +424,33 @@ export const handlers = [
 
     return HttpResponse.json({
       data: { items: [], total: 0, page: 1, pageSize },
+    });
+  }),
+
+  /**
+   * The audit log (#338). Filters and pages on the SERVER, like the endpoint,
+   * so a test that changes the filter is testing the same contract the real
+   * API offers rather than a client-side approximation.
+   */
+  http.get(`${API_BASE}/audit-events`, ({ request }) => {
+    const url = new URL(request.url);
+    const targetType = url.searchParams.get('targetType');
+    const page = Number(url.searchParams.get('page') ?? '1');
+    const pageSize = Number(url.searchParams.get('pageSize') ?? '20');
+
+    const matching = targetType
+      ? mockAuditEvents.filter((event) => event.targetType === targetType)
+      : mockAuditEvents;
+
+    return HttpResponse.json({
+      data: {
+        items: matching.slice((page - 1) * pageSize, page * pageSize),
+        total: matching.length,
+        page,
+        pageSize,
+        totalPages: Math.ceil(matching.length / pageSize),
+      },
+      meta: { timestamp: new Date().toISOString() },
     });
   }),
 

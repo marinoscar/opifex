@@ -25,6 +25,16 @@ import {
 
 export interface AuditChangeCellProps {
   changes: AuditChange[];
+  /**
+   * The row's own `targetId`, when it has one.
+   *
+   * A settings row names the same key twice — once as the target and once as
+   * the field that changed — and the second is noise, so the field label is
+   * dropped when it would repeat the subject the row is already about. It is
+   * kept whenever the row records more than one change, because then the
+   * labels are what tell the changes apart.
+   */
+  subject?: string;
 }
 
 /** Monospace, so `30000` and `null` are legible as values rather than prose. */
@@ -34,7 +44,7 @@ const VALUE_SX = {
   wordBreak: 'break-word',
 } as const;
 
-export function AuditChangeCell({ changes }: AuditChangeCellProps) {
+export function AuditChangeCell({ changes, subject }: AuditChangeCellProps) {
   if (changes.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
@@ -47,14 +57,16 @@ export function AuditChangeCell({ changes }: AuditChangeCellProps) {
     <Stack spacing={0.5} sx={{ minWidth: 0, py: 0.5 }}>
       {changes.map((change) => (
         <Box key={change.field} sx={{ minWidth: 0 }}>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            component="span"
-            sx={{ mr: 0.5 }}
-          >
-            {change.field}
-          </Typography>
+          {!(changes.length === 1 && change.field === subject) && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              component="span"
+              sx={{ mr: 0.5 }}
+            >
+              {change.field}
+            </Typography>
+          )}
           {change.secret && change.effect ? (
             <Tooltip
               title={

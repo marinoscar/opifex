@@ -145,7 +145,12 @@ export function historyColumns(): DataTableColumn<AuditEvent>[] {
       priority: 'secondary',
       minWidth: 280,
       value: (event) => describeAuditChanges(auditChangesOf(event)),
-      render: (event) => <AuditChangeCell changes={auditChangesOf(event)} />,
+      render: (event) => (
+        <AuditChangeCell
+          changes={auditChangesOf(event)}
+          subject={event.targetId}
+        />
+      ),
     },
   ];
 }
