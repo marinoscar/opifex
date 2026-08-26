@@ -110,7 +110,15 @@ export class OperatorSettingsController {
   }
 
   @Patch()
-  @Auth({ permissions: [PERMISSIONS.SYSTEM_SETTINGS_WRITE] })
+  // `interactive: true` is #346, and it is a containment barrier rather than
+  // an RBAC refinement. A personal access token carrying every permission
+  // below is still refused here, because the thing being protected is not "who
+  // may change a ceiling" but "a limit an agent can raise is not a limit"
+  // (VISION §8). Reads above are deliberately unrestricted.
+  @Auth({
+    permissions: [PERMISSIONS.SYSTEM_SETTINGS_WRITE],
+    interactive: true,
+  })
   @ApiOperation({
     summary: 'Change some operator settings',
     description:
@@ -120,7 +128,12 @@ export class OperatorSettingsController {
       "release's change to a default would ever reach this deployment.\n\n" +
       '`null` for a key deletes its row, reverting it to whatever the environment says — and ' +
       "only to the code's default if the environment says nothing.\n\n" +
-      'Writing a key marked `secret` additionally requires `operator_settings:write_secret`.',
+      'Writing a key marked `secret` additionally requires `operator_settings:write_secret`.\n\n' +
+      '**This write requires an interactive session.** A personal access token or a ' +
+      'device-flow token is refused with 403 no matter what permissions it carries, and ' +
+      'the attempt is recorded in `audit_events` — these settings hold budget, quota and ' +
+      'credential configuration, and VISION §8 makes a limit an agent could raise not a ' +
+      'limit. `GET` is unrestricted, so automation can still observe configuration.',
   })
   @ApiBody({
     type: PatchOperatorSettingsDto,
@@ -147,6 +160,12 @@ export class OperatorSettingsController {
     description: 'The registry, re-resolved after the write',
   })
   @ApiResponse({ status: 400, description: 'Unknown key, or a rejected value' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Missing permissions, or a non-interactive credential (personal access token, ' +
+      'device-flow token) on a write',
+  })
   @ApiResponse({ status: 409, description: 'Stale If-Match revision' })
   @ApiResponse({
     status: 503,

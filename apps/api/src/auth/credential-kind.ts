@@ -60,10 +60,7 @@
 
 /** What presented the credential on a request. */
 export type CredentialKind =
-  | 'interactive'
-  | 'personal-access-token'
-  | 'device-code'
-  | 'unknown';
+  'interactive' | 'personal-access-token' | 'device-code' | 'unknown';
 
 /**
  * The JWT claim name carrying {@link CredentialKind}.

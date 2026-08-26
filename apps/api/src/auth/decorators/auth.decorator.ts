@@ -8,6 +8,7 @@ import {
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { RolesGuard } from '../guards/roles.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
+import { InteractiveSessionGuard } from '../guards/interactive-session.guard';
 import { Roles } from './roles.decorator';
 import { Permissions } from './permissions.decorator';
 import { ErrorDto } from '../../common/dto/error.dto';
@@ -19,6 +20,19 @@ import {
 interface AuthOptions {
   roles?: RoleName[];
   permissions?: PermissionName[];
+  /**
+   * Refuse this route to any credential that does not prove a human was
+   * present: no personal access token, no device-flow token (#346).
+   *
+   * An option on `@Auth()` rather than a decorator of its own, because guard
+   * ORDER is the whole correctness argument and only one `UseGuards` call can
+   * state it. As a separate decorator the check would land in a second
+   * `UseGuards`, and since decorators evaluate bottom-up it would run before
+   * `JwtAuthGuard` depending on where a caller wrote it — refusing an
+   * anonymous request with 403 "not interactive" instead of 401, and refusing
+   * it on the strength of a request property nothing had populated yet.
+   */
+  interactive?: boolean;
 }
 
 /**
@@ -35,6 +49,15 @@ export interface RbacExtension {
   roles: string[];
   /** The guard requires ALL of these permissions. */
   permissions: string[];
+  /**
+   * The guard additionally refuses non-interactive credentials (#346).
+   *
+   * Optional so that every `x-rbac` object written before this existed stays
+   * valid, and absent rather than `false` on the routes that do not set it —
+   * a document full of `interactive: false` would read as a decision taken
+   * everywhere, when it is a decision taken in one place.
+   */
+  interactive?: true;
 }
 
 /** Name of the session bearer scheme declared in `src/openapi/document.ts`. */
@@ -73,15 +96,28 @@ const SESSION_SCHEME = 'JWT-auth';
 export function Auth(options: AuthOptions = {}) {
   const roles = options.roles ?? [];
   const permissions = options.permissions ?? [];
+  const interactive = options.interactive === true;
 
   const rbac: RbacExtension = {
     authenticated: true,
     roles: [...roles],
     permissions: [...permissions],
+    ...(interactive ? { interactive: true as const } : {}),
   };
 
   const decorators = [
-    UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard),
+    // LAST, deliberately (#346). Authentication first, so an anonymous caller
+    // gets 401 rather than a refusal about a credential they never presented;
+    // then roles and permissions, so the interactive check only ever fires for
+    // a caller who would otherwise have succeeded. That is what makes the
+    // audit row it writes worth reading: it records a privileged
+    // non-interactive credential reaching a write path, not a stray request.
+    UseGuards(
+      JwtAuthGuard,
+      RolesGuard,
+      PermissionsGuard,
+      ...(interactive ? [InteractiveSessionGuard] : []),
+    ),
     ApiBearerAuth(SESSION_SCHEME),
     ApiExtension(RBAC_EXTENSION_KEY, rbac),
     ApiUnauthorizedResponse({
