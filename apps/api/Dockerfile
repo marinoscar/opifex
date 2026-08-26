@@ -107,6 +107,15 @@ COPY --from=deps /app ./
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY apps/api/prisma ./apps/api/prisma/
 COPY apps/api/prisma.config.ts ./apps/api/
+# Every `npm run prisma:*` script (migrate, seed, generate, push, studio) and
+# `check:prisma-fields` shells out to `scripts/prisma-env.js`, relative to
+# apps/api/ -- not the root `scripts/` copied below, which is a different
+# directory entirely. The `development` stage never had this bug: it copies
+# `apps/api` wholesale (see above) and brings its scripts along for free.
+# `production` copies selectively and missed this one, so `docker compose
+# exec api npm run prisma:migrate` -- the documented ops flow -- failed at
+# module resolution before Prisma ever ran (#382).
+COPY apps/api/scripts ./apps/api/scripts
 COPY scripts ./scripts
 # Root-level JSON Schemas (e.g. run-event.schema.json), read at runtime by
 # RunEventValidator via a path resolved relative to /app.
