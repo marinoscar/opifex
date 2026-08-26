@@ -24,7 +24,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse, delay } from 'msw';
 
 import { render } from '../../utils/test-utils';
-import { expectNoLeak } from '../../utils/domSecrets';
+import { expectNoLeak, findLeaks } from '../../utils/domSecrets';
 import { server } from '../../mocks/server';
 import { CredentialsSectionContainer } from '../../../components/controlcenter/CredentialsSectionContainer';
 import type {
@@ -153,6 +153,19 @@ function serveClaudeAuth(options: {
   );
 
   return calls;
+}
+
+/**
+ * Everything rendered, portals included.
+ *
+ * A Dialog is rendered into `document.body` rather than into the container
+ * `render()` returns, so a leak scan rooted at that container would walk the
+ * credential card and never enter the flow it is meant to be scanning. Rooting
+ * at the body is what makes the scan cover the dialog and anything else
+ * portalled out of the tree.
+ */
+function scanRoot(): HTMLElement {
+  return document.body;
 }
 
 function renderSection(
@@ -297,7 +310,7 @@ describe('ClaudeAuthPanel', () => {
       expect(within(dialog).getByText(/expires in 8:5\d/)).toBeInTheDocument();
     });
 
-    it('says a session is expired instead of failing on submit', async () => {
+    it('says a session that arrived expired is expired, and accepts nothing', async () => {
       const user = userEvent.setup();
       const calls = serveClaudeAuth({
         start: awaitingSession({
@@ -312,11 +325,44 @@ describe('ClaudeAuthPanel', () => {
         within(dialog).getAllByText(/this sign-in has expired/i).length,
       ).toBeGreaterThan(0);
       expect(
-        within(dialog).getByRole('button', { name: /complete sign-in/i }),
-      ).toBeDisabled();
-      expect(
         within(dialog).getByLabelText(/authorization code/i),
       ).toBeDisabled();
+      expect(calls.codes).toHaveLength(0);
+    });
+
+    it('closes the paste field as the countdown runs out, code and all', async () => {
+      // The one that proves the GATE rather than the wording. The test above
+      // cannot: with nothing typed, Submit is disabled for the empty field
+      // whether or not expiry is checked, so it passed against a build with
+      // the expiry check deleted. Here a code really is in the field and
+      // Submit really is enabled first, so the flip can only come from the
+      // deadline passing.
+      const user = userEvent.setup();
+      const calls = serveClaudeAuth({
+        start: awaitingSession({
+          expiresAt: new Date(Date.now() + 4_000).toISOString(),
+        }),
+      });
+      renderSection();
+
+      const dialog = await signInTo(user);
+      const field = within(dialog).getByLabelText(/authorization code/i);
+      await user.type(field, 'a-code');
+
+      // Guards this test against becoming the vacuous one it replaced: had the
+      // session already expired by now, this fails loudly instead of quietly
+      // testing nothing.
+      expect(field).toHaveValue('a-code');
+      const submit = within(dialog).getByRole('button', {
+        name: /complete sign-in/i,
+      });
+      expect(submit).toBeEnabled();
+
+      await waitFor(() => expect(submit).toBeDisabled(), { timeout: 10_000 });
+      expect(
+        within(dialog).getAllByText(/this sign-in has expired/i).length,
+      ).toBeGreaterThan(0);
+      // Discovered here, rather than by a refusal from the API on submit.
       expect(calls.codes).toHaveLength(0);
     });
   });
@@ -552,10 +598,14 @@ describe('ClaudeAuthPanel', () => {
         start: { ...awaitingSession(), token } as ClaudeAuthSession,
         code: { ...completedSession(), token } as ClaudeAuthSession,
       });
-      const { container } = renderSection();
+      renderSection();
 
       const dialog = await signInTo(user);
-      expectNoLeak(container, token);
+      // `document.body`, NOT the render container: MUI renders a Dialog into a
+      // portal outside it, so scanning the container would walk the card and
+      // miss the entire flow. A mutation that dumped `JSON.stringify(session)`
+      // into the dialog passed against the container and fails against this.
+      expectNoLeak(scanRoot(), token);
 
       await user.type(
         within(dialog).getByLabelText(/authorization code/i),
@@ -566,27 +616,37 @@ describe('ClaudeAuthPanel', () => {
       );
       await screen.findByText(/^Connected$/);
 
-      expectNoLeak(container, token);
+      expectNoLeak(scanRoot(), token);
     });
 
     it('keeps the pasted code in its own field and nowhere else', async () => {
-      // The authorization code is short-lived and single-use rather than a
-      // credential, but it is still an authorization artefact: it belongs in
-      // the field the operator typed it into and in the request body, not in
-      // a heading, a confirmation or a title attribute.
+      // The authorization code is short-lived, single-use, and useless without
+      // the PKCE verifier the CLI process is holding — so it is not the
+      // credential this screen exists to protect. It is still an authorization
+      // artefact, and it belongs in the field the operator pasted it into and
+      // in the request body: not in a heading, a confirmation, a chip or a
+      // title attribute.
+      //
+      // Asserted with `findLeaks` rather than `expectNoLeak` because this
+      // field is CONTROLLED, and React reflects a controlled input's contents
+      // into the `value` ATTRIBUTE as well as the property — which
+      // `allowInputValues` does not exempt. So the claim is made precisely:
+      // every place the code appears is an input's own value.
       const user = userEvent.setup();
+      const code = 'code-1234-abcd-5678';
       serveClaudeAuth({});
-      const { container } = renderSection();
+      renderSection();
 
       const dialog = await signInTo(user);
       await user.type(
         within(dialog).getByLabelText(/authorization code/i),
-        'code-1234-abcd-5678',
+        code,
       );
 
-      expectNoLeak(container, 'code-1234-abcd-5678', {
-        allowInputValues: true,
-      });
+      const leaks = findLeaks(scanRoot(), code, { allowInputValues: true });
+      expect(leaks.map((leak) => leak.where)).toEqual(
+        leaks.map(() => expect.stringMatching(/^<input[^>]*>\[value\]$/)),
+      );
     });
   });
 });
