@@ -32,15 +32,19 @@ const INTERVAL_NAME = 'runner-registration-tick';
  * #162 proposes hanging registration off the reconciler tick, and there is a
  * real argument for it: a new timer is a new thing to shut down cleanly, and
  * the reconciler is already the loop that recomputes desired state. It is the
- * wrong home anyway, and the reason is mechanical rather than aesthetic:
- * `ReconcilerTask` registers NO interval at all unless `RECONCILER_ENABLED` is
- * true, and `RunPollerTask` registers none unless a runner is enabled. Both
- * default off. Registration hung off either would therefore fail to converge
- * on precisely the deployments where the fleet table is empty and somebody is
- * trying to find out why — and "the fleet is empty" is the state an operator
- * has to see resolved BEFORE they are willing to turn dispatch on.
+ * wrong home anyway, and the reason is mechanical rather than aesthetic: both
+ * of those loops SKIP when their own flag is off, and both default off. Since
+ * #343 they at least still fire — the interval is registered either way and
+ * the flag is checked inside the callback — but the body returns immediately,
+ * so registration hung off either would still fail to converge on precisely
+ * the deployments where the fleet table is empty and somebody is trying to
+ * find out why. "The fleet is empty" is the state an operator has to see
+ * resolved BEFORE they are willing to turn dispatch on, and hanging its fix
+ * behind the flag it is meant to inform would be circular.
  *
- * That is also why this interval is registered unconditionally. Registering a
+ * That is also why this interval is registered unconditionally — and since
+ * #343 that is no longer the exception it was, but the shape every scheduled
+ * task in this codebase now shares. Registering a
  * disabled runner is not a no-op: the row is written with `enabled: false`,
  * which is what lets dispatch answer "the only runner is disabled" instead of
  * "no runner is registered" — a distinction the service's own comment calls
