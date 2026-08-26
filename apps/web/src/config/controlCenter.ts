@@ -11,8 +11,7 @@
  *
  * #348 (registry-driven settings), #349 (secrets and test buttons), #350 (the
  * repository ladder) and #351 (change history) each own one section. They were
- * declared here as `planned` before they existed — #351 is `live` as of its
- * own PR — for the same reason
+ * declared here as `planned` before they existed, for the same reason
  * `config/cockpitApi.ts` declared its unwired endpoints before they existed:
  * the shape of the thing is part of what the app communicates, and a section
  * that appears out of nowhere three PRs from now teaches an operator less than
@@ -136,7 +135,7 @@ export const CONTROL_CENTER_SECTIONS: readonly ControlCenterSection[] = [
       'The Claude credential, the GitHub token and the spend ceilings — ' +
       'each stored encrypted, shown masked, and TESTED rather than assumed.',
     Icon: KeyIcon,
-    status: 'planned',
+    status: 'live',
     issue: 349,
     phase: PHASE,
   },

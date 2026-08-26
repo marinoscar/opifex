@@ -170,8 +170,18 @@ export interface CeilingChange {
   label: string;
   /** As stored now, quoted rather than normalised. */
   from: string;
-  /** As it would be stored. */
+  /** As it would be stored, for DISPLAY. `(not set)` for an empty figure. */
   to: string;
+  /**
+   * What actually goes in the patch, which is not always what `to` shows.
+   *
+   * The USD figure travels as the raw STRING, empty included: the registry
+   * declares these keys `allowEmpty` and an empty string is how "no ceiling is
+   * configured" is stored — distinct from a JSON null, which would delete the
+   * row and fall back to the environment variable instead. The window travels
+   * as a number, which is what its integer schema expects.
+   */
+  value: string | number;
   /** What that does, in the operator's terms. */
   consequence: string;
 }
@@ -202,13 +212,56 @@ export function describeCeilingChange(
   };
 
   if (field === 'window') {
-    return { ...base, consequence: windowConsequence(current, next) };
+    const days = classifyWindow(next);
+    return {
+      ...base,
+      // An invalid window is carried through as typed rather than repaired.
+      // The API is the enforcement point and its refusal names the field;
+      // silently substituting a number nobody chose would be worse.
+      value: days.ok ? days.days : next,
+      consequence: windowConsequence(current, next),
+    };
   }
 
   return {
     ...base,
+    value: next,
     consequence: usdConsequence(definition, current, next),
   };
+}
+
+export type WindowClassification =
+  { ok: true; days: number } | { ok: false; problem: string };
+
+/**
+ * The window, which IS an integer setting and is checked as one here.
+ *
+ * The API is still the enforcement point. Checking here as well means "this
+ * has to be a whole number of days" arrives while the operator is in the
+ * field, rather than as a rejected patch after they have left it — the same
+ * reasoning `operatorSettingsDraft.toWireValue` records for every bounded
+ * integer.
+ */
+export function classifyWindow(text: string): WindowClassification {
+  const trimmed = text.trim();
+  if (trimmed === '') {
+    return {
+      ok: false,
+      problem:
+        'A window is required. Without one there is nothing for the figure ' +
+        'to be measured over.',
+    };
+  }
+
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed)) {
+    return { ok: false, problem: 'This has to be a whole number of days.' };
+  }
+  if (parsed < 1) {
+    return { ok: false, problem: 'This has to be at least 1 day.' };
+  }
+
+  return { ok: true, days: parsed };
 }
 
 function usdConsequence(
@@ -286,4 +339,76 @@ function windowConsequence(current: string, next: string): string {
 /** A setting value as the text a field holds. Null is empty, not "null". */
 function stringify(value: string | number | boolean | null): string {
   return value === null ? '' : String(value);
+}
+
+// ---------------------------------------------------------------------------
+// Configured, and observed
+// ---------------------------------------------------------------------------
+
+/** The ceiling as the cost read model reports it, from `CostSummary`. */
+export interface ObservedCeiling {
+  limitUsd: number | null;
+  windowDays: number;
+  malformed: string | null;
+}
+
+export interface CeilingInForce {
+  /** What the API says it is enforcing right now. */
+  statement: string;
+  /**
+   * True when that is not what the configured fields say. Never used to
+   * CHANGE either figure — epic #332's first rule is that configured and
+   * observed are shown side by side and neither is derived from the other.
+   * The usual innocent cause is a `restart`-class change that is stored and
+   * not yet in force; the alarming one is a stale read of either.
+   */
+  disagrees: boolean;
+}
+
+/**
+ * What is actually being enforced, beside what is configured.
+ *
+ * `malformed` is reported by the API for the same reason this module keeps it
+ * client-side: a mistyped ceiling refuses to spend, and it refuses for a
+ * reason an operator can act on only if the offending text survives to the
+ * screen.
+ */
+export function ceilingInForce(
+  configuredUsd: string,
+  configuredWindow: string,
+  observed: ObservedCeiling,
+): CeilingInForce {
+  const configured = classifyCeiling(configuredUsd);
+  const windowAgrees = Number(configuredWindow) === observed.windowDays;
+
+  if (observed.malformed !== null) {
+    return {
+      statement:
+        `The API reports the ceiling it is enforcing as MALFORMED: ` +
+        `"${observed.malformed}". Nothing may be dispatched under it.`,
+      disagrees:
+        configured.kind !== 'malformed' ||
+        configured.text !== observed.malformed ||
+        !windowAgrees,
+    };
+  }
+
+  if (observed.limitUsd === null) {
+    return {
+      statement:
+        'No ceiling is in force, so every dispatch is refused — an unset ' +
+        'ceiling is not an unlimited one.',
+      disagrees: configured.kind !== 'unset' || !windowAgrees,
+    };
+  }
+
+  return {
+    statement:
+      `$${observed.limitUsd} over a rolling ${observed.windowDays}-day ` +
+      'window is what the API is enforcing.',
+    disagrees:
+      configured.kind !== 'amount' ||
+      configured.usd !== observed.limitUsd ||
+      !windowAgrees,
+  };
 }

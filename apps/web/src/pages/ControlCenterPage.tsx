@@ -45,6 +45,7 @@ import {
 } from '@mui/material';
 import { Navigate, useSearchParams } from 'react-router-dom';
 
+import { CredentialsSectionContainer } from '../components/controlcenter/CredentialsSectionContainer';
 import { HistorySection } from '../components/controlcenter/HistorySection';
 import { InterfaceSection } from '../components/controlcenter/InterfaceSection';
 import { PlannedSectionPanel } from '../components/controlcenter/PlannedSectionPanel';
@@ -73,6 +74,16 @@ const WRITE_PERMISSION = 'system_settings:write';
  * other and a section must be gated on the string its own controller checks.
  */
 const REPOSITORY_WRITE_PERMISSION = 'projects:write';
+/**
+ * Replacing a credential needs this ON TOP of `system_settings:write`, and the
+ * API checks it against the BODY of a patch rather than the route — the same
+ * endpoint is an ordinary settings write for a timeout and a credential
+ * rotation for a token. Resolved here so the Credentials section can hide the
+ * field the API would refuse, which is all the UI does: ADR-0018 §6 is
+ * explicit that this permission is defence in depth and that #334 and #346 are
+ * what actually keep an agent away from these values.
+ */
+const SECRET_WRITE_PERMISSION = 'operator_settings:write_secret';
 
 /**
  * The permission gate, and nothing else.
@@ -93,6 +104,7 @@ export default function ControlCenterPage() {
     <ControlCenter
       canWrite={hasPermission(WRITE_PERMISSION)}
       canWriteRepositories={hasPermission(REPOSITORY_WRITE_PERMISSION)}
+      canWriteSecrets={hasPermission(SECRET_WRITE_PERMISSION)}
     />
   );
 }
@@ -100,9 +112,11 @@ export default function ControlCenterPage() {
 function ControlCenter({
   canWrite,
   canWriteRepositories,
+  canWriteSecrets,
 }: {
   canWrite: boolean;
   canWriteRepositories: boolean;
+  canWriteSecrets: boolean;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeKey = resolveSection(searchParams.get(SECTION_PARAM));
@@ -209,6 +223,7 @@ function ControlCenter({
               section={activeSection}
               readiness={readiness}
               canWriteRepositories={canWriteRepositories}
+              canWriteSecrets={canWriteSecrets}
               settings={settings}
               settingsError={error}
               canWrite={canWrite}
@@ -254,6 +269,7 @@ function SectionBody({
   section,
   readiness,
   canWriteRepositories,
+  canWriteSecrets,
   settings,
   settingsError,
   canWrite,
@@ -267,6 +283,8 @@ function SectionBody({
   readiness: ReturnType<typeof useReadiness>;
   /** `projects:write`, which is a different permission from `canWrite`. */
   canWriteRepositories: boolean;
+  /** `operator_settings:write_secret`, required on top of `canWrite`. */
+  canWriteSecrets: boolean;
   settings: ReturnType<typeof useSystemSettings>['settings'];
   settingsError: string | null;
   canWrite: boolean;
@@ -310,6 +328,18 @@ function SectionBody({
           fleet={readiness.fleet}
           onSaved={onSaved}
           onSaveError={onSaveError}
+        />
+      );
+    case 'credentials':
+      // Two permissions again, and for the same reason as Repositories: the
+      // API demands `operator_settings:write_secret` on top of
+      // `system_settings:write` for a credential, and an administrator may
+      // hold the second without the first.
+      return (
+        <CredentialsSectionContainer
+          canWrite={canWrite}
+          canWriteSecret={canWriteSecrets}
+          onSaved={onSaved}
         />
       );
     case 'interface':
