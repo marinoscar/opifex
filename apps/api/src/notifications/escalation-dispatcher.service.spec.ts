@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import type { EscalationsService } from '../escalations/escalations.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import {
   EscalationDispatcher,
   MAX_DELIVERY_ATTEMPTS,
@@ -110,9 +111,9 @@ describe('EscalationDispatcher', () => {
       subscriptions as unknown as PushSubscriptionsService,
       push as unknown as WebPushTransport,
       fallback as unknown as FallbackWebhookTransport,
-      new ConfigService({
-        appUrl: 'https://opifex.test',
-        notifications: { receiptTimeoutMs: RECEIPT_TIMEOUT_MS },
+      new ConfigService({ appUrl: 'https://opifex.test' }),
+      makeOperatorSettings({
+        overrides: { 'notifications.receiptTimeoutMs': RECEIPT_TIMEOUT_MS },
       }),
     );
     jest

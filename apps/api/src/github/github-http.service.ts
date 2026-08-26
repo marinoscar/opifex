@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import { EtagCacheService } from './etag-cache.service';
 import {
   GitHubAuthError,
@@ -73,20 +73,24 @@ export class GitHubHttpService {
   private readonly rateLimitReserve: number;
 
   constructor(
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
     private readonly rateLimit: RateLimitService,
     private readonly etags: EtagCacheService,
   ) {
-    this.baseUrl = (
-      this.config.get<string>('github.apiBaseUrl') ?? 'https://api.github.com'
-    ).replace(/\/$/, '');
-    this.token = this.config.get<string>('github.token') || undefined;
-    this.userAgent = this.config.get<string>('github.userAgent') ?? 'opifex';
-    this.timeoutMs =
-      this.config.get<number>('github.requestTimeoutMs') ?? 15000;
-    this.maxRetries = this.config.get<number>('github.maxRetries') ?? 3;
-    this.rateLimitReserve =
-      this.config.get<number>('github.rateLimitReserve') ?? 100;
+    // Still read ONCE, in the constructor, and #340 deliberately did not
+    // change that. #341 is what resolves these per request; unfreezing them
+    // here as well would have mixed two behaviour changes into one diff and
+    // made neither reviewable. The registry already declares `github.token`
+    // and `github.writesEnabled` as `live`, which is the contract those
+    // consumers are being held to — see the registry header.
+    this.baseUrl = this.settings.get('github.apiBaseUrl').replace(/\/$/, '');
+    // The registry's default is the empty string, so `|| undefined` keeps the
+    // exact "unset means unconfigured" reading this had against `ConfigService`.
+    this.token = this.settings.get('github.token') || undefined;
+    this.userAgent = this.settings.get('github.userAgent');
+    this.timeoutMs = this.settings.get('github.requestTimeoutMs');
+    this.maxRetries = this.settings.get('github.maxRetries');
+    this.rateLimitReserve = this.settings.get('github.rateLimitReserve');
 
     if (!this.token) {
       // Not a throw: the API must boot without GitHub configured so the

@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
+import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import {
   POLL_INTERVAL_MS,
   RunPollerService,
@@ -28,10 +28,9 @@ describe('RunPollerTask', () => {
   let intervals: NodeJS.Timeout[];
 
   function build(enabled: boolean): RunPollerTask {
-    const config = {
-      get: (key: string) =>
-        key === 'runners.claudeCodeLocal.enabled' ? enabled : undefined,
-    } as unknown as ConfigService;
+    const settings = makeOperatorSettings({
+      overrides: { 'runners.claudeCodeLocal.enabled': enabled },
+    });
 
     const scheduler = {
       addInterval,
@@ -40,7 +39,7 @@ describe('RunPollerTask', () => {
     } as unknown as SchedulerRegistry;
     const poller = { tick } as unknown as RunPollerService;
 
-    return new RunPollerTask(config, scheduler, poller);
+    return new RunPollerTask(settings, scheduler, poller);
   }
 
   beforeEach(() => {

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
+import { OperatorSettingsService } from '../../settings/operator-settings/operator-settings.service';
 import { DailyBriefService } from './daily-brief.service';
 
 /**
@@ -29,12 +29,12 @@ export class DailyBriefTask {
 
   constructor(
     private readonly brief: DailyBriefService,
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_8AM)
   async handleDailyBrief(): Promise<void> {
-    if (this.config.get<boolean>('supervisor.enabled') !== true) return;
+    if (!this.settings.get('supervisor.enabled')) return;
 
     try {
       const result = await this.brief.send();

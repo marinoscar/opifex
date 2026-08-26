@@ -1,4 +1,3 @@
-import { ConfigService } from '@nestjs/config';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -9,6 +8,10 @@ import { promisify } from 'node:util';
 import type { RunEventPayload } from '../../../src/run-events/run-event.types';
 import { ClaudeCodeLocalRunner } from '../../../src/runners/claude-code-local/claude-code-local.runner';
 import { RunWorkspaceService } from '../../../src/runners/claude-code-local/run-workspace.service';
+import {
+  makeOperatorSettings,
+  type FakeOperatorSettingsService,
+} from '../../../src/settings/operator-settings/operator-settings.test-double';
 import {
   INIT_LINE,
   RATE_LIMIT_BLOCKED_LINE,
@@ -48,7 +51,7 @@ const exec = promisify(execFile);
  *
  * ## How this drives the REAL code path for free
  *
- * `apps/api/src/config/configuration.ts` reads the CLI binary from
+ * The operator settings registry declares the CLI binary as
  * `runners.claudeCodeLocal.binary` (`CLAUDE_CODE_BINARY`, default `claude`).
  * `ClaudeCodeLocalRunner`'s own spec
  * (`claude-code-local.runner.spec.ts`) already establishes the technique
@@ -160,13 +163,9 @@ const HAPPY_PATH_LINES = [
 ];
 
 function buildRunner(
-  env: FixtureEnv,
-  values: Record<string, unknown>,
+  settings: FakeOperatorSettingsService,
 ): ClaudeCodeLocalRunner {
-  const config = {
-    get: (key: string) => values[key],
-  } as unknown as ConfigService;
-  return new ClaudeCodeLocalRunner(config, new RunWorkspaceService(config));
+  return new ClaudeCodeLocalRunner(settings, new RunWorkspaceService(settings));
 }
 
 async function until(
@@ -227,19 +226,23 @@ async function createRealRunnerInstance(): Promise<RunnerConformanceInstance> {
     ].join('\n'),
   );
 
-  const values: Record<string, unknown> = {
-    'runners.claudeCodeLocal.binary': defaultBinary,
-    'runners.claudeCodeLocal.workspaceRoot': env.workspaceRoot,
-    'runners.claudeCodeLocal.gitBinary': 'git',
-    'runners.claudeCodeLocal.gitRemoteBaseUrl': env.gitRemoteBaseUrl,
-    'runners.claudeCodeLocal.committerName': 'Opifex Factory',
-    'runners.claudeCodeLocal.committerEmail': 'factory@opifex.local',
-    'runners.claudeCodeLocal.maxConcurrency': 8,
-    'runners.claudeCodeLocal.killGraceMs': 250,
-    'runners.claudeCodeLocal.permissionMode': 'acceptEdits',
-    'github.token': undefined,
-  };
-  const runner = buildRunner(env, values);
+  const settings = makeOperatorSettings({
+    overrides: {
+      'runners.claudeCodeLocal.binary': defaultBinary,
+      'runners.claudeCodeLocal.workspaceRoot': env.workspaceRoot,
+      'runners.claudeCodeLocal.gitBinary': 'git',
+      'runners.claudeCodeLocal.gitRemoteBaseUrl': env.gitRemoteBaseUrl,
+      'runners.claudeCodeLocal.committerName': 'Opifex Factory',
+      'runners.claudeCodeLocal.committerEmail': 'factory@opifex.local',
+      'runners.claudeCodeLocal.maxConcurrency': 8,
+      'runners.claudeCodeLocal.killGraceMs': 250,
+      'runners.claudeCodeLocal.permissionMode': 'acceptEdits',
+      // Empty, not absent: empty IS the registry's default, and it is how
+      // "no credential" reaches the git layer.
+      'github.token': '',
+    },
+  });
+  const runner = buildRunner(settings);
 
   const workOrder = (
     overrides: Partial<WorkOrderSpec> = {},
@@ -262,18 +265,18 @@ async function createRealRunnerInstance(): Promise<RunnerConformanceInstance> {
     runner,
     workOrder,
     async runToCompletion(order) {
-      values['runners.claudeCodeLocal.binary'] = await writeFakeClaude(
-        env,
-        `${emitLines(HAPPY_PATH_LINES)}\nexit 0`,
+      settings.setOverride(
+        'runners.claudeCodeLocal.binary',
+        await writeFakeClaude(env, `${emitLines(HAPPY_PATH_LINES)}\nexit 0`),
       );
       const handle = await runner.submit(order);
       const { status, events } = await drainUntilTerminal(runner, handle);
       return { handle, status, events };
     },
     async cancelMidRun(order) {
-      values['runners.claudeCodeLocal.binary'] = await writeFakeClaude(
-        env,
-        'sleep 30',
+      settings.setOverride(
+        'runners.claudeCodeLocal.binary',
+        await writeFakeClaude(env, 'sleep 30'),
       );
       const handle = await runner.submit(order);
       await runner.cancel(handle);

@@ -1,4 +1,3 @@
-import { ConfigService } from '@nestjs/config';
 import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,6 +8,15 @@ import {
   explainErrors,
   validatorFor,
 } from '../../../test/schemas/contract-validators';
+import type {
+  OperatorSettingKey,
+  OperatorSettingValue,
+  OperatorSettingsOverrides,
+} from '../../settings/operator-settings/operator-settings.registry';
+import {
+  makeOperatorSettings,
+  FakeOperatorSettingsService,
+} from '../../settings/operator-settings/operator-settings.test-double';
 import {
   RUNNER_SEAM_METHODS,
   type RunHandle,
@@ -100,10 +108,10 @@ describe('ClaudeCodeLocalRunner', () => {
     return path;
   }
 
-  function build(
-    overrides: Record<string, unknown> = {},
-  ): ClaudeCodeLocalRunner {
-    const values: Record<string, unknown> = {
+  function settingsFor(
+    overrides: OperatorSettingsOverrides = {},
+  ): OperatorSettingsOverrides {
+    return {
       'runners.claudeCodeLocal.workspaceRoot': workspaceRoot,
       'runners.claudeCodeLocal.gitBinary': 'git',
       'runners.claudeCodeLocal.gitRemoteBaseUrl': `file://${scratch}`,
@@ -112,13 +120,57 @@ describe('ClaudeCodeLocalRunner', () => {
       'runners.claudeCodeLocal.maxConcurrency': 2,
       'runners.claudeCodeLocal.killGraceMs': 250,
       'runners.claudeCodeLocal.permissionMode': 'acceptEdits',
-      'github.token': undefined,
+      // Empty, not absent: the registry's default for this key IS empty, and
+      // empty is how "no credential" is expressed to the git layer.
+      'github.token': '',
       ...overrides,
     };
-    const config = {
-      get: (key: string) => values[key],
-    } as unknown as ConfigService;
-    return new ClaudeCodeLocalRunner(config, new RunWorkspaceService(config));
+  }
+
+  function runnerFor(settings: FakeOperatorSettingsService) {
+    return new ClaudeCodeLocalRunner(
+      settings,
+      new RunWorkspaceService(settings),
+    );
+  }
+
+  function build(
+    overrides: OperatorSettingsOverrides = {},
+  ): ClaudeCodeLocalRunner {
+    return runnerFor(
+      makeOperatorSettings({ overrides: settingsFor(overrides) }),
+    );
+  }
+
+  /**
+   * The one place in this suite that installs a value the registry forbids.
+   *
+   * `runners.claudeCodeLocal.defaultTimeoutMinutes` is floored at one minute,
+   * which is the right floor for an operator — a sub-minute default would
+   * cancel real work — and an impossible one for the single test that has to
+   * WATCH the ceiling fire rather than merely be armed, since honouring it
+   * would mean a sixty-second wait. So the value goes in past the registry's
+   * validation, deliberately and in exactly one place, rather than the
+   * registry being loosened for the suite's convenience. Everything else here
+   * goes through `makeOperatorSettings`, so no other test can assert against a
+   * value production could never produce.
+   */
+  class SubMinuteCeilingSettings extends FakeOperatorSettingsService {
+    constructor(
+      private readonly ceilingMinutes: number,
+      overrides: OperatorSettingsOverrides,
+    ) {
+      super(overrides, {});
+    }
+
+    override get<K extends OperatorSettingKey>(
+      key: K,
+    ): OperatorSettingValue<K> {
+      if (key === 'runners.claudeCodeLocal.defaultTimeoutMinutes') {
+        return this.ceilingMinutes as OperatorSettingValue<K>;
+      }
+      return super.get(key);
+    }
   }
 
   const workOrder = (
@@ -1019,11 +1071,15 @@ describe('ClaudeCodeLocalRunner', () => {
       // unbounded run looks like when it wedges. A missing ceiling must not
       // mean "run forever".
       const binary = await fakeClaude('defaulted', 'sleep 30');
-      const runner = build({
-        'runners.claudeCodeLocal.binary': binary,
-        'runners.claudeCodeLocal.killGraceMs': 200,
-        'runners.claudeCodeLocal.defaultTimeoutMinutes': 1 / 1200,
-      });
+      const runner = runnerFor(
+        new SubMinuteCeilingSettings(
+          1 / 1200,
+          settingsFor({
+            'runners.claudeCodeLocal.binary': binary,
+            'runners.claudeCodeLocal.killGraceMs': 200,
+          }),
+        ),
+      );
 
       const handle = await runner.submit(
         workOrder({ wallClockTimeoutMinutes: null }),

@@ -1,5 +1,4 @@
-import { ConfigService } from '@nestjs/config';
-
+import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import {
   FallbackWebhookTransport,
   WEBHOOK_TARGET,
@@ -22,7 +21,9 @@ const PAYLOAD = {
 
 function transport(url = 'https://ntfy.example/opifex') {
   const instance = new FallbackWebhookTransport(
-    new ConfigService({ notifications: { fallbackWebhookUrl: url } }),
+    makeOperatorSettings({
+      overrides: { 'notifications.fallbackWebhookUrl': url },
+    }),
   );
   jest.spyOn(instance['logger'], 'log').mockImplementation(() => undefined);
   return instance;

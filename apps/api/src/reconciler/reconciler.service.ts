@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { GitHubRateLimitError } from '../github/github.errors';
 import { INPUT_LABELS } from '../github/labels/factory-labels';
@@ -9,6 +8,7 @@ import { GitHubReadService } from '../github/read/github-read.service';
 import type { RepositoryRef } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoriesService } from '../repositories/repositories.service';
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import type { ReconcileAction } from './diff/actions.types';
 import { ReconcileLogService } from './log/reconcile-log.service';
 import { computeActions } from './diff/diff-engine';
@@ -75,7 +75,7 @@ export class ReconcilerService {
   private lastTick: TickRecord | null = null;
 
   constructor(
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
     private readonly lease: TickLeaseService,
     private readonly repositories: RepositoriesService,
     private readonly github: GitHubReadService,
@@ -85,13 +85,15 @@ export class ReconcilerService {
     private readonly log: ReconcileLogService,
     private readonly workOrders: WorkOrderProjectionService,
   ) {
-    this.rateLimitFloor =
-      this.config.get<number>('github.rateLimitReserve') ?? 100;
+    this.rateLimitFloor = this.settings.get('github.rateLimitReserve');
 
     // Read once at construction, like the rate-limit floor: the projection is
     // pure and takes this as an input, so a value that changed between ticks
     // would make two identical observations produce different desired states.
-    this.retryCeiling = this.config.get<number>('dispatch.retryCeiling') ?? 3;
+    // #342 moves both to a per-TICK snapshot, which keeps that reason and
+    // still lets the next tick see a change; migrating the read here without
+    // moving it is deliberate.
+    this.retryCeiling = this.settings.get('dispatch.retryCeiling');
   }
 
   get lastTickRecord(): TickRecord | null {
@@ -626,7 +628,7 @@ export class ReconcilerService {
   }
 
   private get enabled(): boolean {
-    return this.config.get<boolean>('reconciler.enabled') ?? false;
+    return this.settings.get('reconciler.enabled');
   }
 }
 

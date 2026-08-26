@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { GitHubHttpService } from '../github-http.service';
 import { GitHubReadService } from '../read/github-read.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { makeOperatorSettings } from '../../settings/operator-settings/operator-settings.test-double';
 import { GitHubWriteService } from './github-write.service';
 import {
   GitHubIssueGateService,
@@ -39,10 +40,9 @@ describe('GitHubIssueGateService', () => {
   function build(writesEnabled = true) {
     writes = new GitHubWriteService(
       http as unknown as GitHubHttpService,
-      {
-        get: (key: string) =>
-          key === 'github.writesEnabled' ? writesEnabled : undefined,
-      } as never,
+      makeOperatorSettings({
+        overrides: { 'github.writesEnabled': writesEnabled },
+      }),
     );
 
     return new GitHubIssueGateService(

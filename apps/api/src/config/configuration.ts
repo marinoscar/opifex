@@ -1,3 +1,32 @@
+/**
+ * The `ConfigService` factory: everything set once and then forgotten.
+ *
+ * WHAT IS DELIBERATELY ABSENT (#340, epic #332)
+ * ---------------------------------------------------------------------------
+ * The GitHub, runner, dispatch, reconciler, supervisor, promotion and
+ * notification-delivery settings USED to be manufactured here. They are now
+ * declared in `settings/operator-settings/operator-settings.registry.ts` and
+ * read through `OperatorSettingsService`, and they were REMOVED from here
+ * rather than left in place beside it.
+ *
+ * That removal is the point of #340, not tidiness. While a key resolved
+ * through both paths, a consumer nobody noticed still reading
+ * `config.get('dispatch.enabled')` would be a setting that appears to work in
+ * the Control Center and changes nothing — and ADR-0018 records that the
+ * obvious bridge, `ConfigService.set()`, is disqualified: it writes the value
+ * into `process.env` under the dotted path, which is both a credential leak
+ * into every spawned agent and, for `set(path, undefined)`, the string
+ * `'undefined'` where a null ceiling should be.
+ *
+ * `test/governing/managed-keys-off-config.spec.ts` enumerates the registry and
+ * fails the build if a managed path reappears in a `config.get()` anywhere
+ * outside that module, or if this file starts manufacturing one again.
+ *
+ * What stays here is what epic #332 puts out of scope: `POSTGRES_*`, `JWT_*`,
+ * `GOOGLE_*`, AWS/S3, `OTEL_*`, ports and URLs, `LOG_LEVEL`, `DEVICE_*`,
+ * `STORAGE_*` and the VAPID key pair. They are set once and forgotten, and the
+ * database credential structurally cannot live in the database.
+ */
 export default () => {
   // Construct DATABASE_URL from individual PostgreSQL variables
   const host = process.env.POSTGRES_HOST || 'localhost';
@@ -100,301 +129,6 @@ export default () => {
       partSize: parseInt(process.env.STORAGE_PART_SIZE || '10485760', 10), // 10MB default
     },
 
-    // GitHub (epic #15)
-    //
-    // A fine-grained personal access token, not a GitHub App - see
-    // docs/adr/0001-github-authentication.md. No default and no throw when it
-    // is absent: the API must boot without GitHub configured so the inherited
-    // foundation stays usable, and repository registration is where a missing
-    // token becomes a visible, actionable error.
-    github: {
-      token: process.env.GITHUB_TOKEN,
-      apiBaseUrl: process.env.GITHUB_API_BASE_URL || 'https://api.github.com',
-      // GitHub requires a User-Agent and rejects requests without one.
-      userAgent: process.env.GITHUB_USER_AGENT || 'opifex',
-      requestTimeoutMs: parseInt(
-        process.env.GITHUB_REQUEST_TIMEOUT_MS || '15000',
-        10,
-      ),
-      // Transient failures only (5xx, timeouts). Rate-limit exhaustion is never
-      // retried into.
-      maxRetries: parseInt(process.env.GITHUB_MAX_RETRIES || '3', 10),
-      // Requests held back from the reconciler so interactive use keeps working
-      // - VISION §11 notes automated runs compete with a human for one budget.
-      rateLimitReserve: parseInt(
-        process.env.GITHUB_RATE_LIMIT_RESERVE || '100',
-        10,
-      ),
-      // Bounds the in-memory conditional-request cache. Roughly: watched
-      // repositories x pollable resources x pages.
-      etagCacheMaxEntries: parseInt(
-        process.env.GITHUB_ETAG_CACHE_MAX || '2000',
-        10,
-      ),
-      // The global write kill switch. DEFAULTS OFF, and the default is the
-      // point: VISION §12 requires the reconciler to observe for a week and
-      // record what it WOULD have done before it is allowed to do it. Note the
-      // comparison is against 'true' rather than !== 'false', so an unset,
-      // misspelled or empty value all mean off.
-      writesEnabled: process.env.GITHUB_WRITES_ENABLED === 'true',
-    },
-
-    // Reconciler (epic #16)
-    //
-    // DEFAULTS OFF. The tick reads GitHub on a schedule, so a deployment that
-    // has not been pointed at any repository yet, and every test that boots
-    // AppModule, would otherwise start polling. As with GITHUB_WRITES_ENABLED,
-    // the comparison is against 'true' so unset, misspelled and empty all mean
-    // off.
-    reconciler: {
-      enabled: process.env.RECONCILER_ENABLED === 'true',
-      // VISION §13: start with polling, add webhooks only when tick latency
-      // demonstrably hurts. One minute is frequent enough that a human editing
-      // a label sees an effect promptly, and with ETags an unchanged repository
-      // costs no rate-limit budget at all.
-      intervalMs: parseInt(process.env.RECONCILER_INTERVAL_MS || '60000', 10),
-      // How long tick records are kept. Deliberately longer than VISION §12's
-      // one-week observation window, so the week is still fully reviewable on
-      // the day it ends rather than half-pruned.
-      logRetentionDays: parseInt(
-        process.env.RECONCILER_LOG_RETENTION_DAYS || '14',
-        10,
-      ),
-    },
-
-    // The AI supervisor (epic #21, #89), observe-only.
-    //
-    // DEFAULTS OFF, and compared against 'true' so unset, misspelled and empty
-    // all mean off — the same rule every other switch here follows. This one
-    // matters for a specific reason: since ADR-0015 the supervisor spends real
-    // money on a metered API key of its own, so a deployment that has not
-    // decided to run one must not start spending on it because a default said
-    // yes.
-    supervisor: {
-      enabled: process.env.SUPERVISOR_ENABLED === 'true',
-
-      // The model adapter (ADR-0015, #230).
-      //
-      // A separately metered Anthropic API credential — NOT the agent
-      // subscription `claude-code-local` authenticates with. That separation
-      // is the point: a supervisor invocation no longer competes with a worker
-      // for anything the worker needs, and the cost recorded against an
-      // invocation is genuinely additive rather than a slice of the same pie.
-      //
-      // No default key and no throw when it is absent. An unset key means no
-      // adapter is bound at all, `SupervisorService` falls back to
-      // `UnavailableSupervisorModel`, and every invocation records that
-      // refusal in the decision log where it is visible.
-      model: {
-        apiKey: process.env.SUPERVISOR_MODEL_API_KEY,
-
-        // Sent verbatim as the request's `model` field and recorded verbatim
-        // against the invocation. Deliberately a literal catalogue entry
-        // rather than a `ModelTier`: there is one adapter and one vendor here,
-        // so a tier would only add indirection in front of the same string —
-        // and a tier in the log would say what was ASKED for, where the
-        // literal name says which model actually answered (#89, ADR-0015).
-        name: process.env.SUPERVISOR_MODEL_NAME,
-
-        // Override point for tests and proxies, mirroring github.apiBaseUrl.
-        baseUrl:
-          process.env.SUPERVISOR_MODEL_BASE_URL || 'https://api.anthropic.com',
-
-        // Handed to AbortSignal.timeout. Generous next to GitHub's 15s: this
-        // is a model generating tokens, not an API returning a row.
-        timeoutMs: parseInt(
-          process.env.SUPERVISOR_MODEL_TIMEOUT_MS || '60000',
-          10,
-        ),
-
-        // Anthropic requires max_tokens on every request. Used only when the
-        // proposer does not set its own ceiling.
-        defaultMaxTokens: parseInt(
-          process.env.SUPERVISOR_MODEL_DEFAULT_MAX_TOKENS || '1024',
-          10,
-        ),
-      },
-
-      // Whether a disabled supervisor still writes a `skipped_disabled` row
-      // each hour. Off by default: the decision log must have no gaps while
-      // the supervisor is meant to be running, but a deployment that never
-      // configured one should not accumulate a skip row an hour forever.
-      logSkippedInvocations:
-        process.env.SUPERVISOR_LOG_SKIPPED_INVOCATIONS === 'true',
-
-      // Stand down while any run is parked on a rate limit.
-      //
-      // DEFAULTS ON, and it is the one supervisor switch that does. The reason
-      // is no longer the one this comment used to give -- since ADR-0015 the
-      // supervisor spends its own budget and competes with no worker for
-      // quota. What survives is that a parked worker is evidence that
-      // everything the supervisor exists to advise about has stopped moving,
-      // and diagnosis nobody can act on is worth waiting on. Note the
-      // comparison is !== 'false', because this default is ON.
-      standDownWhenBlocked:
-        process.env.SUPERVISOR_STAND_DOWN_WHEN_BLOCKED !== 'false',
-
-      // SUPERVISOR_HARD_SPEND_CEILING_USD and
-      // SUPERVISOR_HARD_SPEND_CEILING_WINDOW_DAYS are deliberately NOT read
-      // here (#261, ADR-0017). They are read once from `process.env` in
-      // `SupervisorSpendCeilingService`'s constructor, for the same reason
-      // OPIFEX_HARD_SPEND_CEILING_USD is: `ConfigService` has a public
-      // `set()`, so anything reachable through this object is a limit some
-      // code path can raise at runtime -- and VISION §8 is explicit that "a
-      // limit an agent can raise is not a limit". Named here rather than left
-      // absent so a reader who greps this file for the supervisor's settings
-      // finds out where those two live instead of concluding they are unread.
-      //
-      // SUPERVISOR_LIVE_RUN_CEILING used to be read here, standing the
-      // supervisor down once that many runs were live. ADR-0016 removed it:
-      // `runsRunning` does not determine what an invocation costs -- every
-      // proposer runs once per tick regardless -- so the ceiling gated on a
-      // number that was never evidence of the thing it claimed to bound. It is
-      // named here rather than silently absent so a reader who finds the
-      // variable in an old `.env` can trace where it went, and
-      // `RetiredSupervisorConfigService` warns at boot if one still exports
-      // it -- a supplied value that silently does nothing is its own failure.
-    },
-
-    // The promotion ladder (epic #22, #99), VISION §7 "Earned autonomy".
-    //
-    // DEFAULTS OFF, compared against 'true' so unset, misspelled and empty all
-    // mean off — the same rule every other outward-acting switch here follows.
-    // It belongs in that set for the reason DISPATCH_ENABLED does: the ladder
-    // is what eventually decides that a class of action may run without being
-    // asked, and a default that said yes would make the first unattended action
-    // an accident rather than a decision an operator took.
-    //
-    // Off is also PAUSED, not broken. #99's last criterion is that the ladder
-    // "can be paused globally without dismantling the grants", so a false here
-    // stops the ladder promoting or demoting anything and leaves every existing
-    // trust grant exactly as it was — a pause must never be a mass revocation,
-    // or nobody would ever pause a second time.
-    promotion: {
-      enabled: process.env.PROMOTION_LADDER_ENABLED === 'true',
-    },
-
-    // Dispatch (epic #18, #64)
-    dispatch: {
-      // A ceiling across the whole fleet, on top of each runner's own
-      // maxConcurrency. VISION §11 designs for a single operator sharing one
-      // GitHub budget and one machine with automated runs — a fleet limit is
-      // how that operator caps total spend and load without editing every
-      // runner's manifest. Null means no global ceiling.
-      maxConcurrent: process.env.DISPATCH_MAX_CONCURRENT
-        ? parseInt(process.env.DISPATCH_MAX_CONCURRENT, 10)
-        : null,
-
-      // Lets a preview-tier runner be load-bearing when no GA fallback exists.
-      // See docs/adr/0007-preview-runner-acknowledgement.md.
-      //
-      // VISION §11 wants every preview runner backed by a GA one; VISION §3.7
-      // forbids building a second runner before it is needed. With one runner
-      // the fallback cannot exist, so without this the only runner is
-      // permanently ineligible and every work order queues forever.
-      //
-      // DEFAULTS OFF and compared against 'true', like every other switch here:
-      // a safety rule whose bypass defaults on is not a safety rule. Turn it
-      // back off once a genuinely GA runner exists.
-      allowPreviewRunner: process.env.DISPATCH_ALLOW_PREVIEW_RUNNER === 'true',
-
-      // How many attempts a work order gets before it is quarantined (#66).
-      //
-      // Without a ceiling, abandon-and-re-run (VISION §3.4) has no stopping
-      // condition: a work order that cannot succeed re-dispatches forever,
-      // burning the quota that working runs need. Silent abandonment is the
-      // only other option, and it is worse — nobody is told.
-      //
-      // Counted in WORK ORDER attempts, which is also success metric 4
-      // ("attempts per work order", VISION §10), so the number here is
-      // simultaneously a safety limit and a statement about how small a work
-      // order is expected to be. Three is deliberately low: VISION §10 uses a
-      // rising attempt count as evidence of bad decomposition, and a generous
-      // ceiling hides exactly that signal.
-      retryCeiling: process.env.DISPATCH_RETRY_CEILING
-        ? parseInt(process.env.DISPATCH_RETRY_CEILING, 10)
-        : 3,
-
-      // The switch that lets the factory actually spend money.
-      //
-      // DEFAULTS OFF, and this is the one where the default matters most:
-      // dispatching starts an agent against a real subscription, and VISION §3.5
-      // gates on reversibility rather than importance — this action is not
-      // reversible. With it off the executor still runs the whole decision and
-      // records what it WOULD have dispatched, which is VISION §12's
-      // observation-week posture applied to execution rather than to labels.
-      enabled: process.env.DISPATCH_ENABLED === 'true',
-    },
-
-    // Runners (epic #18, #61)
-    runners: {
-      // How long past a run's own wall-clock ceiling before the CONTROL PLANE
-      // cancels it (#180).
-      //
-      // A margin rather than zero, so this is a backstop and not a race: firing
-      // at the same instant as the runner's own timer would land a cancel while
-      // the runner is already killing its process, producing two conflicting
-      // reasons for one stop. Two minutes is comfortably longer than
-      // RUNNER_KILL_GRACE_MS plus a poll interval, so a runner shutting down
-      // cleanly always finishes first.
-      deadlineGraceMinutes: parseInt(
-        process.env.RUNNER_DEADLINE_GRACE_MINUTES || '2',
-        10,
-      ),
-
-      // The v1 runner: Claude Code, invoked as a child process on our own
-      // hardware. See docs/adr/0008-claude-code-local-invocation.md for why a
-      // subprocess rather than the Agent SDK.
-      claudeCodeLocal: {
-        // DEFAULTS OFF, like every other outward-acting subsystem here. This one
-        // spends money and writes branches, so an install that has not been
-        // deliberately pointed at a machine with the CLI on it must not start
-        // spawning agents. Compared against 'true' so unset, misspelled and
-        // empty all mean off.
-        enabled: process.env.CLAUDE_CODE_LOCAL_ENABLED === 'true',
-        // Resolved on PATH by default. Named explicitly so a deployment can pin
-        // a version rather than inheriting whatever the shell finds.
-        binary: process.env.CLAUDE_CODE_BINARY || 'claude',
-        gitBinary: process.env.GIT_BINARY || 'git',
-        // One directory per work-order identity lives under here.
-        workspaceRoot:
-          process.env.RUNNER_WORKSPACE_ROOT || '/var/tmp/opifex/workspaces',
-        // Where the workspace clones from. Overridable for GitHub Enterprise
-        // and, more usefully, for tests that point it at a local fixture.
-        gitRemoteBaseUrl:
-          process.env.GIT_REMOTE_BASE_URL || 'https://github.com',
-        // The factory's own commit identity. Attribution proper lives in the
-        // trailers (#26), which are structured and cannot be mistaken for a
-        // person having written the code.
-        committerName: process.env.RUNNER_COMMITTER_NAME || 'Opifex Factory',
-        committerEmail:
-          process.env.RUNNER_COMMITTER_EMAIL || 'factory@opifex.local',
-        // VISION §11: automated runs compete with interactive use for one
-        // subscription quota. Two is a ceiling that leaves a human room to work
-        // on the same machine; raising it is a deliberate act.
-        maxConcurrency: parseInt(
-          process.env.CLAUDE_CODE_MAX_CONCURRENCY || '2',
-          10,
-        ),
-        // How long a SIGTERMed run has to flush before SIGKILL.
-        killGraceMs: parseInt(process.env.RUNNER_KILL_GRACE_MS || '10000', 10),
-        // Defaults to the narrow end. A mode broad enough never to ask is
-        // coupled to a sandbox that makes never asking safe, and sandboxing is
-        // #113 — so until then a run that needs a permission it does not have
-        // goes silent and is caught by the watchdog (#54), which is the failure
-        // this system exists to notice. Widening it is a deliberate act.
-        permissionMode:
-          process.env.CLAUDE_CODE_PERMISSION_MODE || 'acceptEdits',
-        // A wall-clock backstop for work orders that name no ceiling of their
-        // own. VISION §1's origin story is four hours dead; an unbounded run
-        // that wedges is exactly that shape. Unset means genuinely unbounded,
-        // which is a deliberate choice rather than an oversight.
-        defaultTimeoutMinutes: process.env.RUNNER_DEFAULT_TIMEOUT_MINUTES
-          ? parseInt(process.env.RUNNER_DEFAULT_TIMEOUT_MINUTES, 10)
-          : 60,
-      },
-    },
-
     // Notifications (epic #17, #58)
     //
     // The last link in the chain VISION §1 complains about: everything upstream
@@ -416,26 +150,10 @@ export default () => {
       // of the VAPID spec, not optional decoration.
       vapidSubject: process.env.VAPID_SUBJECT || '',
 
-      // How long a dispatched escalation may go without a device receipt
-      // before it is treated as undelivered.
-      //
-      // Web Push gives no delivery guarantee: a 201 means the push service
-      // ACCEPTED the message, not that a phone showed it. #58 is explicit that
-      // an escalation which silently failed to send is indistinguishable from
-      // no escalation, so the service worker posts a receipt back and this is
-      // how long we wait for it.
-      receiptTimeoutMs: parseInt(
-        process.env.NOTIFY_RECEIPT_TIMEOUT_MS || '120000',
-        10,
-      ),
-
-      // A SECOND, independent path, used only when Web Push could not deliver.
-      //
-      // #58: "a delivery failure must itself escalate through a different
-      // path." A generic POST, so it works with ntfy, a chat webhook, or
-      // anything that accepts JSON. Off unless set: it sends escalation text to
-      // a third party, which is the operator's decision to make, not a default.
-      fallbackWebhookUrl: process.env.NOTIFY_FALLBACK_WEBHOOK_URL || '',
+      // NOTIFY_RECEIPT_TIMEOUT_MS and NOTIFY_FALLBACK_WEBHOOK_URL are managed
+      // settings and are read through `OperatorSettingsService` (#340). The
+      // VAPID key pair stays here: rotating it invalidates every existing
+      // device subscription, which is a migration rather than a setting.
     },
 
     logLevel: process.env.LOG_LEVEL || 'info',

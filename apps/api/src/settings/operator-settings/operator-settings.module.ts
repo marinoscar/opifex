@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
 import { OperatorSettingsRefreshTask } from './operator-settings-refresh.task';
+import { OperatorSettingsEnvDisagreementService } from './operator-settings.env-disagreement';
 import { OperatorSettingsService } from './operator-settings.service';
 
 /**
@@ -29,7 +30,15 @@ import { OperatorSettingsService } from './operator-settings.service';
  */
 @Global()
 @Module({
-  providers: [OperatorSettingsService, OperatorSettingsRefreshTask],
+  providers: [
+    OperatorSettingsService,
+    OperatorSettingsRefreshTask,
+    // Not exported and injected by nothing: its whole job happens in its
+    // constructor, and Nest instantiates it because it is a provider of a
+    // module that is loaded. `RetiredSupervisorConfigService` is registered
+    // the same way, for the same reason.
+    OperatorSettingsEnvDisagreementService,
+  ],
   exports: [OperatorSettingsService],
 })
 export class OperatorSettingsModule {}

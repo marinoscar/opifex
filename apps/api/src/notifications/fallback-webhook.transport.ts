@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import type { NotificationPayload } from './notification-payload';
 import type {
   NotificationTarget,
@@ -43,9 +43,8 @@ export class FallbackWebhookTransport implements NotificationTransport {
   private readonly logger = new Logger(FallbackWebhookTransport.name);
   private readonly url: string;
 
-  constructor(private readonly config: ConfigService) {
-    this.url =
-      this.config.get<string>('notifications.fallbackWebhookUrl') ?? '';
+  constructor(private readonly settings: OperatorSettingsService) {
+    this.url = this.settings.get('notifications.fallbackWebhookUrl');
   }
 
   isConfigured(): boolean {

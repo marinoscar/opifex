@@ -1,7 +1,6 @@
-import { ConfigService } from '@nestjs/config';
-
 import { GitHubWriteService } from '../github/write/github-write.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import { DecisionLogService } from '../supervisor/decision-log/decision-log.service';
 import { RunSummaryService } from './run-summary.service';
 
@@ -55,7 +54,7 @@ describe('RunSummaryService', () => {
     service = new RunSummaryService(
       { run: { findMany, update } } as unknown as PrismaService,
       { postRunSummary } as unknown as GitHubWriteService,
-      { get: () => 3 } as unknown as ConfigService,
+      makeOperatorSettings({ overrides: { 'dispatch.retryCeiling': 3 } }),
       { latestProposalFor } as unknown as DecisionLogService,
     );
     jest.spyOn(service['logger'], 'log').mockImplementation(() => undefined);
@@ -182,7 +181,7 @@ describe('RunSummaryService — the supervisor diagnosis (#92)', () => {
     },
   };
 
-  function build(latestProposalFor: jest.Mock) {
+  function build(latestProposalFor: jest.Mock, retryCeiling = 3) {
     const findMany = jest.fn().mockResolvedValue([OWED_RUN]);
     const update = jest.fn().mockResolvedValue({});
     const postRunSummary = jest
@@ -192,7 +191,9 @@ describe('RunSummaryService — the supervisor diagnosis (#92)', () => {
     const service = new RunSummaryService(
       { run: { findMany, update } } as unknown as PrismaService,
       { postRunSummary } as unknown as GitHubWriteService,
-      { get: () => 3 } as unknown as ConfigService,
+      makeOperatorSettings({
+        overrides: { 'dispatch.retryCeiling': retryCeiling },
+      }),
       { latestProposalFor } as unknown as DecisionLogService,
     );
     jest.spyOn(service['logger'], 'log').mockImplementation(() => undefined);
@@ -212,6 +213,22 @@ describe('RunSummaryService — the supervisor diagnosis (#92)', () => {
       'run-1',
       'run-diagnosis',
     );
+  });
+
+  it('reports the attempt against the CONFIGURED retry ceiling', async () => {
+    // The ceiling is an operator setting (`dispatch.retryCeiling`), and the
+    // summary is where a human reads how much rope a work order has left. A
+    // ceiling read from the wrong place would render "1 of 3" for every
+    // deployment whatever it had configured, so this pins the number the
+    // resolver supplied rather than a literal.
+    const { service, postRunSummary } = build(
+      jest.fn().mockResolvedValue(null),
+      7,
+    );
+
+    await service.postOwed();
+
+    expect(postRunSummary.mock.calls[0][2] as string).toContain('of 7');
   });
 
   it('includes the diagnosis, attributed as a hypothesis', async () => {

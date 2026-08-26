@@ -161,6 +161,22 @@ const productionDatabasePassword = z
  * `configuration.ts` are not repeated here; that file already documents each
  * one's default, and duplicating them would create two places to disagree.
  *
+ * The same holds, more strongly, for the OPERATOR-MANAGED settings (#340,
+ * epic #332). Those are declared once in
+ * `settings/operator-settings/operator-settings.registry.ts`, which carries
+ * each one's schema and default, and they resolve through
+ * `OperatorSettingsService` rather than through `ConfigService` at all — so
+ * validating one here would be validating a variable that this file's own
+ * consumers no longer read. The registry validates them at the point of use
+ * and falls back to the declared default with a warning, deliberately: a
+ * mistyped reconcile interval must not be able to stop the API booting. The
+ * header above is the argument for why the three variables this file DOES gate
+ * are different: without a signing secret every authorization decision the
+ * process makes is void, and a default database password must never ship.
+ * None of the three is a managed key, and
+ * `test/governing/managed-keys-off-config.spec.ts` fails the build if one ever
+ * becomes one without this file being revisited.
+ *
  * `POSTGRES_PASSWORD` is deliberately NOT a member of this object even though
  * `validateEnv` checks it: its rule depends on `NODE_ENV`, which is a sibling
  * key rather than something a field validator can see. It is checked

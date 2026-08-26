@@ -1,10 +1,10 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { Prisma } from '@prisma/client';
 
 import { ContractValidator } from '../contracts/contract-validator';
 import { PrismaService } from '../prisma/prisma.service';
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import { ClaudeCodeLocalRunner } from './claude-code-local/claude-code-local.runner';
 import type { Runner, RunnerCapabilities } from './runner.types';
 
@@ -187,7 +187,7 @@ export class RunnerRegistrationService implements OnModuleInit {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
     private readonly claudeCodeLocal: ClaudeCodeLocalRunner,
     private readonly contracts: ContractValidator,
   ) {}
@@ -533,7 +533,7 @@ export class RunnerRegistrationService implements OnModuleInit {
   }
 
   private get claudeCodeLocalEnabled(): boolean {
-    return this.config.get<boolean>('runners.claudeCodeLocal.enabled') === true;
+    return this.settings.get('runners.claudeCodeLocal.enabled');
   }
 }
 

@@ -1,7 +1,9 @@
 import type { FactoryProvider } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 
+import type { OperatorSettingsOverrides } from '../../settings/operator-settings/operator-settings.registry';
+import { OperatorSettingsService } from '../../settings/operator-settings/operator-settings.service';
+import { makeOperatorSettings } from '../../settings/operator-settings/operator-settings.test-double';
 import { DecisionLogService } from '../decision-log/decision-log.service';
 import type { InvocationDraft } from '../decision-log/decision-log.types';
 import { SnapshotService } from '../snapshot/snapshot.service';
@@ -35,7 +37,7 @@ import { SupervisorSpendLedgerService } from './supervisor-spend-ledger.service'
 
 const MODEL = 'claude-haiku-4-5';
 
-const CONFIG: Record<string, unknown> = {
+const SETTINGS: OperatorSettingsOverrides = {
   'supervisor.model.apiKey': 'sk-ant-test',
   'supervisor.model.name': MODEL,
   'supervisor.model.baseUrl': 'https://api.anthropic.test',
@@ -43,13 +45,12 @@ const CONFIG: Record<string, unknown> = {
   'supervisor.model.defaultMaxTokens': 1024,
 };
 
-function configService(overrides: Record<string, unknown> = {}): ConfigService {
-  const values = { ...CONFIG, ...overrides };
-  return { get: (key: string) => values[key] } as unknown as ConfigService;
+function operatorSettings(overrides: OperatorSettingsOverrides = {}) {
+  return makeOperatorSettings({ overrides: { ...SETTINGS, ...overrides } });
 }
 
-function adapter(overrides: Record<string, unknown> = {}) {
-  const model = createSupervisorModel(configService(overrides));
+function adapter(overrides: OperatorSettingsOverrides = {}) {
+  const model = createSupervisorModel(operatorSettings(overrides));
   if (model === undefined) throw new Error('expected an adapter');
   return model;
 }
@@ -322,13 +323,17 @@ describe('AnthropicSupervisorModel (ADR-0015)', () => {
           }),
       );
 
+      // One second, which is the registry's floor for this key rather than an
+      // arbitrarily small number. A second of real waiting is the honest price
+      // of exercising a real `AbortSignal.timeout`; going under the floor
+      // would mean asserting against a value production can never hold.
       const started = Date.now();
       await expect(
-        adapter({ 'supervisor.model.timeoutMs': 25 }).ask({
+        adapter({ 'supervisor.model.timeoutMs': 1_000 }).ask({
           snapshot: 'S',
           instruction: 'I',
         }),
-      ).rejects.toThrow(/did not answer within 25ms/);
+      ).rejects.toThrow(/did not answer within 1000ms/);
 
       expect(Date.now() - started).toBeLessThan(5000);
       expect(callInit().signal).toBeInstanceOf(AbortSignal);
@@ -369,7 +374,9 @@ describe('AnthropicSupervisorModel (ADR-0015)', () => {
       // it says so once an invocation rather than falling back to the
       // refusing default, which would make a typo indistinguishable from a
       // deliberate decision not to run a supervisor.
-      const model = adapter({ 'supervisor.model.name': undefined });
+      // Empty, not absent: empty IS the registry's default for this key, so
+      // it is what a deployment with a key and no model name resolves to.
+      const model = adapter({ 'supervisor.model.name': '' });
 
       await expect(
         model.ask({ snapshot: 'S', instruction: 'I' }),
@@ -381,7 +388,7 @@ describe('AnthropicSupervisorModel (ADR-0015)', () => {
 
 describe('createSupervisorModel (ADR-0015)', () => {
   it('builds the adapter when an API key is configured', () => {
-    const model = createSupervisorModel(configService());
+    const model = createSupervisorModel(operatorSettings());
 
     expect(model).toBeInstanceOf(AnthropicSupervisorModel);
     expect(model?.name).toBe(MODEL);
@@ -391,18 +398,16 @@ describe('createSupervisorModel (ADR-0015)', () => {
     // The load-bearing half. Undefined is what leaves @Optional() with
     // nothing, which is what leaves UnavailableSupervisorModel in place.
     expect(
-      createSupervisorModel(configService({ 'supervisor.model.apiKey': '' })),
-    ).toBeUndefined();
-    expect(
       createSupervisorModel(
-        configService({ 'supervisor.model.apiKey': undefined }),
+        operatorSettings({ 'supervisor.model.apiKey': '' }),
       ),
     ).toBeUndefined();
   });
 
   it('does not throw when nothing at all is configured', () => {
-    // A missing key must never stop the API booting.
-    const empty = { get: () => undefined } as unknown as ConfigService;
+    // A missing key must never stop the API booting. No overrides and a
+    // hermetic environment, so this is the registry's own defaults.
+    const empty = makeOperatorSettings();
     expect(() => createSupervisorModel(empty)).not.toThrow();
     expect(createSupervisorModel(empty)).toBeUndefined();
   });
@@ -481,14 +486,17 @@ function supervisorModelProvider() {
   return found as FactoryProvider<ReturnType<typeof createSupervisorModel>>;
 }
 
-async function buildSupervisor(config: Record<string, unknown>) {
+async function buildSupervisor(overrides: OperatorSettingsOverrides) {
   const record = jest
     .fn()
     .mockResolvedValue({ invocationId: 'inv-1', proposalIds: [] });
 
   const moduleRef = await Test.createTestingModule({
     providers: [
-      { provide: ConfigService, useValue: configService(config) },
+      {
+        provide: OperatorSettingsService,
+        useValue: operatorSettings(overrides),
+      },
       {
         provide: SnapshotService,
         useValue: { collect: jest.fn().mockResolvedValue(snapshotState()) },
@@ -534,7 +542,7 @@ describe('SupervisorModule binding (ADR-0015)', () => {
     const provider = supervisorModelProvider();
 
     expect(provider.useFactory).toBe(createSupervisorModel);
-    expect(provider.inject).toEqual([ConfigService]);
+    expect(provider.inject).toEqual([OperatorSettingsService]);
   });
 
   it('hands SupervisorService the adapter when a key is configured', async () => {
@@ -562,7 +570,7 @@ describe('SupervisorModule binding (ADR-0015)', () => {
   it('leaves UnavailableSupervisorModel in place when no key is configured', async () => {
     const { service, bound, recorded } = await buildSupervisor({
       'supervisor.enabled': true,
-      'supervisor.model.apiKey': undefined,
+      'supervisor.model.apiKey': '',
     });
 
     // No adapter in the graph at all: @Optional() sees undefined and the

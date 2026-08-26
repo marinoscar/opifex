@@ -1,5 +1,3 @@
-import { ConfigService } from '@nestjs/config';
-
 import type { HardCeiling } from '../budget/hard-spend-ceiling';
 import { HardSpendCeilingService } from '../budget/hard-spend-ceiling';
 import type { SpendTally } from '../budget/spend-ledger.service';
@@ -11,6 +9,7 @@ import {
 } from '../runners/claude-code-local/claude-code-local.runner';
 import { RunPollerService } from '../runners/run-poller.service';
 import type { RunnerCapabilities } from '../runners/runner.types';
+import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import type { GeneratedWorkOrder } from '../work-orders/work-order-generator';
 import { WorkOrderRecordsService } from '../work-orders/work-order-records.service';
 import { DispatchService } from './dispatch.service';
@@ -148,9 +147,9 @@ describe('RunExecutorService', () => {
       workOrder: { update: workOrderUpdate },
     } as unknown as PrismaService;
 
-    const config = {
-      get: (key: string) => (key === 'dispatch.enabled' ? enabled : undefined),
-    } as unknown as ConfigService;
+    const settings = makeOperatorSettings({
+      overrides: { 'dispatch.enabled': enabled },
+    });
 
     const runner = {
       submit,
@@ -160,7 +159,7 @@ describe('RunExecutorService', () => {
 
     return new RunExecutorService(
       prisma,
-      config,
+      settings,
       { decide } as unknown as DispatchService,
       { write } as unknown as WorkOrderRecordsService,
       { track } as unknown as RunPollerService,
@@ -471,10 +470,11 @@ describe('RunExecutorService', () => {
     });
 
     it('defaults to disabled when the flag is absent', async () => {
-      const config = { get: () => undefined } as unknown as ConfigService;
+      // No override and a hermetic environment, so the `false` under test is
+      // the REGISTRY's declared default rather than a `?? false` here.
       const bare = new RunExecutorService(
         { run: { create: runCreate } } as unknown as PrismaService,
-        config,
+        makeOperatorSettings(),
         { decide } as unknown as DispatchService,
         { write } as unknown as WorkOrderRecordsService,
         { track } as unknown as RunPollerService,
@@ -647,7 +647,7 @@ describe('RunExecutorService', () => {
 
       const executorWithBlindRunner = new RunExecutorService(
         { run: { create: runCreate } } as unknown as PrismaService,
-        { get: () => true } as unknown as ConfigService,
+        makeOperatorSettings({ overrides: { 'dispatch.enabled': true } }),
         { decide } as unknown as DispatchService,
         { write } as unknown as WorkOrderRecordsService,
         { track } as unknown as RunPollerService,
@@ -693,7 +693,7 @@ describe('RunExecutorService', () => {
           run: { create: runCreate },
           workOrder: { update: workOrderUpdate },
         } as unknown as PrismaService,
-        { get: () => true } as unknown as ConfigService,
+        makeOperatorSettings({ overrides: { 'dispatch.enabled': true } }),
         { decide } as unknown as DispatchService,
         { write } as unknown as WorkOrderRecordsService,
         { track } as unknown as RunPollerService,

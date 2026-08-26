@@ -1,5 +1,4 @@
-import { ConfigService } from '@nestjs/config';
-
+import { makeOperatorSettings } from '../../settings/operator-settings/operator-settings.test-double';
 import { GitHubHttpService } from '../github-http.service';
 import { GitHubNotFoundError } from '../github.errors';
 import { GitHubWriteService } from './github-write.service';
@@ -18,11 +17,12 @@ function httpMock() {
 }
 
 function build(http: ReturnType<typeof httpMock>, writesEnabled: boolean) {
-  const config = {
-    get: (key: string) =>
-      key === 'github.writesEnabled' ? writesEnabled : undefined,
-  } as unknown as ConfigService;
-  return new GitHubWriteService(http as unknown as GitHubHttpService, config);
+  return new GitHubWriteService(
+    http as unknown as GitHubHttpService,
+    makeOperatorSettings({
+      overrides: { 'github.writesEnabled': writesEnabled },
+    }),
+  );
 }
 
 describe('GitHubWriteService', () => {
@@ -33,12 +33,13 @@ describe('GitHubWriteService', () => {
   });
 
   describe('the kill switch', () => {
-    it('defaults OFF when the config says nothing', () => {
+    it('defaults OFF when nothing is configured', () => {
       // VISION §12's observation week is the default posture, not an opt-in.
-      const config = { get: () => undefined } as unknown as ConfigService;
+      // No override and no environment, so this asserts the REGISTRY's default
+      // rather than a `?? false` at the call site.
       const service = new GitHubWriteService(
         http as unknown as GitHubHttpService,
-        config,
+        makeOperatorSettings(),
       );
 
       expect(service.enabled).toBe(false);

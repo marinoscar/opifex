@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
+import { OperatorSettingsService } from '../../settings/operator-settings/operator-settings.service';
 import { DecisionLogService } from '../decision-log/decision-log.service';
 import type {
   InvocationDraft,
@@ -95,7 +95,7 @@ export class SupervisorService {
   private readonly proposers: readonly SupervisorProposer[];
 
   constructor(
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
     private readonly snapshots: SnapshotService,
     private readonly log: DecisionLogService,
     // Both REQUIRED, unlike the model and the proposers below. Those are
@@ -290,13 +290,17 @@ export class SupervisorService {
 
   /** Whether the supervisor is turned on at all. */
   get enabled(): boolean {
-    return this.config.get<boolean>('supervisor.enabled') === true;
+    return this.settings.get('supervisor.enabled');
   }
 
   private get quotaGate(): QuotaGateConfig {
     return {
-      standDownWhenBlocked:
-        this.config.get<boolean>('supervisor.standDownWhenBlocked') !== false,
+      // The one managed switch that DEFAULTS ON, which is why its env form
+      // used to be compared `!== 'false'` here. The registry's single boolean
+      // rule reproduces both idioms — see `booleanSetting`.
+      standDownWhenBlocked: this.settings.get(
+        'supervisor.standDownWhenBlocked',
+      ),
     };
   }
 

@@ -1,8 +1,11 @@
 import { Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import type { EscalationsService } from '../escalations/escalations.service';
 import type { PrismaService } from '../prisma/prisma.service';
+import {
+  makeOperatorSettings,
+  type FakeOperatorSettingsService,
+} from '../settings/operator-settings/operator-settings.test-double';
 import {
   EMPTY_FLEET_SUMMARY,
   EMPTY_FLEET_TICKS_BEFORE_ESCALATION,
@@ -37,7 +40,7 @@ describe('FleetStateService', () => {
   let findMany: jest.Mock;
   let raiseSystemOnce: jest.Mock;
   let resolveSystem: jest.Mock;
-  let dispatchEnabled: boolean;
+  let settings: FakeOperatorSettingsService;
 
   function buildPrisma(): PrismaService {
     return {
@@ -45,11 +48,14 @@ describe('FleetStateService', () => {
     } as unknown as PrismaService;
   }
 
-  function buildConfig(): ConfigService {
-    return {
-      get: (key: string) =>
-        key === 'dispatch.enabled' ? dispatchEnabled : undefined,
-    } as unknown as ConfigService;
+  function buildSettings() {
+    // Held on the suite so a test can flip the switch AFTER the service is
+    // built, the way an operator would — `dispatch.enabled` is declared
+    // `live`, and nothing here holds a copy of it.
+    settings = makeOperatorSettings({
+      overrides: { 'dispatch.enabled': true },
+    });
+    return settings;
   }
 
   function buildEscalations(): EscalationsService {
@@ -62,7 +68,7 @@ describe('FleetStateService', () => {
   function build(): FleetStateService {
     return new FleetStateService(
       buildPrisma(),
-      buildConfig(),
+      buildSettings(),
       buildEscalations(),
     );
   }
@@ -73,7 +79,6 @@ describe('FleetStateService', () => {
       .fn()
       .mockResolvedValue({ id: 'escalation-1', deduplicated: false });
     resolveSystem = jest.fn().mockResolvedValue(0);
-    dispatchEnabled = true;
     // One process's worth of log calls per test would otherwise be noise;
     // silenced the same way `runner-registration.task.spec.ts` does it,
     // against `Logger.prototype` so every instance this file constructs is
@@ -206,7 +211,7 @@ describe('FleetStateService', () => {
     });
 
     it('does not escalate when DISPATCH_ENABLED is off, however long the fleet stays empty', async () => {
-      dispatchEnabled = false;
+      settings.setOverride('dispatch.enabled', false);
       findMany.mockResolvedValue([]);
 
       for (

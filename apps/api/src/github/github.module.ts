@@ -1,6 +1,6 @@
 import { Global, Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import { EtagCacheService } from './etag-cache.service';
 import { GitHubHttpService } from './github-http.service';
 import { RateLimitService } from './rate-limit.service';
@@ -23,15 +23,15 @@ import { RateLimitService } from './rate-limit.service';
     RateLimitService,
     {
       provide: EtagCacheService,
-      // A factory rather than an injected config lookup inside the service:
+      // A factory rather than an injected settings lookup inside the service:
       // the cache is a data structure with a size bound, and giving it a
-      // ConfigService dependency would make it awkward to construct in a test
-      // at a size a test can actually fill.
-      useFactory: (config: ConfigService) =>
-        new EtagCacheService(
-          config.get<number>('github.etagCacheMaxEntries') ?? 2000,
-        ),
-      inject: [ConfigService],
+      // settings dependency would make it awkward to construct in a test at a
+      // size a test can actually fill. The registry declares this key
+      // `restart` for the same reason — resizing a live cache is a different
+      // operation from building one.
+      useFactory: (settings: OperatorSettingsService) =>
+        new EtagCacheService(settings.get('github.etagCacheMaxEntries')),
+      inject: [OperatorSettingsService],
     },
     GitHubHttpService,
   ],

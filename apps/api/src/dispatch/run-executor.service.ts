@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 
@@ -12,6 +11,7 @@ import {
   RunnerAtCapacityError,
 } from '../runners/claude-code-local/claude-code-local.runner';
 import { RunPollerService } from '../runners/run-poller.service';
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import type { Runner, WorkOrderSpec } from '../runners/runner.types';
 import type { GeneratedWorkOrder } from '../work-orders/work-order-generator';
 import { WorkOrderRecordsService } from '../work-orders/work-order-records.service';
@@ -61,7 +61,7 @@ export class RunExecutorService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
     private readonly dispatch: DispatchService,
     private readonly records: WorkOrderRecordsService,
     private readonly poller: RunPollerService,
@@ -269,7 +269,7 @@ export class RunExecutorService {
   }
 
   private get enabled(): boolean {
-    return this.config.get<boolean>('dispatch.enabled') === true;
+    return this.settings.get('dispatch.enabled');
   }
 }
 

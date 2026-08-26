@@ -1,16 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { decideBudgetOverrun } from '../budget/budget-overrun';
-import {
-  DEFAULT_DEADLINE_GRACE_MINUTES,
-  decideDeadline,
-} from '../budget/run-deadline';
+// The grace default now lives in the operator settings registry, which
+// `operator-settings.parity.spec.ts` pins to `DEFAULT_DEADLINE_GRACE_MINUTES`
+// so the two cannot drift apart.
+import { decideDeadline } from '../budget/run-deadline';
 import { toNumberOrNull } from '../common/decimal';
 import { EscalationsService } from '../escalations/escalations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuotaService } from '../quota/quota.service';
 import { RunEventsService } from '../run-events/run-events.service';
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import { SILENCE_THRESHOLDS_MS } from '../watchdog/silent-detection';
 import type { RunHandle, Runner } from './runner.types';
 
@@ -124,7 +124,7 @@ export class RunPollerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly runEvents: RunEventsService,
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
     private readonly escalations: EscalationsService,
     private readonly quota: QuotaService,
   ) {}
@@ -419,13 +419,12 @@ export class RunPollerService {
     });
 
     const now = new Date();
-    const defaultTimeoutMinutes =
-      this.config.get<number | null>(
-        'runners.claudeCodeLocal.defaultTimeoutMinutes',
-      ) ?? null;
-    const graceMinutes =
-      this.config.get<number>('runners.deadlineGraceMinutes') ??
-      DEFAULT_DEADLINE_GRACE_MINUTES;
+    // Re-read every sweep, which is what lets a lowered ceiling still cancel
+    // a run that is already over it — see the registry's note on this key.
+    const defaultTimeoutMinutes = this.settings.get(
+      'runners.claudeCodeLocal.defaultTimeoutMinutes',
+    );
+    const graceMinutes = this.settings.get('runners.deadlineGraceMinutes');
 
     for (const run of runs) {
       const verdict = decideDeadline(

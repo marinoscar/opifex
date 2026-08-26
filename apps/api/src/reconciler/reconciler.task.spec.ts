@@ -1,4 +1,3 @@
-import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
 import { DeadTimeService } from '../dead-time/dead-time.service';
@@ -8,6 +7,7 @@ import { GitHubWriteService } from '../github/write/github-write.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
 import { EscalationDispatcher } from '../notifications/escalation-dispatcher.service';
 import { RepositoriesService } from '../repositories/repositories.service';
+import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import { WatchdogService } from '../watchdog/watchdog.service';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
 import { SpecFeedbackExecutor } from './execute/spec-feedback.executor';
@@ -103,7 +103,7 @@ describe('ReconcilerTask', () => {
     writesIssued = 0;
 
     task = new ReconcilerTask(
-      { get: () => undefined } as unknown as ConfigService,
+      makeOperatorSettings(),
       {
         addInterval: jest.fn(),
         doesExist: jest.fn(),

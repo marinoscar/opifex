@@ -1,4 +1,3 @@
-import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
@@ -18,6 +17,7 @@ import { ReconcilerTask } from '../../src/reconciler/reconciler.task';
 import type { ReconcileAction } from '../../src/reconciler/diff/actions.types';
 import type { TickRecord } from '../../src/reconciler/reconciler.types';
 import { RepositoriesService } from '../../src/repositories/repositories.service';
+import { makeOperatorSettings } from '../../src/settings/operator-settings/operator-settings.test-double';
 import { WatchdogService } from '../../src/watchdog/watchdog.service';
 
 /**
@@ -86,11 +86,10 @@ function httpMock() {
   } as unknown as jest.Mocked<Pick<GitHubHttpService, 'request'>>;
 }
 
-function writeServiceConfig(writesEnabled: boolean): ConfigService {
-  return {
-    get: (key: string) =>
-      key === 'github.writesEnabled' ? writesEnabled : undefined,
-  } as unknown as ConfigService;
+function writeSettings(writesEnabled: boolean) {
+  return makeOperatorSettings({
+    overrides: { 'github.writesEnabled': writesEnabled },
+  });
 }
 
 /** Every non-write collaborator `ReconcilerTask` needs, stubbed to no-ops. */
@@ -221,14 +220,14 @@ describeIfDb('actionsExecuted, persisted to a real database (#317)', () => {
     const http = httpMock();
     const writes = new GitHubWriteService(
       http as unknown as GitHubHttpService,
-      writeServiceConfig(options.writesEnabled),
+      writeSettings(options.writesEnabled),
     );
     const log = trackingLog(new ReconcileLogService(prisma));
     const executor = new MirrorLabelExecutor(writes);
     const collaborators = noopCollaborators();
 
     const task = new ReconcilerTask(
-      { get: () => undefined } as unknown as ConfigService,
+      makeOperatorSettings(),
       {
         addInterval: jest.fn(),
         doesExist: jest.fn(),
@@ -342,7 +341,7 @@ describeIfDb('actionsExecuted, persisted to a real database (#317)', () => {
     const http = httpMock();
     const writes = new GitHubWriteService(
       http as unknown as GitHubHttpService,
-      writeServiceConfig(true),
+      writeSettings(true),
     );
     const log = trackingLog(new ReconcileLogService(prisma));
     const executor = new MirrorLabelExecutor(writes);
@@ -369,7 +368,7 @@ describeIfDb('actionsExecuted, persisted to a real database (#317)', () => {
     });
 
     const task = new ReconcilerTask(
-      { get: () => undefined } as unknown as ConfigService,
+      makeOperatorSettings(),
       {
         addInterval: jest.fn(),
         doesExist: jest.fn(),
@@ -484,7 +483,7 @@ describeIfDb('actionsExecuted, persisted to a real database (#317)', () => {
     } as unknown as jest.Mocked<Pick<GitHubHttpService, 'request'>>;
     const writes = new GitHubWriteService(
       http as unknown as GitHubHttpService,
-      writeServiceConfig(true),
+      writeSettings(true),
     );
     const log = trackingLog(new ReconcileLogService(prisma));
     const executor = new MirrorLabelExecutor(writes);
@@ -500,7 +499,7 @@ describeIfDb('actionsExecuted, persisted to a real database (#317)', () => {
     });
 
     const task = new ReconcilerTask(
-      { get: () => undefined } as unknown as ConfigService,
+      makeOperatorSettings(),
       {
         addInterval: jest.fn(),
         doesExist: jest.fn(),
