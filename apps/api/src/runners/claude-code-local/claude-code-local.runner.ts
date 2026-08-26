@@ -10,7 +10,7 @@ import {
   ChildProcessSupervisor,
   type SupervisedProcess,
 } from '../process/child-process-supervisor';
-import { runCommand } from '../process/run-command';
+import { probeBinaryVersion } from '../process/probe-version';
 import type {
   RunHandle,
   Runner,
@@ -747,25 +747,21 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
   private async probeVersion(): Promise<string | null> {
     if (this.observedVersion) return this.observedVersion;
 
-    const result = await runCommand(this.supervisor, {
-      command: this.binary,
-      args: ['--version'],
-      cwd: process.cwd(),
-      timeoutMs: 10_000,
-    });
+    // The spawn, the timeout and the version extraction live in
+    // `process/probe-version.ts` because #338's Test buttons need the same
+    // probe for `claude` and for `git`. What stays HERE is the part that is
+    // this runner's own: the cache, and the decision that a failed probe means
+    // unavailable. See that module's header.
+    const probe = await probeBinaryVersion(this.supervisor, this.binary);
 
-    if (!result.ok) {
+    if (!probe.ok) {
       this.logger.warn(
         `Could not probe ${this.binary} --version; declaring ${this.key} unavailable`,
       );
       return null;
     }
 
-    // "2.1.240 (Claude Code)" — the leading semver is the part anything else
-    // can compare, and keeping the parenthetical would make every version
-    // comparison a string match on a marketing name.
-    const match = /(\d+\.\d+\.\d+[^\s]*)/.exec(result.stdout);
-    this.observedVersion = match ? match[1] : result.stdout.trim();
+    this.observedVersion = probe.version;
     return this.observedVersion;
   }
 
