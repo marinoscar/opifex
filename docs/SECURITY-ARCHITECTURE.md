@@ -1402,6 +1402,85 @@ over rather than because they are inherited:
   fails deceptively: `claude --version` succeeds unauthenticated, so the runner
   would go on registering itself as healthy.
 
+#### Operator settings writes require an interactive session (#346)
+
+The companion to the section above, and the second half of one decision rather
+than a second decision. #334 removed the credentials from the agent's
+environment so it has nothing to authenticate with. This refuses the request
+even if it somehow does.
+
+The thing being protected moved. Until epic #332 the budget ceilings, the quota
+limits and the credentials were rows in a `.env` file, and
+`apps/api/src/autonomy/never-trustable.ts` forbade an autonomous action writing
+`.env`, `.env.*` or `*.env` — a rule that worked because the configuration was a
+FILE, so changing it produced a `file-write` effect the guard could name and
+match. #339 moved that configuration into the `operator_settings` table.
+Changing a spend ceiling is now an authenticated `PATCH /api/operator-settings`.
+It produces no file write, so those rules never fire on it. They did not become
+wrong; they became **inapplicable** — the worse of the two, because a rule that
+has stopped firing looks exactly like a rule nobody violates. They remain in
+place as a backstop (an agent writing an `.env` in a repository workspace is
+still a file write), and `never-trustable.ts` now says so, so a future reader
+does not mistake them for the control.
+
+**What holds the line now.** `apps/api/src/auth/guards/interactive-session.guard.ts`
+refuses any write to that endpoint from a credential that cannot be shown to
+come from a human at a keyboard:
+
+| Credential                        | `GET /api/operator-settings` | `PATCH /api/operator-settings` |
+| --------------------------------- | ---------------------------- | ------------------------------ |
+| Browser session (OAuth login)     | allowed                      | allowed                        |
+| Personal access token             | allowed                      | **403**                        |
+| Device-flow token (RFC 8628)      | allowed                      | **403**                        |
+| Access token with no `cred` claim | allowed                      | **403**                        |
+
+**Reads are deliberately unrestricted.** Automation that observes configuration
+— a dashboard, a drift check, a runbook verifier — changes no limit, and
+restricting it would buy nothing while teaching operators to route around the
+guard, which is how a guard stops being one.
+
+**How the three are told apart.** An access token now carries a `cred` claim
+(`interactive` or `device-code`) set at the moment it is minted;
+`JwtStrategy.validate` resolves it onto the request, which is the only place
+the verified payload exists. A personal access token is recognised where it
+always was — `JwtAuthGuard`'s `Bearer pat_…` branch — and is never interactive
+by its own definition ("automated or non-interactive clients",
+`docs/personal-access-tokens.md`). A token whose claim is absent or
+unrecognised resolves to `unknown` and is **refused**: the direction is
+deliberate, and its cost is that an access token minted before this shipped is
+refused on this one endpoint until the next one (at most
+`JWT_ACCESS_TTL_MINUTES`). Treating an absent claim as proof of a human would
+make every future minting path that forgets to say so silently privileged.
+
+**Rotation preserves the kind**, and without that the guard would be one
+request away from decorative: a device-flow refresh token would be exchanged at
+`POST /api/auth/refresh` for an access token carrying no device marker. A
+device-flow refresh token therefore carries a `dvc_` prefix — the same
+prefix-encoding convention `pat_` already uses — and `refreshAccessToken` reads
+it and mints both replacements with the same kind. A refresh is not an
+authentication event; nobody proved anything at a keyboard to perform one, so
+it cannot be the moment a device session becomes an interactive one.
+
+**Guard order carries the argument.** The check is an option on `@Auth()`
+(`interactive: true`) rather than a decorator of its own, and it runs LAST —
+after `JwtAuthGuard`, `RolesGuard` and `PermissionsGuard`. An anonymous request
+still answers 401 rather than a refusal about a credential it never presented,
+and the interactive check only fires for a caller who would otherwise have
+succeeded. That is what makes the `audit_events` row it writes
+(`auth.non-interactive-refused`, with the actor, the endpoint, the credential
+kind and the setting KEYS — never their values, per #337) worth reading: it
+records a fully privileged non-interactive credential reaching a write path,
+not a stray request. As with `NeverTrustableService`, a failed audit write does
+not turn the refusal into a permission; the log is a lower bound on attempts
+rather than a count.
+
+**Neither barrier is sufficient alone**, and ADR-0018 §6 says so as a condition
+of the migration rather than as a caveat: "either one missing is sufficient to
+invalidate this decision, not merely weaken it". #334 alone fails the first
+time some future code path legitimately hands an agent a token — reopening the
+hole with nothing left to catch it. #346 alone fails if an agent reaches a live
+browser session. They are independent on purpose.
+
 **Generate Secrets:**
 
 ```bash
@@ -1770,6 +1849,7 @@ apps/api/src/auth/
 ├── auth.controller.ts              # Auth endpoints (login, logout, refresh)
 ├── auth.service.ts                 # Core auth logic (tokens, validation)
 ├── auth.module.ts                  # Auth module configuration
+├── credential-kind.ts              # How a request authenticated (#346)
 ├── strategies/
 │   ├── google.strategy.ts          # Google OAuth strategy
 │   └── jwt.strategy.ts             # JWT validation strategy
@@ -1777,6 +1857,7 @@ apps/api/src/auth/
 │   ├── jwt-auth.guard.ts           # Global JWT authentication guard
 │   ├── roles.guard.ts              # RBAC roles guard (OR logic)
 │   ├── permissions.guard.ts        # RBAC permissions guard (AND logic)
+│   ├── interactive-session.guard.ts # Refuses non-interactive credentials (#346)
 │   └── google-oauth.guard.ts       # Google OAuth flow guard
 ├── decorators/
 │   ├── auth.decorator.ts           # Combined @Auth() decorator
