@@ -87,6 +87,57 @@ describe('describeRequirements', () => {
   });
 });
 
+describe('the interactive-session requirement (#346)', () => {
+  it('is rendered after the permissions, and names VISION §8', () => {
+    // An operator writing a script against `PATCH /api/operator-settings`
+    // should learn from the reference that their personal access token will
+    // not work, rather than from a 403 at 2am.
+    const line = describeRequirements(
+      operation({
+        authenticated: true,
+        roles: [],
+        permissions: ['system_settings:write'],
+        interactive: true,
+      }),
+    );
+
+    expect(line).toContain('`system_settings:write`');
+    expect(line).toContain('an interactive session');
+    expect(line).toContain('VISION §8');
+    expect(line!.indexOf('`system_settings:write`')).toBeLessThan(
+      line!.indexOf('an interactive session'),
+    );
+  });
+
+  it('is absent from an operation that did not ask for it', () => {
+    const line = describeRequirements(
+      operation({
+        authenticated: true,
+        roles: [],
+        permissions: ['system_settings:read'],
+      }),
+    );
+
+    expect(line).not.toContain('interactive');
+  });
+
+  it('is stated even when nothing else is required', () => {
+    // Nothing declares this combination today, but the clause list is what
+    // decides between the two sentences, so an interactive-only route must not
+    // fall through to "any signed-in user may call this".
+    const line = describeRequirements(
+      operation({
+        authenticated: true,
+        roles: [],
+        permissions: [],
+        interactive: true,
+      }),
+    );
+
+    expect(line).toContain('an interactive session');
+  });
+});
+
 describe('applyRbacDocs', () => {
   function documentWith(op: DocOperation): MutableDocument {
     return { paths: { '/api/thing': { get: op } } };
