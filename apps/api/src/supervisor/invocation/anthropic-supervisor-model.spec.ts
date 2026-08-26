@@ -16,6 +16,7 @@ import {
 } from './anthropic-supervisor-model';
 import {
   SUPERVISOR_MODEL,
+  UnavailableSupervisorModel,
   type SupervisorModel,
 } from './supervisor-model.port';
 import {
@@ -50,9 +51,7 @@ function operatorSettings(overrides: OperatorSettingsOverrides = {}) {
 }
 
 function adapter(overrides: OperatorSettingsOverrides = {}) {
-  const model = createSupervisorModel(operatorSettings(overrides));
-  if (model === undefined) throw new Error('expected an adapter');
-  return model;
+  return createSupervisorModel(operatorSettings(overrides));
 }
 
 /**
@@ -369,6 +368,21 @@ describe('AnthropicSupervisorModel (ADR-0015)', () => {
       ).rejects.toThrow(/no content array/);
     });
 
+    it('refuses, naming the setting to change, when there is no API key', async () => {
+      // #344. This refusal used to be a missing DI binding; it is per call
+      // now, and what an operator reads has to be actionable rather than an
+      // instruction to bind a provider.
+      const model = adapter({ 'supervisor.model.apiKey': '' });
+
+      await expect(
+        model.ask({ snapshot: 'S', instruction: 'I' }),
+      ).rejects.toThrow(SupervisorModelError);
+      await expect(
+        model.ask({ snapshot: 'S', instruction: 'I' }),
+      ).rejects.toThrow(/SUPERVISOR_MODEL_API_KEY/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it('refuses to ask anything when no model is named', async () => {
       // A key with no SUPERVISOR_MODEL_NAME beside it is half-configured, and
       // it says so once an invocation rather than falling back to the
@@ -386,22 +400,23 @@ describe('AnthropicSupervisorModel (ADR-0015)', () => {
   });
 });
 
-describe('createSupervisorModel (ADR-0015)', () => {
+describe('createSupervisorModel (ADR-0015, #344)', () => {
   it('builds the adapter when an API key is configured', () => {
     const model = createSupervisorModel(operatorSettings());
 
     expect(model).toBeInstanceOf(AnthropicSupervisorModel);
-    expect(model?.name).toBe(MODEL);
+    expect(model.name).toBe(MODEL);
   });
 
-  it('contributes no adapter when the API key is unset', () => {
-    // The load-bearing half. Undefined is what leaves @Optional() with
-    // nothing, which is what leaves UnavailableSupervisorModel in place.
+  it('builds the adapter when the API key is unset', () => {
+    // The whole of #344. An adapter that is not built cannot be built later,
+    // so a key set at runtime would reach a process that had already decided
+    // there was no model.
     expect(
       createSupervisorModel(
         operatorSettings({ 'supervisor.model.apiKey': '' }),
       ),
-    ).toBeUndefined();
+    ).toBeInstanceOf(AnthropicSupervisorModel);
   });
 
   it('does not throw when nothing at all is configured', () => {
@@ -409,7 +424,96 @@ describe('createSupervisorModel (ADR-0015)', () => {
     // hermetic environment, so this is the registry's own defaults.
     const empty = makeOperatorSettings();
     expect(() => createSupervisorModel(empty)).not.toThrow();
-    expect(createSupervisorModel(empty)).toBeUndefined();
+    expect(createSupervisorModel(empty)).toBeInstanceOf(
+      AnthropicSupervisorModel,
+    );
+  });
+
+  it('reports the same name as UnavailableSupervisorModel when there is no key', () => {
+    // Not a coincidence to be asserted loosely: the decision-log `model`
+    // column for an unconfigured supervisor has to read after #344 exactly
+    // what it read when no adapter was bound at all. If either string moves,
+    // this is where the two stop agreeing.
+    expect(adapter({ 'supervisor.model.apiKey': '' }).name).toBe(
+      new UnavailableSupervisorModel().name,
+    );
+    expect(adapter({ 'supervisor.model.apiKey': '' }).name).toBe('none');
+  });
+
+  it("reports 'unconfigured' for a key that names no model, and the name otherwise", () => {
+    // Three states, kept apart: no key at all, a key with no model beside it,
+    // and a working configuration. ADR-0015's argument is that a typo in a
+    // model name must not read like a decision not to run a supervisor.
+    expect(adapter({ 'supervisor.model.name': '' }).name).toBe('unconfigured');
+    expect(adapter().name).toBe(MODEL);
+  });
+});
+
+describe('per-call configuration (#344)', () => {
+  it('picks up a key supplied after the adapter was built', async () => {
+    // The failure #344 exists to close, at the adapter's own level: the same
+    // object refuses, then calls, with no reconstruction in between.
+    const settings = operatorSettings({ 'supervisor.model.apiKey': '' });
+    const model = createSupervisorModel(settings);
+
+    await expect(
+      model.ask({ snapshot: 'S', instruction: 'I' }),
+    ).rejects.toThrow(/SUPERVISOR_MODEL_API_KEY/);
+    expect(model.name).toBe('none');
+
+    fetchMock.mockImplementation(async () => messageResponse(answer('hi')));
+    settings.setOverride('supervisor.model.apiKey', 'sk-ant-set-later');
+
+    await expect(
+      model.ask({ snapshot: 'S', instruction: 'I' }),
+    ).resolves.toMatchObject({ text: 'hi' });
+    expect(model.name).toBe(MODEL);
+    expect(callInit().headers).toMatchObject({
+      'x-api-key': 'sk-ant-set-later',
+    });
+  });
+
+  it('stops calling when the key is removed again', async () => {
+    fetchMock.mockImplementation(async () => messageResponse(answer('hi')));
+    const settings = operatorSettings();
+    const model = createSupervisorModel(settings);
+
+    await model.ask({ snapshot: 'S', instruction: 'I' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    settings.setOverride('supervisor.model.apiKey', '');
+
+    await expect(
+      model.ask({ snapshot: 'S', instruction: 'I' }),
+    ).rejects.toThrow(/SUPERVISOR_MODEL_API_KEY/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves the model name, base URL and token ceiling per call, not once', async () => {
+    fetchMock.mockImplementation(async () => messageResponse(answer('hi')));
+    const settings = operatorSettings();
+    const model = createSupervisorModel(settings);
+
+    await model.ask({ snapshot: 'S', instruction: 'I' });
+
+    settings.setOverride('supervisor.model.name', 'claude-sonnet-4-5');
+    settings.setOverride('supervisor.model.baseUrl', 'https://proxy.test');
+    settings.setOverride('supervisor.model.defaultMaxTokens', 99);
+
+    await model.ask({ snapshot: 'S', instruction: 'I' });
+
+    expect(sentBody(0)).toMatchObject({ model: MODEL, max_tokens: 1024 });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://api.anthropic.test/v1/messages',
+    );
+    expect(sentBody(1)).toMatchObject({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 99,
+    });
+    expect(fetchMock.mock.calls[1][0]).toBe('https://proxy.test/v1/messages');
+    // Reported from the same read that was sent, so the decision log cannot
+    // name a model other than the one that answered.
+    expect(model.name).toBe('claude-sonnet-4-5');
   });
 });
 
@@ -490,12 +594,13 @@ async function buildSupervisor(overrides: OperatorSettingsOverrides) {
   const record = jest
     .fn()
     .mockResolvedValue({ invocationId: 'inv-1', proposalIds: [] });
+  const settings = operatorSettings(overrides);
 
   const moduleRef = await Test.createTestingModule({
     providers: [
       {
         provide: OperatorSettingsService,
-        useValue: operatorSettings(overrides),
+        useValue: settings,
       },
       {
         provide: SnapshotService,
@@ -529,11 +634,10 @@ async function buildSupervisor(overrides: OperatorSettingsOverrides) {
 
   return {
     service: moduleRef.get(SupervisorService),
-    bound: moduleRef.get<SupervisorModel | undefined>(SUPERVISOR_MODEL, {
-      strict: false,
-    }),
+    bound: moduleRef.get<SupervisorModel>(SUPERVISOR_MODEL, { strict: false }),
+    settings,
     record,
-    recorded: () => record.mock.calls[0][0] as InvocationDraft,
+    recorded: (index = 0) => record.mock.calls[index][0] as InvocationDraft,
   };
 }
 
@@ -567,16 +671,16 @@ describe('SupervisorModule binding (ADR-0015)', () => {
     expect(draft.tokensOutput).toBe(500);
   });
 
-  it('leaves UnavailableSupervisorModel in place when no key is configured', async () => {
+  it('records the same refusal it always did when no key is configured', async () => {
     const { service, bound, recorded } = await buildSupervisor({
       'supervisor.enabled': true,
       'supervisor.model.apiKey': '',
     });
 
-    // No adapter in the graph at all: @Optional() sees undefined and the
-    // existing `?? new UnavailableSupervisorModel()` fallback wins, exactly as
-    // it did before ADR-0015 was implemented.
-    expect(bound).toBeUndefined();
+    // #344: the adapter IS in the graph now — that is the change — and the row
+    // it produces is the one an unconfigured deployment produced before, when
+    // @Optional() saw undefined and `?? new UnavailableSupervisorModel()` won.
+    expect(bound).toBeInstanceOf(AnthropicSupervisorModel);
 
     await service.invoke(NOW);
 
@@ -588,6 +692,37 @@ describe('SupervisorModule binding (ADR-0015)', () => {
     expect(draft.failureReason).not.toBeNull();
     expect(draft.costUsd).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reaches the adapter on the next invocation after a key is set at runtime', async () => {
+    // The acceptance criterion #344 is actually for: no restart, no second
+    // module, no new SupervisorService. One process, one adapter, one operator
+    // typing a key into the Control Center between two ticks.
+    const { service, settings, record, recorded } = await buildSupervisor({
+      'supervisor.enabled': true,
+      'supervisor.model.apiKey': '',
+    });
+
+    await service.invoke(NOW);
+    expect(recorded(0).model).toBe('none');
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fetchMock.mockImplementation(async () =>
+      messageResponse(answer('because the runner died', 1000, 500)),
+    );
+    settings.setOverride('supervisor.model.apiKey', 'sk-ant-set-in-the-ui');
+
+    await service.invoke(NOW);
+
+    expect(record).toHaveBeenCalledTimes(2);
+    const draft = recorded(1);
+    expect(draft.outcome).toBe('completed');
+    expect(draft.model).toBe(MODEL);
+    expect(draft.costUsd).toBe(0.0035);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(callInit().headers).toMatchObject({
+      'x-api-key': 'sk-ant-set-in-the-ui',
+    });
   });
 
   it('records a rejected API call as a failure rather than letting it escape', async () => {
