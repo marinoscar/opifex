@@ -947,10 +947,22 @@ type StoredColumns = Pick<
  * otherwise keep its old ciphertext columns and the row would violate
  * `operator_settings_value_xor_secret_check` at the database.
  *
- * `Prisma.JsonNull` and not `null` for a null value: `dispatch.maxConcurrent`
- * legitimately resolves to `null` meaning "no ceiling", and `null` would write
- * SQL NULL — a row with neither shape, which the same CHECK refuses.
- * `Prisma.JsonNull` writes the JSON scalar `null`, which is `IS NOT NULL`.
+ * `Prisma.JsonNull` and not `null` for a null value, because
+ * `dispatch.maxConcurrent` legitimately resolves to `null` meaning "no
+ * ceiling", and the row must still carry a `value` the CHECK can see.
+ *
+ * The cast is required regardless: `Prisma.InputJsonValue` does not include
+ * `null`, so a bare `null` does not compile. What it is NOT is a runtime
+ * guard against writing SQL NULL — that was measured against the pinned
+ * `@prisma/client@7.8.0` with `@prisma/adapter-pg`, and a bare `null` produces
+ * byte-identical JSONB (`value = 'null'::jsonb`, `IS NOT NULL`) to the
+ * sentinel. Stated precisely because a comment that claims a guarantee the
+ * code does not provide is worse than no comment: the next person to touch
+ * this would trust it.
+ *
+ * The neighbouring mistake IS real and IS caught: `Prisma.DbNull` writes SQL
+ * NULL and trips `operator_settings_value_xor_secret_check` with a 23514,
+ * proven in `operator-settings-service-write-path.integration.spec.ts`.
  */
 function plainColumns(value: unknown): StoredColumns {
   return {
