@@ -10,6 +10,12 @@ import {
   DEFAULT_SYSTEM_SETTINGS,
   SystemSettingsValue,
 } from '../../common/types/settings.types';
+import { MASK } from '../../common/crypto/redact';
+import {
+  ENCRYPTION_KEY_ENV_VAR,
+  open,
+  seal,
+} from '../../common/crypto/secret-box';
 
 describe('SystemSettingsService', () => {
   let service: SystemSettingsService;
@@ -416,6 +422,93 @@ describe('SystemSettingsService', () => {
       const result = await service.isFeatureEnabled('featureC');
 
       expect(result).toBe(false);
+    });
+  });
+
+  /**
+   * #337: the audit sink redacts before it writes.
+   *
+   * Both write paths hand the ENTIRE settings payload to `audit_events.meta`.
+   * The system settings document cannot hold a credential today, but the
+   * `changes` field echoes the caller's DTO verbatim — so the leak arrives the
+   * moment epic #332 adds a secret-bearing key, and the audit log is the one
+   * table that cannot be rewritten afterwards.
+   */
+  describe('audit redaction (#337)', () => {
+    const SECRET = 'github_pat_11ABCDEFG0abcdefghijKLMNOPqrstuvwxyz012345';
+    const originalKey = process.env[ENCRYPTION_KEY_ENV_VAR];
+
+    beforeEach(() => {
+      process.env[ENCRYPTION_KEY_ENV_VAR] = Buffer.alloc(32, 7).toString(
+        'base64',
+      );
+
+      mockPrisma.systemSettings.findUnique.mockResolvedValue(
+        mockSystemSettings as any,
+      );
+      mockPrisma.systemSettings.update.mockResolvedValue({
+        ...mockSystemSettings,
+        version: 2,
+      } as any);
+      mockPrisma.auditEvent.create.mockResolvedValue({} as any);
+    });
+
+    afterAll(() => {
+      if (originalKey === undefined) {
+        delete process.env[ENCRYPTION_KEY_ENV_VAR];
+      } else {
+        process.env[ENCRYPTION_KEY_ENV_VAR] = originalKey;
+      }
+    });
+
+    it('writes no part of a secret into the audit row, sealed or not', async () => {
+      const sealed = seal(SECRET, 'github.token');
+      // The secret box really does hold this plaintext, so the assertions
+      // below are about a live credential rather than an arbitrary string.
+      expect(open(sealed, 'github.token')).toEqual({
+        ok: true,
+        plaintext: SECRET,
+      });
+
+      await service.patchSettings(
+        {
+          features: { chat: true },
+          github: { token: SECRET, valueCiphertext: sealed },
+        } as any,
+        mockUserId,
+      );
+
+      const row = mockPrisma.auditEvent.create.mock.calls[0][0] as {
+        data: { meta: unknown };
+      };
+      const written = JSON.stringify(row.data.meta);
+
+      expect(written).not.toContain(SECRET);
+      // Not the ciphertext either: a sealed envelope under a secret-named
+      // field is masked wholesale rather than half-preserved.
+      expect(written).not.toContain(sealed.ciphertext);
+      expect(written).toContain(MASK);
+    });
+
+    it('leaves the non-secret settings in the audit row untouched', async () => {
+      // Redaction that swallowed the whole document would close the leak and
+      // destroy the reason the audit row exists, which is a failure nobody
+      // would notice until they needed the log.
+      await service.patchSettings(
+        { features: { chat: true } } as any,
+        mockUserId,
+      );
+
+      const row = mockPrisma.auditEvent.create.mock.calls[0][0] as {
+        data: { meta: Record<string, unknown> };
+      };
+
+      expect(row.data.meta).toMatchObject({
+        changes: { features: { chat: true } },
+        resultingValue: expect.objectContaining({
+          ui: expect.any(Object) as unknown,
+        }) as unknown,
+      });
     });
   });
 });
