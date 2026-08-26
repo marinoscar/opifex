@@ -356,6 +356,15 @@ async function seedInitialAdminAllowlist() {
   }
 }
 
+// operator_settings (#332, #336) is deliberately NOT seeded here, and never
+// should be. An ABSENT row is how OperatorSettingsResolver knows to fall
+// through to `.env` for that key; seeding today's environment values into
+// the table would freeze them in the database and make every future `.env`
+// edit inert, silently, since the resolver would keep reading the stale
+// database row instead. There is also no reference data to seed: unlike
+// roles/permissions, the set of valid keys lives in the registry
+// (`apps/api/src/operator-settings/*`, #335), not in this table.
+
 // =============================================================================
 // Main Seed Function
 // =============================================================================
