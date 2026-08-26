@@ -223,6 +223,7 @@ import type {
   TrustGrantListItem,
 } from '../types/trust';
 import type { AuditEventsPage } from '../types/audit';
+import type { ClaudeAuthSession } from '../types/claudeAuth';
 import type { FleetHealth, ReadinessHealth } from '../types/health';
 import type {
   OperatorSettingsDocument,
@@ -1268,6 +1269,98 @@ export async function patchOperatorSettings(
   });
 }
 
+// ---------------------------------------------------------------------------
+// The guided Claude sign-in (#386, epic #332)
+// ---------------------------------------------------------------------------
+
+/**
+ * `POST /operator-settings/claude-auth/start` — begin a sign-in.
+ *
+ * **This blocks.** The API spawns `claude setup-token` on a pseudo-terminal
+ * and does not answer until the CLI has printed its authorize URL — a few
+ * seconds normally, forty-five at the ceiling. There is no earlier response
+ * worth having: the URL is the only thing the screen can render, and a
+ * two-phase "started, now poll" would put the same wait in the client with an
+ * extra round trip on top. Callers must show a pending state that survives
+ * three-quarters of a minute without looking frozen.
+ *
+ * Rejects with `ApiError`. A 409 means another sign-in is already live and its
+ * message names the session to cancel; that message is shown as written,
+ * because it carries an identifier this layer would only mangle.
+ */
+export async function startClaudeAuth(
+  signal?: AbortSignal,
+): Promise<ClaudeAuthSession> {
+  return api.post<ClaudeAuthSession>(
+    '/operator-settings/claude-auth/start',
+    undefined,
+    { signal },
+  );
+}
+
+/**
+ * `GET /operator-settings/claude-auth/:sessionId` — where a sign-in is now.
+ *
+ * The same shape every other route here answers. Rejects 404 for a session
+ * this API has never held — which includes every session from before an API
+ * restart, since these live in memory by design.
+ */
+export async function getClaudeAuthSession(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<ClaudeAuthSession> {
+  return api.get<ClaudeAuthSession>(
+    `/operator-settings/claude-auth/${encodeURIComponent(sessionId)}`,
+    { signal },
+  );
+}
+
+/**
+ * `POST /operator-settings/claude-auth/:sessionId/code` — hand over the code.
+ *
+ * **This blocks for as long as the vendor exchange takes**, up to ninety
+ * seconds. It is the wait most likely to be mistaken for a hung screen, and
+ * the one place a caller must say what is happening rather than spin.
+ *
+ * The response is the finished session and never the token: success is
+ * `status: 'completed'` with `configured: true`, which is the whole of it.
+ *
+ * The code is sent exactly as given. Trimming happens in the API's own schema,
+ * which also refuses an embedded newline rather than silently truncating at
+ * it — a rule this layer must not pre-empt, since a client-side "fix" would
+ * turn a refusal into a half-code written to a live terminal.
+ */
+export async function submitClaudeAuthCode(
+  sessionId: string,
+  code: string,
+  signal?: AbortSignal,
+): Promise<ClaudeAuthSession> {
+  return api.post<ClaudeAuthSession>(
+    `/operator-settings/claude-auth/${encodeURIComponent(sessionId)}/code`,
+    { code },
+    { signal },
+  );
+}
+
+/**
+ * `DELETE /operator-settings/claude-auth/:sessionId` — stop a sign-in.
+ *
+ * Kills the CLI process group. This is not cosmetic: a session abandoned
+ * without it leaves a `claude` process holding a pseudo-terminal until the
+ * ten-minute expiry, and a second sign-in cannot start until it goes. Safe to
+ * call on a session that has already ended.
+ */
+export async function cancelClaudeAuth(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<ClaudeAuthSession> {
+  return api.delete<ClaudeAuthSession>(
+    `/operator-settings/claude-auth/${encodeURIComponent(sessionId)}`,
+    { signal },
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Audit events (#351, epic #332)
 // ---------------------------------------------------------------------------
 
