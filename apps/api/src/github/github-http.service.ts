@@ -28,6 +28,15 @@ export interface GitHubRequestOptions {
   accept?: string;
 }
 
+/**
+ * The per-request policy one call resolved for itself, carried through that
+ * call's retries so every attempt within it agrees (#341).
+ */
+interface RequestPolicy {
+  token: string | undefined;
+  timeoutMs: number;
+}
+
 export interface GitHubResponse<T> {
   data: T;
   status: number;
@@ -65,32 +74,31 @@ export interface GitHubResponse<T> {
 export class GitHubHttpService {
   private readonly logger = new Logger(GitHubHttpService.name);
 
+  /**
+   * The host, and the identity sent to it. FROZEN AT CONSTRUCTION, deliberately
+   * — do not "improve" these into live reads.
+   *
+   * `EtagCacheService` is keyed by request PATH, not by host
+   * (`etag-cache.service.ts`). Swapping `github.apiBaseUrl` inside a running
+   * process would therefore replay one host's ETags against another and take
+   * the resulting 304s as confirmation of bodies that host has never sent — a
+   * cache handing back a different server's answers, which is silently wrong
+   * rather than merely stale. The registry says `restart` on that key for this
+   * exact reason. `userAgent` is frozen with it because it is part of the same
+   * "which deployment is this, talking to which host" identity: it is only ever
+   * meaningful alongside the base URL it is presented to, and letting the two
+   * halves of one identity change on different schedules buys nothing.
+   */
   private readonly baseUrl: string;
-  private readonly token: string | undefined;
   private readonly userAgent: string;
-  private readonly timeoutMs: number;
-  private readonly maxRetries: number;
-  private readonly rateLimitReserve: number;
 
   constructor(
     private readonly settings: OperatorSettingsService,
     private readonly rateLimit: RateLimitService,
     private readonly etags: EtagCacheService,
   ) {
-    // Still read ONCE, in the constructor, and #340 deliberately did not
-    // change that. #341 is what resolves these per request; unfreezing them
-    // here as well would have mixed two behaviour changes into one diff and
-    // made neither reviewable. The registry already declares `github.token`
-    // and `github.writesEnabled` as `live`, which is the contract those
-    // consumers are being held to — see the registry header.
     this.baseUrl = this.settings.get('github.apiBaseUrl').replace(/\/$/, '');
-    // The registry's default is the empty string, so `|| undefined` keeps the
-    // exact "unset means unconfigured" reading this had against `ConfigService`.
-    this.token = this.settings.get('github.token') || undefined;
     this.userAgent = this.settings.get('github.userAgent');
-    this.timeoutMs = this.settings.get('github.requestTimeoutMs');
-    this.maxRetries = this.settings.get('github.maxRetries');
-    this.rateLimitReserve = this.settings.get('github.rateLimitReserve');
 
     if (!this.token) {
       // Not a throw: the API must boot without GitHub configured so the
@@ -103,7 +111,40 @@ export class GitHubHttpService {
     }
   }
 
-  /** Whether a credential is configured at all. */
+  /**
+   * Per-request policy, resolved on every use rather than captured (#341).
+   *
+   * None of these has a cross-request invariant: a change lands on the next
+   * request and nothing downstream can observe an inconsistency. Within ONE
+   * request they are resolved exactly once, at the top of `request()`, so a
+   * rotation cannot land between the "is a token configured" check and the
+   * `Authorization` header built from it, and cannot change the retry budget
+   * a loop is already counting against.
+   *
+   * The token in particular is why this issue exists: `RunWorkspaceService`
+   * already reads `github.token` live for git operations, so a frozen copy
+   * here meant one rotation applying to `git push` and not to the API call
+   * beside it.
+   */
+  private get token(): string | undefined {
+    // The registry's default is the empty string, so `|| undefined` keeps the
+    // exact "unset means unconfigured" reading this had against `ConfigService`.
+    return this.settings.get('github.token') || undefined;
+  }
+
+  private get timeoutMs(): number {
+    return this.settings.get('github.requestTimeoutMs');
+  }
+
+  private get maxRetries(): number {
+    return this.settings.get('github.maxRetries');
+  }
+
+  private get rateLimitReserve(): number {
+    return this.settings.get('github.rateLimitReserve');
+  }
+
+  /** Whether a credential is configured at all, as of right now. */
   get configured(): boolean {
     return this.token !== undefined;
   }
@@ -124,7 +165,18 @@ export class GitHubHttpService {
     const url = this.buildUrl(path, options.query);
     const conditional = options.conditional ?? method === 'GET';
 
-    if (!this.token) {
+    // Resolved ONCE, here, and then carried through the retry loop. Reading
+    // them again per attempt would let a rotation mid-retry send the check's
+    // token on one attempt and a different one on the next, and would let a
+    // loop already counting attempts against a budget of 3 find itself
+    // counting against a budget of 0.
+    const policy: RequestPolicy = {
+      token: this.token,
+      timeoutMs: this.timeoutMs,
+    };
+    const maxRetries = this.maxRetries;
+
+    if (!policy.token) {
       throw new GitHubAuthError(
         'No GitHub credential configured (set GITHUB_TOKEN)',
         null,
@@ -136,18 +188,25 @@ export class GitHubHttpService {
     const cached = conditional ? this.etags.get(method, url) : undefined;
 
     let lastTransient: GitHubTransientError | undefined;
-    for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
       if (attempt > 0) {
         await delay(backoffMs(attempt));
       }
 
       try {
-        return await this.attempt<T>(method, url, path, options, cached);
+        return await this.attempt<T>(
+          method,
+          url,
+          path,
+          options,
+          cached,
+          policy,
+        );
       } catch (error) {
         if (error instanceof GitHubTransientError) {
           lastTransient = error;
           this.logger.warn(
-            `${method} ${path} failed transiently (attempt ${attempt + 1}/${this.maxRetries + 1}): ${error.message}`,
+            `${method} ${path} failed transiently (attempt ${attempt + 1}/${maxRetries + 1}): ${error.message}`,
           );
           continue;
         }
@@ -247,10 +306,11 @@ export class GitHubHttpService {
     path: string,
     options: GitHubRequestOptions,
     cached: { etag: string; body: unknown; link: string | null } | undefined,
+    policy: RequestPolicy,
   ): Promise<GitHubResponse<T>> {
     const headers: Record<string, string> = {
       accept: options.accept ?? 'application/vnd.github+json',
-      authorization: `Bearer ${this.token}`,
+      authorization: `Bearer ${policy.token}`,
       'user-agent': this.userAgent,
       'x-github-api-version': '2022-11-28',
     };
@@ -268,7 +328,7 @@ export class GitHubHttpService {
         headers,
         body:
           options.body === undefined ? undefined : JSON.stringify(options.body),
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(policy.timeoutMs),
       });
     } catch (error) {
       // A timeout or socket failure. No headers, so no rate-limit news.
