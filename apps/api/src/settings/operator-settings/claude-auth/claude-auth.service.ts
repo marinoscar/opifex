@@ -377,7 +377,9 @@ export class ClaudeAuthService implements OnModuleDestroy {
 
     if (settled === 'ready') return;
 
-    this.finish(session, 'failed', settled ?? 'timed_out');
+    // `cli_no_url`, not `timed_out`: nobody has been asked for a code yet, so
+    // nothing about this is an operator running out of time (#389).
+    this.finish(session, 'failed', settled ?? 'cli_no_url');
   }
 
   /** Resolve when a token appears, a failure is recognisable, or time is up. */
@@ -402,8 +404,13 @@ export class ClaudeAuthService implements OnModuleDestroy {
     });
 
     if (settled !== 'ready') {
-      this.logFailure(session, settled ?? 'timed_out');
-      this.finish(session, 'failed', settled ?? 'timed_out');
+      // The ceiling here is the CLI failing to answer a code it accepted —
+      // a fault in this flow — and NOT the session's ten minutes elapsing,
+      // which is `expireIfDue`'s business and keeps `timed_out`. Reporting
+      // both as an expiry is what hid #389 for as long as it was hidden.
+      const reason = settled ?? 'cli_no_response';
+      this.logFailure(session, reason);
+      this.finish(session, 'failed', reason);
       return;
     }
 

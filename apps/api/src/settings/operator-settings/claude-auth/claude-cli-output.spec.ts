@@ -268,5 +268,17 @@ describe('describeFailure', () => {
     expect(describeFailure('cli_missing')).toMatch(/binary/i);
     expect(describeFailure('pty_unavailable')).toMatch(/util-linux/);
     expect(describeFailure('timed_out')).toMatch(/Nothing was changed/);
+    expect(describeFailure('cli_no_url')).toMatch(/never printed a sign-in/i);
+    expect(describeFailure('cli_no_response')).toMatch(/never answered/i);
+  });
+
+  it('does not call a stalled CLI an expiry', () => {
+    // #389: `timed_out` covered three situations and rendered as "this
+    // sign-in has expired" for all of them. The one where the CLI took the
+    // code and went silent is a fault in this flow, and telling an operator
+    // it expired invites them to retry the thing that fails identically.
+    expect(describeFailure('cli_no_response')).not.toMatch(/expired/i);
+    expect(describeFailure('cli_no_url')).not.toMatch(/expired/i);
+    expect(describeFailure('timed_out')).toMatch(/expired/i);
   });
 });

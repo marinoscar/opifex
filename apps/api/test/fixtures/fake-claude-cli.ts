@@ -261,7 +261,15 @@ export type FakeClaudeBehaviour =
    */
   | 'noisy-startup'
   /** Never gets as far as printing a URL. */
-  | 'die-at-startup';
+  | 'die-at-startup'
+  /**
+   * Runs, prints the banner, and never gets to a URL — but does not die.
+   *
+   * The startup ceiling's own case, and the one that proves it is reported as
+   * `cli_no_url` rather than as an expiry: nobody has been asked for a code
+   * here, so an operator's clock has nothing to do with it (#389).
+   */
+  | 'hang-at-startup';
 
 const AFTER_CODE: Record<FakeClaudeBehaviour, string> = {
   success: [
@@ -306,6 +314,8 @@ const AFTER_CODE: Record<FakeClaudeBehaviour, string> = {
 
   'hang-after-code': 'sleep 120',
 
+  'hang-at-startup': '',
+
   'noisy-startup': 'sleep 120',
 
   'die-at-startup': '',
@@ -338,6 +348,8 @@ export async function makeFakeClaudeCli(
       ? [REQUIRE_TTY, BANNER, line('Something went wrong.'), 'exit 1'].join(
           '\n',
         )
+      : behaviour === 'hang-at-startup'
+      ? [REQUIRE_TTY, BANNER, 'sleep 120'].join('\n')
       : [
           REQUIRE_TTY,
           BANNER,

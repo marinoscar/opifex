@@ -170,11 +170,15 @@ export function extractOauthToken(raw: string): string | null {
 /**
  * Why the flow did not produce a token.
  *
- * These are not severities of one failure; they are four different situations
- * with four different remedies, and #386 makes telling them apart an
- * acceptance criterion. An operator reading "authentication failed" learns
- * nothing about whether to re-copy a code, install a package, or go and buy a
- * subscription.
+ * These are not severities of one failure; they are different situations with
+ * different remedies, and #386 makes telling them apart an acceptance
+ * criterion. An operator reading "authentication failed" learns nothing about
+ * whether to re-copy a code, install a package, or go and buy a subscription.
+ *
+ * The same argument is why `timed_out` was split in #389: an operator who
+ * never pasted anything and a CLI that took the code and went silent are not
+ * one situation, and reporting the second as an expiry both told the operator
+ * something untrue and hid a real defect for as long as it was believed.
  */
 export type ClaudeAuthFailureReason =
   /** The code was wrong, already used, or expired before it was pasted. */
@@ -185,8 +189,20 @@ export type ClaudeAuthFailureReason =
   | 'cli_missing'
   /** `script(1)` is not installed, so no pty could be allocated. */
   | 'pty_unavailable'
-  /** Nobody pasted a code before the session expired. */
+  /**
+   * NOBODY PASTED A CODE before the session's ten minutes were up.
+   *
+   * The operator's clock ran out, and this is the only reason that means
+   * that. It used to mean three different things — see the two below — and
+   * #389 is what that cost: a sign-in the CLI had stalled was reported as an
+   * expiry, which sent the operator to retry the one thing guaranteed to fail
+   * identically, and sent the person debugging it to read session lifetimes.
+   */
   | 'timed_out'
+  /** The CLI ran, but never printed an authorize URL to send anyone to. */
+  | 'cli_no_url'
+  /** The CLI took the code and then said nothing at all, until the ceiling. */
+  | 'cli_no_response'
   /** An operator pressed Cancel. */
   | 'cancelled'
   /** The CLI failed in a way this code does not recognise. */
@@ -198,6 +214,8 @@ export const CLAUDE_AUTH_FAILURE_REASONS: readonly ClaudeAuthFailureReason[] = [
   'cli_missing',
   'pty_unavailable',
   'timed_out',
+  'cli_no_url',
+  'cli_no_response',
   'cancelled',
   'unknown',
 ];
@@ -317,10 +335,30 @@ export function describeFailure(reason: ClaudeAuthFailureReason): string {
         'which the API image installs. Rebuild the API image.'
       );
     case 'timed_out':
+      // Strictly the session clock, and nothing else. See the union member.
       return (
         'This sign-in expired before a code was pasted. Nothing was changed. ' +
         'Start again — the authorization code the browser gives you is only ' +
         'valid for a few minutes, so keep the tab and this page side by side.'
+      );
+    case 'cli_no_url':
+      return (
+        'The Claude Code CLI started but never printed a sign-in link. ' +
+        'Nothing was changed and the process was stopped. It ran, so this is ' +
+        'not a missing binary and not a missing terminal — it simply did not ' +
+        'reach the screen that hands over the link within the time allowed. ' +
+        'A second attempt is worth one try; if it happens again, the API log ' +
+        "holds the CLI's own output for this attempt."
+      );
+    case 'cli_no_response':
+      return (
+        'The Claude Code CLI accepted the code and then never answered. ' +
+        'Nothing was changed. This is not the sign-in running out of time ' +
+        'and it says nothing about the code: the code went in, and the CLI ' +
+        'printed neither a token nor an error in the ninety seconds after ' +
+        'it. That is a fault on this side rather than something to fix by ' +
+        "re-copying anything. The API log holds the CLI's own output for " +
+        'this attempt.'
       );
     case 'cancelled':
       return 'This sign-in was cancelled. Nothing was changed.';

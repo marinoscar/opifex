@@ -226,6 +226,19 @@ describe('ClaudeAuthService (#386)', () => {
       expect(session.url).toBeNull();
     });
 
+    it('calls a CLI that never reaches a URL exactly that, not an expiry', async () => {
+      // The startup ceiling is a third thing `timed_out` used to cover. Here
+      // nobody has been asked for a code at all, so an operator's ten minutes
+      // are not what ran out (#389).
+      await given('hang-at-startup', { startupTimeoutMs: 1_500 });
+
+      const session = await service.start('user-1');
+
+      expect(session.status).toBe('failed');
+      expect(session.error?.reason).toBe('cli_no_url');
+      expect(session.error?.reason).not.toBe('timed_out');
+    });
+
     it('refuses a second sign-in while one is live, and names it', async () => {
       // Enforced rather than assumed: two concurrent flows would each mint a
       // real token against the account, and one would be discarded.
@@ -390,18 +403,24 @@ describe('ClaudeAuthService (#386)', () => {
 
       const done = await service.submitCode(started.sessionId, 'code', null);
 
-      expect(done.error?.reason).toBe('timed_out');
+      expect(done.error?.reason).toBe('cli_no_response');
       expect(done.error?.reason).not.toBe('invalid_code');
     });
 
-    it('gives up on a CLI that goes quiet after the code', async () => {
+    it('calls a CLI that goes quiet after the code exactly that, not an expiry', async () => {
+      // #389's second bug. This session had eight and a half minutes left; it
+      // did not expire, the CLI stopped answering. Reporting it as an expiry
+      // told the operator to retry the one thing that fails identically, and
+      // sent whoever debugged it reading session lifetimes for a week.
       await given('hang-after-code', { exchangeTimeoutMs: 1_500 });
       const started = await service.start('user-1');
 
       const done = await service.submitCode(started.sessionId, 'code', null);
 
       expect(done.status).toBe('failed');
-      expect(done.error?.reason).toBe('timed_out');
+      expect(done.error?.reason).toBe('cli_no_response');
+      expect(done.error?.reason).not.toBe('timed_out');
+      expect(done.error?.message).toMatch(/never answered/i);
     });
 
     it('accepts exactly one code per sign-in', async () => {
@@ -457,6 +476,8 @@ describe('ClaudeAuthService (#386)', () => {
       await waitUntil(() => groupIsGone(pid), 10_000);
 
       expect(service.get(started.sessionId).status).toBe('expired');
+      // `timed_out` now means THIS and only this: the session's own clock ran
+      // out with nobody having pasted anything (#389).
       expect(service.get(started.sessionId).error?.reason).toBe('timed_out');
     });
 
