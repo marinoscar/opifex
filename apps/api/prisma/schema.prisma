@@ -1788,6 +1788,37 @@ model ReconcileTick {
   allFromCache       Boolean @map("all_from_cache")
   rateLimitRemaining Int?    @map("rate_limit_remaining")
 
+  /// The tick-scoped settings snapshot it actually ran under — `{ retryCeiling,
+  /// rateLimitReserve, writesEnabled }`, the shape `TickSettings` in
+  /// `reconciler.types.ts` describes. #342 moved these three off
+  /// construction-time `readonly` fields onto a snapshot read once at the top
+  /// of `tick()`, on the grounds that the coherence unit is one tick, not the
+  /// process — nothing requires tick 100 and tick 101 to agree, only that tick
+  /// 100's own computation never sees two different values for the same key.
+  /// This column is that snapshot's persistence: the reason to read it once
+  /// per tick, rather than freezing it at boot, is defeated if the value read
+  /// does not survive the tick it was read for. Without it, "which retry
+  /// ceiling did this tick quarantine against" and "was this tick's write ever
+  /// permitted" are answerable only from whatever `.env` or container log
+  /// happened to be lying around when someone asks — exactly the gap
+  /// `writesEnabled` on `TickSettings` was already written to close for the
+  /// in-memory record, extended here to the persisted one.
+  ///
+  /// NULL means one thing and one thing only: **this row predates the
+  /// column.** #342 landed the snapshot in `TickSettings` and threaded it
+  /// through `tick()` before this column existed anywhere to hold it, so
+  /// every `reconcile_ticks` row written before this migration genuinely never
+  /// captured its settings — there is nothing to backfill, because nothing was
+  /// ever read to backfill it with. Do not default this column, and do not let
+  /// a reader default it either: NULL must never be interpreted as "the
+  /// defaults" or as "whatever `github.writesEnabled` happens to be now" —
+  /// neither is what that tick ran under, and asserting either would state a
+  /// fact about history that is not true, which is precisely the failure this
+  /// column exists to stop. A tick recorded after this migration always has a
+  /// value here; `ReconcileLogService.record` sets it unconditionally, same as
+  /// `failures` below.
+  settings Json?
+
   /// Per-repository failures, `[{ repository, reason }]`. Always present.
   failures Json
 

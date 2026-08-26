@@ -23,6 +23,11 @@ describe('ReconcilerController', () => {
       actionsExecuted: 1,
       allFromCache: false,
       rateLimitRemaining: 4999,
+      settings: {
+        retryCeiling: 3,
+        rateLimitReserve: 100,
+        writesEnabled: false,
+      },
       failures: [],
       executionFailures: null,
       projections: null,

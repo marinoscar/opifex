@@ -52,7 +52,7 @@ review: **the check enforces the habit, review enforces the content.**
 
 #### Phase 2 — Reconciler, read-only
 
-The control loop that everything else now runs on top of exists, and for this phase it can only look. Each tick it observes GitHub and the run state in Postgres, computes what should be true, and records the diff — it holds no GitHub write client, so it cannot act on what it observes (epics #15, #16; #131, #133). An eligible issue projects into a work order and that projection is persisted on the tick, ahead of anything that could execute one (#155–#158).
+The control loop that everything else now runs on top of exists, and for this phase it can only look. Each tick it observes GitHub and the run state in Postgres, computes what should be true, and records the diff — it holds no GitHub write client, so it cannot act on what it observes (epics #15, #16; #131, #133). An eligible issue projects into a work order and that projection is persisted on the tick, ahead of anything that could execute one (#155–#158). `retryCeiling` and `rateLimitReserve` are now read once at the top of each tick instead of frozen at process construction — the coherence unit is one tick, not the process lifetime — and that snapshot, plus `writesEnabled`, is now persisted on `reconcile_ticks.settings` and returned from `GET /reconciler/ticks` and `GET /reconciler/ticks/:id`, so a reviewer can tell which ceiling or which GitHub write mode a given tick ran under from the row alone. `NULL` on this column means the tick predates the snapshot, never that it ran with defaults (#342, epic #332).
 
 #### Phase 3 — Liveness and escalation
 

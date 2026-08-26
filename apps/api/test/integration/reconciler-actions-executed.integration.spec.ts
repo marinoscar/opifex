@@ -53,6 +53,7 @@ function tickRecord(overrides: Partial<TickRecord> = {}): TickRecord {
     failures: [],
     allFromCache: false,
     rateLimitRemaining: 4999,
+    settings: { retryCeiling: 3, rateLimitReserve: 100, writesEnabled: false },
     projections: [],
     workOrdersCreated: 0,
     rejections: [],

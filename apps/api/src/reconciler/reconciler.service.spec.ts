@@ -8,7 +8,10 @@ import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoriesService } from '../repositories/repositories.service';
 import type { OperatorSettingsOverrides } from '../settings/operator-settings/operator-settings.registry';
-import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
+import {
+  makeOperatorSettings,
+  type FakeOperatorSettingsService,
+} from '../settings/operator-settings/operator-settings.test-double';
 import { WorkOrderProjectionService } from '../work-orders/work-order-projection.service';
 import { ReconcilerService } from './reconciler.service';
 import { ReconcileLogService } from './log/reconcile-log.service';
@@ -47,6 +50,20 @@ function emptyProjection() {
   };
 }
 
+/** One open issue asking to be built, as the read adapter hands it over. */
+const READY_ISSUE = {
+  number: 312,
+  title: 'Add a permit search prompt builder',
+  body: 'anything',
+  state: 'open' as const,
+  author: 'marinoscar',
+  labels: [],
+  inputLabels: ['factory:ready'],
+  unknownInputLabels: [],
+  ignoredLabels: [],
+  observedMirrorLabels: [],
+};
+
 describe('ReconcilerService', () => {
   let lease: { withLease: jest.Mock };
   let repositories: { listObserved: jest.Mock };
@@ -60,7 +77,7 @@ describe('ReconcilerService', () => {
   };
 
   function build(overrides: OperatorSettingsOverrides = {}): ReconcilerService {
-    return new ReconcilerService(
+    return buildWith(
       makeOperatorSettings({
         overrides: {
           'reconciler.enabled': true,
@@ -68,6 +85,18 @@ describe('ReconcilerService', () => {
           ...overrides,
         },
       }),
+    );
+  }
+
+  /**
+   * The same service, from a settings double the caller keeps a handle on.
+   *
+   * Split out for #342: a spec that changes a value MID-TICK has to be able to
+   * reach the double after construction, which `build`'s inline one hides.
+   */
+  function buildWith(settings: FakeOperatorSettingsService): ReconcilerService {
+    return new ReconcilerService(
+      settings,
       lease as unknown as TickLeaseService,
       repositories as unknown as RepositoriesService,
       github as unknown as GitHubReadService,
@@ -421,6 +450,160 @@ describe('ReconcilerService', () => {
     });
   });
 
+  /**
+   * ADR-0018 §4: the coherence unit is one tick, not the life of the process.
+   *
+   * The constructor used to freeze `dispatch.retryCeiling` and
+   * `github.rateLimitReserve`, so the ONLY way to change either was a restart.
+   * These pin both halves of what replaced it: one tick never sees a value
+   * move underneath it, and the next tick sees the new one.
+   */
+  describe('the settings snapshot (#342)', () => {
+    function settingsDouble(
+      overrides: OperatorSettingsOverrides = {},
+    ): FakeOperatorSettingsService {
+      return makeOperatorSettings({
+        overrides: {
+          'reconciler.enabled': true,
+          'github.rateLimitReserve': 100,
+          ...overrides,
+        },
+      });
+    }
+
+    function observedRepositories(count = 1) {
+      repositories.listObserved.mockResolvedValue(
+        Array.from({ length: count }, (_, i) =>
+          repository({
+            id: `1111111${i}-1111-1111-1111-111111111111`,
+            name: `app-${i}`,
+            observeEnabled: true,
+            dispatchEnabled: true,
+          }),
+        ),
+      );
+    }
+
+    /**
+     * A work order that has spent `attempt` attempts and has no live run.
+     *
+     * The projection's retry-ceiling branch is the observable the ceiling
+     * actually decides — `attempt >= retryCeiling` quarantines, and the reason
+     * string names the number that was used, so the assertion reads the value
+     * the decision was taken against rather than a value merely reported.
+     */
+    function spentWorkOrder(attempt: number) {
+      return [
+        {
+          id: 'wo',
+          identity: 'wo_app_312_a3f91c2_a1',
+          issueNumber: 312,
+          attempt,
+          status: 'failed',
+          runs: [],
+        },
+      ];
+    }
+
+    beforeEach(() => {
+      observedRepositories();
+      prisma.workOrder.findMany.mockResolvedValue(spentWorkOrder(2));
+      github.listIssues.mockResolvedValue({
+        issues: [READY_ISSUE],
+        truncated: false,
+        allFromCache: false,
+      });
+    });
+
+    it('decides the whole tick against the ceiling it started with, and the next tick against the new one', async () => {
+      // The test that matters. An operator's edit lands after the tick has
+      // begun but before the projection runs; the running tick must finish
+      // under the rules it started with, and the one after it must not.
+      const settings = settingsDouble({ 'dispatch.retryCeiling': 5 });
+      const service = buildWith(settings);
+      github.listIssues.mockImplementation(async () => {
+        settings.setOverride('dispatch.retryCeiling', 1);
+        return { issues: [READY_ISSUE], truncated: false, allFromCache: false };
+      });
+
+      const during = await service.tick();
+      const after = await service.tick();
+
+      // 2 attempts against a ceiling of 5: still dispatchable.
+      expect(during.settings.retryCeiling).toBe(5);
+      expect(during.projections[0].issues[0].intent).toBe('dispatch');
+      // The same two attempts against the ceiling the operator set: exhausted.
+      expect(after.settings.retryCeiling).toBe(1);
+      expect(after.projections[0].issues[0].intent).toBe('quarantined');
+      expect(after.projections[0].issues[0].reason).toContain('all 1 attempts');
+    });
+
+    it('projects every repository in one sweep against the same ceiling', async () => {
+      // Coherence is per TICK, not per repository. A value re-read inside the
+      // sweep would quarantine the repositories at the end of the list under
+      // rules the ones at the front never saw — the same bug at a smaller
+      // scale, and the one a naive fix reintroduces.
+      observedRepositories(3);
+      const settings = settingsDouble({ 'dispatch.retryCeiling': 5 });
+      const service = buildWith(settings);
+      github.listIssues.mockImplementation(async () => {
+        settings.setOverride('dispatch.retryCeiling', 1);
+        return { issues: [READY_ISSUE], truncated: false, allFromCache: false };
+      });
+
+      const record = await service.tick();
+
+      expect(record.projections).toHaveLength(3);
+      expect(record.projections.map((p) => p.issues[0].intent)).toEqual([
+        'dispatch',
+        'dispatch',
+        'dispatch',
+      ]);
+    });
+
+    it('holds back the reserve the tick was configured with, not the one at boot', async () => {
+      const settings = settingsDouble();
+      const service = buildWith(settings);
+      const warn = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => undefined);
+      http.canSpend.mockReturnValue(false);
+
+      settings.setOverride('github.rateLimitReserve', 250);
+      const record = await service.tick();
+
+      expect(record.outcome).toBe('skipped-rate-limited');
+      expect(record.settings.rateLimitReserve).toBe(250);
+      // Named in the message too: an operator reading "at or below the reserve
+      // of 100" while the reserve is 250 has been told the wrong thing.
+      expect(String(warn.mock.calls[0]?.[0])).toContain('250');
+    });
+
+    it('records the write mode the tick actually ran under', async () => {
+      // VISION §12's observation week is reviewed FROM this record. A tick
+      // that cannot say whether writes were permitted makes its own
+      // `actionsExecuted: 0` unfalsifiable — it could equally mean the switch
+      // was on and there was nothing to do.
+      expect((await build().tick()).settings.writesEnabled).toBe(false);
+      expect(
+        (await build({ 'github.writesEnabled': true }).tick()).settings
+          .writesEnabled,
+      ).toBe(true);
+    });
+
+    it('records the configuration even for a tick that declined to run', async () => {
+      // Read before the enablement check on purpose: "why did nothing happen"
+      // is answered by the settings the tick declined under.
+      const record = await build({
+        'reconciler.enabled': false,
+        'dispatch.retryCeiling': 9,
+      }).tick();
+
+      expect(record.outcome).toBe('skipped-disabled');
+      expect(record.settings.retryCeiling).toBe(9);
+    });
+  });
+
   describe('the record', () => {
     it('always reports a duration and both timestamps', async () => {
       // #45: tick latency has to be MEASURABLE, because VISION §13 says add
@@ -506,19 +689,6 @@ describe('ReconcilerService', () => {
   });
 
   describe('projecting work orders (#155)', () => {
-    const READY_ISSUE = {
-      number: 312,
-      title: 'Add a permit search prompt builder',
-      body: 'anything',
-      state: 'open' as const,
-      author: 'marinoscar',
-      labels: [],
-      inputLabels: ['factory:ready'],
-      unknownInputLabels: [],
-      ignoredLabels: [],
-      observedMirrorLabels: [],
-    };
-
     function withIssues(issues: unknown[]): void {
       github.listIssues.mockResolvedValue({
         issues,

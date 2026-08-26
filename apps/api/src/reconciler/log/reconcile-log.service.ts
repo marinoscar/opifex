@@ -94,6 +94,12 @@ export class ReconcileLogService {
           // claim this tick acted and found nothing wrong (#320).
           allFromCache: record.allFromCache,
           rateLimitRemaining: record.rateLimitRemaining,
+          // Always set, unconditionally, same as `failures` below: every tick
+          // recorded from here on captures its own settings snapshot, so
+          // there is no "quiet tick" carve-out the way there is for
+          // `projections`/`actions`. NULL on this column, going forward, can
+          // only mean a row written before this line existed (#342).
+          settings: toJson(record.settings),
           failures: toJson(record.failures),
           projections: worthKeeping ? toJson(record.projections) : undefined,
           actions: worthKeeping ? toJson(record.actions) : undefined,
@@ -242,6 +248,11 @@ function toResponse(tick: ReconcileTickRow) {
     actionsExecuted: tick.actionsExecuted,
     allFromCache: tick.allFromCache,
     rateLimitRemaining: tick.rateLimitRemaining,
+    // Passed straight through, null included: null means this row predates
+    // the column (#342), not "defaults" or "whatever settings are now" — see
+    // the Prisma model's comment on `settings`. There is no `?? null` default
+    // to apply here since the column is already nullable end to end.
+    settings: tick.settings,
     failures: tick.failures,
     // `?? null` on the others is a default for a missing heavy payload; here
     // null is MEANINGFUL and is passed straight through — see the DTO.
