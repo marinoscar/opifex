@@ -3,13 +3,23 @@ import type { HardCeiling } from '../budget/hard-spend-ceiling';
 /**
  * The never-trustable list (#95, ADR-0013).
  *
- * VISION §8 names five things no grant may ever authorise: force-push or any
+ * VISION §8 names the things no grant may ever authorise: force-push or any
  * write to a protected branch; deleting branches, issues or pull requests;
- * reading or writing credentials; spend above the hard ceiling; and modifying
- * CI workflows, the policy table, or budget configuration. It calls the last
- * one the item that matters most — "an agent that can edit the check enforcing
- * its own trailers, or grant itself trust, has the appearance of guardrails and
- * none of the substance."
+ * reading or writing credentials; spend above the hard ceiling; modifying CI
+ * workflows or the policy table; and modifying budget configuration outside an
+ * interactive, RBAC-gated admin action. It calls the CI-workflow and
+ * policy-table item the one that matters most — "an agent that can edit the
+ * check enforcing its own trailers, or grant itself trust, has the appearance
+ * of guardrails and none of the substance."
+ *
+ * That last clause used to read "modifying CI workflows, the policy table, or
+ * budget configuration", unqualified, and #345 split it. Nothing about what an
+ * AGENT may do changed: this file refuses a `budget-config-write` effect
+ * unconditionally, and no trust grant, promoted action class or
+ * agent-reachable path moves a spend ceiling. What the amendment admits is
+ * that a signed-in human admin lowering a ceiling during an incident is not an
+ * agent raising its own limit, and the ceilings became editable from the
+ * Control Center on exactly those terms (ADR-0018 §6).
  *
  * ADR-0013 settled WHERE that list lives. It is not a flag on
  * `supervisor/action-classes.ts`, because none of the five is an action class:
@@ -75,6 +85,29 @@ export type AutonomyEffect =
       kind: 'trust-grant-write';
       operation: 'create' | 'widen' | 'renew' | 'revoke';
     }
+  | {
+      /**
+       * A write to the spend ceilings' own configuration (#345, ADR-0018 §6).
+       *
+       * ADR-0013's union had no name for this and did not need one: there was
+       * no reachable code path any effect could describe, because
+       * `hard-spend-ceiling.ts` had no setter for anything to call. Epic #332
+       * created one — `PATCH /api/operator-settings` — and ADR-0013's own
+       * consequences say what follows: "An effect kind that is real but not
+       * yet modelled in the `Effect` union is not caught, because the guard
+       * can only refuse what it can name."
+       *
+       * Nothing in this ADR's design should ever let an action class's
+       * `effectsFor` legitimately produce this. That is the point. The guard
+       * "does not ask what class an action belongs to", so a promotion mistake
+       * or a future executor wired incorrectly is refused here regardless of
+       * what the class registry says — which is the only case this member
+       * exists for.
+       */
+      kind: 'budget-config-write';
+      /** The managed key or variable being written, named in the refusal. */
+      setting: string;
+    }
   | { kind: 'issue-create'; repository: string }
   | { kind: 'issue-edit'; repository: string; ref: string }
   | { kind: 'dispatch'; repository: string; workOrder: string }
@@ -95,7 +128,8 @@ export type NeverTrustableRule =
   | 'hard-spend-ceiling'
   | 'self-modification'
   | 'quarantine-self-clear'
-  | 'trust-self-grant';
+  | 'trust-self-grant'
+  | 'budget-config-write';
 
 /** One rule refusing one effect, with the sentence a human reads. */
 export interface NeverTrustableRefusal {
@@ -156,14 +190,19 @@ export interface ForbiddenPathRule {
  * became INAPPLICABLE, which is worse, because a rule that stops firing looks
  * exactly like a rule that is never violated.
  *
- * What actually holds that line now lives elsewhere, in two independent
- * pieces, both preconditions of ADR-0018 §6:
+ * What actually holds that line now lives elsewhere, in three independent
+ * pieces — the first two being preconditions of ADR-0018 §6, the third being
+ * this file's own answer to the gap:
  *
  *  - `runners/process/child-environment.ts` (#334) — the agent subprocess
  *    inherits an allowlist, so it holds no credential to authenticate with.
  *  - `auth/guards/interactive-session.guard.ts` (#346) — the settings write
  *    path refuses any credential that does not prove a human was present,
  *    whatever permissions it carries.
+ *  - the `budget-config-write` member of `AutonomyEffect` below (#345) — the
+ *    write named as an effect this guard can see, so that an action reaching
+ *    it through some path nobody modelled is refused on its own terms rather
+ *    than passing because no `file-write` happened to be involved.
  *
  * The rules below stay, and are load-bearing for what remains: an agent
  * writing an `.env` file in a repository workspace is still a file write this
@@ -374,6 +413,27 @@ export function checkNeverTrustable(
               'none of the substance (VISION §8); only revoke is permitted.',
           });
         }
+        break;
+      }
+
+      case 'budget-config-write': {
+        // Always, with no condition to get wrong, and deliberately NOT
+        // conditioned on which setting or which direction. ADR-0018's own
+        // alternatives section rejects "lowering is fine, raising is not" for
+        // the write path, and the argument is sharper here: if something that
+        // is not a human admin has reached this effect at all, it can lower
+        // the ceiling to zero and stand the factory down, which is a
+        // differently-shaped but still real harm.
+        refusals.push({
+          rule: 'budget-config-write',
+          effect,
+          reason:
+            `Refused: write to budget configuration "${effect.setting}". ` +
+            'Modifying budget configuration is never trustable outside an ' +
+            'interactive, RBAC-gated admin action (VISION §8, ADR-0018 §6) — ' +
+            'no trust grant, promoted action class or agent-reachable path ' +
+            'moves a spend ceiling.',
+        });
         break;
       }
 
