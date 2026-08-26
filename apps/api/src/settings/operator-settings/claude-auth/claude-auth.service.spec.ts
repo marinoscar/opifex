@@ -8,6 +8,8 @@ import {
 import {
   FAKE_AUTHORIZE_URL,
   FAKE_OAUTH_TOKEN,
+  PASTE_CHUNK_THRESHOLD,
+  REALISTIC_AUTHORIZATION_CODE,
   makeFakeClaudeCli,
   type FakeClaudeBehaviour,
   type FakeClaudeCli,
@@ -288,6 +290,35 @@ describe('ClaudeAuthService (#386)', () => {
 
       // And it is the right token: the resolver decrypts to what the CLI
       // printed.
+      expect(settings.get('runners.claudeCodeLocal.oauthToken')).toBe(
+        FAKE_OAUTH_TOKEN,
+      );
+    });
+
+    it('submits a code of the length real ones actually are', async () => {
+      // THE #389 test. Every other spec in this file pastes four characters,
+      // which is why they all passed for as long as the service sent the code
+      // and its Enter as ONE write: the vendor's input layer reads a chunk
+      // that size as pasted text, a paste carries no Enter, and the 92-
+      // character code an operator really pastes was echoed at the prompt and
+      // then sat there until the exchange ceiling fired.
+      //
+      // `fake-claude-cli.spec.ts` pins the other half — that the fake would
+      // refuse the old one-write form — so this cannot pass vacuously.
+      await given('success', { exchangeTimeoutMs: 10_000 });
+      const started = await service.start('user-1');
+      expect(REALISTIC_AUTHORIZATION_CODE.length).toBeGreaterThan(
+        PASTE_CHUNK_THRESHOLD,
+      );
+
+      const done = await service.submitCode(
+        started.sessionId,
+        REALISTIC_AUTHORIZATION_CODE,
+        'user-1',
+      );
+
+      expect(done.status).toBe('completed');
+      expect(done.error).toBeNull();
       expect(settings.get('runners.claudeCodeLocal.oauthToken')).toBe(
         FAKE_OAUTH_TOKEN,
       );
