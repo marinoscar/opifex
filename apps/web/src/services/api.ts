@@ -222,6 +222,7 @@ import type {
   TrustGrantFilters,
   TrustGrantListItem,
 } from '../types/trust';
+import type { AuditEventsPage } from '../types/audit';
 import type { FleetHealth, ReadinessHealth } from '../types/health';
 import type {
   OperatorSettingsDocument,
@@ -1261,4 +1262,56 @@ export async function patchOperatorSettings(
     headers:
       revision === null ? undefined : { 'If-Match': revision.toString() },
   });
+}
+
+// Audit events (#351, epic #332)
+// ---------------------------------------------------------------------------
+
+/**
+ * `GET /api/audit-events` — the audit log, newest first (#338, #351).
+ *
+ * Only the parameters `auditEventListQuerySchema` actually declares are sent.
+ * `targetType` is the one History offers, because it is what separates "what
+ * changed about my configuration" from every storage upload and role change in
+ * the same table.
+ *
+ * No `sort` parameter exists on this endpoint: the order is `createdAt desc`
+ * with an `id` tiebreaker, and `sortOrder` only flips it. A sortable column
+ * here could therefore only re-order the page in the browser, which is why
+ * `historyColumns.tsx` declares nothing sortable.
+ *
+ * The endpoint is gated on `system_settings:read`, the same permission the
+ * Control Center route already requires — see the controller's header for why
+ * it is that string and not a new `audit:read`.
+ */
+export async function getAuditEvents(
+  params: {
+    page?: number;
+    pageSize?: number;
+    targetType?: string;
+    targetId?: string;
+    action?: string;
+    actorUserId?: string;
+    since?: string;
+    until?: string;
+    sortOrder?: 'asc' | 'desc';
+  } = {},
+  signal?: AbortSignal,
+): Promise<AuditEventsPage> {
+  const searchParams = new URLSearchParams();
+  if (params.page) searchParams.set('page', String(params.page));
+  if (params.pageSize) searchParams.set('pageSize', String(params.pageSize));
+  if (params.targetType) searchParams.set('targetType', params.targetType);
+  if (params.targetId) searchParams.set('targetId', params.targetId);
+  if (params.action) searchParams.set('action', params.action);
+  if (params.actorUserId) searchParams.set('actorUserId', params.actorUserId);
+  if (params.since) searchParams.set('since', params.since);
+  if (params.until) searchParams.set('until', params.until);
+  if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
+
+  const query = searchParams.toString();
+  return api.get<AuditEventsPage>(
+    query ? `/audit-events?${query}` : '/audit-events',
+    { signal },
+  );
 }

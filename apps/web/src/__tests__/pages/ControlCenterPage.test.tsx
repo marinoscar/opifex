@@ -318,6 +318,27 @@ describe('ControlCenterPage', () => {
       expect(reads).toBe(1);
     });
 
+    it('renders History from the audit endpoint, not as a placeholder', async () => {
+      // #351 flipped this section's status and added one case to the switch.
+      // The assertion is that the shell now draws the real thing: a
+      // placeholder would say "History is not built yet" and name the issue.
+      const user = userEvent.setup();
+      render(<ControlCenterPage />, {
+        wrapperOptions: { user: mockAdminUser },
+      });
+      await awaitPage();
+      await user.click(screen.getByRole('tab', { name: 'History' }));
+
+      expect(
+        await screen.findByRole('grid', {
+          name: 'Configuration change history',
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/History is not built yet/i),
+      ).not.toBeInTheDocument();
+    });
+
     // Points at Credentials rather than Configuration: #348 flipped
     // Configuration to live, which is exactly the transition this test was
     // written to make cheap. Retargeting it is the maintenance the design

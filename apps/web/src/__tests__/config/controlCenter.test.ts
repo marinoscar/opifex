@@ -41,31 +41,29 @@ describe('control center sections', () => {
   });
 
   it('declares the sections the rest of the epic still owes', () => {
-    // #349 secrets and test buttons, #351 change history. Declared now so
-    // landing one is a status flip plus a component, never a change to the
-    // shell — which is how #348 and #350 both landed, below.
+    // #349 secrets and test buttons is the last one owed. Declared as
+    // `planned` so landing one is a status flip plus a component, never a
+    // change to the shell -- which is exactly what #348, #350 and #351 each
+    // turned out to be.
     const planned = CONTROL_CENTER_SECTIONS.filter(
       (section) => section.status === 'planned',
     ).map((section) => section.issue);
 
-    expect(planned).toEqual([349, 351]);
+    expect(planned).toEqual([349]);
   });
 
-  it('keeps the delivering issue on a section that has landed', () => {
-    // Provenance survives the flip: `issue` records which change DELIVERED a
-    // section, not only which one was owed it — which is what `issue` is
-    // documented to mean for a `live` section.
-    const repositories = CONTROL_CENTER_SECTIONS.find(
-      (section) => section.key === 'repositories',
-    );
-    const settings = CONTROL_CENTER_SECTIONS.find(
-      (section) => section.key === 'settings',
-    );
+  it('keeps the delivering issue on every section that has landed', () => {
+    // The registry is provenance as well as intent: a section that went live
+    // keeps naming its issue, so "why does this screen exist" stays
+    // answerable after the placeholder is gone.
+    const landed = { repositories: 350, settings: 348, history: 351 };
 
-    expect(repositories?.status).toBe('live');
-    expect(repositories?.issue).toBe(350);
-    expect(settings?.status).toBe('live');
-    expect(settings?.issue).toBe(348);
+    for (const [key, issue] of Object.entries(landed)) {
+      const section = CONTROL_CENTER_SECTIONS.find((s) => s.key === key);
+
+      expect(section?.status, key).toBe('live');
+      expect(section?.issue, key).toBe(issue);
+    }
   });
 
   it('gives every section a description that is a sentence, not a label', () => {

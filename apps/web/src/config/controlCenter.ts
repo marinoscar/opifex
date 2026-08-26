@@ -10,8 +10,9 @@
  * ## This file is the seam the rest of the epic lands in
  *
  * #348 (registry-driven settings), #349 (secrets and test buttons), #350 (the
- * repository ladder) and #351 (change history) each own one section. They are
- * declared here NOW, as `planned`, for the same reason
+ * repository ladder) and #351 (change history) each own one section. They were
+ * declared here as `planned` before they existed — #351 is `live` as of its
+ * own PR — for the same reason
  * `config/cockpitApi.ts` declared its unwired endpoints before they existed:
  * the shape of the thing is part of what the app communicates, and a section
  * that appears out of nowhere three PRs from now teaches an operator less than
@@ -157,7 +158,7 @@ export const CONTROL_CENTER_SECTIONS: readonly ControlCenterSection[] = [
       'Who changed which setting, when, and what it was before — with ' +
       'secrets recorded as a mask rather than a value.',
     Icon: HistoryIcon,
-    status: 'planned',
+    status: 'live',
     issue: 351,
     phase: PHASE,
   },
