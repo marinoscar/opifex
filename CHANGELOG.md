@@ -23,11 +23,12 @@ review: **the check enforces the habit, review enforces the content.**
 
 ## [Unreleased]
 
-> **Before deploying this: three things changed what it takes to start or operate the API.**
+> **Before deploying this: four things changed what it takes to start or operate the API.**
 >
 > - `JWT_SECRET` is now required and validated at boot: unset, or under 32 characters, and the API refuses to start — the startup failure names every invalid variable at once. Generate one with `openssl rand -base64 32` (44 characters, comfortably over the floor). (#278, #295, #309)
 > - `POSTGRES_PASSWORD` is now required when `NODE_ENV=production`: an unset value, an empty value, and the literal `postgres` default — the value `infra/compose/.env.example` ships, so copying that file is not choosing a password — are all rejected at boot. Outside production the default still applies with no enforcement, so a local `docker compose up` stays frictionless. (#299, #306)
 > - `GET /api/health` (the comprehensive check — not the liveness or readiness probes) now fails when no runner is registered and routable, the way it already failed on seed drift. `GET /api/health/ready` deliberately does **not** fail on either condition: it reports the finding and stays up, because the container that would go down under `restart: unless-stopped` is the same one running the fix (registration convergence, or `prisma:seed`). (#277, #294)
+> - The GitHub, runner, dispatch, reconciler, supervisor, promotion and notification-delivery variables are now read through the operator settings registry rather than manufactured in `configuration.ts`, and the registry validates them. Values it rejects — a non-integer where a number is expected, or a number outside the declared range, such as a `GITHUB_REQUEST_TIMEOUT_MS` below 1000 — no longer take effect: the declared default is used instead and the reason is logged once — the first time that setting is read — naming the variable and what was wrong with it. Nothing refuses to boot over one, deliberately, since a mistyped reconcile interval is not a reason to take an API down. Every value that was already valid resolves exactly as it did. (#340, epic #332, ADR-0018)
 
 ### Added
 
