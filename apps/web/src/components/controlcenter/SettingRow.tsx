@@ -28,10 +28,11 @@
  *
  * The API returns `{ configured, source, hint, updatedAt }` for a secret and
  * never a value, so there is nothing to seed an input with. Rotation and the
- * Test buttons are #349's, and writing one additionally needs
- * `operator_settings:write_secret`, which this section does not ask for. The
- * row states what is configured and where it came from, and says which issue
- * brings the rest — rather than offering a field that would 403.
+ * Test buttons live in the Credentials section (#349), which is also where the
+ * additional `operator_settings:write_secret` permission is explained — this
+ * section does not ask for it, and a field here would 403 for an operator who
+ * holds only `system_settings:write`. The row states what is configured and
+ * where it came from, and points at where the rest is.
  */
 
 import {
@@ -367,9 +368,10 @@ function SecretValue({ entry }: { entry: SecretOperatorSetting }) {
         {entry.configured ? (entry.hint ?? 'configured') : 'not configured'}
       </Typography>
       <Typography variant="caption" component="p" color="text.secondary">
-        Rotating this credential, and testing it against the service it is for,
-        arrive in #349. It is read-only here — the API never returns the value,
-        and writing one needs <code>operator_settings:write_secret</code>.
+        Read-only here — the API never returns the value. Rotating this
+        credential, clearing it, and testing it against the service it is for
+        all live in the <strong>Credentials</strong> section, which is also
+        where the extra permission a secret write needs is explained.
       </Typography>
     </Box>
   );

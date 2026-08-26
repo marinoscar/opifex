@@ -86,10 +86,13 @@ describe('groupSettings', () => {
   it('groups in the declared order and keeps registry order inside', () => {
     const groups = groupSettings(SETTINGS);
 
+    // GROUP_ORDER's order, not the order the response listed them in: the
+    // fixture carries `supervisor` entries before its later `dispatch` ones.
     expect(groups.map((group) => group.group)).toEqual([
       'github',
       'runner',
       'dispatch',
+      'supervisor',
     ]);
     expect(groups[0].entries.map((setting) => setting.key)).toEqual([
       'github.token',

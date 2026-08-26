@@ -339,28 +339,15 @@ describe('ControlCenterPage', () => {
       ).not.toBeInTheDocument();
     });
 
-    // Points at Credentials rather than Configuration: #348 flipped
-    // Configuration to live, which is exactly the transition this test was
-    // written to make cheap. Retargeting it is the maintenance the design
-    // predicted, not a symptom -- and a section that is still planned is what
-    // it needs to assert against.
-    it('renders a planned section as not built, naming its issue', async () => {
-      const user = userEvent.setup();
-      render(<ControlCenterPage />, {
-        wrapperOptions: { user: mockAdminUser },
-      });
-      await awaitPage();
-
-      await user.click(screen.getByRole('tab', { name: 'Credentials' }));
-
-      expect(
-        await screen.findByText(/Credentials is not built yet/i),
-      ).toBeInTheDocument();
-      expect(screen.getByText(/#349/)).toBeInTheDocument();
-      expect(
-        screen.getByText(/Arrives in Phase 5 — Cockpit/),
-      ).toBeInTheDocument();
-    });
+    // There is no longer a `renders a planned section as not built` case,
+    // because there is no longer a planned section: #349 was the last one, and
+    // every tab now draws its own component. The case was retargeted twice as
+    // sections landed -- Configuration, then Credentials, then History -- which
+    // is the maintenance the section registry was designed to make cheap, and
+    // its disappearance is that design finishing rather than coverage being
+    // dropped. `PlannedSectionPanel` itself is still covered by
+    // `config/controlCenter.test.ts`, which asserts nothing is planned, and the
+    // component survives for the next section somebody declares.
   });
 
   describe('Readiness', () => {

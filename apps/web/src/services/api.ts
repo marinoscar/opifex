@@ -229,6 +229,10 @@ import type {
   OperatorSettingsPatch,
 } from '../types/operatorSettings';
 import type {
+  OperatorProbeName,
+  OperatorProbeResult,
+} from '../types/operatorProbes';
+import type {
   MetricsSummary,
   QueueEntry,
   RunDetail,
@@ -1314,4 +1318,105 @@ export async function getAuditEvents(
     query ? `/audit-events?${query}` : '/audit-events',
     { signal },
   );
+}
+
+// ---------------------------------------------------------------------------
+// The Test buttons (#349, epic #332)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a probe call produced — which is not the same question as what the
+ * probe found.
+ *
+ * `answered` carries the API's own `{ ok, detail, checkedAt, skipped }`
+ * untouched, including `ok: false`, because a rejected credential is a finding
+ * rather than a fault. `unreachable` is the other thing entirely: the call did
+ * not produce a finding at all — no permission, no route, no network — and
+ * the screen must not paint that as a failing credential. Telling an operator
+ * their token is bad when the real problem is a 403 on the probe endpoint is
+ * the mistake this split exists to make impossible.
+ */
+export type OperatorProbeOutcome =
+  | { state: 'answered'; result: OperatorProbeResult }
+  | {
+      state: 'unreachable';
+      detail: string;
+      /** The HTTP status, when there was one. Null for a transport failure. */
+      status: number | null;
+    };
+
+/**
+ * `POST /operator-settings/probes/:probe` — does the configured thing work?
+ *
+ * Resolves for every outcome, like `probeRepositoryAccess`. A probe is
+ * something an operator asks on purpose and gets an answer to; throwing would
+ * make the button's failure mode "an exception somewhere" rather than a
+ * sentence on the card next to it.
+ *
+ * The response is NOT reshaped. `ok`, `detail`, `checkedAt`, `skipped` and
+ * `rateLimit` all reach the component as the API wrote them — a client-side
+ * "helpful" default for `detail` would be this layer inventing a finding, and
+ * a `checkedAt` filled in from the browser clock would be an observation
+ * timestamped by something that did not observe anything.
+ */
+export async function runOperatorProbe(
+  probe: OperatorProbeName,
+  options: { repositoryId?: string; signal?: AbortSignal } = {},
+): Promise<OperatorProbeOutcome> {
+  const { repositoryId, signal } = options;
+
+  try {
+    const result = await api.post<OperatorProbeResult>(
+      `/operator-settings/probes/${encodeURIComponent(probe)}`,
+      // Always an object, even when there is nothing to say. The API's body is
+      // optional in OpenAPI terms, but `ZodValidationPipe` is global and an
+      // absent body reaches an object schema as `undefined` — which a
+      // `z.object` rejects. `{}` satisfies it and means the same thing:
+      // `github-repo` then asks about the first observed repository, which is
+      // what an operator with one registered repository expects.
+      { ...(repositoryId === undefined ? {} : { repositoryId }) },
+      { signal },
+    );
+
+    return { state: 'answered', result };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      if (error.status === 403) {
+        return {
+          state: 'unreachable',
+          status: 403,
+          detail:
+            'This account may not run probes, so nothing here has been ' +
+            'tested — which says nothing either way about the credential. ' +
+            'Running one needs system_settings:write.',
+        };
+      }
+
+      if (error.status === 404 || error.status === 501) {
+        return {
+          state: 'unreachable',
+          status: error.status,
+          detail:
+            `This deployment's API does not know the ${probe} probe ` +
+            `(${error.status}: ${error.message}). Nothing has tested this ` +
+            'credential.',
+        };
+      }
+
+      return {
+        state: 'unreachable',
+        status: error.status,
+        detail: `The probe answered ${error.status}: ${error.message}`,
+      };
+    }
+
+    return {
+      state: 'unreachable',
+      status: null,
+      detail:
+        error instanceof Error
+          ? `The probe could not be called: ${error.message}`
+          : 'The probe could not be called.',
+    };
+  }
 }

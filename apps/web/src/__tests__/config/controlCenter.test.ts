@@ -41,22 +41,28 @@ describe('control center sections', () => {
   });
 
   it('declares the sections the rest of the epic still owes', () => {
-    // #349 secrets and test buttons is the last one owed. Declared as
-    // `planned` so landing one is a status flip plus a component, never a
-    // change to the shell -- which is exactly what #348, #350 and #351 each
-    // turned out to be.
+    // Nothing is owed any more. #349 was the last planned section, and each
+    // one landed as a status flip plus a component rather than a change to the
+    // shell -- which is what the registry was for. An empty list here is the
+    // design finishing, not the assertion going slack: a section declared
+    // `planned` tomorrow fails this immediately, which is the point.
     const planned = CONTROL_CENTER_SECTIONS.filter(
       (section) => section.status === 'planned',
     ).map((section) => section.issue);
 
-    expect(planned).toEqual([349]);
+    expect(planned).toEqual([]);
   });
 
   it('keeps the delivering issue on every section that has landed', () => {
     // The registry is provenance as well as intent: a section that went live
     // keeps naming its issue, so "why does this screen exist" stays
     // answerable after the placeholder is gone.
-    const landed = { repositories: 350, settings: 348, history: 351 };
+    const landed = {
+      repositories: 350,
+      settings: 348,
+      history: 351,
+      credentials: 349,
+    };
 
     for (const [key, issue] of Object.entries(landed)) {
       const section = CONTROL_CENTER_SECTIONS.find((s) => s.key === key);

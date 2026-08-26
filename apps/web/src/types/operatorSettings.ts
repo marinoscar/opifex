@@ -107,7 +107,8 @@ export interface OperatorSettingsOverlay {
   stale?: boolean;
 }
 
-/** Whether a secret can be written at all right now. #349 acts on this. */
+/** Whether a secret can be written at all right now. The Credentials section
+ * disables Replace and says why when this is false (#349). */
 export interface OperatorSecretStorage {
   configured: boolean;
   problem?: string;
