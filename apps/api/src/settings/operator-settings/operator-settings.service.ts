@@ -209,6 +209,13 @@ export class OperatorSettingsService implements OnModuleInit {
   /** The database layer. Empty until the first successful refresh. */
   private overlayRows = new Map<OperatorSettingKey, OverlayEntry>();
 
+  /**
+   * What the most recent refresh announced, so a write can tell whether its
+   * own key was already covered. Reset to empty by a failed refresh, because
+   * a previous pass's change set says nothing about this one.
+   */
+  private lastRefreshChanged: readonly OperatorSettingKey[] = [];
+
   private overlayState: OperatorSettingsOverlayState = {
     status: 'unavailable',
     loadedAt: null,
@@ -400,6 +407,7 @@ export class OperatorSettingsService implements OnModuleInit {
     const changed = diffOverlays(this.overlayRows, next);
 
     this.overlayRows = next;
+    this.lastRefreshChanged = changed;
     this.overlayState = {
       status: 'loaded',
       loadedAt: attemptedAt,
@@ -746,11 +754,14 @@ export class OperatorSettingsService implements OnModuleInit {
 
     await this.writeAuditRow(key, before, after, action, userId);
 
-    // `refresh()` has already announced the change if it observed one. It is
-    // announced again here only when it did not — which happens when the
-    // refresh failed (the database went away between the commit and the read)
-    // and the overlay in memory is now behind the row that was just written.
-    if (this.overlayState.status !== 'loaded') {
+    // Every write announces itself, exactly once. `refresh()` has usually
+    // already done it — it diffs the overlay and emits what moved — but two
+    // cases slip past that: the refresh failed (the database went away between
+    // the commit and the read), or the value written is byte-for-byte the one
+    // already stored, which the diff correctly reports as no change. A caller
+    // that asked for a write is owed the event either way, so it is emitted
+    // here when the refresh did not emit it, and never twice.
+    if (!this.lastRefreshChanged.includes(key)) {
       this.notifyChanged([key]);
     }
 
@@ -852,6 +863,7 @@ export class OperatorSettingsService implements OnModuleInit {
   ): OperatorSettingsOverlayState {
     const stale = this.overlayState.loadedAt !== null;
 
+    this.lastRefreshChanged = [];
     this.overlayState = {
       status: 'unavailable',
       loadedAt: this.overlayState.loadedAt,
