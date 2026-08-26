@@ -10,7 +10,7 @@
  *
  * ## Why `retryable` exists at all
  *
- * Two of the seven reasons are deployment faults. `cli_missing` means the
+ * Two of the nine reasons are deployment faults. `cli_missing` means the
  * `claude` binary is not in the API container; `pty_unavailable` means
  * `script(1)` is not either. Neither changes because an operator pressed a
  * button again — the next attempt fails identically, in the same forty
@@ -109,9 +109,34 @@ const FAILURE_PRESENTATIONS: Record<
     severity: 'warning',
     retryable: true,
     nextStep:
-      'Nothing was changed. A sign-in lasts ten minutes and the code the ' +
-      'browser hands you is good for only a few, so open the link and this ' +
-      'page side by side before starting again.',
+      'Nothing was changed, and nothing was pasted: the ten minutes ran out ' +
+      'first. The code the browser hands you is good for only a few minutes ' +
+      'either way, so open the link and this page side by side before ' +
+      'starting again.',
+  },
+  cli_no_url: {
+    title: 'The CLI never produced a sign-in link',
+    severity: 'error',
+    retryable: true,
+    nextStep:
+      'Nothing was changed and the Claude Code process was stopped. It ran — ' +
+      'so this is neither a missing binary nor a missing terminal — and then ' +
+      'failed to reach the screen that hands over the link. That is a fault ' +
+      'on the API side, not something you did and not this sign-in expiring. ' +
+      'Try once more; if it happens again, the API log holds the output of ' +
+      'the attempt and is the thing to read.',
+  },
+  cli_no_response: {
+    title: 'The CLI took the code and never answered',
+    severity: 'error',
+    retryable: true,
+    nextStep:
+      'Nothing was changed. This is not an expiry and it says nothing about ' +
+      'the code: it reached the CLI, which then produced neither a token nor ' +
+      'an error for ninety seconds. Re-copying the code is not the fix. A ' +
+      'second attempt can end differently, but if it does not, this is a ' +
+      "fault to report — the API log holds the CLI's own output for the " +
+      'attempt, with anything token-shaped redacted.',
   },
   cancelled: {
     title: 'This sign-in was cancelled',

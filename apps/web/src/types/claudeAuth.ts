@@ -39,10 +39,16 @@ export type ClaudeAuthStatus = (typeof CLAUDE_AUTH_STATUSES)[number];
 /**
  * Why it did not produce a token.
  *
- * Seven values rather than one, because the API went to real trouble to tell
+ * Nine values rather than one, because the API went to real trouble to tell
  * them apart and each has a different next step: re-copy a code, check a plan,
- * rebuild the image, or nothing at all. `config/claudeAuth.ts` is where each
- * one becomes something on screen.
+ * rebuild the image, report a fault, or nothing at all. `config/claudeAuth.ts`
+ * is where each one becomes something on screen.
+ *
+ * `cli_no_url` and `cli_no_response` were split out of `timed_out` in #389.
+ * They are the CLI stalling — before the link, and after the code — and are
+ * faults on the API's side; `timed_out` is now only the operator's own ten
+ * minutes running out. They rendered identically, as an expiry, which is both
+ * untrue and an invitation to retry something that cannot work.
  */
 export const CLAUDE_AUTH_FAILURE_REASONS = [
   'invalid_code',
@@ -50,6 +56,8 @@ export const CLAUDE_AUTH_FAILURE_REASONS = [
   'cli_missing',
   'pty_unavailable',
   'timed_out',
+  'cli_no_url',
+  'cli_no_response',
   'cancelled',
   'unknown',
 ] as const;

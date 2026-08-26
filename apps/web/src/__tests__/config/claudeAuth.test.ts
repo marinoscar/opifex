@@ -1,8 +1,8 @@
 /**
  * How a sign-in's failures and its deadline are presented (#386, epic #332).
  *
- * Two claims worth pinning here rather than through a render: that the seven
- * reasons stay seven distinct things, and that the countdown says nothing it
+ * Two claims worth pinning here rather than through a render: that the nine
+ * reasons stay nine distinct things, and that the countdown says nothing it
  * cannot support.
  */
 
@@ -47,6 +47,28 @@ describe('claudeAuthFailurePresentation', () => {
     // a different account, a slower operator.
     expect(claudeAuthFailurePresentation('invalid_code').retryable).toBe(true);
     expect(claudeAuthFailurePresentation('timed_out').retryable).toBe(true);
+  });
+
+  it('does not present a stalled CLI as an expiry', () => {
+    // #389. Both of these used to arrive as `timed_out`, whose heading reads
+    // "This sign-in expired before a code arrived" — untrue for either, and
+    // an invitation to retry the thing that had just failed identically. The
+    // one that matters most is `cli_no_response`: the code DID reach the CLI,
+    // so telling the operator to re-copy it sends them somewhere there is
+    // nothing to find.
+    const expiry = claudeAuthFailurePresentation('timed_out');
+
+    for (const reason of ['cli_no_url', 'cli_no_response'] as const) {
+      const stalled = claudeAuthFailurePresentation(reason);
+
+      expect(stalled.title).not.toMatch(/expired/i);
+      expect(stalled.title).not.toBe(expiry.title);
+      expect(stalled.nextStep).toMatch(/nothing was changed/i);
+    }
+
+    expect(claudeAuthFailurePresentation('cli_no_response').nextStep).toMatch(
+      /not an expiry/i,
+    );
   });
 
   it('names the fix for a deployment fault rather than the operator', () => {
