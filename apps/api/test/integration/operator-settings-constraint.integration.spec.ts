@@ -161,7 +161,16 @@ describeIfDb(
 
         expect(rows).toHaveLength(1);
         expect(rows[0].id).toBe(1);
-        expect(rows[0].revision).toBe(0n);
+        // Deliberately NOT `toBe(0n)`. The row's EXISTENCE without setup is
+        // what #336 claims -- that the migration seeds it rather than the
+        // first write creating it lazily. Its VALUE is not this spec's
+        // property: `OperatorSettingsService.set()` bumps the counter through
+        // the real write path, so on a persistent local test database the
+        // first run of the write-path spec would break this one permanently,
+        // and in an order-dependent way that looks like a real regression.
+        // A test that fails because a sibling did its job is a false alarm
+        // with a long half-life.
+        expect(rows[0].revision).toBeGreaterThanOrEqual(0n);
       });
 
       it('rejects a second row', async () => {

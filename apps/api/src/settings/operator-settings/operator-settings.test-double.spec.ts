@@ -173,4 +173,53 @@ describe('makeOperatorSettings', () => {
       expect(settings.changes.at(-1)?.keys).toEqual(['reconciler.enabled']);
     });
   });
+
+  describe('the write surface it stands in for (#339)', () => {
+    it('applies and announces a `set`, so a controller spec needs no database', async () => {
+      const settings = makeOperatorSettings();
+      const seen: string[][] = [];
+      settings.onChange((change) => seen.push([...change.keys]));
+
+      const result = await settings.set('dispatch.maxConcurrent', 4, 'user-1');
+
+      expect(settings.get('dispatch.maxConcurrent')).toBe(4);
+      expect(result).toMatchObject({
+        key: 'dispatch.maxConcurrent',
+        changed: true,
+        revision: 1,
+      });
+      expect(result.resolved.value).toBe(4);
+      expect(seen).toEqual([['dispatch.maxConcurrent']]);
+    });
+
+    it('parses a `set` through the registry, so the env form and the JSON form agree', async () => {
+      const settings = makeOperatorSettings();
+
+      await settings.set('dispatch.enabled', 'true', null);
+
+      expect(settings.get('dispatch.enabled')).toBe(true);
+    });
+
+    it('reverts to the layer below on `clear`, and reports doing nothing twice', async () => {
+      const settings = makeOperatorSettings({
+        env: { RECONCILER_ENABLED: 'true' },
+      });
+      await settings.set('reconciler.enabled', false, null);
+
+      const first = await settings.clear('reconciler.enabled', null);
+      const second = await settings.clear('reconciler.enabled', null);
+
+      expect(settings.get('reconciler.enabled')).toBe(true);
+      expect(first.changed).toBe(true);
+      expect(second.changed).toBe(false);
+    });
+
+    it('reports the overlay as loaded, because the overrides ARE in force', () => {
+      // Reporting `unavailable` would make every spec of a consumer that
+      // renders the status assert against a degraded state it never asked for.
+      expect(makeOperatorSettings().overlay()).toMatchObject({
+        status: 'loaded',
+      });
+    });
+  });
 });
