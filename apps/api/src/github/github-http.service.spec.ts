@@ -1,5 +1,5 @@
-import { ConfigService } from '@nestjs/config';
-
+import type { OperatorSettingsOverrides } from '../settings/operator-settings/operator-settings.registry';
+import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import { EtagCacheService } from './etag-cache.service';
 import {
   GitHubHttpService,
@@ -15,7 +15,7 @@ import {
 } from './github.errors';
 import { RateLimitService } from './rate-limit.service';
 
-const CONFIG: Record<string, unknown> = {
+const SETTINGS: OperatorSettingsOverrides = {
   'github.apiBaseUrl': 'https://api.github.com',
   'github.token': 'ghp_test',
   'github.userAgent': 'opifex-test',
@@ -26,9 +26,8 @@ const CONFIG: Record<string, unknown> = {
   'github.rateLimitReserve': 100,
 };
 
-function configService(overrides: Record<string, unknown> = {}): ConfigService {
-  const values = { ...CONFIG, ...overrides };
-  return { get: (key: string) => values[key] } as unknown as ConfigService;
+function operatorSettings(overrides: OperatorSettingsOverrides = {}) {
+  return makeOperatorSettings({ overrides: { ...SETTINGS, ...overrides } });
 }
 
 /** A `fetch` Response, with the rate-limit headers GitHub always sends. */
@@ -66,8 +65,8 @@ describe('GitHubHttpService', () => {
   let rateLimit: RateLimitService;
   let etags: EtagCacheService;
 
-  function build(overrides: Record<string, unknown> = {}): GitHubHttpService {
-    return new GitHubHttpService(configService(overrides), rateLimit, etags);
+  function build(overrides: OperatorSettingsOverrides = {}): GitHubHttpService {
+    return new GitHubHttpService(operatorSettings(overrides), rateLimit, etags);
   }
 
   beforeEach(() => {
@@ -116,7 +115,10 @@ describe('GitHubHttpService', () => {
     });
 
     it('fails with an auth error, not a crash, when no token is configured', async () => {
-      const service = build({ 'github.token': undefined });
+      // The empty string is how "no credential" is expressed now: the
+      // registry's default for this key IS empty, and an override of
+      // `undefined` would mean "say nothing", which is a different claim.
+      const service = build({ 'github.token': '' });
 
       expect(service.configured).toBe(false);
       await expect(service.request('/repos/acme/app')).rejects.toBeInstanceOf(

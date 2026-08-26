@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
+import { OperatorSettingsService } from '../../settings/operator-settings/operator-settings.service';
 import { GitHubHttpService } from '../github-http.service';
 import { GitHubNotFoundError } from '../github.errors';
 import type { RepositoryRef } from '../read/github-read.service';
@@ -73,10 +73,13 @@ export class GitHubWriteService {
 
   constructor(
     private readonly http: GitHubHttpService,
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
   ) {
-    this.writesEnabled =
-      this.config.get<boolean>('github.writesEnabled') ?? false;
+    // Read once at construction, as before. #341 owns making the kill switch
+    // resolve per write — the epic's exit criterion that "toggling writes
+    // actually changes behaviour rather than logging as though it did" is that
+    // issue's, not this one's.
+    this.writesEnabled = this.settings.get('github.writesEnabled');
 
     if (!this.writesEnabled) {
       this.logger.log(
