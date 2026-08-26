@@ -114,6 +114,12 @@ export interface TickRecord {
    * Part of the record and not of the service, so that reviewing a tick answers
    * "what was it configured to do" from the tick itself. See {@link
    * TickSettings} for why the unit of coherence is one tick.
+   *
+   * **In memory only, so far.** `reconcile_ticks` has no column to hold it, so
+   * this does not survive `ReconcileLogService.record` and is not on the
+   * `/reconciler/ticks` responses — a reader of the persisted log still cannot
+   * tell which ceiling or which write mode a tick ran under. Closing that needs
+   * a migration, which is why it is not done here; #342 records the gap.
    */
   settings: TickSettings;
   /**
