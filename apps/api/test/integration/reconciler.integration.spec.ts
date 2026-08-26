@@ -1,5 +1,3 @@
-import { ConfigService } from '@nestjs/config';
-
 import { EtagCacheService } from '../../src/github/etag-cache.service';
 import { GitHubHttpService } from '../../src/github/github-http.service';
 import {
@@ -16,6 +14,7 @@ import { ReconcileLogService } from '../../src/reconciler/log/reconcile-log.serv
 import { ReconcilerService } from '../../src/reconciler/reconciler.service';
 import { TickLeaseService } from '../../src/reconciler/tick-lease.service';
 import type { RepositoriesService } from '../../src/repositories/repositories.service';
+import { makeOperatorSettings } from '../../src/settings/operator-settings/operator-settings.test-double';
 import { WorkOrderProjectionService } from '../../src/work-orders/work-order-projection.service';
 import {
   rawIssue,
@@ -108,29 +107,28 @@ describe('reconciler ticks against a mocked GitHub', () => {
   }
 
   function build(repository: Partial<typeof REPO> = {}) {
-    const values: Record<string, unknown> = {
-      'reconciler.enabled': true,
-      'github.token': 'ghp_test',
-      'github.apiBaseUrl': 'https://api.github.com',
-      'github.userAgent': 'opifex-test',
-      'github.requestTimeoutMs': 5000,
-      'github.maxRetries': 0,
-      'github.rateLimitReserve': 100,
-    };
-    const config = {
-      get: (k: string) => values[k],
-    } as unknown as ConfigService;
+    const settings = makeOperatorSettings({
+      overrides: {
+        'reconciler.enabled': true,
+        'github.token': 'ghp_test',
+        'github.apiBaseUrl': 'https://api.github.com',
+        'github.userAgent': 'opifex-test',
+        'github.requestTimeoutMs': 5000,
+        'github.maxRetries': 0,
+        'github.rateLimitReserve': 100,
+      },
+    });
 
     const rateLimit = new RateLimitService();
     const http = new GitHubHttpService(
-      config,
+      settings,
       rateLimit,
       new EtagCacheService(50),
     );
     const read = new GitHubReadService(http);
 
     return new ReconcilerService(
-      config,
+      settings,
       {
         withLease: jest.fn(async (work: () => Promise<unknown>) => ({
           acquired: true,

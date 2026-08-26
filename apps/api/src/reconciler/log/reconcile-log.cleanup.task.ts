@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
+import { OperatorSettingsService } from '../../settings/operator-settings/operator-settings.service';
 import { ReconcileLogService } from './reconcile-log.service';
 
 /**
@@ -21,13 +21,13 @@ export class ReconcileLogCleanupTask {
   private readonly logger = new Logger(ReconcileLogCleanupTask.name);
 
   constructor(
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
     private readonly log: ReconcileLogService,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   async handleCleanup(): Promise<void> {
-    const days = this.config.get<number>('reconciler.logRetentionDays') ?? 14;
+    const days = this.settings.get('reconciler.logRetentionDays');
 
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);

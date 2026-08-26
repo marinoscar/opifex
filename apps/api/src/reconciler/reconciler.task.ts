@@ -4,7 +4,6 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 
 import { DeadTimeService } from '../dead-time/dead-time.service';
@@ -13,6 +12,7 @@ import { EscalationsService } from '../escalations/escalations.service';
 import { GitHubWriteService } from '../github/write/github-write.service';
 import { GitLivenessService } from '../liveness/git-liveness.service';
 import { EscalationDispatcher } from '../notifications/escalation-dispatcher.service';
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import { tallyCoverage } from '../watchdog/check-coverage';
 import {
   WatchdogService,
@@ -63,7 +63,7 @@ interface ActingPhase {
  * pattern #45 points at — but a decorator argument is evaluated at class
  * definition time, so the interval would be baked into the build. #45 requires
  * it be configurable without a code change, which means registering the
- * interval at runtime once `ConfigService` has been read.
+ * interval at runtime once the settings have been read.
  *
  * `SchedulerRegistry` is part of the `@nestjs/schedule` already wired at the
  * root, so this adds no dependency.
@@ -73,7 +73,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ReconcilerTask.name);
 
   constructor(
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
     private readonly scheduler: SchedulerRegistry,
     private readonly reconciler: ReconcilerService,
     private readonly executor: MirrorLabelExecutor,
@@ -92,7 +92,11 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    const enabled = this.config.get<boolean>('reconciler.enabled') ?? false;
+    // #343 removes this boot-time gate so the interval is registered
+    // unconditionally and `reconciler.enabled` can be honoured per tick, which
+    // is what the registry already declares. Until then this stays a
+    // boot-time decision and the read simply moves to the resolver.
+    const enabled = this.settings.get('reconciler.enabled');
 
     if (!enabled) {
       // No interval is registered at all, rather than one that returns early.
@@ -105,8 +109,7 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const intervalMs =
-      this.config.get<number>('reconciler.intervalMs') ?? 60_000;
+    const intervalMs = this.settings.get('reconciler.intervalMs');
 
     const handle = setInterval(() => {
       // Deliberately not awaited: `setInterval` cannot await, and the lease is

@@ -1,8 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ConfigService } from '@nestjs/config';
-
 import { GitHubHttpService } from '../github/github-http.service';
 import { GitHubNotFoundError } from '../github/github.errors';
 import {
@@ -14,6 +12,7 @@ import { RateLimitService } from '../github/rate-limit.service';
 import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoriesService } from '../repositories/repositories.service';
+import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import { WorkOrderProjectionService } from '../work-orders/work-order-projection.service';
 import { ReconcilerService } from './reconciler.service';
 import { ReconcileLogService } from './log/reconcile-log.service';
@@ -111,12 +110,13 @@ describe('factory input labels, through a whole tick', () => {
       workOrder: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
-    const values: Record<string, unknown> = {
-      'reconciler.enabled': true,
-      'github.rateLimitReserve': 100,
-    };
     service = new ReconcilerService(
-      { get: (k: string) => values[k] } as unknown as ConfigService,
+      makeOperatorSettings({
+        overrides: {
+          'reconciler.enabled': true,
+          'github.rateLimitReserve': 100,
+        },
+      }),
       {
         withLease: jest.fn(async (work: () => Promise<unknown>) => ({
           acquired: true,

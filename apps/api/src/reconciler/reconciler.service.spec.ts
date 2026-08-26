@@ -1,5 +1,3 @@
-import { ConfigService } from '@nestjs/config';
-
 import { GitHubHttpService } from '../github/github-http.service';
 import {
   GitHubNotFoundError,
@@ -9,6 +7,8 @@ import { RateLimitService } from '../github/rate-limit.service';
 import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoriesService } from '../repositories/repositories.service';
+import type { OperatorSettingsOverrides } from '../settings/operator-settings/operator-settings.registry';
+import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import { WorkOrderProjectionService } from '../work-orders/work-order-projection.service';
 import { ReconcilerService } from './reconciler.service';
 import { ReconcileLogService } from './log/reconcile-log.service';
@@ -59,14 +59,15 @@ describe('ReconcilerService', () => {
     workOrder: { findMany: jest.Mock };
   };
 
-  function build(config: Record<string, unknown> = {}): ReconcilerService {
-    const values: Record<string, unknown> = {
-      'reconciler.enabled': true,
-      'github.rateLimitReserve': 100,
-      ...config,
-    };
+  function build(overrides: OperatorSettingsOverrides = {}): ReconcilerService {
     return new ReconcilerService(
-      { get: (k: string) => values[k] } as unknown as ConfigService,
+      makeOperatorSettings({
+        overrides: {
+          'reconciler.enabled': true,
+          'github.rateLimitReserve': 100,
+          ...overrides,
+        },
+      }),
       lease as unknown as TickLeaseService,
       repositories as unknown as RepositoriesService,
       github as unknown as GitHubReadService,
