@@ -131,7 +131,11 @@ describe('ReconcileLogService', () => {
       // No quiet-tick carve-out here (#342): unlike `projections`/`actions`,
       // every tick captured a snapshot by the time it reaches `record`, so
       // there is nothing to withhold.
-      const settings = { retryCeiling: 7, rateLimitReserve: 250, writesEnabled: true };
+      const settings = {
+        retryCeiling: 7,
+        rateLimitReserve: 250,
+        writesEnabled: true,
+      };
       await service.record(tick({ actions: [], failures: [], settings }));
 
       const [{ data }] = prisma.reconcileTick.create.mock.calls[0];
@@ -144,14 +148,22 @@ describe('ReconcileLogService', () => {
       // this file.
       await service.record(
         tick({
-          settings: { retryCeiling: 1, rateLimitReserve: 5, writesEnabled: false },
+          settings: {
+            retryCeiling: 1,
+            rateLimitReserve: 5,
+            writesEnabled: false,
+          },
         }),
       );
       const [{ data: first }] = prisma.reconcileTick.create.mock.calls[0];
 
       await service.record(
         tick({
-          settings: { retryCeiling: 9, rateLimitReserve: 500, writesEnabled: true },
+          settings: {
+            retryCeiling: 9,
+            rateLimitReserve: 500,
+            writesEnabled: true,
+          },
         }),
       );
       const [{ data: second }] = prisma.reconcileTick.create.mock.calls[1];
@@ -375,7 +387,11 @@ describe('ReconcileLogService', () => {
         actionsExecuted: 1,
         allFromCache: false,
         rateLimitRemaining: 4999,
-        settings: { retryCeiling: 3, rateLimitReserve: 100, writesEnabled: false },
+        settings: {
+          retryCeiling: 3,
+          rateLimitReserve: 100,
+          writesEnabled: false,
+        },
         failures: [],
         executionFailures: null,
         projections: null,
@@ -385,7 +401,11 @@ describe('ReconcileLogService', () => {
     }
 
     it('history: passes a populated settings column through untouched', async () => {
-      const settings = { retryCeiling: 5, rateLimitReserve: 200, writesEnabled: true };
+      const settings = {
+        retryCeiling: 5,
+        rateLimitReserve: 200,
+        writesEnabled: true,
+      };
       prisma.reconcileTick.findMany.mockResolvedValue([dbRow({ settings })]);
 
       const { items } = await service.history({ page: 1, pageSize: 25 });
@@ -394,7 +414,9 @@ describe('ReconcileLogService', () => {
     });
 
     it('history: passes a null settings column through as null, not a default', async () => {
-      prisma.reconcileTick.findMany.mockResolvedValue([dbRow({ settings: null })]);
+      prisma.reconcileTick.findMany.mockResolvedValue([
+        dbRow({ settings: null }),
+      ]);
 
       const { items } = await service.history({ page: 1, pageSize: 25 });
 
@@ -402,7 +424,11 @@ describe('ReconcileLogService', () => {
     });
 
     it('findById: passes a populated settings column through untouched', async () => {
-      const settings = { retryCeiling: 5, rateLimitReserve: 200, writesEnabled: true };
+      const settings = {
+        retryCeiling: 5,
+        rateLimitReserve: 200,
+        writesEnabled: true,
+      };
       prisma.reconcileTick.findUnique.mockResolvedValue(dbRow({ settings }));
 
       const tick = await service.findById('tick-uuid');
@@ -411,7 +437,9 @@ describe('ReconcileLogService', () => {
     });
 
     it('findById: passes a null settings column through as null, not a default', async () => {
-      prisma.reconcileTick.findUnique.mockResolvedValue(dbRow({ settings: null }));
+      prisma.reconcileTick.findUnique.mockResolvedValue(
+        dbRow({ settings: null }),
+      );
 
       const tick = await service.findById('tick-uuid');
 
