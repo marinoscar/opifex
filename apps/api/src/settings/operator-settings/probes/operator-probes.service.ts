@@ -448,20 +448,18 @@ export class OperatorProbesService {
   }
 
   /**
-   * The adapter, built from the LIVE settings.
+   * The adapter, reading the LIVE settings.
    *
-   * Not `createSupervisorModel(config)`: that factory reads `ConfigService`,
-   * which is the boot-time environment. This is the same class fed the values
-   * the operator is looking at.
+   * Since #344 the adapter takes the resolver itself rather than a snapshot of
+   * config values, and resolves each of them per call -- which is what makes a
+   * key an operator just typed reachable without a restart. Handing it the
+   * same `OperatorSettingsService` the rest of this class reads from is
+   * therefore the whole of the wiring: the probe and the supervisor's own
+   * invocations cannot disagree about which key is in force, because there is
+   * only one place either can read it from.
    */
   protected createModel(): SupervisorModel {
-    return new AnthropicSupervisorModel({
-      apiKey: this.settings.get('supervisor.model.apiKey'),
-      model: this.settings.get('supervisor.model.name'),
-      baseUrl: this.settings.get('supervisor.model.baseUrl').replace(/\/$/, ''),
-      timeoutMs: this.settings.get('supervisor.model.timeoutMs'),
-      defaultMaxTokens: this.settings.get('supervisor.model.defaultMaxTokens'),
-    });
+    return new AnthropicSupervisorModel(this.settings);
   }
 
   /**
