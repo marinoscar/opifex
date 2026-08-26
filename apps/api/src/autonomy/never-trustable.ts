@@ -140,6 +140,38 @@ export interface ForbiddenPathRule {
  * ordinary work — most of the roadmap is schema changes — and forbidding them
  * would make the guard fire on routine pull requests, which is how a guard
  * gets routed around instead of respected.
+ *
+ * ## THE `.env` RULES ARE NOW A BACKSTOP, NOT THE PRIMARY CONTROL (#346)
+ *
+ * The three env-file rules at the bottom of this list were the primary control
+ * for "budget, quota and credential configuration", and they worked for one
+ * reason: that configuration was a FILE, so changing it was a `file-write`
+ * effect, and a `file-write` effect is something this guard can name and
+ * match.
+ *
+ * Epic #332 moved that configuration into the `operator_settings` table,
+ * reachable through `PATCH /api/operator-settings`. Changing a spend ceiling
+ * is now an authenticated HTTP request. It produces no `file-write` effect and
+ * therefore never reaches these rules at all — they did not become wrong, they
+ * became INAPPLICABLE, which is worse, because a rule that stops firing looks
+ * exactly like a rule that is never violated.
+ *
+ * What actually holds that line now lives elsewhere, in two independent
+ * pieces, both preconditions of ADR-0018 §6:
+ *
+ *  - `runners/process/child-environment.ts` (#334) — the agent subprocess
+ *    inherits an allowlist, so it holds no credential to authenticate with.
+ *  - `auth/guards/interactive-session.guard.ts` (#346) — the settings write
+ *    path refuses any credential that does not prove a human was present,
+ *    whatever permissions it carries.
+ *
+ * The rules below stay, and are load-bearing for what remains: an agent
+ * writing an `.env` file in a repository workspace is still a file write this
+ * guard can see, deployments still carry `.env` files, and not every key has
+ * migrated. But do not read their presence as evidence that budget
+ * configuration is protected — the copy that matters is a database row, and
+ * these patterns cannot reach it. Deleting them would be a regression;
+ * relying on them alone would be a fiction.
  */
 export const FORBIDDEN_WRITE_PATHS: readonly ForbiddenPathRule[] =
   Object.freeze([
