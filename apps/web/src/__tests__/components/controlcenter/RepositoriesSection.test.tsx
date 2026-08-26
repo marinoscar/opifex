@@ -62,14 +62,44 @@ function listing(...items: RepositorySummary[]) {
   );
 }
 
-/** Captures the PATCH body, and answers with the row it implies. */
+/**
+ * Captures the PATCH body, and answers with the row it implies.
+ *
+ * The response is NOT a straight echo of the request, and the difference is
+ * the whole point: `budgetCeilingUsd` goes to the API as a **number** and
+ * comes back as a **string**. `repository.dto.ts` is explicit about why — the
+ * column is a Postgres `DECIMAL` and Prisma returns a `Decimal`, because
+ * serialising a spend ceiling through a JS number would round it, and that is
+ * the one field where rounding is least acceptable.
+ *
+ * A mock that echoed the number back would hand the component a shape the real
+ * API never produces, and the component would then be exercised against a
+ * fiction: `budgetCeilingUsd` is typed `string | null`, so a number reaching
+ * the field seeds `ceilingText` with one and `parseBudgetCeiling` throws
+ * `input.trim is not a function` on the next render. That is a bug in the
+ * mock, not in the component — so the mock re-serialises the way the API does.
+ */
 function capturePatch(stored: RepositorySummary) {
   const bodies: Record<string, unknown>[] = [];
   server.use(
     http.patch(`${API_BASE}/repositories/:id`, async ({ request }) => {
       const body = (await request.json()) as Record<string, unknown>;
       bodies.push(body);
-      return HttpResponse.json({ data: { ...stored, ...body } });
+      const { budgetCeilingUsd, ...rest } = body;
+      return HttpResponse.json({
+        data: {
+          ...stored,
+          ...rest,
+          ...('budgetCeilingUsd' in body
+            ? {
+                budgetCeilingUsd:
+                  budgetCeilingUsd === null
+                    ? null
+                    : Number(budgetCeilingUsd).toFixed(2),
+              }
+            : {}),
+        },
+      });
     }),
   );
   return bodies;
