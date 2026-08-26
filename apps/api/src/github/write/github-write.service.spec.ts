@@ -17,12 +17,24 @@ function httpMock() {
 }
 
 function build(http: ReturnType<typeof httpMock>, writesEnabled: boolean) {
-  return new GitHubWriteService(
-    http as unknown as GitHubHttpService,
-    makeOperatorSettings({
-      overrides: { 'github.writesEnabled': writesEnabled },
-    }),
-  );
+  return buildLive(http, writesEnabled).service;
+}
+
+/**
+ * The same service, with the settings handle kept — so a spec can flip the
+ * kill switch while the service is alive, which is #341's whole subject.
+ */
+function buildLive(http: ReturnType<typeof httpMock>, writesEnabled: boolean) {
+  const settings = makeOperatorSettings({
+    overrides: { 'github.writesEnabled': writesEnabled },
+  });
+  return {
+    settings,
+    service: new GitHubWriteService(
+      http as unknown as GitHubHttpService,
+      settings,
+    ),
+  };
 }
 
 describe('GitHubWriteService', () => {
@@ -98,6 +110,110 @@ describe('GitHubWriteService', () => {
           body: { labels: ['factory/dispatched'] },
         }),
       );
+    });
+  });
+
+  /**
+   * #341. A kill switch you have to restart to pull is not a kill switch: the
+   * flag was frozen at construction and `enabled` returned the frozen copy, so
+   * flipping GitHub writes in the Control Center would have appeared to work
+   * and changed nothing.
+   */
+  describe('the kill switch is read per call (#341)', () => {
+    it('stops writing when it is turned off mid-flight', async () => {
+      const { settings, service } = buildLive(http, true);
+
+      await service.addLabel(REPO, 312, 'factory/dispatched');
+      expect(http.request).toHaveBeenCalledTimes(1);
+
+      settings.setOverride('github.writesEnabled', false);
+
+      const result = await service.addLabel(REPO, 312, 'factory/dispatched');
+
+      // COMPLETE, not truncated. The diff log is the deliverable of the
+      // observation week (VISION §12), not a debugging aid — a suppressed
+      // write must produce a record as full as a performed one, so this is an
+      // exhaustive equality rather than a `toMatchObject` that would pass with
+      // half the fields missing.
+      expect(result).toEqual({
+        action: WriteAction.AddLabel,
+        reversibility: Reversibility.Reversible,
+        approval: ApprovalRequirement.Gated,
+        performed: false,
+        noop: false,
+        url: null,
+        description: "Add 'factory/dispatched' to acme/app#312",
+      });
+      expect(http.request).toHaveBeenCalledTimes(1);
+    });
+
+    it('starts writing when it is turned on mid-flight', async () => {
+      // The other direction, and the reason it is safe: a write performed here
+      // is one an operator authorised seconds earlier.
+      const { settings, service } = buildLive(http, false);
+
+      expect((await service.addLabel(REPO, 312, 'x')).performed).toBe(false);
+
+      settings.setOverride('github.writesEnabled', true);
+
+      expect((await service.addLabel(REPO, 312, 'x')).performed).toBe(true);
+      expect(http.request).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports `enabled` as of now, not as of construction', () => {
+      const { settings, service } = buildLive(http, false);
+
+      expect(service.enabled).toBe(false);
+      settings.setOverride('github.writesEnabled', true);
+      expect(service.enabled).toBe(true);
+    });
+
+    it('counts a write already in flight when the switch is pulled', async () => {
+      // #317's counter is incremented BEFORE the await and outside any try,
+      // because from that point a request is on its way out. Turning writes off
+      // while it is in flight cannot un-issue it: the number's job is to catch
+      // a window that was supposed to be read-only, so it must not lose the
+      // one write that escaped.
+      const { settings, service } = buildLive(http, true);
+      let release: () => void = () => undefined;
+      http.request.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = () =>
+              resolve({
+                data: {},
+                status: 200,
+                fromCache: false,
+                link: null,
+                etag: null,
+              });
+          }),
+      );
+
+      const inFlight = service.addLabel(REPO, 312, 'factory/dispatched');
+      settings.setOverride('github.writesEnabled', false);
+      release();
+
+      expect((await inFlight).performed).toBe(true);
+      expect(service.writesIssued).toBe(1);
+
+      // And the next call, decided after the flip, does not move it.
+      await service.addLabel(REPO, 312, 'factory/dispatched');
+      expect(service.writesIssued).toBe(1);
+    });
+
+    it('resumes counting when the switch goes back on', async () => {
+      const { settings, service } = buildLive(http, true);
+
+      await service.addLabel(REPO, 312, 'a');
+      settings.setOverride('github.writesEnabled', false);
+      await service.addLabel(REPO, 312, 'b');
+      settings.setOverride('github.writesEnabled', true);
+      await service.addLabel(REPO, 312, 'c');
+
+      // Two, not three: the suppressed write never touched GitHub.
+      expect(service.writesIssued).toBe(2);
+      expect(http.request).toHaveBeenCalledTimes(2);
     });
   });
 
