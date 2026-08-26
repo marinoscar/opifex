@@ -25,7 +25,12 @@ describe('maskSecret', () => {
 
       const revealed = masked.replace(/^\*+/, '');
 
-      expect(revealed.length).toBeLessThanOrEqual(REVEALED_SUFFIX_LENGTH);
+      // The literal 4 is deliberate and must not become
+      // `REVEALED_SUFFIX_LENGTH`: an assertion written against the constant
+      // moves with it, so raising the constant to 6 would leave this test
+      // green while the mask started revealing half again as much. Mutation
+      // testing caught exactly that.
+      expect(revealed.length).toBeLessThanOrEqual(4);
       if (revealed.length > 0) {
         expect(value.endsWith(revealed)).toBe(true);
       }

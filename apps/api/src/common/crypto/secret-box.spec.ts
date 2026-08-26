@@ -211,13 +211,21 @@ describe('secret-box', () => {
       }
     });
 
-    it('does not let a rewritten keyVersion downgrade the binding', () => {
-      // keyVersion is inside the AAD, so editing the stored field cannot be
-      // used to steer `open` at a different key without breaking the tag.
+    it('refuses a rewritten keyVersion before it ever reaches the cipher', () => {
       const sealed: SealedSecret = seal(GITHUB_TOKEN, GITHUB_KEY);
 
-      expect(open({ ...sealed, keyVersion: 1.0 }, GITHUB_KEY).ok).toBe(true);
-      expect(open({ ...sealed, keyVersion: 2 }, GITHUB_KEY).ok).toBe(false);
+      // STATED HONESTLY, because mutation testing caught this one passing for
+      // the wrong reason: what rejects version 2 today is the supported-version
+      // check, NOT the AAD. `keyVersion` is inside the additional data, so a
+      // rewritten version cannot be used to steer `open` at a different key
+      // once a second version exists -- but with exactly one supported version
+      // there is no way to exercise that from outside the module, and a test
+      // asserting it here would pass whether or not the version were bound.
+      // The case becomes real, and should be added, when rotation lands.
+      const result = open({ ...sealed, keyVersion: 2 }, GITHUB_KEY);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe('unsupported_key_version');
     });
   });
 
