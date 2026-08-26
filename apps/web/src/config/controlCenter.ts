@@ -146,7 +146,7 @@ export const CONTROL_CENTER_SECTIONS: readonly ControlCenterSection[] = [
       'The enablement ladder: register, observe, then dispatch — one ' +
       'repository at a time, which is how the observation week ends.',
     Icon: AccountTreeIcon,
-    status: 'planned',
+    status: 'live',
     issue: 350,
     phase: PHASE,
   },

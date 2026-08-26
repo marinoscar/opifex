@@ -48,6 +48,7 @@ import { Navigate, useSearchParams } from 'react-router-dom';
 import { InterfaceSection } from '../components/controlcenter/InterfaceSection';
 import { PlannedSectionPanel } from '../components/controlcenter/PlannedSectionPanel';
 import { ReadinessSection } from '../components/controlcenter/ReadinessSection';
+import { RepositoriesSection } from '../components/controlcenter/RepositoriesSection';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import {
   CONTROL_CENTER_SECTIONS,
@@ -63,6 +64,13 @@ import { useSystemSettings } from '../hooks/useSystemSettings';
 
 const READ_PERMISSION = 'system_settings:read';
 const WRITE_PERMISSION = 'system_settings:write';
+/**
+ * The Repositories section writes through `RepositoriesController`, which
+ * enforces this and not `system_settings:write`. Two different permissions,
+ * resolved separately, because an administrator may hold either without the
+ * other and a section must be gated on the string its own controller checks.
+ */
+const REPOSITORY_WRITE_PERMISSION = 'projects:write';
 
 /**
  * The permission gate, and nothing else.
@@ -79,10 +87,21 @@ export default function ControlCenterPage() {
     return <Navigate to="/" replace />;
   }
 
-  return <ControlCenter canWrite={hasPermission(WRITE_PERMISSION)} />;
+  return (
+    <ControlCenter
+      canWrite={hasPermission(WRITE_PERMISSION)}
+      canWriteRepositories={hasPermission(REPOSITORY_WRITE_PERMISSION)}
+    />
+  );
 }
 
-function ControlCenter({ canWrite }: { canWrite: boolean }) {
+function ControlCenter({
+  canWrite,
+  canWriteRepositories,
+}: {
+  canWrite: boolean;
+  canWriteRepositories: boolean;
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeKey = resolveSection(searchParams.get(SECTION_PARAM));
 
@@ -187,6 +206,7 @@ function ControlCenter({ canWrite }: { canWrite: boolean }) {
             <SectionBody
               section={activeSection}
               readiness={readiness}
+              canWriteRepositories={canWriteRepositories}
               settings={settings}
               settingsError={error}
               canWrite={canWrite}
@@ -229,6 +249,7 @@ function ControlCenter({ canWrite }: { canWrite: boolean }) {
 function SectionBody({
   section,
   readiness,
+  canWriteRepositories,
   settings,
   settingsError,
   canWrite,
@@ -238,6 +259,8 @@ function SectionBody({
 }: {
   section: ControlCenterSection;
   readiness: ReturnType<typeof useReadiness>;
+  /** `projects:write`, which is a different permission from `canWrite`. */
+  canWriteRepositories: boolean;
   settings: ReturnType<typeof useSystemSettings>['settings'];
   settingsError: string | null;
   canWrite: boolean;
@@ -262,6 +285,12 @@ function SectionBody({
           onNavigateToSection={onNavigateToSection}
         />
       );
+    case 'repositories':
+      // `projects:write`, not `system_settings:write`: the permission a
+      // section's controls are gated on is the one ITS controller enforces,
+      // and `RepositoriesController` enforces this one. An administrator here
+      // may hold neither, one, or both.
+      return <RepositoriesSection canWrite={canWriteRepositories} />;
     case 'interface':
       if (!settings) {
         return (

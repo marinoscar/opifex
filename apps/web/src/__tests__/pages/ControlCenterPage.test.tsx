@@ -282,12 +282,12 @@ describe('ControlCenterPage', () => {
       });
       await awaitPage();
 
-      await user.click(screen.getByRole('tab', { name: 'Repositories' }));
+      await user.click(screen.getByRole('tab', { name: 'Configuration' }));
 
       expect(
-        await screen.findByText(/Repositories is not built yet/i),
+        await screen.findByText(/Configuration is not built yet/i),
       ).toBeInTheDocument();
-      expect(screen.getByText(/#350/)).toBeInTheDocument();
+      expect(screen.getByText(/#348/)).toBeInTheDocument();
       expect(
         screen.getByText(/Arrives in Phase 5 — Cockpit/),
       ).toBeInTheDocument();

@@ -286,6 +286,176 @@ export async function getRepositories(
   );
 }
 
+/**
+ * The subset of `UpdateRepositoryDto` the Control Center's ladder writes
+ * (#350, epic #332).
+ *
+ * Every field is optional and omission means "leave it alone" — the API's own
+ * rule, since each default lives in the Prisma schema and a PATCH that
+ * mentioned a field it was not asked to change would reset it. So the ladder
+ * sends only what the operator actually moved.
+ *
+ * `budgetCeilingUsd` is a NUMBER here and a string on the way back
+ * (`RepositorySummary`). That asymmetry is the API's: the column is a Postgres
+ * `DECIMAL`, and serialising it out through a JS number would round a spend
+ * ceiling. `null` clears it, which is different from omitting it.
+ */
+export interface UpdateRepositoryInput {
+  observeEnabled?: boolean;
+  mirrorLabelsEnabled?: boolean;
+  specFeedbackEnabled?: boolean;
+  dispatchEnabled?: boolean;
+  budgetCeilingUsd?: number | null;
+  wallClockTimeoutMinutes?: number | null;
+  pathConstraints?: string[];
+  projectId?: string | null;
+}
+
+/**
+ * `PATCH /repositories/:id` — change one repository's policy.
+ *
+ * Requires `projects:write`, which is what `RepositoriesController.update`
+ * enforces; the ladder renders read-only without it, and the API refuses the
+ * write regardless. Enabling dispatch re-verifies reachability API-side, so
+ * this call can fail for a reason the switch itself knows nothing about — the
+ * caller surfaces the message rather than assuming the flip took.
+ */
+export async function updateRepository(
+  id: string,
+  input: UpdateRepositoryInput,
+  signal?: AbortSignal,
+): Promise<RepositorySummary> {
+  return api.patch<RepositorySummary>(
+    `/repositories/${encodeURIComponent(id)}`,
+    input,
+    { signal },
+  );
+}
+
+/**
+ * What the per-repository access probe answered — including "nothing did".
+ *
+ *  - `reachable` — the probe read this repository with the configured token.
+ *  - `unreachable` — the probe ran and could NOT read it. The case worth
+ *    having: a fine-grained PAT that is valid, passes a `/rate_limit` check,
+ *    and does not cover *this* repository. Otherwise that is discovered when a
+ *    run fails at the end.
+ *  - `not-implemented` — this deployment's API has no such probe yet (#338).
+ *    Structural, like `config/readiness.ts`'s `unverifiable`: it clears when
+ *    the endpoint ships, not when you press the button again.
+ *  - `forbidden` — the probe exists and this account may not ask it. A fact
+ *    about the ACCOUNT, never about the repository.
+ *  - `failed` — the call itself did not produce an answer.
+ */
+export type RepositoryAccessProbeState =
+  'reachable' | 'unreachable' | 'not-implemented' | 'forbidden' | 'failed';
+
+export interface RepositoryAccessProbeResult {
+  state: RepositoryAccessProbeState;
+  /** A sentence for the operator. The API's own `detail` when there is one. */
+  detail: string;
+  /** When the probe ran, as the API reported it. Null when it did not run. */
+  checkedAt: string | null;
+}
+
+/** The `{ ok, detail, checkedAt }` shape #338 specifies for every probe. */
+interface ProbeResponse {
+  ok: boolean;
+  detail?: string;
+  checkedAt?: string;
+}
+
+/**
+ * `POST /operator-settings/probes/github-repo` — can the configured GitHub
+ * credential actually read THIS repository?
+ *
+ * ## It is one function because the endpoint does not exist yet
+ *
+ * #338 is being built in parallel and is not on `main`. Everything the ladder
+ * knows about this probe — its path, its request body, its response shape, and
+ * what a 404 from it means today — is in this function, so wiring it up for
+ * real is an edit here and nowhere else.
+ *
+ * ## It resolves rather than throwing
+ *
+ * A missing probe is not an error the operator did anything about, and the
+ * section must not be blocked on it. So every outcome comes back as a state:
+ * the caller renders "not yet verifiable" for the two it cannot conclude
+ * from, exactly as the readiness chain does, and never paints a green check it
+ * did not earn.
+ *
+ * ## Why a 404 reads as "not built yet"
+ *
+ * Nest answers an unrouted path with 404, and that is the ONLY 404 this call
+ * can receive today. Once #338 lands, a 404 could instead mean the repository
+ * id is unknown — so the API's own message is carried into `detail` verbatim
+ * rather than replaced, leaving the difference visible on screen even while
+ * this branch cannot tell the two apart.
+ */
+export async function probeRepositoryAccess(
+  repositoryId: string,
+  signal?: AbortSignal,
+): Promise<RepositoryAccessProbeResult> {
+  try {
+    const response = await api.post<ProbeResponse>(
+      '/operator-settings/probes/github-repo',
+      { repositoryId },
+      { signal },
+    );
+
+    return {
+      state: response.ok ? 'reachable' : 'unreachable',
+      detail:
+        response.detail ??
+        (response.ok
+          ? 'The configured GitHub credential can read this repository.'
+          : 'The configured GitHub credential could not read this repository.'),
+      checkedAt: response.checkedAt ?? null,
+    };
+  } catch (error) {
+    return probeFailure(error);
+  }
+}
+
+function probeFailure(error: unknown): RepositoryAccessProbeResult {
+  if (error instanceof ApiError) {
+    if (error.status === 404 || error.status === 501) {
+      return {
+        state: 'not-implemented',
+        detail:
+          'POST /api/operator-settings/probes/github-repo answered ' +
+          `${error.status}: ${error.message}. The per-repository access ` +
+          'probe arrives in #338; until then nothing here has tested this ' +
+          'credential against this repository.',
+        checkedAt: null,
+      };
+    }
+    if (error.status === 403) {
+      return {
+        state: 'forbidden',
+        detail:
+          'This account may not run probes, so the access test says nothing ' +
+          'either way about the repository.',
+        checkedAt: null,
+      };
+    }
+    return {
+      state: 'failed',
+      detail: `The probe answered ${error.status}: ${error.message}`,
+      checkedAt: null,
+    };
+  }
+
+  return {
+    state: 'failed',
+    detail:
+      error instanceof Error
+        ? `The probe could not be called: ${error.message}`
+        : 'The probe could not be called.',
+    checkedAt: null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The Control Center's readiness chain (#347, epic #332)
 // ---------------------------------------------------------------------------

@@ -1,5 +1,14 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Box, Container, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  Container,
+  Stack,
+  Typography,
+} from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
+import TuneIcon from '@mui/icons-material/Tune';
 
 import { DataTable } from '../components/datatable';
 import type { DataTableFilterModel } from '../components/datatable';
@@ -14,6 +23,10 @@ import { getRepositories, type RepositoriesPage } from '../services/api';
 
 /** The permission `RepositoriesController` really enforces on registration. */
 const WRITE_PERMISSION = 'projects:write';
+
+/** What it takes to open the Control Center, where enablement now lives. */
+const CONTROL_CENTER_PERMISSION = 'system_settings:read';
+const CONTROL_CENTER_PATH = '/admin/settings?section=repositories';
 
 /**
  * `/projects` — every repository Opifex watches (#81, epic #20).
@@ -73,9 +86,31 @@ export default function ProjectsPage() {
         <Typography variant="h4" component="h1" gutterBottom>
           Projects
         </Typography>
-        <Typography color="text.secondary" sx={{ mb: 3 }}>
-          Every repository Opifex watches, and what it is allowed to do in each.
-        </Typography>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1}
+          sx={{
+            mb: 3,
+            alignItems: { xs: 'flex-start', sm: 'center' },
+            justifyContent: 'space-between',
+          }}
+        >
+          <Typography color="text.secondary">
+            Every repository Opifex watches, and what it is allowed to do in
+            each. This table READS those permissions; the Control Center is
+            where they are changed.
+          </Typography>
+          {hasPermission(CONTROL_CENTER_PERMISSION) && (
+            <Button
+              size="small"
+              startIcon={<TuneIcon />}
+              component={RouterLink}
+              to={CONTROL_CENTER_PATH}
+            >
+              Enablement ladder
+            </Button>
+          )}
+        </Stack>
 
         {error && !data && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -91,7 +126,10 @@ export default function ProjectsPage() {
           loading={isRefreshing && state !== 'ready'}
           error={error}
           emptyState={
-            <EmptyState canRegister={hasPermission(WRITE_PERMISSION)} />
+            <EmptyState
+              canRegister={hasPermission(WRITE_PERMISSION)}
+              canOpenControlCenter={hasPermission(CONTROL_CENTER_PERMISSION)}
+            />
           }
           pagination={{
             page,
@@ -116,14 +154,26 @@ export default function ProjectsPage() {
 /**
  * What to do when nothing is registered.
  *
- * #81 asks that the empty state guide the operator to register one. It shows
- * the actual call rather than a button, because registration VERIFIES the
- * repository is reachable with the configured token before accepting it — an
- * entry Opifex cannot read would turn every subsequent tick into a 404 — and a
- * form that can fail for token reasons it cannot explain is worse than the
- * command that reports them.
+ * #81 asks that the empty state guide the operator to register one, and until
+ * #350 that guidance was a `curl` command with `observeEnabled` in its body —
+ * which made this page the documentation for enabling a repository as well as
+ * for registering one. Enablement now has a screen, so the two are separated:
+ * this says how to REGISTER, and points at the Control Center for everything
+ * that happens to a repository afterwards.
+ *
+ * Registration itself is still not a form here. `POST /api/repositories`
+ * verifies the repository is reachable with the configured token before
+ * accepting it — an entry Opifex cannot read would turn every subsequent tick
+ * into a 404 — and a form that can fail for token reasons it cannot explain is
+ * worse than the runbook that reports them.
  */
-function EmptyState({ canRegister }: { canRegister: boolean }) {
+function EmptyState({
+  canRegister,
+  canOpenControlCenter,
+}: {
+  canRegister: boolean;
+  canOpenControlCenter: boolean;
+}) {
   return (
     <Box sx={{ p: 3, textAlign: 'center' }}>
       <Typography variant="body1" gutterBottom>
@@ -135,27 +185,27 @@ function EmptyState({ canRegister }: { canRegister: boolean }) {
         accepting it.
       </Typography>
       {canRegister ? (
-        <Box
-          component="pre"
-          sx={{
-            mt: 2,
-            p: 2,
-            textAlign: 'left',
-            overflowX: 'auto',
-            bgcolor: 'action.hover',
-            borderRadius: 1,
-            fontSize: '0.8rem',
-          }}
-        >
-          {`curl -X POST /api/repositories \\
-  -H 'Content-Type: application/json' \\
-  -d '{"owner":"you","name":"repo","observeEnabled":true}'`}
-        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          Register one with <code>POST /api/repositories</code> — see
+          docs/RUNBOOK-observation-week.md. Once it is registered, observation,
+          label mirroring, spec feedback and dispatch are enabled one rung at a
+          time in the Control Center.
+        </Typography>
       ) : (
         <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
           Registering one needs <code>{WRITE_PERMISSION}</code>, which this
           account does not hold.
         </Typography>
+      )}
+      {canOpenControlCenter && (
+        <Button
+          size="small"
+          sx={{ mt: 1 }}
+          component={RouterLink}
+          to={CONTROL_CENTER_PATH}
+        >
+          Open the enablement ladder
+        </Button>
       )}
     </Box>
   );
