@@ -41,27 +41,31 @@ describe('control center sections', () => {
   });
 
   it('declares the sections the rest of the epic still owes', () => {
-    // #348 registry-driven settings, #349 secrets and test buttons, #351
-    // change history. Declared now so landing one is a status flip plus a
-    // component, never a change to the shell. #350 is no longer among them:
-    // the repository ladder landed, which is what flipping a status looks
-    // like from here.
+    // #349 secrets and test buttons, #351 change history. Declared now so
+    // landing one is a status flip plus a component, never a change to the
+    // shell — which is how #348 and #350 both landed, below.
     const planned = CONTROL_CENTER_SECTIONS.filter(
       (section) => section.status === 'planned',
     ).map((section) => section.issue);
 
-    expect(planned).toEqual([348, 349, 351]);
+    expect(planned).toEqual([349, 351]);
   });
 
-  it('marks the repository ladder live, still naming #350', () => {
+  it('keeps the delivering issue on a section that has landed', () => {
+    // Provenance survives the flip: `issue` records which change DELIVERED a
+    // section, not only which one was owed it — which is what `issue` is
+    // documented to mean for a `live` section.
     const repositories = CONTROL_CENTER_SECTIONS.find(
       (section) => section.key === 'repositories',
     );
+    const settings = CONTROL_CENTER_SECTIONS.find(
+      (section) => section.key === 'settings',
+    );
 
     expect(repositories?.status).toBe('live');
-    // Provenance survives the flip: `issue` records which change delivered a
-    // section, not only which one is owed it.
     expect(repositories?.issue).toBe(350);
+    expect(settings?.status).toBe('live');
+    expect(settings?.issue).toBe(348);
   });
 
   it('gives every section a description that is a sentence, not a label', () => {

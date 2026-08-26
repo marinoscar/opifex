@@ -39,11 +39,23 @@ import {
   getReadinessHealth,
   getRepositoryEnablementCounts,
 } from '../services/api';
+import type { FleetHealth } from '../types/health';
 import { usePolledResource } from './usePolledResource';
 
 export interface UseReadinessResult {
   steps: ReadinessStep[];
   summary: ReadinessSummary;
+  /**
+   * The fleet as this read found it, or null when it could not be read.
+   *
+   * Exposed alongside the chain because the Configuration section (#348) shows
+   * the observed counterpart of a setting beside its configured value, and
+   * this payload is the only place the API publishes an observation of one —
+   * `enabled` and `maxConcurrency` read back off the registered runner. A
+   * second poll of `/health/ready` from that section would have shown a
+   * different instant on the same screen.
+   */
+  fleet: FleetHealth | null;
   /** When the observations on screen were last read successfully. */
   lastUpdatedAt: Date | null;
   isRefreshing: boolean;
@@ -146,6 +158,7 @@ export function useReadiness(): UseReadinessResult {
   return {
     steps,
     summary: summariseReadiness(steps),
+    fleet: inputs.fleet,
     lastUpdatedAt,
     isRefreshing,
     isLoading: data === null,

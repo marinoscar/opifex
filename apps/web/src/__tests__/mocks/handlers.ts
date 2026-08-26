@@ -1,5 +1,7 @@
 import { http, HttpResponse } from 'msw';
 
+import { operatorSettingsFixture } from './operatorSettings';
+
 // Use wildcard pattern to match relative URLs
 const API_BASE = '*/api';
 
@@ -358,6 +360,30 @@ export const handlers = [
       },
     });
   }),
+
+  /**
+   * `GET /api/operator-settings` — the Control Center's Configuration section
+   * (#348, epic #332).
+   *
+   * A subset of the real registry, in the real response shape. See
+   * `mocks/operatorSettings.ts` for which branches it was chosen to cover.
+   */
+  http.get(`${API_BASE}/operator-settings`, () =>
+    HttpResponse.json({ data: operatorSettingsFixture() }),
+  ),
+
+  /**
+   * `PATCH /api/operator-settings` — answers with the registry re-resolved,
+   * as the real endpoint does, with the revision advanced.
+   *
+   * It deliberately does NOT apply the body: a test that wants to know what
+   * was sent asserts on the request, and a fixture that pretended to resolve a
+   * write would be asserting against its own simulation of the API rather than
+   * against the API's contract.
+   */
+  http.patch(`${API_BASE}/operator-settings`, () =>
+    HttpResponse.json({ data: operatorSettingsFixture({ revision: 8 }) }),
+  ),
 
   http.post(`${API_BASE}/auth/device/authorize`, async ({ request }) => {
     const body = (await request.json()) as {
