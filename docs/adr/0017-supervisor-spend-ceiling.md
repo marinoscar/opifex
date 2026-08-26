@@ -1,6 +1,6 @@
 # 17. The supervisor gets its own hard spend ceiling, enforced between model calls
 
-- Status: Proposed
+- Status: Proposed — superseded in part by [ADR-0018](0018-operator-settings-resolution-and-ceilings.md) (only the "no runtime path" guarantee for `SUPERVISOR_HARD_SPEND_CEILING_USD`; the separate ceiling, tally, gate function and window this ADR decided are unchanged — see ADR-0018's Context and point 6)
 - Date: 2026-08-25
 - Issue: #261
 - Epic: #21
