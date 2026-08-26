@@ -70,28 +70,30 @@ import { TrustDigestSource } from './brief/trust-digest.source';
     DailyBriefService,
     DailyBriefTask,
     {
-      // The model adapter (ADR-0015, #230), or nothing.
+      // The model adapter (ADR-0015, #230), bound UNCONDITIONALLY (#344).
       //
-      // A factory rather than a class provider because the binding is
-      // CONDITIONAL: `createSupervisorModel` returns the Anthropic adapter
-      // when `SUPERVISOR_MODEL_API_KEY` is set and `undefined` when it is not.
-      // With `undefined`, `@Optional() @Inject(SUPERVISOR_MODEL)` in
-      // `SupervisorService` leaves `model` undefined and the existing
-      // `?? new UnavailableSupervisorModel()` fallback still wins — still
-      // refusing, still recording that refusal in the decision log. The
-      // unconfigured path is unchanged by design; a missing key must not crash
-      // the API at boot and must not quietly disable the supervisor either.
+      // It used to be conditional: `createSupervisorModel` returned the
+      // adapter when `SUPERVISOR_MODEL_API_KEY` was set and `undefined` when
+      // it was not, leaving `@Optional() @Inject(SUPERVISOR_MODEL)` in
+      // `SupervisorService` to fall back to `UnavailableSupervisorModel`. A
+      // factory runs ONCE, so that verdict outlived any later change to the
+      // key: an operator who set it in the Control Center enabled a supervisor
+      // that could not call anything until the process restarted, while the UI
+      // said it was on. Since epic #332 makes the key operator-settable, the
+      // condition had to move — the adapter is always here, and it resolves
+      // the key, the model name, the base URL, the timeout and the token
+      // ceiling on every call.
       //
-      // Why the decision is made HERE, at instantiation, rather than by
-      // building the providers array conditionally at module-definition time:
-      // this decorator is evaluated while `app.module.ts` is being imported,
-      // which is before `ConfigModule.forRoot()` has loaded a `.env` file. A
-      // `process.env` read up there would be right in a container and wrong on
-      // a developer's machine. The same holds for `OperatorSettingsService`,
-      // which resolves the environment at read time for exactly that reason.
+      // The unconfigured path is unchanged, by design and by ADR-0015: with no
+      // key the adapter refuses per invocation, reports its name as `'none'`
+      // exactly as `UnavailableSupervisorModel` did, and the refusal is
+      // recorded in the decision log rather than crashing the API at boot or
+      // quietly disabling the supervisor.
       //
-      // It binds one adapter, and nothing outside `invocation/` names a model
-      // provider — the seam stays vendor-neutral even though today there is
+      // Still a factory rather than a class provider, for what is now the only
+      // remaining reason: choosing between vendors is this function's job the
+      // day there are two. Nothing outside `invocation/` names a model
+      // provider, so the seam stays vendor-neutral even though there is
       // exactly one vendor behind it.
       provide: SUPERVISOR_MODEL,
       inject: [OperatorSettingsService],
