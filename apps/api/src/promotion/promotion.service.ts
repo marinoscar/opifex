@@ -12,6 +12,7 @@ import type {
 } from '@prisma/client';
 
 import { ApprovalGateService } from '../approvals/approval-gate.service';
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import { FallbackWebhookTransport } from '../notifications/fallback-webhook.transport';
 import type { NotificationPayload } from '../notifications/notification-payload';
 import { PushSubscriptionsService } from '../notifications/push-subscriptions.service';
@@ -257,6 +258,7 @@ export class PromotionService {
     private readonly push: WebPushTransport,
     private readonly fallback: FallbackWebhookTransport,
     private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
   ) {}
 
   /**
@@ -270,7 +272,7 @@ export class PromotionService {
    * decision.
    */
   get enabled(): boolean {
-    return this.config.get<boolean>('promotion.enabled') === true;
+    return this.settings.get('promotion.enabled');
   }
 
   /**

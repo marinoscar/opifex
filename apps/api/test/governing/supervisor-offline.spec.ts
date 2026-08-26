@@ -1,11 +1,10 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ConfigService } from '@nestjs/config';
-
 import { decideBudgetOverrun } from '../../src/budget/budget-overrun';
 import { decideDispatch } from '../../src/dispatch/dispatch-policy';
 import { DecisionLogService } from '../../src/supervisor/decision-log/decision-log.service';
+import { makeOperatorSettings } from '../../src/settings/operator-settings/operator-settings.test-double';
 import { SnapshotService } from '../../src/supervisor/snapshot/snapshot.service';
 import { SupervisorService } from '../../src/supervisor/invocation/supervisor.service';
 import type { SupervisorSpendCeilingService } from '../../src/supervisor/invocation/supervisor-spend-ceiling';
@@ -183,17 +182,14 @@ describe('GOVERNING TEST: the factory runs with the supervisor offline (#94)', (
         record: jest.fn(() => new Promise(() => undefined)),
       } as unknown as DecisionLogService;
 
-      const config = (enabled: boolean) =>
-        ({
-          get: (key: string) =>
-            key === 'supervisor.enabled' ? enabled : undefined,
-        }) as unknown as ConfigService;
+      const settings = (enabled: boolean) =>
+        makeOperatorSettings({ overrides: { 'supervisor.enabled': enabled } });
 
       return [
         {
           how: 'disabled by configuration',
           supervisor: new SupervisorService(
-            config(false),
+            settings(false),
             snapshots,
             log,
             ceiling(5),
@@ -203,7 +199,7 @@ describe('GOVERNING TEST: the factory runs with the supervisor offline (#94)', (
         {
           how: 'enabled but erroring',
           supervisor: new SupervisorService(
-            config(true),
+            settings(true),
             snapshots,
             log,
             ceiling(5),
@@ -213,7 +209,7 @@ describe('GOVERNING TEST: the factory runs with the supervisor offline (#94)', (
         {
           how: 'enabled but hanging',
           supervisor: new SupervisorService(
-            config(true),
+            settings(true),
             snapshots,
             hangingLog,
             ceiling(5),
@@ -223,7 +219,7 @@ describe('GOVERNING TEST: the factory runs with the supervisor offline (#94)', (
         {
           how: 'enabled with no spend ceiling configured',
           supervisor: new SupervisorService(
-            config(true),
+            settings(true),
             snapshots,
             log,
             ceiling(null),
@@ -233,7 +229,7 @@ describe('GOVERNING TEST: the factory runs with the supervisor offline (#94)', (
         {
           how: 'enabled and over its spend ceiling',
           supervisor: new SupervisorService(
-            config(true),
+            settings(true),
             snapshots,
             log,
             ceiling(5),
@@ -399,10 +395,7 @@ describe('GOVERNING TEST: the factory runs with the supervisor offline (#94)', (
         .mockResolvedValue({ invocationId: 'inv-1', proposalIds: [] });
       const brokenSupervisor = (spendCeiling: SupervisorSpendCeilingService) =>
         new SupervisorService(
-          {
-            get: (key: string) =>
-              key === 'supervisor.enabled' ? true : undefined,
-          } as unknown as ConfigService,
+          makeOperatorSettings({ overrides: { 'supervisor.enabled': true } }),
           {
             collect: jest.fn().mockRejectedValue(new Error('database is down')),
             render: jest.fn(),

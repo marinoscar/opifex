@@ -1,6 +1,6 @@
-import { ConfigService } from '@nestjs/config';
-
 import type { HardCeiling } from '../../budget/hard-spend-ceiling';
+import type { OperatorSettingsOverrides } from '../../settings/operator-settings/operator-settings.registry';
+import { makeOperatorSettings } from '../../settings/operator-settings/operator-settings.test-double';
 import type { DecisionLogService } from '../decision-log/decision-log.service';
 import type { SnapshotService } from '../snapshot/snapshot.service';
 import type { SnapshotInput } from '../snapshot/snapshot.types';
@@ -45,10 +45,11 @@ function state(
   };
 }
 
-function configDouble(values: Record<string, unknown> = {}) {
-  return {
-    get: jest.fn((key: string) => values[key]),
-  } as unknown as ConfigService;
+function settingsDouble(
+  overrides: OperatorSettingsOverrides = {},
+  env: NodeJS.ProcessEnv = {},
+) {
+  return makeOperatorSettings({ overrides, env });
 }
 
 /**
@@ -83,7 +84,9 @@ function tallyValue(
 
 function build(
   options: {
-    config?: Record<string, unknown>;
+    config?: OperatorSettingsOverrides;
+    /** The process environment, for a variable that is no longer a key. */
+    env?: NodeJS.ProcessEnv;
     snapshot?: SnapshotInput;
     collectRejects?: Error;
     model?: SupervisorModel;
@@ -113,7 +116,10 @@ function build(
   const ledger = { tally } as unknown as SupervisorSpendLedgerService;
 
   const service = new SupervisorService(
-    configDouble({ 'supervisor.enabled': true, ...options.config }),
+    settingsDouble(
+      { 'supervisor.enabled': true, ...options.config },
+      options.env,
+    ),
     snapshots,
     log,
     ceilingDouble(options.ceiling),
@@ -152,9 +158,16 @@ describe('SupervisorService (#89)', () => {
     });
 
     it('treats a missing config value as off, not on', async () => {
-      const { service } = build({
-        config: { 'supervisor.enabled': undefined },
-      });
+      // Nothing overridden and nothing in the environment, so `false` here is
+      // the REGISTRY's declared default rather than a `=== true` at the call
+      // site — which is the thing that must stay true after #340.
+      const service = new SupervisorService(
+        makeOperatorSettings(),
+        { collect: jest.fn(), render: jest.fn() } as unknown as SnapshotService,
+        { record: jest.fn() } as unknown as DecisionLogService,
+        ceilingDouble(),
+        { tally: jest.fn() } as unknown as SupervisorSpendLedgerService,
+      );
       expect(service.enabled).toBe(false);
     });
   });
@@ -199,12 +212,14 @@ describe('SupervisorService (#89)', () => {
       // live-run ceiling'). A busy factory is no longer a reason to skip a
       // tick: every proposer runs once per invocation whatever `runsRunning`
       // is, so the count the ceiling gated on never determined what the tick
-      // cost. `SUPERVISOR_LIVE_RUN_CEILING` is left set in the config double
-      // on purpose -- a deployment that still has it exported must not still
-      // be gated by it.
+      // cost. `SUPERVISOR_LIVE_RUN_CEILING` is left EXPORTED on purpose -- a
+      // deployment that still has it in its `.env` must not still be gated by
+      // it. It is expressed as an environment variable rather than an
+      // override because it is no longer a managed key at all, which is
+      // exactly the state a lingering `.env` line is in.
       const propose = jest.fn().mockResolvedValue([]);
       const { service, record } = build({
-        config: { 'supervisor.liveRunCeiling': 2 },
+        env: { SUPERVISOR_LIVE_RUN_CEILING: '2' },
         snapshot: state({ runsRunning: 50 }),
         proposers: [proposer('p', propose)],
       });

@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 
 import { EscalationsService } from '../escalations/escalations.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import { buildPayload } from './notification-payload';
 import {
   FallbackWebhookTransport,
@@ -71,7 +72,11 @@ export class EscalationDispatcher {
     private readonly subscriptions: PushSubscriptionsService,
     private readonly push: WebPushTransport,
     private readonly fallback: FallbackWebhookTransport,
+    // `appUrl` is deliberately NOT a managed key — epic #332 leaves ports and
+    // URLs in `.env` — so this service reads from both paths, each for what it
+    // owns.
     private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
   ) {}
 
   /**
@@ -330,8 +335,7 @@ export class EscalationDispatcher {
    * an operator has seen.
    */
   private async sweepOverdue(now: Date): Promise<number> {
-    const timeoutMs =
-      this.config.get<number>('notifications.receiptTimeoutMs') ?? 120_000;
+    const timeoutMs = this.settings.get('notifications.receiptTimeoutMs');
     const cutoff = new Date(now.getTime() - timeoutMs);
 
     const overdue = await this.prisma.escalation.findMany({

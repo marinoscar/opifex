@@ -1,5 +1,4 @@
-import { ConfigService } from '@nestjs/config';
-
+import { makeOperatorSettings } from '../../settings/operator-settings/operator-settings.test-double';
 import type { SupervisorService } from './supervisor.service';
 import { SupervisorTask } from './supervisor.task';
 
@@ -14,15 +13,13 @@ function build(
     },
   } as unknown as SupervisorService;
 
-  const config = {
-    get: jest.fn((key: string) =>
-      key === 'supervisor.logSkippedInvocations'
-        ? (options.logSkips ?? false)
-        : undefined,
-    ),
-  } as unknown as ConfigService;
+  const settings = makeOperatorSettings({
+    overrides: {
+      'supervisor.logSkippedInvocations': options.logSkips ?? false,
+    },
+  });
 
-  return { task: new SupervisorTask(supervisor, config), invoke };
+  return { task: new SupervisorTask(supervisor, settings), invoke };
 }
 
 describe('SupervisorTask (#89)', () => {

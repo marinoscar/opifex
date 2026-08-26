@@ -7,6 +7,7 @@ import type { NotificationPayload } from '../notifications/notification-payload'
 import type { PushSubscriptionsService } from '../notifications/push-subscriptions.service';
 import type { WebPushTransport } from '../notifications/web-push.transport';
 import type { PrismaService } from '../prisma/prisma.service';
+import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import type { DecisionLogService } from '../supervisor/decision-log/decision-log.service';
 import type { ActionClassApprovalRate } from '../supervisor/decision-log/decision-log.types';
 import type { TrustGrantService } from '../trust/trust-grant.service';
@@ -217,9 +218,9 @@ function build(
       isConfigured: () => false,
       send: webhookSend,
     } as unknown as FallbackWebhookTransport,
-    new ConfigService({
-      appUrl: 'https://opifex.example',
-      promotion: { enabled: options.enabled ?? true },
+    new ConfigService({ appUrl: 'https://opifex.example' }),
+    makeOperatorSettings({
+      overrides: { 'promotion.enabled': options.enabled ?? true },
     }),
   );
 

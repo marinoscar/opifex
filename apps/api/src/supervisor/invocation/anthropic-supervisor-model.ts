@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
+import { OperatorSettingsService } from '../../settings/operator-settings/operator-settings.service';
 import { priceUsd } from './model-pricing';
 import type {
   SupervisorModel,
@@ -51,7 +51,7 @@ const ANTHROPIC_VERSION = '2023-06-01';
 /** What the model is recorded as when `SUPERVISOR_MODEL_NAME` is not set. */
 const UNCONFIGURED_MODEL_NAME = 'unconfigured';
 
-/** Everything the adapter needs, already resolved from `ConfigService`. */
+/** Everything the adapter needs, already resolved from the settings. */
 export interface AnthropicSupervisorModelConfig {
   /** `SUPERVISOR_MODEL_API_KEY`. The adapter is not constructed without one. */
   apiKey: string;
@@ -218,12 +218,15 @@ export class AnthropicSupervisorModel implements SupervisorModel {
  * decision not to run a supervisor.
  */
 export function createSupervisorModel(
-  config: ConfigService,
+  settings: OperatorSettingsService,
 ): SupervisorModel | undefined {
-  const apiKey = config.get<string>('supervisor.model.apiKey');
+  // #344 binds the adapter unconditionally so a key set later takes effect
+  // without a restart. Until then this stays a provider factory evaluated
+  // once, and #340 only moves the reads onto the resolver.
+  const apiKey = settings.get('supervisor.model.apiKey');
   if (!apiKey) return undefined;
 
-  const model = config.get<string>('supervisor.model.name') ?? '';
+  const model = settings.get('supervisor.model.name');
   if (model === '') {
     new Logger(AnthropicSupervisorModel.name).warn(
       'SUPERVISOR_MODEL_API_KEY is set but SUPERVISOR_MODEL_NAME is not - every ' +
@@ -234,13 +237,9 @@ export function createSupervisorModel(
   return new AnthropicSupervisorModel({
     apiKey,
     model,
-    baseUrl: (
-      config.get<string>('supervisor.model.baseUrl') ??
-      'https://api.anthropic.com'
-    ).replace(/\/$/, ''),
-    timeoutMs: config.get<number>('supervisor.model.timeoutMs') ?? 60000,
-    defaultMaxTokens:
-      config.get<number>('supervisor.model.defaultMaxTokens') ?? 1024,
+    baseUrl: settings.get('supervisor.model.baseUrl').replace(/\/$/, ''),
+    timeoutMs: settings.get('supervisor.model.timeoutMs'),
+    defaultMaxTokens: settings.get('supervisor.model.defaultMaxTokens'),
   });
 }
 

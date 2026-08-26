@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import { DailyBriefService } from './brief/daily-brief.service';
 import { DailyBriefTask } from './brief/daily-brief.task';
 import { DecisionLogController } from './decision-log/decision-log.controller';
@@ -87,13 +87,14 @@ import { TrustDigestSource } from './brief/trust-digest.source';
       // this decorator is evaluated while `app.module.ts` is being imported,
       // which is before `ConfigModule.forRoot()` has loaded a `.env` file. A
       // `process.env` read up there would be right in a container and wrong on
-      // a developer's machine.
+      // a developer's machine. The same holds for `OperatorSettingsService`,
+      // which resolves the environment at read time for exactly that reason.
       //
       // It binds one adapter, and nothing outside `invocation/` names a model
       // provider — the seam stays vendor-neutral even though today there is
       // exactly one vendor behind it.
       provide: SUPERVISOR_MODEL,
-      inject: [ConfigService],
+      inject: [OperatorSettingsService],
       useFactory: createSupervisorModel,
     },
     {

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
+import { OperatorSettingsService } from '../../settings/operator-settings/operator-settings.service';
 import { SupervisorService } from './supervisor.service';
 
 /**
@@ -33,7 +33,7 @@ export class SupervisorTask {
 
   constructor(
     private readonly supervisor: SupervisorService,
-    private readonly config: ConfigService,
+    private readonly settings: OperatorSettingsService,
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR)
@@ -59,8 +59,6 @@ export class SupervisorTask {
   }
 
   private get logSkips(): boolean {
-    return (
-      this.config.get<boolean>('supervisor.logSkippedInvocations') === true
-    );
+    return this.settings.get('supervisor.logSkippedInvocations');
   }
 }
