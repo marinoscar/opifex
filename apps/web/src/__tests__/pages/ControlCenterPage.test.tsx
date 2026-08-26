@@ -318,6 +318,11 @@ describe('ControlCenterPage', () => {
       expect(reads).toBe(1);
     });
 
+    // Points at Credentials rather than Configuration: #348 flipped
+    // Configuration to live, which is exactly the transition this test was
+    // written to make cheap. Retargeting it is the maintenance the design
+    // predicted, not a symptom -- and a section that is still planned is what
+    // it needs to assert against.
     it('renders a planned section as not built, naming its issue', async () => {
       const user = userEvent.setup();
       render(<ControlCenterPage />, {
@@ -325,12 +330,12 @@ describe('ControlCenterPage', () => {
       });
       await awaitPage();
 
-      await user.click(screen.getByRole('tab', { name: 'Configuration' }));
+      await user.click(screen.getByRole('tab', { name: 'Credentials' }));
 
       expect(
-        await screen.findByText(/Configuration is not built yet/i),
+        await screen.findByText(/Credentials is not built yet/i),
       ).toBeInTheDocument();
-      expect(screen.getByText(/#348/)).toBeInTheDocument();
+      expect(screen.getByText(/#349/)).toBeInTheDocument();
       expect(
         screen.getByText(/Arrives in Phase 5 — Cockpit/),
       ).toBeInTheDocument();
