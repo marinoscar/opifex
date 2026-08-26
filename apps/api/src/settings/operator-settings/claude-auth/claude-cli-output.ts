@@ -216,7 +216,7 @@ const NO_SUBSCRIPTION_PHRASES: readonly RegExp[] = [
   /didn'?t grant inference access/i,
   /disabled Claude subscription access/i,
   /this policy does not permit/i,
-  /requires? (?:a )?Claude subscription/i,
+  /no active (?:Claude )?subscription/i,
 ];
 
 /**
@@ -289,7 +289,10 @@ export function describeFailure(reason: ClaudeAuthFailureReason): string {
         'The code was rejected. Authorization codes are single-use and expire ' +
         'within a few minutes, so this usually means it was already used, it ' +
         'sat too long before being pasted, or part of it was missed when ' +
-        'copying. Start again and paste the whole code straight away.'
+        'copying. Start again and paste the whole code straight away. If the ' +
+        'code was definitely fresh and complete, check the plan on the ' +
+        'account you signed in with — the CLI reports some account-level ' +
+        'refusals through the same OAuth error.'
       );
     case 'no_subscription':
       return (
