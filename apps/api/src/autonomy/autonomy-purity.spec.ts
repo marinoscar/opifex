@@ -123,8 +123,10 @@ describe('autonomy module purity (#95, ADR-0013)', () => {
       // A second constant would be the drift ADR-0011 and ADR-0013 both refuse,
       // and a guard checking a stale copy of the ceiling is worse than no
       // guard: it reports success. The ceiling is #65's, at
-      // `budget/hard-spend-ceiling.ts`, read from the environment once at boot
-      // into readonly fields with no setter, and passed in here as a value.
+      // `budget/hard-spend-ceiling.ts`, resolved there through
+      // `OperatorSettingsService` since #345 and passed in here as a value.
+      // That this file holds no copy of its own is what makes an admin's edit
+      // reach the guard at all, as well as what stops the two disagreeing.
       expect(codeOf('never-trustable.ts')).not.toContain('HARD_SPEND_CEILING');
     });
 

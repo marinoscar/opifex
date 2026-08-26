@@ -51,6 +51,26 @@ export type SpendVerdict =
   | { admit: false; refusal: SpendRefusal; reason: string };
 
 /**
+ * What a refused operator's next move is, in one sentence.
+ *
+ * The operator's next move on hitting a limit is to look for the knob, and the
+ * message has to answer that before they go looking. Until #345 the answer was
+ * "there isn't one, and that is deliberate" — the sentence read "This ceiling
+ * cannot be raised at runtime", which was true: the value was frozen in a
+ * `readonly` field with no setter anywhere in the process. ADR-0018 §6
+ * replaced that structural guarantee with an access-controlled one, so the
+ * sentence had to change or become a lie told at exactly the moment an
+ * operator is trusting it.
+ *
+ * It still says the half that did not change, and says it first: no grant, no
+ * promoted class, no agent. What it adds is who the knob belongs to.
+ */
+const WHO_RAISES_IT =
+  'No trust grant, promoted action class or agent can raise this ceiling ' +
+  '(VISION §8); a signed-in admin can, from the Control Center, and the ' +
+  'change is recorded.';
+
+/**
  * The rules, in the order they are applied. Order matters:
  *
  * 1. **A malformed ceiling is not an absent one.** Checked first, and reported
@@ -120,7 +140,7 @@ export function decideSpendAdmission(
       refusal: 'hard-spend-ceiling-reached',
       reason:
         `Hard spend ceiling reached: ${spent} against a ${window} ceiling of ` +
-        `${usd(limit)}. This ceiling cannot be raised at runtime.`,
+        `${usd(limit)}. ${WHO_RAISES_IT}`,
     };
   }
 
@@ -158,7 +178,7 @@ export function decideSpendAdmission(
       reason:
         `Dispatching would authorize up to ${usd(projected)} against a ${window} ceiling of ` +
         `${usd(limit)}: ${spent}, and this order authorizes a further ` +
-        `${usd(order.ceilingUsd)}. This ceiling cannot be raised at runtime.`,
+        `${usd(order.ceilingUsd)}. ${WHO_RAISES_IT}`,
     };
   }
 

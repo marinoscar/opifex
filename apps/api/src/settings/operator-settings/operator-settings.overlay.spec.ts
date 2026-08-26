@@ -1065,6 +1065,62 @@ describe('OperatorSettingsService: the database overlay (#339)', () => {
       expect(prisma.audits[0]?.meta).toMatchObject({ to: 'claude-opus-4' });
     });
 
+    it('records a spend ceiling change, because that is now a security-relevant operation', async () => {
+      // #345's acceptance criterion, and the one property that partly
+      // compensates for what ADR-0018 §6 gave up. Until #345 there was nothing
+      // to audit: the ceiling could not move inside a running process at all.
+      // Now it can, and the whole access-controlled guarantee rests on a
+      // change being attributable — so a raise that left no row would be
+      // indistinguishable from a ceiling nobody touched.
+      const { settings, prisma } = makeService({
+        env: { OPIFEX_HARD_SPEND_CEILING_USD: '25' },
+      });
+      await settings.refresh();
+      prisma.audits.length = 0;
+
+      await settings.set('dispatch.hardSpendCeilingUsd', '5000', 'admin-1');
+
+      expect(prisma.audits).toHaveLength(1);
+      expect(prisma.audits[0]).toMatchObject({
+        actorUserId: 'admin-1',
+        action: 'operator_settings:set',
+        targetType: 'operator_settings',
+        targetId: 'dispatch.hardSpendCeilingUsd',
+      });
+      // The figures themselves, in the clear, on both sides. A ceiling is not
+      // a credential: an audit row that masked it would record that somebody
+      // changed the budget without recording what they changed it to, which is
+      // the half that matters.
+      expect(prisma.audits[0].meta).toMatchObject({
+        key: 'dispatch.hardSpendCeilingUsd',
+        from: '25',
+        to: '5000',
+        fromSource: 'env',
+        toSource: 'database',
+      });
+    });
+
+    it('records the supervisor ceiling and a revert to the environment too', async () => {
+      const { settings, prisma } = makeService({
+        env: { SUPERVISOR_HARD_SPEND_CEILING_USD: '5' },
+      });
+      await settings.set('supervisor.hardSpendCeilingUsd', '50', 'admin-1');
+      prisma.audits.length = 0;
+
+      await settings.clear('supervisor.hardSpendCeilingUsd', 'admin-1');
+
+      expect(prisma.audits).toHaveLength(1);
+      expect(prisma.audits[0]).toMatchObject({
+        action: 'operator_settings:clear',
+        targetId: 'supervisor.hardSpendCeilingUsd',
+      });
+      expect(prisma.audits[0].meta).toMatchObject({
+        from: '50',
+        to: '5',
+        toSource: 'env',
+      });
+    });
+
     it('does not fail the write when the audit row cannot be written', async () => {
       // The change is already committed and in force. Answering 500 would tell
       // the operator it did not apply, which is false — and is the more

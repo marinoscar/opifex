@@ -424,11 +424,27 @@ Hardcoded, not policy-configurable, regardless of any grant:
 - Deleting branches, issues, or pull requests
 - Reading or writing credentials
 - Spend above the hard ceiling
-- **Modifying CI workflows, the policy table, or budget configuration**
+- **Modifying CI workflows or the policy table**
+- **Modifying budget configuration outside an interactive, RBAC-gated admin action**
 
-The last item matters most. An agent that can edit the check enforcing its own trailers,
-or grant itself trust, has the appearance of guardrails and none of the substance. For
-the same reason, it cannot clear its own quarantine.
+The workflow-and-policy-table item matters most. An agent that can edit the check
+enforcing its own trailers, or grant itself trust, has the appearance of guardrails and
+none of the substance. For the same reason, it cannot clear its own quarantine. Nothing
+qualifies that one: there is no authorized path, no admin screen, no break-glass.
+
+Budget configuration is stated separately because one path to it is legitimate and every
+other path is not. The operator who most needs to lower a ceiling is the one watching
+spend run away right now, and requiring an SSH session and a process restart to do it
+makes the safety mechanism slowest at the only moment it is urgent. So the ceilings are
+editable — by a signed-in human, through an RBAC-gated write that refuses any credential
+which cannot prove a person was present, recorded in the audit log. Outside that, nothing
+changes: no trust grant raises a ceiling, no promoted action class reaches the write, no
+agent-reachable path touches it, and an attempt to do so is refused by name rather than
+caught by accident. "A limit an agent can raise is not a limit" still holds exactly as written.
+What is admitted is that the operator is not an agent — and the cost of admitting it is
+real, because the guarantee is now that the agent cannot reach the write rather than that
+the write does not exist. That is a weaker kind of promise, and it is only worth making
+while both barriers that hold it up are actually in force.
 
 ### The digest replaces the interruptions
 

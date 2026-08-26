@@ -5,6 +5,7 @@ import {
   HARD_SPEND_CEILING_WINDOW_ENV,
   parseHardCeiling,
 } from '../../budget/hard-spend-ceiling';
+import { makeOperatorSettings } from '../../settings/operator-settings/operator-settings.test-double';
 import {
   DEFAULT_SUPERVISOR_CEILING_WINDOW_DAYS,
   parseSupervisorCeiling,
@@ -25,9 +26,13 @@ import {
  *     parameterizing it, on condition the rules stay identical in BEHAVIOUR —
  *     which is a promise, and this is the test that holds it. A change made to
  *     one parser and not the other fails here rather than drifting quietly.
- *  3. That there is no way to move it once the process is running, which is
- *     the actual requirement (VISION §8: "a limit an agent can raise is not a
- *     limit").
+ *  3. That it MOVES when an operator moves it. This used to be its exact
+ *     opposite — "there is no way to move it once the process is running" —
+ *     and the reversal is ADR-0018 §6's, argued there and conditional on both
+ *     #334 and #346 being in force. VISION §8's "a limit an agent can raise is
+ *     not a limit" is unchanged and still holds: no trust grant, promoted
+ *     action class or agent-reachable path moves this number. What moves it is
+ *     a signed-in admin, interactively, on the record.
  */
 describe('the supervisor spend ceiling', () => {
   describe('parsing', () => {
@@ -152,26 +157,125 @@ describe('the supervisor spend ceiling', () => {
     });
   });
 
-  describe('immutability — the actual requirement', () => {
-    const ENV = SUPERVISOR_SPEND_CEILING_ENV;
-    const original = process.env[ENV];
+  describe('changing at runtime — the requirement that reversed', () => {
+    it('reads the environment layer exactly as it always did', () => {
+      const service = new SupervisorSpendCeilingService(
+        makeOperatorSettings({
+          env: {
+            [SUPERVISOR_SPEND_CEILING_ENV]: '5',
+            [SUPERVISOR_SPEND_CEILING_WINDOW_ENV]: '7',
+          },
+        }),
+      );
 
-    afterEach(() => {
-      if (original === undefined) delete process.env[ENV];
-      else process.env[ENV] = original;
+      expect(service.value).toEqual({
+        limitUsd: 5,
+        windowDays: 7,
+        malformed: null,
+      });
     });
 
-    it('does not move when the environment is changed after construction', () => {
-      process.env[ENV] = '5';
-      const service = new SupervisorSpendCeilingService();
+    it('lets a stored override win over the environment', () => {
+      const service = new SupervisorSpendCeilingService(
+        makeOperatorSettings({
+          env: { [SUPERVISOR_SPEND_CEILING_ENV]: '5' },
+          overrides: { 'supervisor.hardSpendCeilingUsd': '50' },
+        }),
+      );
 
-      process.env[ENV] = '999999';
+      expect(service.value.limitUsd).toBe(50);
+    });
+
+    it('still tells a malformed ceiling apart from an unset one', () => {
+      const malformed = new SupervisorSpendCeilingService(
+        makeOperatorSettings({
+          overrides: { 'supervisor.hardSpendCeilingUsd': '5O' },
+        }),
+      );
+      const unset = new SupervisorSpendCeilingService(makeOperatorSettings({}));
+
+      expect(malformed.value).toEqual({
+        limitUsd: null,
+        windowDays: DEFAULT_SUPERVISOR_CEILING_WINDOW_DAYS,
+        malformed: '5O',
+      });
+      expect(unset.value.malformed).toBeNull();
+    });
+
+    it('permits more supervision the moment an admin raises it', () => {
+      const settings = makeOperatorSettings({
+        overrides: { 'supervisor.hardSpendCeilingUsd': '1' },
+      });
+      const service = new SupervisorSpendCeilingService(settings);
+      expect(service.value.limitUsd).toBe(1);
+
+      settings.setOverride('supervisor.hardSpendCeilingUsd', '20');
+
+      expect(service.value.limitUsd).toBe(20);
+    });
+
+    it('permits less the moment an admin lowers it, with no restart', () => {
+      const settings = makeOperatorSettings({
+        overrides: { 'supervisor.hardSpendCeilingUsd': '20' },
+      });
+      const service = new SupervisorSpendCeilingService(settings);
+
+      settings.setOverride('supervisor.hardSpendCeilingUsd', '0');
+
+      // Zero, not null: "spend nothing" is a real instruction, and the empty
+      // string is what means "unset". The two must not collapse.
+      expect(service.value).toMatchObject({ limitUsd: 0, malformed: null });
+    });
+
+    it('follows the window too, not only the figure', () => {
+      const settings = makeOperatorSettings({
+        overrides: { 'supervisor.hardSpendCeilingUsd': '5' },
+      });
+      const service = new SupervisorSpendCeilingService(settings);
+      expect(service.value.windowDays).toBe(
+        DEFAULT_SUPERVISOR_CEILING_WINDOW_DAYS,
+      );
+
+      settings.setOverride('supervisor.hardSpendCeilingWindowDays', 30);
+
+      expect(service.value.windowDays).toBe(30);
+    });
+
+    it('ignores a change to the DISPATCH ceiling, which is a different limit', () => {
+      // The two ceilings are separate on purpose (ADR-0017). A supervisor that
+      // followed dispatch's figure would be the shared-budget coupling that
+      // whole decision exists to avoid, rebuilt through the change emitter.
+      const settings = makeOperatorSettings({
+        overrides: { 'supervisor.hardSpendCeilingUsd': '5' },
+      });
+      const service = new SupervisorSpendCeilingService(settings);
+
+      settings.setOverride('dispatch.hardSpendCeilingUsd', '9999');
 
       expect(service.value.limitUsd).toBe(5);
     });
 
-    it('does not move when a caller mutates the object it handed back', () => {
-      const service = new SupervisorSpendCeilingService({ [ENV]: '5' });
+    it('stops following changes once the module is destroyed', () => {
+      const settings = makeOperatorSettings({
+        overrides: { 'supervisor.hardSpendCeilingUsd': '5' },
+      });
+      const service = new SupervisorSpendCeilingService(settings);
+
+      service.onModuleDestroy();
+      settings.setOverride('supervisor.hardSpendCeilingUsd', '9999');
+
+      expect(service.value.limitUsd).toBe(5);
+    });
+
+    it('hands back a copy, so a caller cannot raise it by mutating one', () => {
+      // Still true and still load-bearing: without it a caller could raise the
+      // ceiling for every subsequent reader with no write path, no audit row
+      // and nothing recording that it happened.
+      const service = new SupervisorSpendCeilingService(
+        makeOperatorSettings({
+          overrides: { 'supervisor.hardSpendCeilingUsd': '5' },
+        }),
+      );
 
       const grabbed = service.value as { limitUsd: number | null };
       grabbed.limitUsd = 999999;
@@ -179,20 +283,28 @@ describe('the supervisor spend ceiling', () => {
       expect(service.value.limitUsd).toBe(5);
     });
 
-    it('exposes no way to set it', () => {
-      // Structural rather than a comment: this fails the moment somebody adds
-      // a setter, a public field or a `configure()` helper, which is exactly
-      // when a reviewer needs stopping.
-      const service = new SupervisorSpendCeilingService({ [ENV]: '5' });
+    it('exposes no mutator that takes a value', () => {
+      // The inversion of the old "exposes no way to set it", and the part of
+      // it that survives: a setter exists now, but it is fed by the resolver
+      // and takes no argument, so nothing holding this instance can name a
+      // number.
+      const service = new SupervisorSpendCeilingService(
+        makeOperatorSettings({}),
+      );
 
-      const surface = [
+      const mutators = [
         ...Object.getOwnPropertyNames(service),
         ...Object.getOwnPropertyNames(Object.getPrototypeOf(service)),
-      ];
+      ]
+        .filter((name) => /^(set|configure|update|raise)/i.test(name))
+        .filter(
+          (name) =>
+            typeof (service as unknown as Record<string, unknown>)[name] ===
+            'function',
+        );
 
-      expect(
-        surface.filter((name) => /^(set|configure|update|raise)/i.test(name)),
-      ).toEqual([]);
+      expect(mutators).toEqual([]);
+      expect(service.refresh).toHaveLength(0);
     });
   });
 
@@ -208,7 +320,7 @@ describe('the supervisor spend ceiling', () => {
           }),
       );
 
-      new SupervisorSpendCeilingService(env);
+      new SupervisorSpendCeilingService(makeOperatorSettings({ env }));
       spies.forEach((spy) => spy.mockRestore());
       return lines;
     }

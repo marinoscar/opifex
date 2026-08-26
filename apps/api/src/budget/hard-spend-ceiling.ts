@@ -1,37 +1,70 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
+
+import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 
 /**
- * The hard global spend ceiling (#65).
+ * The hard global spend ceiling (#65, #345, ADR-0018 §6).
  *
- * ## Why this does not go through `ConfigService`
+ * ## The guarantee is access control, not absence — and that is a downgrade
  *
- * Every other setting in this codebase is read through `ConfigService`, and
- * this one deliberately is not. VISION §8 puts the hard ceiling on the **never
- * trustable** list: spend above it cannot be authorized by any trust grant,
- * ever, and "a limit an agent can raise is not a limit."
+ * This file used to say the opposite, and the change is worth stating plainly
+ * rather than quietly editing away. Until #345 the ceiling was read from
+ * `process.env` once, in the constructor, into `readonly` fields with no
+ * setter anywhere in the class, and the guarantee that followed was
+ * structural: there was genuinely no code path from anything inside the
+ * process — an autonomous proposer, a fully promoted trust grant, a bug — to
+ * this number. A structural guarantee has no failure mode inside the process,
+ * because there is nothing inside it to compromise.
  *
- * `ConfigService` has a public `set()`. Any code holding the injected instance
- * can raise a value that came from `configuration.ts` at runtime, and nothing
- * would record that it happened. `system_settings` is worse — it is a JSONB
- * row an Admin can `PATCH` over HTTP, which is precisely a trust grant
- * reaching the limit. So the ceiling is read from `process.env` here, once, in
- * the constructor, into `readonly` fields with no setter anywhere in the
- * class.
+ * ADR-0018 §6 replaces it with a guarantee that is different in kind, not
+ * degree. A setter exists now: `PATCH /api/operator-settings`, RBAC-gated the
+ * same way the rest of the settings surface is. The claim is no longer "no
+ * setter exists" but **"a setter exists and the agent provably cannot reach
+ * it"**, and that claim has a failure mode the old one did not — something
+ * that is not a deliberate human admin action reaching the write path at all.
+ * Two independent barriers close it, and BOTH are preconditions rather than
+ * defence in depth, because either one missing invalidates the decision:
  *
- * ## What this does and does not guarantee, stated exactly
+ * - **`runners/process/child-environment.ts` (#334).** The agent subprocess
+ *   inherits an allowlisted environment, so it holds no credential to
+ *   authenticate with. If an agent's own execution environment could reach an
+ *   admin's session, this ceiling would not be access-controlled — it would be
+ *   unlocked.
+ * - **`auth/guards/interactive-session.guard.ts` (#346).** The settings write
+ *   path refuses any credential that cannot prove a human was present. A
+ *   personal access token authenticates as the user who created it and is
+ *   built for non-interactive clients; an Admin-scoped PAT reaching this
+ *   endpoint would be indistinguishable in the audit log from that admin
+ *   acting deliberately.
  *
- * It guarantees there is **no runtime path** to a higher ceiling: no endpoint,
- * no setting, no database row, no `ConfigService.set`, no trust grant. Raising
- * it requires an operator changing the environment and restarting the process
- * — an act outside the running system, which is the whole point.
+ * VISION §8 was amended for this and not ignored: "modifying CI workflows or
+ * the policy table" is still absolutely never-trustable, while modifying
+ * budget configuration is never-trustable *outside an interactive, RBAC-gated
+ * admin action*. No trust grant raises this ceiling, no promoted action class
+ * reaches the write, and `autonomy/never-trustable.ts` names the write itself
+ * as a forbidden `budget-config-write` effect — so a promotion mistake or a
+ * future executor wired incorrectly is refused by the guard regardless of what
+ * the class registry says.
  *
- * It does **not** guarantee that an agent with write access to this repository
- * could not edit this file. Nothing in the application layer can guarantee
- * that, and claiming otherwise would be the "appearance of guardrails and none
- * of the substance" VISION §8 warns about. The defence there is that the
- * factory's token must not carry workflow-write, that this file's changes are
- * visible in a diff, and that the ceiling is enforced in the process that
- * holds the money rather than in the one being budgeted.
+ * ## What is still true
+ *
+ * Every ceiling change is written to `audit_events` by the write path that
+ * makes it (`operator_settings:set` / `:clear`, with the key and the before
+ * and after), which the old design could not offer because there was nothing
+ * to record.
+ *
+ * It still does **not** guarantee that an agent with write access to this
+ * repository could not edit this file. Nothing in the application layer can
+ * guarantee that, and claiming otherwise would be the "appearance of
+ * guardrails and none of the substance" VISION §8 warns about. The defence
+ * there is that the factory's token must not carry workflow-write, that this
+ * file's changes are visible in a diff, and that the ceiling is enforced in
+ * the process that holds the money rather than in the one being budgeted.
  *
  * ## Unset means dispatch is refused, not that spending is unlimited
  *
@@ -44,12 +77,26 @@ import { Injectable, Logger } from '@nestjs/common';
  * (VISION §3.5 gates on reversibility, and spend is not reversible).
  */
 
-/** The only name that sets the ceiling. Nothing else may. */
+/**
+ * The environment variable the ceiling falls back to.
+ *
+ * No longer "the only name that sets the ceiling": since #345 it is the middle
+ * layer of `default -> env -> database row`, and a row written from the
+ * Control Center wins over it. It is still the only *variable* — nothing else
+ * in the environment moves this number — and a deployment that sets it and
+ * never opens the Control Center behaves exactly as it did before.
+ */
 export const HARD_SPEND_CEILING_ENV = 'OPIFEX_HARD_SPEND_CEILING_USD';
 
-/** The only name that sets the window the ceiling is measured over. */
+/** The variable the window falls back to, on the same three-layer terms. */
 export const HARD_SPEND_CEILING_WINDOW_ENV =
   'OPIFEX_HARD_SPEND_CEILING_WINDOW_DAYS';
+
+/** The managed keys this ceiling resolves through. */
+export const HARD_SPEND_CEILING_KEYS = [
+  'dispatch.hardSpendCeilingUsd',
+  'dispatch.hardSpendCeilingWindowDays',
+] as const;
 
 /**
  * The default window: thirty days.
@@ -114,20 +161,67 @@ function positiveIntOr(raw: string | undefined, fallback: number): number {
 }
 
 /**
- * Holds the ceiling for the lifetime of the process.
+ * Holds the ceiling in force, and re-reads it whenever the operator moves it.
  *
- * No setter, no mutable field, and `process.env` is read exactly once — in the
- * constructor — so that even mutating `process.env` after boot cannot move it.
+ * ## The setter, and why it takes no argument
+ *
+ * `refresh()` is the only way this number moves, and it is fed by
+ * `OperatorSettingsService` rather than by its caller. That is not a stylistic
+ * choice about signatures: a public `set(usd: number)` would be exactly the
+ * `ConfigService.set()` hazard this file's header used to be written against —
+ * any code holding the injected instance could raise the ceiling, and nothing
+ * would record that it happened. With no parameter, the only thing that can
+ * change the answer is a value that came through the resolver, which means it
+ * came through the write path, which means it was written by an authenticated,
+ * interactive human and filed in `audit_events`.
+ *
+ * ## Three places it is called, and why each is needed
+ *
+ * The constructor reads and announces, so a boot log states the ceiling even
+ * when the database is unreachable and only the environment layer answers.
+ * `onModuleInit` reads again, because provider construction happens before
+ * `OperatorSettingsService` has loaded the overlay — without this a stored
+ * override would not reach the boot announcement. The change listener reads on
+ * every announced change, which is what makes a raised ceiling permit more
+ * spend, and a lowered one permit less, without a restart.
  */
 @Injectable()
-export class HardSpendCeilingService {
+export class HardSpendCeilingService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(HardSpendCeilingService.name);
 
-  private readonly ceiling: HardCeiling;
+  /**
+   * The ceiling in force. Mutable since #345 — see the class doc — and
+   * private, with `value` handing out a copy, so the only path to it remains
+   * {@link refresh}.
+   */
+  private ceiling: HardCeiling;
 
-  constructor() {
-    this.ceiling = parseHardCeiling(process.env);
+  /** Detaches the settings listener. Undefined before init, after destroy. */
+  private unsubscribe: (() => void) | undefined;
+
+  constructor(private readonly settings: OperatorSettingsService) {
+    this.ceiling = this.read();
     this.announce();
+
+    this.unsubscribe = this.settings.onChange((change) => {
+      if (change.keys.some((key) => keyOfThisCeiling(key))) this.refresh();
+    });
+  }
+
+  /**
+   * Re-read once the overlay has loaded.
+   *
+   * Silent when nothing moved, so an ordinary boot announces once rather than
+   * twice — and loud when the stored ceiling differs from the environment's,
+   * which is the case an operator most needs to see stated.
+   */
+  onModuleInit(): void {
+    this.refresh();
+  }
+
+  onModuleDestroy(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = undefined;
   }
 
   /** The ceiling in force. A copy, so a caller cannot mutate the held value. */
@@ -136,11 +230,58 @@ export class HardSpendCeilingService {
   }
 
   /**
-   * Say at boot what the ceiling is, including when there isn't one.
+   * Take whatever the resolver now says, and announce it if it moved.
+   *
+   * Public because the module lifecycle and the change listener both call it,
+   * and because a spec proving a ceiling change takes effect should drive the
+   * same entry point the running system does. It accepts no value; see the
+   * class doc.
+   */
+  refresh(): HardCeiling {
+    const next = this.read();
+    const moved =
+      next.limitUsd !== this.ceiling.limitUsd ||
+      next.windowDays !== this.ceiling.windowDays ||
+      next.malformed !== this.ceiling.malformed;
+
+    this.ceiling = next;
+    if (moved) this.announce();
+
+    return this.value;
+  }
+
+  /**
+   * The resolver's answer, run through the same parser as the environment's.
+   *
+   * The resolved values are handed to `parseHardCeiling` in the shape it
+   * already takes, rather than being interpreted here, so there is exactly one
+   * implementation of "unset", "malformed" and the window fallback in this
+   * file. A second reading of those rules on the settings path is how the
+   * distinction between a mistyped ceiling and an absent one would quietly
+   * stop being true on one of the two paths.
+   */
+  private read(): HardCeiling {
+    return parseHardCeiling({
+      [HARD_SPEND_CEILING_ENV]: this.settings.get(
+        'dispatch.hardSpendCeilingUsd',
+      ),
+      [HARD_SPEND_CEILING_WINDOW_ENV]: String(
+        this.settings.get('dispatch.hardSpendCeilingWindowDays'),
+      ),
+    });
+  }
+
+  /**
+   * Say what the ceiling is, at boot and on every change, including when there
+   * isn't one.
    *
    * A safety limit nobody can see the state of is one an operator will assume
    * is working. The malformed case is an error rather than a warning because
    * it is the case where somebody believed they had set a ceiling.
+   *
+   * Since #345 this also fires when an operator moves the ceiling from the
+   * Control Center, which is the log line that makes a live change visible to
+   * anyone reading the process's output rather than the audit table.
    */
   private announce(): void {
     const { limitUsd, windowDays, malformed } = this.ceiling;
@@ -163,8 +304,14 @@ export class HardSpendCeilingService {
     }
 
     this.logger.log(
-      `Hard spend ceiling: $${limitUsd} per ${windowDays} days. This cannot be raised at ` +
-        `runtime by any setting, endpoint or trust grant.`,
+      `Hard spend ceiling: $${limitUsd} per ${windowDays} days. It cannot be raised by any ` +
+        `trust grant, promoted action class or agent-reachable path — only by a signed-in ` +
+        `admin, interactively, on the record (ADR-0018 §6).`,
     );
   }
+}
+
+/** Whether a changed managed key is one of this ceiling's two. */
+function keyOfThisCeiling(key: string): boolean {
+  return (HARD_SPEND_CEILING_KEYS as readonly string[]).includes(key);
 }

@@ -391,6 +391,70 @@ describe('checkNeverTrustable (#95, ADR-0013)', () => {
     });
   });
 
+  describe('budget configuration (#345, ADR-0018 §6)', () => {
+    it('refuses a write to a spend ceiling, always', () => {
+      // No condition, and deliberately none about direction. ADR-0018 rejects
+      // "lowering is fine, raising is not" for the write path, and the
+      // argument is sharper here: anything that is not a human admin reaching
+      // this effect can lower the ceiling to zero and stand the factory down.
+      expect(
+        rulesFor([
+          {
+            kind: 'budget-config-write',
+            setting: 'dispatch.hardSpendCeilingUsd',
+          },
+        ]),
+      ).toEqual(['budget-config-write']);
+    });
+
+    it('refuses the supervisor ceiling on the same terms', () => {
+      expect(
+        rulesFor([
+          {
+            kind: 'budget-config-write',
+            setting: 'supervisor.hardSpendCeilingUsd',
+          },
+        ]),
+      ).toEqual(['budget-config-write']);
+    });
+
+    it('names the setting, because "denied by policy" is the message nobody can act on', () => {
+      const [refusal] = checkNeverTrustable(
+        [
+          {
+            kind: 'budget-config-write',
+            setting: 'OPIFEX_HARD_SPEND_CEILING_USD',
+          },
+        ],
+        CEILING,
+      );
+
+      expect(refusal.reason).toContain('OPIFEX_HARD_SPEND_CEILING_USD');
+      expect(refusal.reason).toContain('interactive');
+    });
+
+    it('refuses even under a ceiling that is configured and generous', () => {
+      // The point of the effect. `CEILING` here is a perfectly valid, high
+      // ceiling — the spend rule would permit a great deal — and this refusal
+      // is not about the amount at all. It is about who is allowed to move the
+      // number, which no ceiling value can answer.
+      const refusals = checkNeverTrustable(
+        [
+          { kind: 'spend', usd: 1 },
+          {
+            kind: 'budget-config-write',
+            setting: 'dispatch.hardSpendCeilingUsd',
+          },
+        ],
+        CEILING,
+      );
+
+      expect(refusals.map((refusal) => refusal.rule)).toEqual([
+        'budget-config-write',
+      ]);
+    });
+  });
+
   describe('trust grants (VISION §8)', () => {
     it.each(['create', 'widen', 'renew'] as const)(
       'refuses to %s a grant',
@@ -450,6 +514,10 @@ describe('checkNeverTrustable (#95, ADR-0013)', () => {
           },
           { kind: 'quarantine-clear', workOrder: 'wo-1' },
           { kind: 'trust-grant-write', operation: 'widen' },
+          {
+            kind: 'budget-config-write',
+            setting: 'dispatch.hardSpendCeilingUsd',
+          },
         ],
         CEILING,
       );
@@ -463,6 +531,7 @@ describe('checkNeverTrustable (#95, ADR-0013)', () => {
         'self-modification',
         'quarantine-self-clear',
         'trust-self-grant',
+        'budget-config-write',
       ]);
     });
 
