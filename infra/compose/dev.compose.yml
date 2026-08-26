@@ -18,6 +18,11 @@ services:
       # React Refresh preamble script that `script-src 'self'` blocks, which
       # leaves the app a blank page; this policy permits it. Development only.
       - ../nginx/csp.dev.conf:/etc/nginx/csp.conf:ro
+      # Same override mechanism: base.compose.yml points the `web` upstream at
+      # port 80 (the production static-file server), which is not what runs
+      # here. The `web` service below runs the `development` target, whose
+      # Vite dev server listens on 5173.
+      - ../nginx/web-upstream.dev.conf:/etc/nginx/web-upstream.conf:ro
 
   # ---------------------------------------------------------------------------
   # API - Development overrides

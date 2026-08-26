@@ -31,6 +31,11 @@ services:
       # it so the Vite dev server's inline preamble is not blocked; production
       # keeps the strict policy.
       - ../nginx/csp.conf:/etc/nginx/csp.conf:ro
+      # Same split, same reason: nginx.conf includes this path for the `web`
+      # upstream port. dev.compose.yml mounts web-upstream.dev.conf (Vite,
+      # 5173) over it; this is the production default (the static-file
+      # server, 80). See infra/nginx/web-upstream.conf.
+      - ../nginx/web-upstream.conf:/etc/nginx/web-upstream.conf:ro
     depends_on:
       - api
       - web
