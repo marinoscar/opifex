@@ -200,9 +200,7 @@ describe('extractOauthToken', () => {
       'sk-ant-oat01-A1b2C3d4E5f6G7h8I9\r\r\n' +
       "\x1b[2GStore\x1b[8Gthis\x1b[13Gtoken\x1b[19Gsecurely.\x1b[29GYou\x1b[33Gwon't\x1b[39Gbe\x1b[42Gable\x1b[47Gto\x1b[50Gsee\x1b[54Git\x1b[57Gagain.\r\r\n";
 
-    expect(extractOauthToken(success)).toBe(
-      'sk-ant-oat01-A1b2C3d4E5f6G7h8I9',
-    );
+    expect(extractOauthToken(success)).toBe('sk-ant-oat01-A1b2C3d4E5f6G7h8I9');
   });
 
   it('never splices the following line onto the token', () => {
@@ -218,17 +216,14 @@ describe('extractOauthToken', () => {
       'sk-ant-oat01-A1b2C3d4E5f6G7h8I9\r\r\n' +
       'Store this token securely.\r\r\n';
 
-    expect(extractOauthToken(success)).toBe(
-      'sk-ant-oat01-A1b2C3d4E5f6G7h8I9',
-    );
+    expect(extractOauthToken(success)).toBe('sk-ant-oat01-A1b2C3d4E5f6G7h8I9');
   });
 
   it('answers null for a token torn across lines rather than guessing', () => {
     // The documented, deliberate limitation: a narrow pty loses the token and
     // says so, instead of inventing one. The service widens the pty to 400
     // columns precisely so this stays hypothetical.
-    const wrapped =
-      'sk-ant-oat01-A1b2C3d4\r\r\n' + 'E5f6G7h8I9\r\r\n';
+    const wrapped = 'sk-ant-oat01-A1b2C3d4\r\r\n' + 'E5f6G7h8I9\r\r\n';
 
     expect(extractOauthToken(wrapped)).toBeNull();
   });
@@ -247,8 +242,7 @@ describe('extractOauthToken', () => {
 
 describe('redactTokens', () => {
   it('removes anything token-shaped from text about to leave the process', () => {
-    const leaked =
-      'CLI said: sk-ant-oat01-A1b2C3d4E5f6G7h8I9 and exited';
+    const leaked = 'CLI said: sk-ant-oat01-A1b2C3d4E5f6G7h8I9 and exited';
 
     const safe = redactTokens(leaked);
 

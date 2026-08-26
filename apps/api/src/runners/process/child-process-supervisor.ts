@@ -67,6 +67,37 @@ export interface SpawnRequest {
   /** Written to the child's stdin, which is then closed. */
   stdin?: string;
   /**
+   * Leave stdin OPEN after the initial {@link stdin} write, for a child that
+   * is answered rather than fed (#386).
+   *
+   * The default — close it — is right for every batch caller: a child whose
+   * stdin stays open sits waiting for input that is never coming, which looks
+   * exactly like a stalled run. `claude setup-token` inverts that. It prints
+   * an authorize URL, blocks on `Paste code here if prompted >`, and the code
+   * it is waiting for arrives minutes later over HTTP from an operator's
+   * browser. Closing stdin at spawn ends that flow before it starts, and the
+   * pty in front of it sees EOF and tears down.
+   *
+   * A caller that sets this owns the lifetime: nothing else will close stdin,
+   * so it must call {@link SupervisedProcess.closeStdin} or
+   * {@link SupervisedProcess.kill}.
+   */
+  keepStdinOpen?: boolean;
+  /**
+   * Called with every RAW stdout/stderr chunk, before any line splitting.
+   *
+   * {@link onLine} is the right shape for line-delimited JSON and the wrong
+   * one for a terminal: it splits on `\n`, strips one `\r`, and drops empty
+   * lines, none of which survive contact with a CLI that draws with cursor
+   * positioning and repaints in place. A caller matching on escape sequences
+   * needs the bytes as they arrived.
+   *
+   * Both hooks can be set at once; this one runs first, and a throw here is
+   * reported through {@link SpawnRequest.onError} exactly as {@link onLine}'s
+   * is — the supervised thing cannot take the supervisor down.
+   */
+  onChunk?: (chunk: string, stream: 'stdout' | 'stderr') => void;
+  /**
    * Called once per complete line of stdout, with the newline stripped.
    *
    * Line-oriented because `--output-format=stream-json` is line-delimited
@@ -144,10 +175,16 @@ export class SupervisedProcess {
     });
 
     child.stdout?.setEncoding('utf8');
-    child.stdout?.on('data', (chunk: string) => this.consumeStdout(chunk));
+    child.stdout?.on('data', (chunk: string) => {
+      this.emitChunk(chunk, 'stdout');
+      this.consumeStdout(chunk);
+    });
 
     child.stderr?.setEncoding('utf8');
-    child.stderr?.on('data', (chunk: string) => this.consumeStderr(chunk));
+    child.stderr?.on('data', (chunk: string) => {
+      this.emitChunk(chunk, 'stderr');
+      this.consumeStderr(chunk);
+    });
 
     this.guardOutputStream('stdout', child.stdout);
     this.guardOutputStream('stderr', child.stderr);
@@ -155,8 +192,54 @@ export class SupervisedProcess {
 
     // A child whose stdin we never write to would otherwise sit waiting for
     // input that is never coming, which looks exactly like a stalled run.
-    if (request.stdin !== undefined) child.stdin?.end(request.stdin);
-    else child.stdin?.end();
+    // `keepStdinOpen` is the deliberate exception (#386) — see the field.
+    if (request.keepStdinOpen === true) {
+      if (request.stdin !== undefined) child.stdin?.write(request.stdin);
+    } else if (request.stdin !== undefined) {
+      child.stdin?.end(request.stdin);
+    } else {
+      child.stdin?.end();
+    }
+  }
+
+  /**
+   * Send more input to a child spawned with {@link SpawnRequest.keepStdinOpen}.
+   *
+   * Never throws, for the same reason {@link kill} never does: the caller is
+   * reacting to something that happened outside this process (an operator
+   * pasting a code), and a child that exited in the meantime is an ordinary
+   * outcome rather than an error path. A failed write is reported through
+   * `onError` and the caller finds out from the outcome, which is the
+   * supervisor's rule everywhere — the outcome is the fact, the stream is a
+   * report.
+   *
+   * Returns whether the data was handed to the stream, so a caller that wants
+   * to distinguish "sent" from "there was nothing to send to" can.
+   */
+  write(data: string): boolean {
+    if (!this.isAlive()) return false;
+
+    const stdin = this.child.stdin;
+    if (!stdin || stdin.destroyed || stdin.writableEnded) return false;
+
+    try {
+      stdin.write(data);
+      return true;
+    } catch (error) {
+      this.report(error);
+      return false;
+    }
+  }
+
+  /** Close a stdin held open by {@link SpawnRequest.keepStdinOpen}. */
+  closeStdin(): void {
+    const stdin = this.child.stdin;
+    if (!stdin || stdin.destroyed || stdin.writableEnded) return;
+    try {
+      stdin.end();
+    } catch (error) {
+      this.report(error);
+    }
   }
 
   /**
@@ -367,6 +450,14 @@ export class SupervisedProcess {
     const remainder = this.stdoutBuffer.trim();
     this.stdoutBuffer = '';
     if (remainder.length > 0) this.emitLine(remainder);
+  }
+
+  private emitChunk(chunk: string, stream: 'stdout' | 'stderr'): void {
+    try {
+      this.request.onChunk?.(chunk, stream);
+    } catch (error) {
+      this.report(error);
+    }
   }
 
   private emitLine(line: string): void {

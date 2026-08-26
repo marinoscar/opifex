@@ -31,6 +31,18 @@
  * but the extractor does not depend on that having worked.
  */
 
+/*
+ * `no-control-regex` is disabled for this file, and only this file.
+ *
+ * The rule exists to catch a control character typed into a pattern by
+ * accident. Here every one of them is the subject: a terminal escape sequence
+ * IS `ESC` followed by bytes, and a module that reads terminal output without
+ * naming `\x1b` and `\x07` is a module that does not do its job. They are
+ * written as escapes rather than as literal bytes so that the source stays
+ * greppable and diffable.
+ */
+/* eslint-disable no-control-regex */
+
 /** Where the CLI sends the operator, and the only URL shape accepted. */
 const AUTHORIZE_URL_PREFIX = 'https://claude.com/';
 
