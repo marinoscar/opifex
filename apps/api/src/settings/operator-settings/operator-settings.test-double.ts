@@ -8,7 +8,9 @@ import {
 import {
   OperatorSettingsService,
   type OperatorSettingSource,
+  type OperatorSettingWriteResult,
   type OperatorSettingsChange,
+  type OperatorSettingsOverlayState,
 } from './operator-settings.service';
 
 /**
@@ -44,6 +46,13 @@ import {
  *    failure this file exists to prevent.
  * 3. **Emitted changes are recorded**, so a spec can assert that a write
  *    announced itself without having to attach a listener first.
+ * 4. **`set` and `clear` are in-memory** (#339). The real ones write a row, bump
+ *    the collection revision in the same transaction and file an audit event;
+ *    the double applies the override and announces it, so a spec exercising a
+ *    consumer's reaction to a write does not need a database. A spec that is
+ *    testing the WRITE PATH itself must use the real service against a Prisma
+ *    stub — the double would prove nothing about the transaction or the audit
+ *    row.
  *
  * ## Values still go through the registry
  *
@@ -57,6 +66,9 @@ export class FakeOperatorSettingsService extends OperatorSettingsService {
 
   /** Every change announced through `notifyChanged`, in order. */
   readonly changes: OperatorSettingsChange[] = [];
+
+  /** Stands in for the collection revision, so `set` can return one. */
+  private revisionCounter = 0;
 
   constructor(
     overrides: OperatorSettingsOverrides,
@@ -114,6 +126,72 @@ export class FakeOperatorSettingsService extends OperatorSettingsService {
     else this.overrides.clear();
     this.notifyChanged(cleared);
     return this;
+  }
+
+  /**
+   * The real `set`, minus the database. See difference 4 in the class doc.
+   *
+   * `userId` is accepted and ignored: the signature has to match so that a
+   * consumer or controller written against `OperatorSettingsService` compiles
+   * and runs against this, which is the entire contract of a double.
+   */
+  override set<K extends OperatorSettingKey>(
+    key: K,
+    value: unknown,
+    _userId: string | null,
+  ): Promise<OperatorSettingWriteResult<K>> {
+    this.applyOverride(key, value as OperatorSettingValue<K>);
+    this.notifyChanged([key]);
+
+    return Promise.resolve({
+      key,
+      changed: true,
+      revision: ++this.revisionCounter,
+      resolved: this.resolve(key),
+    });
+  }
+
+  /** The real `clear`, minus the database. See difference 4 in the class doc. */
+  override clear<K extends OperatorSettingKey>(
+    key: K,
+    _userId: string | null,
+  ): Promise<OperatorSettingWriteResult<K>> {
+    const changed = this.overrides.delete(key);
+    if (changed) {
+      this.notifyChanged([key]);
+      this.revisionCounter += 1;
+    }
+
+    return Promise.resolve({
+      key,
+      changed,
+      revision: this.revisionCounter,
+      resolved: this.resolve(key),
+    });
+  }
+
+  /** No-op: there is nothing behind the double to re-read from. */
+  override refresh(): Promise<OperatorSettingsOverlayState> {
+    return Promise.resolve(this.overlay());
+  }
+
+  /**
+   * Always `'loaded'`.
+   *
+   * The double's overrides ARE its overlay, and they are in force — reporting
+   * `'unavailable'` would make every spec of a consumer that renders the
+   * status assert against a degraded state it never asked for. A spec that
+   * needs the unavailable state is testing the real service's refresh path and
+   * belongs there.
+   */
+  override overlay(): OperatorSettingsOverlayState {
+    return {
+      status: 'loaded',
+      loadedAt: new Date(0),
+      attemptedAt: new Date(0),
+      revision: this.revisionCounter,
+      overriddenKeys: this.overrides.size,
+    };
   }
 
   override notifyChanged(keys: readonly OperatorSettingKey[]): void {
