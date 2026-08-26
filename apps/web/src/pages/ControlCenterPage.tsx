@@ -19,7 +19,7 @@
  * Sections come from `config/controlCenter.ts` and are selected by
  * `?section=`. #348, #349, #350 and #351 each replace one `planned` entry with
  * a component; none of them should need to touch this file beyond adding a
- * case to the switch below. Everything a section needs that is shared —
+ * case to the switch below, which is all #351 did. Everything a section needs that is shared —
  * permission, the settings document, the save path, the section navigator —
  * is resolved here once.
  *
@@ -45,6 +45,7 @@ import {
 } from '@mui/material';
 import { Navigate, useSearchParams } from 'react-router-dom';
 
+import { HistorySection } from '../components/controlcenter/HistorySection';
 import { InterfaceSection } from '../components/controlcenter/InterfaceSection';
 import { PlannedSectionPanel } from '../components/controlcenter/PlannedSectionPanel';
 import { ReadinessSection } from '../components/controlcenter/ReadinessSection';
@@ -327,6 +328,13 @@ function SectionBody({
           canWrite={canWrite}
         />
       );
+    case 'history':
+      // Nothing is passed in: History reads `GET /api/audit-events` itself
+      // through its own hook, exactly as Readiness reads the two endpoints its
+      // chain rests on. The shell resolves what SECTIONS SHARE — the settings
+      // document, the save path, the write permission — and the audit log is
+      // shared by nothing.
+      return <HistorySection />;
     default:
       // Unreachable while every `live` section has a case above. Left as a
       // visible failure rather than a silent blank: a section flipped to
