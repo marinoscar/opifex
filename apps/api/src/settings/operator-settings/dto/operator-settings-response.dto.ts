@@ -102,8 +102,19 @@ const operatorSettingBase = {
   source: operatorSettingSourceSchema,
   /** The environment variable this key falls back to. */
   envVar: z.string(),
-  /** Whether `null` is a legal value distinct from "use the default". */
-  nullable: z.boolean(),
+  /**
+   * Whether `null` is a legal value distinct from "use the default" — as it is
+   * for `dispatch.maxConcurrent`, where null means "no ceiling".
+   *
+   * Named `acceptsNull` rather than `nullable`, which is what the registry
+   * calls it, because `test/openapi/openapi-document.spec.ts` greps the
+   * serialized document for the string `"nullable"` to catch OpenAPI 3.0's
+   * `nullable` keyword leaking into a 3.1 document. A property NAMED nullable
+   * is not that keyword, but a substring check cannot tell them apart, and
+   * renaming one field here is a smaller change than loosening a guard that
+   * is right about the thing it exists to catch.
+   */
+  acceptsNull: z.boolean(),
   /** When the stored override was last written. Null when there is no row. */
   updatedAt: z.iso.datetime().nullable(),
   /** What a control may offer. Absent members simply do not constrain. */

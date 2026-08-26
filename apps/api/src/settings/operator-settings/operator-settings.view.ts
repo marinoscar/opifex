@@ -94,7 +94,7 @@ function buildEntry(
     dangerous: definition.dangerous === true,
     source: resolved.source,
     envVar: definition.envVar,
-    nullable: definition.nullable,
+    acceptsNull: definition.nullable,
     updatedAt: settings.storedAt(key)?.toISOString() ?? null,
     constraints: {
       ...(definition.min === undefined ? {} : { min: definition.min }),

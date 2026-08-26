@@ -147,10 +147,10 @@ describe('OperatorSettingsController (#338)', () => {
       const document = controller.list();
 
       expect(entry(document, 'dispatch.maxConcurrent')).toMatchObject({
-        nullable: true,
+        acceptsNull: true,
         value: null,
       });
-      expect(entry(document, 'dispatch.enabled').nullable).toBe(false);
+      expect(entry(document, 'dispatch.enabled').acceptsNull).toBe(false);
     });
 
     it('names the environment variable each key falls back to', () => {
