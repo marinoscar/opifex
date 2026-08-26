@@ -363,7 +363,7 @@ async function seedInitialAdminAllowlist() {
 // edit inert, silently, since the resolver would keep reading the stale
 // database row instead. There is also no reference data to seed: unlike
 // roles/permissions, the set of valid keys lives in the registry
-// (`apps/api/src/operator-settings/*`, #335), not in this table.
+// (`apps/api/src/settings/operator-settings/*`, #335), not in this table.
 
 // =============================================================================
 // Main Seed Function
