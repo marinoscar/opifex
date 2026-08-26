@@ -349,29 +349,29 @@ export async function makeFakeClaudeCli(
           '\n',
         )
       : behaviour === 'hang-at-startup'
-      ? [REQUIRE_TTY, BANNER, 'sleep 120'].join('\n')
-      : [
-          REQUIRE_TTY,
-          BANNER,
-          ...(behaviour === 'noisy-startup'
-            ? [
-                line(
-                  'OAuth error: Request failed with status code 400 (retrying)',
-                ),
-              ]
-            : []),
-          // Prints the URL and the prompt, then reads the paste from the
-          // terminal the way the real CLI reads it. This is what makes the
-          // write-to-stdin path real — the service writes minutes after
-          // spawn, and this is what has to still be listening — and, since
-          // #389, what makes the LENGTH of the write matter, as it does
-          // against the vendor's own binary. `node` by absolute path: the
-          // fake runs under `sh -c` inside `script(1)`, where the PATH is
-          // whatever the API container has.
-          `${quote(process.execPath)} ${quote(reader)}`,
-          AFTER_CODE[behaviour],
-          '',
-        ].join('\n');
+        ? [REQUIRE_TTY, BANNER, 'sleep 120'].join('\n')
+        : [
+            REQUIRE_TTY,
+            BANNER,
+            ...(behaviour === 'noisy-startup'
+              ? [
+                  line(
+                    'OAuth error: Request failed with status code 400 (retrying)',
+                  ),
+                ]
+              : []),
+            // Prints the URL and the prompt, then reads the paste from the
+            // terminal the way the real CLI reads it. This is what makes the
+            // write-to-stdin path real — the service writes minutes after
+            // spawn, and this is what has to still be listening — and, since
+            // #389, what makes the LENGTH of the write matter, as it does
+            // against the vendor's own binary. `node` by absolute path: the
+            // fake runs under `sh -c` inside `script(1)`, where the PATH is
+            // whatever the API container has.
+            `${quote(process.execPath)} ${quote(reader)}`,
+            AFTER_CODE[behaviour],
+            '',
+          ].join('\n');
 
   await writeFile(reader, pasteReader(), { mode: 0o644 });
   await writeFile(binary, body, { mode: 0o755 });
