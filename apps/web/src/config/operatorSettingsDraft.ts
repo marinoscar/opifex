@@ -167,9 +167,11 @@ export interface BuiltPatch {
  * server no longer publishes — a key removed from the registry between two
  * reads — is dropped rather than sent to be rejected.
  *
- * Secrets are skipped entirely. #349 owns writing them, and until it lands a
- * secret row is read-only on screen; a secret reaching this function would be
- * a bug worth failing quietly-but-visibly over rather than a value to guess at.
+ * Secrets are skipped entirely, and that stayed true when #349 landed: a
+ * credential is written from the Credentials section, one key at a time,
+ * through `config/secretRotation.ts`, whose value never enters a draft object
+ * in the first place. A secret reaching this function would therefore be a bug
+ * worth failing quietly-but-visibly over rather than a value to guess at.
  */
 export function buildPatch(
   settings: readonly OperatorSetting[],

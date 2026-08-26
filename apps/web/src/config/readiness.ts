@@ -267,9 +267,14 @@ function credentialStep(inputs: ReadinessInputs): ReadinessStep {
       label: 'Set and test the Claude credential',
       section: 'credentials',
       today:
+        'The Credentials section stores the token and tests it with a real ' +
+        'non-interactive invocation — the only check that distinguishes a ' +
+        'working credential from a CLI that answers --version without one. ' +
         'CLAUDE_CODE_OAUTH_TOKEN (your subscription quota) or ' +
-        'ANTHROPIC_API_KEY (per-token billing) in infra/compose/.env, and a ' +
-        'container recreate. #349 brings it here with a Test button.',
+        'ANTHROPIC_API_KEY (per-token billing) in infra/compose/.env is ' +
+        'still the layer underneath, and still needs a container recreate. ' +
+        'This step reports what /health/ready observed and does not run the ' +
+        'probe itself, so it stays "not yet verifiable" here (#349).',
     },
   };
 }
