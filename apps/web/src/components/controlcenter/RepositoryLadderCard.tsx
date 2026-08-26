@@ -102,7 +102,6 @@ export function RepositoryLadderCard({
 
   const [draft, setDraft] = useState<LadderState>(stored);
   const [ceilingText, setCeilingText] = useState(storedCeiling ?? '');
-  const [ceilingError, setCeilingError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [pending, setPending] = useState<LadderWarning[] | null>(null);
@@ -115,10 +114,14 @@ export function RepositoryLadderCard({
     setSeededFrom(repository);
     setDraft(stateOf(repository));
     setCeilingText(repository.budgetCeilingUsd ?? '');
-    setCeilingError(null);
   }
 
+  // Derived, not stored, so an amount the API would reject is named AS IT IS
+  // TYPED. Reporting it only on Save would be unreachable: Save is disabled
+  // while the field is invalid, so the operator would be left with a dead
+  // button and no reason for it.
   const parsedCeiling = parseBudgetCeiling(ceilingText);
+  const ceilingError = parsedCeiling.ok ? null : parsedCeiling.error;
   const flagsChanged = LADDER_RUNGS.some(
     (rung) => draft[rung.key] !== stored[rung.key],
   );
@@ -161,11 +164,9 @@ export function RepositoryLadderCard({
 
   const handleSave = () => {
     setSavedAt(null);
-    if (!parsedCeiling.ok) {
-      setCeilingError(parsedCeiling.error);
-      return;
-    }
-    setCeilingError(null);
+    // Unreachable while the button is disabled on an invalid ceiling; kept so
+    // the write path cannot depend on that being true.
+    if (!parsedCeiling.ok) return;
 
     const introduced = warningsIntroducedBy(stored, draft);
     if (introduced.length > 0) {
@@ -178,7 +179,6 @@ export function RepositoryLadderCard({
   const handleReset = () => {
     setDraft(stored);
     setCeilingText(storedCeiling ?? '');
-    setCeilingError(null);
     setSaveError(null);
     setSavedAt(null);
   };
@@ -309,10 +309,7 @@ export function RepositoryLadderCard({
         <TextField
           label="Budget ceiling (USD per run)"
           value={ceilingText}
-          onChange={(event) => {
-            setCeilingText(event.target.value);
-            setCeilingError(null);
-          }}
+          onChange={(event) => setCeilingText(event.target.value)}
           disabled={disabled}
           size="small"
           error={!!ceilingError}
@@ -327,10 +324,7 @@ export function RepositoryLadderCard({
         />
         <Button
           size="small"
-          onClick={() => {
-            setCeilingText('');
-            setCeilingError(null);
-          }}
+          onClick={() => setCeilingText('')}
           disabled={disabled || ceilingText === ''}
           sx={{ mt: { sm: 0.5 } }}
         >
@@ -360,7 +354,7 @@ export function RepositoryLadderCard({
         <Button
           variant="contained"
           onClick={handleSave}
-          disabled={disabled || !hasChanges}
+          disabled={disabled || !hasChanges || !parsedCeiling.ok}
         >
           Save
         </Button>
