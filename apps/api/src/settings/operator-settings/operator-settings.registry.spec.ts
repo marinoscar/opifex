@@ -55,7 +55,11 @@ function parityCases(def: AnyOperatorSettingDefinition): ParityCase[] {
     case 'boolean': {
       const flipped = !(def.default as boolean);
       return [
-        { what: `boolean ${String(flipped)}`, json: flipped, env: String(flipped) },
+        {
+          what: `boolean ${String(flipped)}`,
+          json: flipped,
+          env: String(flipped),
+        },
         {
           what: `boolean ${String(!flipped)}`,
           json: !flipped,
@@ -156,7 +160,9 @@ describe('operator settings registry', () => {
       // Anchored on whole underscore-separated words: SUPERVISOR_MODEL_
       // DEFAULT_MAX_TOKENS ends in TOKENS and is a token BUDGET, not a
       // credential.
-      if (/(^|_)(TOKEN|API_KEY|SECRET|PASSWORD|CREDENTIAL)(_|$)/.test(def.envVar)) {
+      if (
+        /(^|_)(TOKEN|API_KEY|SECRET|PASSWORD|CREDENTIAL)(_|$)/.test(def.envVar)
+      ) {
         expect(def.secret).toBe(true);
       }
     });
@@ -252,7 +258,9 @@ describe('operator settings registry', () => {
       // every unrecognised spelling means off today. The registry keeps that
       // by rejecting the value and falling back to the declared default.
       for (const raw of ['TRUE', 'yes', '1', 'on', 'enabled']) {
-        expect(parseOperatorSetting('github.writesEnabled', raw).ok).toBe(false);
+        expect(parseOperatorSetting('github.writesEnabled', raw).ok).toBe(
+          false,
+        );
       }
       expect(parseOperatorSetting('github.writesEnabled', 'true')).toEqual({
         ok: true,
@@ -265,9 +273,9 @@ describe('operator settings registry', () => {
       // 'FALSE' and 'no' mean ON. Same rule as above, opposite default — one
       // parsing rule reproducing two contradictory call-site idioms.
       for (const raw of ['FALSE', 'no', '0', 'off']) {
-        expect(parseOperatorSetting('supervisor.standDownWhenBlocked', raw).ok).toBe(
-          false,
-        );
+        expect(
+          parseOperatorSetting('supervisor.standDownWhenBlocked', raw).ok,
+        ).toBe(false);
       }
       expect(
         parseOperatorSetting('supervisor.standDownWhenBlocked', 'false'),
@@ -290,9 +298,9 @@ describe('operator settings registry', () => {
     });
 
     it('enforces the declared bounds on both forms', () => {
-      expect(parseOperatorSetting('runners.claudeCodeLocal.maxConcurrency', 0).ok).toBe(
-        false,
-      );
+      expect(
+        parseOperatorSetting('runners.claudeCodeLocal.maxConcurrency', 0).ok,
+      ).toBe(false);
       expect(
         parseOperatorSetting('runners.claudeCodeLocal.maxConcurrency', '0').ok,
       ).toBe(false);
@@ -341,18 +349,18 @@ describe('operator settings registry', () => {
         false,
       );
       expect(
-        parseOperatorSetting('runners.claudeCodeLocal.committerEmail', 'nobody').ok,
+        parseOperatorSetting('runners.claudeCodeLocal.committerEmail', 'nobody')
+          .ok,
       ).toBe(false);
       // Empty is how "no fallback configured" is expressed, and must stay
       // expressible even though the field is a URL.
-      expect(parseOperatorSetting('notifications.fallbackWebhookUrl', '')).toEqual(
-        { ok: true, value: '' },
-      );
+      expect(
+        parseOperatorSetting('notifications.fallbackWebhookUrl', ''),
+      ).toEqual({ ok: true, value: '' });
     });
 
     it('rejects a permission mode the CLI would reject', () => {
-      const key: OperatorSettingKey =
-        'runners.claudeCodeLocal.permissionMode';
+      const key: OperatorSettingKey = 'runners.claudeCodeLocal.permissionMode';
       expect(parseOperatorSetting(key, 'bypassPermissions').ok).toBe(true);
       expect(parseOperatorSetting(key, 'yolo').ok).toBe(false);
     });

@@ -28,7 +28,10 @@ export interface ResolvedOperatorSetting<K extends OperatorSettingKey> {
    * being used instead. The Control Center shows this rather than presenting a
    * rejected value as if it had taken effect.
    */
-  readonly invalid?: { readonly source: OperatorSettingSource; readonly reason: string };
+  readonly invalid?: {
+    readonly source: OperatorSettingSource;
+    readonly reason: string;
+  };
 }
 
 /**
