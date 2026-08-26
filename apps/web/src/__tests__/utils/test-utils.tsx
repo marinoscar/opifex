@@ -16,6 +16,12 @@ interface WrapperOptions {
   user?: MockUser | null;
   isLoading?: boolean;
   providers?: AuthProviderType[];
+  /**
+   * Injected so a test can assert that a component RE-READS `/auth/me` rather
+   * than inferring a new value (#347). The mock provider makes its own spy
+   * otherwise, which no test could reach.
+   */
+  refreshUser?: () => Promise<void>;
 }
 
 export interface MockUser {
@@ -25,6 +31,11 @@ export interface MockUser {
   profileImageUrl: string | null;
   roles: { name: string }[];
   permissions: string[];
+  /**
+   * The theme policy, as `/auth/me` delivers it (#79, #211). Optional exactly
+   * as it is on the real `User`: absent means allowed.
+   */
+  allowUserThemeOverride?: boolean;
   isActive: boolean;
   createdAt: string;
 }
@@ -114,6 +125,7 @@ interface MockAuthProviderProps {
   user?: MockUser | null;
   isLoading?: boolean;
   providers?: AuthProviderType[];
+  refreshUser?: () => Promise<void>;
 }
 
 function MockAuthProvider({
@@ -122,6 +134,7 @@ function MockAuthProvider({
   user = mockUser,
   isLoading = false,
   providers = defaultMockProviders,
+  refreshUser,
 }: MockAuthProviderProps) {
   const contextValue = {
     user: authenticated ? user : null,
@@ -130,7 +143,7 @@ function MockAuthProvider({
     providers,
     login: vi.fn(),
     logout: vi.fn().mockResolvedValue(undefined),
-    refreshUser: vi.fn().mockResolvedValue(undefined),
+    refreshUser: refreshUser ?? vi.fn().mockResolvedValue(undefined),
   };
 
   return (
@@ -145,6 +158,7 @@ function createWrapper(options: WrapperOptions = {}) {
     user = mockUser,
     isLoading = false,
     providers = defaultMockProviders,
+    refreshUser,
   } = options;
 
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -157,6 +171,7 @@ function createWrapper(options: WrapperOptions = {}) {
             user={user}
             isLoading={isLoading}
             providers={providers}
+            refreshUser={refreshUser}
           >
             {children}
           </MockAuthProvider>

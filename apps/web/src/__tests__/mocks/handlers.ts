@@ -270,15 +270,73 @@ export const handlers = [
     });
   }),
 
+  /**
+   * `GET /health/ready` — Terminus's readiness payload, in its REAL shape.
+   *
+   * The previous fixture answered `{ checks: { database: 'ok' } }`, which no
+   * endpoint has ever returned; the real one is `{ status, info, error,
+   * details }` with one entry per indicator. That mattered from the moment the
+   * Control Center started reading `info.fleet` for the readiness chain
+   * (#347) — a fixture in an invented shape can only test invented behaviour.
+   *
+   * The values are the ones `docs/RUNBOOK-enable-claude-code-local.md` records
+   * verbatim from the reference deployment after the epic #324 rebuild and
+   * BEFORE any flag was flipped: `available: true` beside `enabled: false`.
+   * That is the divergence the whole screen exists to show, so it is the
+   * honest default for a deployment that has just been stood up.
+   */
   http.get(`${API_BASE}/health/ready`, () => {
+    const fleet = {
+      status: 'up',
+      checked: true,
+      registered: 1,
+      routable: 1,
+      enabled: 0,
+      dispatchable: 0,
+      checkedAt: new Date().toISOString(),
+      runners: [
+        {
+          key: 'claude-code-local',
+          version: '2.1.246',
+          enabled: false,
+          available: true,
+          maxConcurrency: 2,
+        },
+      ],
+      message:
+        'All 1 registered runner(s) are disabled. Nothing will be dispatched ' +
+        'until one is switched on — this is a configuration choice, not a ' +
+        'failure.',
+    };
+
     return HttpResponse.json({
       data: {
         status: 'ok',
+        // `info` holds the indicators that are up and `details` holds all of
+        // them. Both are sent, because the client reads `info` first and falls
+        // back — and a fixture with only one of them could not exercise that.
+        info: { database: { status: 'up' }, fleet },
+        error: {},
+        details: { database: { status: 'up' }, fleet },
         timestamp: new Date().toISOString(),
-        checks: {
-          database: 'ok',
-        },
       },
+    });
+  }),
+
+  /**
+   * `GET /repositories` — honours the two boolean filters the endpoint really
+   * does, so the readiness chain's "how many may be dispatched into" question
+   * gets a different answer from its "how many are registered" one.
+   *
+   * Empty by default: a deployment with nothing registered is the state an
+   * operator opening the Control Center for the first time is actually in.
+   */
+  http.get(`${API_BASE}/repositories`, ({ request }) => {
+    const url = new URL(request.url);
+    const pageSize = Number(url.searchParams.get('pageSize') ?? '25');
+
+    return HttpResponse.json({
+      data: { items: [], total: 0, page: 1, pageSize },
     });
   }),
 

@@ -19,8 +19,8 @@ import App from '../App';
  * The page-level checks stay in the app as defence for a page mounted from
  * anywhere else; they are covered by those pages' own suites.
  */
-vi.mock('../pages/SystemSettingsPage', () => ({
-  default: () => <h1>System Settings</h1>,
+vi.mock('../pages/ControlCenterPage', () => ({
+  default: () => <h1>Control Center</h1>,
 }));
 
 vi.mock('../pages/UserManagementPage', () => ({
@@ -104,7 +104,7 @@ describe('App', () => {
         { timeout: 5000 },
       );
       expect(
-        screen.queryByRole('heading', { name: /system settings/i }),
+        screen.queryByRole('heading', { name: /control center/i }),
       ).not.toBeInTheDocument();
     });
 
@@ -141,7 +141,7 @@ describe('App', () => {
       await waitFor(
         () =>
           expect(
-            screen.getByRole('heading', { name: /system settings/i }),
+            screen.getByRole('heading', { name: /control center/i }),
           ).toBeInTheDocument(),
         { timeout: 5000 },
       );
@@ -162,7 +162,7 @@ describe('App', () => {
       await waitFor(
         () =>
           expect(
-            screen.getByRole('heading', { name: /system settings/i }),
+            screen.getByRole('heading', { name: /control center/i }),
           ).toBeInTheDocument(),
         { timeout: 5000 },
       );
