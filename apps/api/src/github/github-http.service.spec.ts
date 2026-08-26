@@ -1,3 +1,5 @@
+import { Logger } from '@nestjs/common';
+
 import type { OperatorSettingsOverrides } from '../settings/operator-settings/operator-settings.registry';
 import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import { EtagCacheService } from './etag-cache.service';
@@ -69,6 +71,24 @@ describe('GitHubHttpService', () => {
     return new GitHubHttpService(operatorSettings(overrides), rateLimit, etags);
   }
 
+  /**
+   * The same service, with the settings handle kept — so a spec can change a
+   * value while the service is alive, which is the whole subject of #341.
+   */
+  function buildLive(overrides: OperatorSettingsOverrides = {}) {
+    const settings = operatorSettings(overrides);
+    return {
+      settings,
+      service: new GitHubHttpService(settings, rateLimit, etags),
+    };
+  }
+
+  /** The `Authorization` header of the nth fetch, 0-indexed. */
+  function authorizationOf(call: number): string {
+    const [, init] = fetchMock.mock.calls[call] as [string, RequestInit];
+    return (init.headers as Record<string, string>).authorization;
+  }
+
   beforeEach(() => {
     rateLimit = new RateLimitService();
     etags = new EtagCacheService(50);
@@ -126,6 +146,163 @@ describe('GitHubHttpService', () => {
       );
       // The API must boot without GitHub configured; it just cannot call it.
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * #341. The token, the timeout, the retry budget and the reserve are
+   * per-request policy: a change to any of them must land on the NEXT request
+   * without a restart. This mattered before any UI existed, because
+   * `RunWorkspaceService` already read `github.token` live for git operations
+   * — so a frozen copy here meant one rotation applying to `git push` and not
+   * to the API call beside it.
+   */
+  describe('settings resolved per request (#341)', () => {
+    it('carries a rotated token on the NEXT request', async () => {
+      fetchMock.mockImplementation(async () => githubResponse(200, {}));
+      const { settings, service } = buildLive();
+
+      await service.request('/repos/acme/app');
+      expect(authorizationOf(0)).toBe('Bearer ghp_test');
+
+      // The rotation an operator performs while the process is running.
+      settings.setOverride('github.token', 'ghp_rotated');
+
+      await service.request('/repos/acme/app/issues');
+      expect(authorizationOf(1)).toBe('Bearer ghp_rotated');
+    });
+
+    it('keeps ONE request on the token it started with, across its retries', async () => {
+      // Resolved once per request, not once per attempt: a rotation landing
+      // between the "is a credential configured" check and the header built
+      // from it would send `Bearer undefined`, and a retry that changed
+      // credentials mid-flight would make a 401 unattributable to either token.
+      const { settings, service } = buildLive({ 'github.maxRetries': 1 });
+      fetchMock
+        .mockImplementationOnce(async () => {
+          settings.setOverride('github.token', 'ghp_rotated');
+          return githubResponse(503, { message: 'unavailable' });
+        })
+        .mockImplementation(async () => githubResponse(200, {}));
+
+      await service.request('/repos/acme/app');
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(authorizationOf(0)).toBe('Bearer ghp_test');
+      expect(authorizationOf(1)).toBe('Bearer ghp_test');
+
+      // And the request AFTER it picks the rotation up.
+      await service.request('/repos/acme/app/issues');
+      expect(authorizationOf(2)).toBe('Bearer ghp_rotated');
+    });
+
+    it('reports `configured` as of now, so a token arriving needs no restart', async () => {
+      fetchMock.mockImplementation(async () => githubResponse(200, {}));
+      const { settings, service } = buildLive({ 'github.token': '' });
+
+      expect(service.configured).toBe(false);
+      await expect(service.request('/repos/acme/app')).rejects.toBeInstanceOf(
+        GitHubAuthError,
+      );
+
+      settings.setOverride('github.token', 'ghp_arrived');
+
+      expect(service.configured).toBe(true);
+      await service.request('/repos/acme/app');
+      expect(authorizationOf(0)).toBe('Bearer ghp_arrived');
+    });
+
+    it('still warns at construction when no token is configured', () => {
+      // #43 is where a missing token becomes actionable; this line is what an
+      // operator reads a startup log for, and making the token live must not
+      // cost it.
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      build({ 'github.token': '' });
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('GITHUB_TOKEN is not set'),
+      );
+
+      warn.mockClear();
+      build();
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('applies a changed timeout to the next request', async () => {
+      const timeout = jest.spyOn(AbortSignal, 'timeout');
+      fetchMock.mockImplementation(async () => githubResponse(200, {}));
+      const { settings, service } = buildLive();
+
+      await service.request('/repos/acme/app');
+      expect(timeout).toHaveBeenLastCalledWith(5000);
+
+      settings.setOverride('github.requestTimeoutMs', 1000);
+
+      await service.request('/repos/acme/app');
+      expect(timeout).toHaveBeenLastCalledWith(1000);
+    });
+
+    it('applies a changed retry budget to the next request', async () => {
+      fetchMock.mockImplementation(async () =>
+        githubResponse(503, { message: 'unavailable' }),
+      );
+      const { settings, service } = buildLive({ 'github.maxRetries': 0 });
+
+      await expect(service.request('/x')).rejects.toBeInstanceOf(
+        GitHubTransientError,
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // One retry, not three: every retry here waits on a real backoff timer,
+      // and the assertion is that the budget CHANGED, not how large it got.
+      settings.setOverride('github.maxRetries', 1);
+
+      await expect(service.request('/x')).rejects.toBeInstanceOf(
+        GitHubTransientError,
+      );
+      // Two more: the attempt plus its retry.
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it('applies a changed rate-limit reserve without a restart', async () => {
+      fetchMock.mockImplementation(async () =>
+        githubResponse(200, {}, { 'x-ratelimit-remaining': '50' }),
+      );
+      const { settings, service } = buildLive();
+      await service.request('/repos/acme/app');
+
+      expect(service.canSpend()).toBe(false);
+
+      // VISION §11 has automated runs competing with a human for one budget;
+      // an operator lowering the reserve wants the reconciler moving again now,
+      // not after a deploy.
+      settings.setOverride('github.rateLimitReserve', 10);
+
+      expect(service.canSpend()).toBe(true);
+    });
+
+    it('does NOT follow a changed base URL or user agent', async () => {
+      // Frozen deliberately. `EtagCacheService` is keyed by request PATH, not
+      // by host, so a live process that changed hosts would send one host's
+      // `If-None-Match` to another and take the 304 as confirmation of a body
+      // the new host has never sent. A cache returning a different server's
+      // answers is silently wrong, which is worse than stale.
+      fetchMock.mockImplementation(async () => githubResponse(200, {}));
+      const { settings, service } = buildLive();
+
+      settings.setOverride('github.apiBaseUrl', 'https://ghe.internal/api/v3');
+      settings.setOverride('github.userAgent', 'opifex-rotated');
+
+      await service.request('/repos/acme/app');
+
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('https://api.github.com/repos/acme/app');
+      expect((init.headers as Record<string, string>)['user-agent']).toBe(
+        'opifex-test',
+      );
     });
   });
 
