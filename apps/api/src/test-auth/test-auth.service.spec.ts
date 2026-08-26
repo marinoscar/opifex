@@ -231,6 +231,11 @@ describe('TestAuthService', () => {
         sub: mockUser.id,
         email: mockUser.email,
         roles: ['viewer'],
+        // #346: this endpoint impersonates a browser login, so it has to mint
+        // what a browser login mints. Asserted rather than ignored — a test
+        // credential that is quietly weaker than the thing it stands in for
+        // would make every interactive-only route untestable end to end.
+        cred: 'interactive',
       });
       expect(result.accessToken).toBe('mock-jwt-token');
     });

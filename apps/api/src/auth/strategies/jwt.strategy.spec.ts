@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
 import { JwtStrategy } from './jwt.strategy';
 import { AuthService } from '../auth.service';
+import type { RequestWithCredentialKind } from '../credential-kind';
 
 describe('JwtStrategy', () => {
   let strategy: JwtStrategy;
@@ -54,7 +55,8 @@ describe('JwtStrategy', () => {
         email: 'test@example.com',
         roles: ['viewer'],
       };
-      const result = await strategy.validate(payload);
+      const req: RequestWithCredentialKind = {};
+      const result = await strategy.validate(req, payload);
 
       expect(result).toEqual(mockUser);
       expect(mockAuthService.validateJwtPayload).toHaveBeenCalledWith(payload);
@@ -65,7 +67,7 @@ describe('JwtStrategy', () => {
 
       const payload = { sub: 'invalid', email: 'test@example.com', roles: [] };
 
-      await expect(strategy.validate(payload)).rejects.toThrow(
+      await expect(strategy.validate({}, payload)).rejects.toThrow(
         UnauthorizedException,
       );
     });
@@ -77,9 +79,78 @@ describe('JwtStrategy', () => {
 
       const payload = { sub: 'invalid', email: 'test@example.com', roles: [] };
 
-      await expect(strategy.validate(payload)).rejects.toThrow(
+      await expect(strategy.validate({}, payload)).rejects.toThrow(
         UnauthorizedException,
       );
+    });
+
+    // #346. The strategy is the only place the VERIFIED payload exists, so it
+    // is the only place the credential kind can be read without decoding the
+    // token a second time.
+    describe('credential kind (#346)', () => {
+      beforeEach(() => {
+        mockAuthService.validateJwtPayload.mockResolvedValue({
+          id: 'user-1',
+        } as any);
+      });
+
+      it('records an interactive session on the request', async () => {
+        const req: RequestWithCredentialKind = {};
+
+        await strategy.validate(req, {
+          sub: 'user-1',
+          email: 'test@example.com',
+          roles: [],
+          cred: 'interactive',
+        });
+
+        expect(req.credentialKind).toBe('interactive');
+      });
+
+      it('records a device-flow token on the request', async () => {
+        const req: RequestWithCredentialKind = {};
+
+        await strategy.validate(req, {
+          sub: 'user-1',
+          email: 'test@example.com',
+          roles: [],
+          cred: 'device-code',
+        });
+
+        expect(req.credentialKind).toBe('device-code');
+      });
+
+      it('records a token with no claim as unknown, not as interactive', async () => {
+        // The fail-closed direction, and the one a refactor is most likely to
+        // reverse: a token minted before #346 shipped carries no `cred`, and
+        // reading its absence as proof of a human is exactly the silent
+        // privilege escalation this guard exists to stop.
+        const req: RequestWithCredentialKind = {};
+
+        await strategy.validate(req, {
+          sub: 'user-1',
+          email: 'test@example.com',
+          roles: [],
+        });
+
+        expect(req.credentialKind).toBe('unknown');
+      });
+
+      it('does not attach the user to the request itself', async () => {
+        // The kind is a property of the REQUEST, not of the person: the same
+        // admin is interactive in a browser tab and not interactive in a cron
+        // job, and only one of those two facts outlives the request.
+        const req: RequestWithCredentialKind & { user?: unknown } = {};
+
+        await strategy.validate(req, {
+          sub: 'user-1',
+          email: 'test@example.com',
+          roles: [],
+          cred: 'interactive',
+        });
+
+        expect(req.user).toBeUndefined();
+      });
     });
   });
 });

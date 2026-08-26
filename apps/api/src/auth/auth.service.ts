@@ -19,6 +19,12 @@ import {
   readGoogleOAuthStatus,
 } from './google-oauth.config';
 import { JwtPayload } from './strategies/jwt.strategy';
+import {
+  CREDENTIAL_KIND_CLAIM,
+  DEVICE_REFRESH_TOKEN_PREFIX,
+  credentialKindFromRefreshToken,
+  type CredentialKind,
+} from './credential-kind';
 import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 import { TokenResponseDto } from './dto/auth-user.dto';
 import { AuthProviderDto } from './dto/auth-provider.dto';
@@ -315,6 +321,9 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       roles,
+      // A browser login, by construction: this method is only reached from
+      // the OAuth callback (#346).
+      [CREDENTIAL_KIND_CLAIM]: 'interactive',
     };
 
     const accessTtlMinutes = this.configService.get<number>(
@@ -341,15 +350,30 @@ export class AuthService {
       email: string;
       userRoles: Array<{ role: { name: string } }>;
     },
-    options?: { accessTtlMinutes?: number; refreshTtlDays?: number },
+    options?: {
+      accessTtlMinutes?: number;
+      refreshTtlDays?: number;
+      /**
+       * How the human authenticated (#346). Defaults to `'interactive'`
+       * because the OAuth callback is the caller that passes nothing; the
+       * device flow passes `'device-code'` explicitly, and a future
+       * non-interactive minting path that forgets to is a bug this default
+       * hides — which is why `device-auth.service.ts` states it at the call
+       * site rather than relying on being the only exception.
+       */
+      credentialKind?: CredentialKind;
+    },
   ): Promise<FullTokenResponse> {
+    const credentialKind = options?.credentialKind ?? 'interactive';
     const accessToken = this.generateAccessToken(
       user,
       options?.accessTtlMinutes,
+      credentialKind,
     );
     const refreshToken = await this.createRefreshToken(
       user.id,
       options?.refreshTtlDays,
+      credentialKind,
     );
 
     return {
@@ -369,6 +393,7 @@ export class AuthService {
       userRoles: Array<{ role: { name: string } }>;
     },
     ttlMinutesOverride?: number,
+    credentialKind: CredentialKind = 'interactive',
   ) {
     const roles = user.userRoles.map((ur) => ur.role.name);
 
@@ -376,6 +401,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       roles,
+      [CREDENTIAL_KIND_CLAIM]: credentialKind,
     };
 
     const accessTtlMinutes =
@@ -396,6 +422,7 @@ export class AuthService {
   private async createRefreshToken(
     userId: string,
     ttlDaysOverride?: number,
+    credentialKind: CredentialKind = 'interactive',
   ): Promise<string> {
     const refreshTtlDays =
       ttlDaysOverride ??
@@ -403,8 +430,18 @@ export class AuthService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + refreshTtlDays);
 
-    // Generate random token
-    const token = randomBytes(32).toString('hex');
+    // Generate random token.
+    //
+    // A device-flow refresh token carries its provenance in its own prefix
+    // (#346). Without it, `POST /api/auth/refresh` would launder a device
+    // token into an interactive one in a single request and the settings
+    // guard would be decorative. The hash is taken over the whole string, so
+    // storage, lookup and uniqueness are untouched by the prefix.
+    const secret = randomBytes(32).toString('hex');
+    const token =
+      credentialKind === 'device-code'
+        ? `${DEVICE_REFRESH_TOKEN_PREFIX}${secret}`
+        : secret;
     const tokenHash = this.hashToken(token);
 
     // Store hashed token in database
@@ -471,9 +508,23 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    // Generate new tokens
-    const newRefreshToken = await this.createRefreshToken(storedToken.userId);
-    const accessToken = this.generateAccessToken(storedToken.user);
+    // Generate new tokens.
+    //
+    // The rotation preserves the credential kind (#346). A refresh is not an
+    // authentication event — nobody proved anything at a keyboard to perform
+    // it — so it cannot be the moment a device-flow session becomes an
+    // interactive one.
+    const credentialKind = credentialKindFromRefreshToken(refreshToken);
+    const newRefreshToken = await this.createRefreshToken(
+      storedToken.userId,
+      undefined,
+      credentialKind,
+    );
+    const accessToken = this.generateAccessToken(
+      storedToken.user,
+      undefined,
+      credentialKind,
+    );
 
     return {
       accessToken: accessToken.token,

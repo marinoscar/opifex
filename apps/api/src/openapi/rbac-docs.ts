@@ -79,6 +79,18 @@ export function describeRequirements(operation: DocOperation): string | null {
     clauses.push(`permissions ${permissions.map(code).join(' and ')}`);
   }
 
+  if (rbac.interactive === true) {
+    // Last in the list because it is the least ordinary requirement, and a
+    // reader scanning for the roles and permissions should hit those first
+    // (#346). Rendered at all because an operator writing a script against
+    // this endpoint needs to learn from the reference that their personal
+    // access token will not work, rather than from a 403 at 2am.
+    clauses.push(
+      'an interactive session — a personal access token or a device-flow ' +
+        'token is refused (VISION §8)',
+    );
+  }
+
   if (clauses.length === 0) {
     return authenticationOnly();
   }

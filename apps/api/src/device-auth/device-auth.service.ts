@@ -205,6 +205,13 @@ export class DeviceAuthService {
         const tokens = await this.authService.generateFullTokens(record.user, {
           accessTtlMinutes: tokenExpiryDays * 24 * 60,
           refreshTtlDays: tokenExpiryDays,
+          // Stated, not inferred (#346). This flow exists so a device with no
+          // browser can act unattended for days afterwards, which is exactly
+          // the property that makes it unacceptable on the operator-settings
+          // write path. Both tokens carry it: the access token as a claim,
+          // the refresh token as a prefix, so a rotation cannot launder one
+          // into an interactive session.
+          credentialKind: 'device-code',
         });
 
         // Mark as used (update status to expired to prevent reuse)

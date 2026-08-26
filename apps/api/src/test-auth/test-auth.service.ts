@@ -5,6 +5,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TestLoginDto } from './dto/test-login.dto';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { CREDENTIAL_KIND_CLAIM } from '../auth/credential-kind';
 import { DEFAULT_USER_SETTINGS } from '../common/types/settings.types';
 
 export interface TestAuthTokenResponse {
@@ -124,6 +125,12 @@ export class TestAuthService {
       sub: user.id,
       email: user.email,
       roles,
+      // This endpoint stands in for a browser login in E2E, so it mints what
+      // a browser login mints (#346). Saying so explicitly is the point: a
+      // test harness that silently produced a weaker credential than the
+      // thing it impersonates would make the interactive-only guard
+      // untestable through the front door.
+      [CREDENTIAL_KIND_CLAIM]: 'interactive',
     };
 
     const accessTtlMinutes = this.configService.get<number>(

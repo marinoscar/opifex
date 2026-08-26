@@ -254,6 +254,12 @@ describe('DeviceAuthService', () => {
         expect.objectContaining({
           accessTtlMinutes: expect.any(Number),
           refreshTtlDays: expect.any(Number),
+          // #346. This flow exists so a device with no browser can act
+          // unattended for days, which is exactly what makes it unacceptable
+          // on the operator-settings write path — and the token has to say so
+          // at the moment it is minted, because nothing downstream can work it
+          // out from a JWT that is otherwise identical to a browser session's.
+          credentialKind: 'device-code',
         }),
       );
 
