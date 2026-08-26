@@ -23,6 +23,10 @@ import { PERMISSIONS } from '../../src/common/constants/roles.constants';
 /** Where `@ApiExtension` stores what it stamped. */
 const SWAGGER_API_EXTENSION = 'swagger/apiExtension';
 
+/** Where `@HttpCode` stores its override, and where `@ApiResponse` stores its. */
+const HTTP_CODE_METADATA = '__httpCode__';
+const SWAGGER_API_RESPONSE = 'swagger/apiResponse';
+
 /**
  * The Claude sign-in routes are gated exactly as a secret write is (#386).
  *
@@ -242,6 +246,45 @@ describe('Claude sign-in requires a secret-write, interactive credential (#386)'
         PERMISSIONS.OPERATOR_SETTINGS_WRITE_SECRET,
       ]);
       expect(rbac.interactive).toBe(true);
+    });
+  });
+
+  describe('the status codes it documents are the ones it answers', () => {
+    /*
+     * The one kind of drift `openapi:lint` cannot catch, because both the
+     * truth and the lie are valid OpenAPI: a POST documented as 200 while
+     * Nest answers its default 201. The web client is generated from that
+     * document, so a mismatch shows up as a client that treats a successful
+     * call as a failure — and only at runtime.
+     */
+    const expectedFor = (
+      handler: (...args: never[]) => unknown,
+      verb: string,
+    ) =>
+      (Reflect.getMetadata(HTTP_CODE_METADATA, handler) as
+        number | undefined) ?? (verb === 'POST' ? 201 : 200);
+
+    it.each([
+      ['POST', 'start'],
+      ['GET', 'get'],
+      ['POST', 'submitCode'],
+      ['DELETE', 'cancel'],
+    ])('%s %s', (verb, name) => {
+      const handler = (
+        ClaudeAuthController.prototype as unknown as Record<
+          string,
+          (...args: never[]) => unknown
+        >
+      )[name]!;
+
+      const documented = Reflect.getMetadata(
+        SWAGGER_API_RESPONSE,
+        handler,
+      ) as Record<string, unknown>;
+
+      expect(Object.keys(documented)).toContain(
+        String(expectedFor(handler, verb)),
+      );
     });
   });
 

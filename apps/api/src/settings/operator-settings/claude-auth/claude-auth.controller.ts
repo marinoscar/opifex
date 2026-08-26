@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+} from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { Auth } from '../../../auth/decorators/auth.decorator';
@@ -57,6 +66,11 @@ export class ClaudeAuthController {
   constructor(private readonly claudeAuth: ClaudeAuthService) {}
 
   @Post('start')
+  // 201, and documented as 201. A sign-in session is a resource with an
+  // identifier that did not exist before this call, and the OpenAPI document
+  // is the contract the web client is generated against — a document
+  // promising 200 while the route answers 201 is drift the `openapi:lint`
+  // gate cannot see, because both are valid documents.
   @ApiOperation({
     summary: 'Begin connecting a Claude subscription',
     description:
@@ -72,6 +86,7 @@ export class ClaudeAuthController {
       'human in a browser regardless.',
   })
   @ApiDataResponse(ClaudeAuthSessionDto, {
+    status: HttpStatus.CREATED,
     description: 'A live sign-in, with the URL to open',
   })
   @ApiResponse({
@@ -100,6 +115,10 @@ export class ClaudeAuthController {
   }
 
   @Post(':sessionId/code')
+  // 200, not the POST default of 201: this changes a session that already
+  // exists rather than creating one, and the body it returns is the same
+  // session `start` and `GET` return.
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Submit the code the browser gave you',
     description:

@@ -439,7 +439,7 @@ export const OPERATOR_SETTINGS = {
     reload: 'next-unit',
     group: 'runner',
     label: 'Claude subscription token',
-    help: 'From `claude setup-token`. Automated runs compete with your own interactive use for one subscription quota (VISION §11) — the concurrency ceiling below is what leaves you room. Empty means the runner is unauthenticated and every dispatch fails at spawn. A rotation applies to the next agent started, not to agents already running.',
+    help: 'Use Connect Claude account on the Credentials section (#386) — it runs `claude setup-token` for you on a pseudo-terminal and seals the result here, so there is no shell to get into and nothing to copy by hand. Automated runs compete with your own interactive use for one subscription quota (VISION §11) — the concurrency ceiling below is what leaves you room. Empty means the runner is unauthenticated and every dispatch fails at spawn. A rotation applies to the next agent started, not to agents already running.',
   }),
 
   'runners.claudeCodeLocal.enabled': booleanSetting({
