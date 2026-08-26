@@ -118,22 +118,26 @@ function serveProbe(
     };
   },
 ) {
-  const calls = { count: 0 };
+  const calls: { count: number; bodies: unknown[] } = { count: 0, bodies: [] };
 
   server.use(
-    http.post(`${API_BASE}/operator-settings/probes/${probe}`, () => {
-      calls.count += 1;
-      return HttpResponse.json({
-        data: {
-          probe,
-          ok: result.ok,
-          detail: result.detail,
-          checkedAt: '2026-08-20T14:32:00.000Z',
-          skipped: result.skipped ?? false,
-          ...(result.rateLimit ? { rateLimit: result.rateLimit } : {}),
-        },
-      });
-    }),
+    http.post(
+      `${API_BASE}/operator-settings/probes/${probe}`,
+      async ({ request }) => {
+        calls.count += 1;
+        calls.bodies.push(await request.json());
+        return HttpResponse.json({
+          data: {
+            probe,
+            ok: result.ok,
+            detail: result.detail,
+            checkedAt: '2026-08-20T14:32:00.000Z',
+            skipped: result.skipped ?? false,
+            ...(result.rateLimit ? { rateLimit: result.rateLimit } : {}),
+          },
+        });
+      },
+    ),
   );
 
   return calls;
@@ -408,6 +412,27 @@ describe('CredentialsSection', () => {
             node.textContent.includes('2026'),
         ),
       ).toBeInTheDocument();
+    });
+
+    it('sends a body the API’s schema accepts, even with nothing to say', async () => {
+      // `ZodValidationPipe` is global on the API and an absent body reaches an
+      // object schema as `undefined`, which it rejects. An empty object means
+      // "ask about the first observed repository", which is what an operator
+      // with one registered repository expects.
+      const user = userEvent.setup();
+      const calls = serveProbe('github-token', {
+        ok: true,
+        detail: 'The token is valid.',
+      });
+      renderSection();
+
+      const github = await card('github.token');
+      await user.click(
+        within(github).getByRole('button', { name: 'Test token' }),
+      );
+
+      await waitFor(() => expect(calls.count).toBe(1));
+      expect(calls.bodies[0]).toEqual({});
     });
 
     it('renders a rejected credential as a finding, not as an error', async () => {

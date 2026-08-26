@@ -1368,7 +1368,13 @@ export async function runOperatorProbe(
   try {
     const result = await api.post<OperatorProbeResult>(
       `/operator-settings/probes/${encodeURIComponent(probe)}`,
-      repositoryId === undefined ? undefined : { repositoryId },
+      // Always an object, even when there is nothing to say. The API's body is
+      // optional in OpenAPI terms, but `ZodValidationPipe` is global and an
+      // absent body reaches an object schema as `undefined` — which a
+      // `z.object` rejects. `{}` satisfies it and means the same thing:
+      // `github-repo` then asks about the first observed repository, which is
+      // what an operator with one registered repository expects.
+      { ...(repositoryId === undefined ? {} : { repositoryId }) },
       { signal },
     );
 
