@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw';
 
+import { costSummaryFixture } from './costSummary';
 import { operatorSettingsFixture } from './operatorSettings';
 
 // Use wildcard pattern to match relative URLs
@@ -495,6 +496,16 @@ export const handlers = [
    */
   http.patch(`${API_BASE}/operator-settings`, () =>
     HttpResponse.json({ data: operatorSettingsFixture({ revision: 8 }) }),
+  ),
+
+  /**
+   * `GET /api/cost/summary` — read by the Credentials section for
+   * `ceiling`, the one place spend is tallied over the ceiling's own window
+   * (#349, epic #332). Requires `runs:read` on the real API, which is a
+   * different permission from the one that opens the Control Center.
+   */
+  http.get(`${API_BASE}/cost/summary`, () =>
+    HttpResponse.json({ data: costSummaryFixture() }),
   ),
 
   http.post(`${API_BASE}/auth/device/authorize`, async ({ request }) => {
