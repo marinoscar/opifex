@@ -21,9 +21,24 @@
 #
 # A label Opifex obeys and a label Opifex merely writes must never be
 # confusable, or an operator can set what looks like an instruction and watch
-# it silently do nothing. The separator is the whole guarantee. Colors follow
-# the same split: input labels are warm (you are steering), mirror labels are
-# cool/grey (you are observing).
+# it silently do nothing. The separator is the whole guarantee.
+#
+# A THIRD kind exists, outside the `factory` prefix entirely (#303):
+#
+#   needs:*     ROUTING — colon.  Also human input, and also obeyed — but it
+#   tier:*                describes the WORK rather than whether the work
+#                         happens. `needs:` says what the work requires of a
+#                         runner (#64); `tier:` says which class of model it
+#                         wants (#273). #273 declined the `factory:tier-…`
+#                         spelling on purpose: `factory:` is a CLOSED
+#                         vocabulary of three intents, and widening it would
+#                         put "which model class" in the same breath as
+#                         "stop".
+#
+# Colors carry the distinction the separator cannot, since two of the three
+# kinds use a colon: input labels are warm (you are steering the factory),
+# mirror labels are cool/grey (you are observing it), routing labels are green
+# (you are describing the work itself, and neither of the other two).
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -64,6 +79,65 @@
 - name: "factory/label-ignored"
   color: "9E6A03"
   description: "Mirror: a needs:/tier:/factory: label was not understood and was ignored. Visibility only."
+
+# -----------------------------------------------------------------------------
+# Routing labels — Opifex OBEYS these too, but they describe the WORK (green
+# palette: neither steering the factory nor watching it)
+#
+# The source of truth for both vocabularies is
+# `apps/api/src/github/labels/ignored-labels.ts` (`NEEDS_BY_LABEL`,
+# `MODEL_TIER_BY_LABEL`), and `input-labels.spec.ts` fails if an entry there is
+# missing here — which is the gap this section closes: for as long as these
+# seven were undeclared, `scripts/sync-labels.mjs` could not create them, and a
+# label that does not exist on the repository cannot be put on an issue (#303,
+# the same failure #195 fixed for `factory:*`).
+#
+# Both families fail soft, and the same way: an unrecognised value is IGNORED
+# rather than rejected, because a spelling mistake must not cost a work order.
+# The ignoring is not silent — it comes back as `factory/label-ignored`, and
+# the offending name is on the projection's reason. Nothing here is a hard
+# requirement on an operator's memory; a work order with no routing label at
+# all runs on the defaults.
+# -----------------------------------------------------------------------------
+
+# needs:* — what the work requires of a runner, matched against the
+# capabilities a runner advertises (#64). A SET: several may apply at once and
+# asking for both streaming and cost reporting is coherent, so all four share
+# one shade. There is no ranking among them to encode.
+- name: "needs:full-streaming"
+  color: "1A7F37"
+  description: "Routing input: the run must be observable per tool call. Matched against runner capability."
+
+- name: "needs:cost-reporting"
+  color: "1A7F37"
+  description: "Routing input: the runner must report cost, or budget enforcement is meaningless."
+
+- name: "needs:structured-rate-limits"
+  color: "1A7F37"
+  description: "Routing input: the runner must report rate limits structurally, so a park can carry a resume."
+
+- name: "needs:own-infrastructure"
+  color: "1A7F37"
+  description: "Routing input: the work must not leave the operator's own infrastructure."
+
+# tier:* — which class of model the work wants (#273). Mutually exclusive: at
+# most one applies, and two at once mean NO tier rather than the larger,
+# because picking the largest spends money nobody asked for and picking the
+# smallest can park an order forever behind a constraint nobody chose. A
+# lighter shade of the same green, the way phase:* takes one colour for its
+# whole group: the two routing vocabularies stay one family, and which of them
+# you are looking at is legible before you have read the name.
+- name: "tier:small"
+  color: "8FD9A8"
+  description: "Routing input: prefer a small, cheap model class. At most one tier: label — two mean none."
+
+- name: "tier:standard"
+  color: "8FD9A8"
+  description: "Routing input: prefer the standard model class. At most one tier: label — two mean none."
+
+- name: "tier:large"
+  color: "8FD9A8"
+  description: "Routing input: prefer a large, costly model class. At most one tier: label — two mean none."
 
 # -----------------------------------------------------------------------------
 # Type — what kind of issue this is
