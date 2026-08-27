@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw';
 
 import { costSummaryFixture } from './costSummary';
 import { operatorSettingsFixture } from './operatorSettings';
+import { supervisorModelCatalogFixture } from './supervisorModels';
 
 // Use wildcard pattern to match relative URLs
 const API_BASE = '*/api';
@@ -496,6 +497,22 @@ export const handlers = [
    */
   http.patch(`${API_BASE}/operator-settings`, () =>
     HttpResponse.json({ data: operatorSettingsFixture({ revision: 8 }) }),
+  ),
+
+  /**
+   * `GET /api/operator-settings/supervisor-models` — what the configured key
+   * can reach (#393, #394, epic #391).
+   *
+   * Registered BEFORE the `PATCH` above would ever matter and after the plain
+   * `GET /operator-settings`, because MSW matches in order and this is a
+   * longer path under the same prefix.
+   *
+   * A failure on this endpoint is a 200 carrying a `status`, so there is no
+   * error-shaped default to choose here: the default is a provider that
+   * answered.
+   */
+  http.get(`${API_BASE}/operator-settings/supervisor-models`, () =>
+    HttpResponse.json({ data: supervisorModelCatalogFixture() }),
   ),
 
   /**

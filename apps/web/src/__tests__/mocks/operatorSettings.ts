@@ -166,6 +166,26 @@ export const OPERATOR_SETTINGS_FIXTURE: OperatorSetting[] = [
     default: 'claude',
   },
   {
+    key: 'supervisor.model.provider',
+    group: 'supervisor',
+    label: 'Supervisor model provider',
+    help: 'Which vendor the supervisor asks. The key and the model name go to whichever provider is selected here, and the base URL follows it.',
+    type: 'enum',
+    reload: 'live',
+    dangerous: true,
+    source: 'default',
+    envVar: 'SUPERVISOR_MODEL_PROVIDER',
+    acceptsNull: false,
+    updatedAt: null,
+    // The API takes these from SUPERVISOR_MODEL_PROVIDERS in
+    // `supervisor/invocation/supervisor-model.config.ts`. The picker is
+    // populated from this, never from a list in `apps/web`.
+    constraints: { values: ['anthropic', 'openai'] },
+    secret: false,
+    value: 'anthropic',
+    default: 'anthropic',
+  },
+  {
     key: 'supervisor.model.apiKey',
     group: 'supervisor',
     label: 'Supervisor model API key',
@@ -197,6 +217,25 @@ export const OPERATOR_SETTINGS_FIXTURE: OperatorSetting[] = [
     constraints: {},
     secret: false,
     value: 'claude-sonnet-4-5',
+    default: '',
+  },
+  {
+    key: 'supervisor.model.baseUrl',
+    group: 'supervisor',
+    label: 'Supervisor model base URL',
+    // EMPTY by default, and empty MEANS "follow the provider" — not "unset".
+    // The API's registry says so and the panel renders it as that.
+    help: 'Leave empty and the supervisor calls the selected provider’s own endpoint. Set it only for a proxy, a gateway or a test server.',
+    type: 'string',
+    reload: 'live',
+    dangerous: true,
+    source: 'default',
+    envVar: 'SUPERVISOR_MODEL_BASE_URL',
+    acceptsNull: false,
+    updatedAt: null,
+    constraints: { format: 'url' },
+    secret: false,
+    value: '',
     default: '',
   },
   {
