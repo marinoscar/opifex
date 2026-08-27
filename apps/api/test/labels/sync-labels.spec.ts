@@ -2,6 +2,15 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import {
+  INPUT_LABEL_PREFIX,
+  MIRROR_LABEL_PREFIX,
+} from '../../src/github/labels/factory-labels';
+import {
+  NEEDS_LABEL_PREFIX,
+  TIER_LABEL_PREFIX,
+} from '../../src/github/labels/ignored-labels';
+
 /**
  * #195's label sync, exercised against the real `scripts/sync-labels.mjs`.
  *
@@ -28,7 +37,17 @@ interface Label {
 type Task =
   | { fn: 'declaredLabels'; source: string }
   | { fn: 'diffLabels'; declared: Label[]; actual: Label[] }
-  | { fn: 'validateLabels'; labels: Label[] };
+  | { fn: 'validateLabels'; labels: Label[] }
+  | { fn: 'labelPrefixes' }
+  | { fn: 'labelKind'; names: string[] }
+  | {
+      fn: 'formatDriftReport';
+      diff: {
+        missing: Label[];
+        changed: (Label & { differences: string[] })[];
+        extra: string[];
+      };
+    };
 
 function run<T>(task: Task): T {
   const output = execFileSync('node', [HARNESS], {
@@ -51,6 +70,24 @@ const diff = (declared: Label[], actual: Label[]) =>
 
 const validate = (labels: Label[]) =>
   run<{ problems: string[] }>({ fn: 'validateLabels', labels }).problems;
+
+const prefixes = () =>
+  run<{ prefixes: Record<string, string> }>({ fn: 'labelPrefixes' }).prefixes;
+
+const kindsOf = (names: string[]) =>
+  run<{ kinds: string[] }>({ fn: 'labelKind', names }).kinds;
+
+const kindOf = (name: string) => kindsOf([name])[0];
+
+const report = (diff: {
+  missing?: Label[];
+  changed?: (Label & { differences: string[] })[];
+  extra?: string[];
+}) =>
+  run<{ lines: string[] }>({
+    fn: 'formatDriftReport',
+    diff: { missing: [], changed: [], extra: [], ...diff },
+  }).lines;
 
 const label = (over: Partial<Label> = {}): Label => ({
   name: 'factory:hold',
@@ -193,6 +230,120 @@ describe('sync-labels.mjs', () => {
         [label({ color: 'b60205' })],
       );
       expect(result.changed).toEqual([]);
+    });
+  });
+
+  describe('telling the kinds apart in the report (#303)', () => {
+    // A missing `tier:large` used to print identically to a missing
+    // `factory:ready`, which reads as one flat pile of drift. They are not the
+    // same news: without the input label the repository cannot be steered at
+    // all, while without the routing label work still runs and simply never
+    // leaves the defaults.
+
+    it('restates the prefixes the code owns, and no others', () => {
+      // The script is plain .mjs and cannot import factory-labels.ts, so the
+      // four prefixes are copied into it. This is the assertion that stops the
+      // copy drifting — a separator changed on one side and not the other
+      // would silently reclassify every label in the report, and the report is
+      // the only place an operator sees the taxonomy applied.
+      expect(prefixes()).toEqual({
+        input: INPUT_LABEL_PREFIX,
+        mirror: MIRROR_LABEL_PREFIX,
+        needs: NEEDS_LABEL_PREFIX,
+        tier: TIER_LABEL_PREFIX,
+      });
+    });
+
+    it('classifies by separator and prefix, not by a list of names', () => {
+      expect(kindOf('factory:hold')).toBe('input');
+      expect(kindOf('factory/dispatched')).toBe('mirror');
+      expect(kindOf('needs:cost-reporting')).toBe('routing');
+      expect(kindOf('tier:large')).toBe('routing');
+      // Not in any vocabulary, and still classified: the report describes the
+      // family, and whether the factory understands the value is a different
+      // question that input-labels.spec.ts answers.
+      expect(kindOf('factory:hold-please')).toBe('input');
+      expect(kindOf('tier:huge')).toBe('routing');
+    });
+
+    it('files a label matching no prefix under "other" rather than dropping it', () => {
+      // This script never deletes and never hides. A label it does not
+      // recognise is far more likely to be a human's than a mistake.
+      expect(kindsOf(['bug', 'phase:4', 'api'])).toEqual([
+        'other',
+        'other',
+        'other',
+      ]);
+    });
+
+    it('treats Tier:Large as routing, because the projection does', () => {
+      // MODEL_TIER_BY_LABEL is looked up lower-cased, so this label really
+      // does set a tier. Filing it under "other" would tell an operator their
+      // label means nothing when it means everything.
+      expect(kindOf('Tier:Large')).toBe('routing');
+    });
+
+    it('groups missing labels under one heading per kind, most urgent first', () => {
+      const lines = report({
+        missing: [
+          label({ name: 'bug' }),
+          label({ name: 'tier:large' }),
+          label({ name: 'factory/review' }),
+          label({ name: 'factory:ready' }),
+        ],
+      });
+
+      const headings = lines.filter((line) => !line.startsWith('  ') && line);
+      expect(headings).toHaveLength(4);
+      expect(headings[0]).toContain('Input labels');
+      expect(headings[1]).toContain('Mirror labels');
+      expect(headings[2]).toContain('Routing labels');
+      expect(headings[3]).toContain('Other labels');
+    });
+
+    it('says what a missing label of each kind costs', () => {
+      const input = report({ missing: [label({ name: 'factory:ready' })] });
+      const routing = report({ missing: [label({ name: 'tier:large' })] });
+
+      expect(input[0]).toContain('cannot be steered');
+      expect(routing[0]).toContain('only on the defaults');
+      // And the two are not the same sentence, which was the whole complaint.
+      expect(input[0]).not.toEqual(routing[0]);
+    });
+
+    it('prints no heading for a kind with nothing wrong', () => {
+      const lines = report({ missing: [label({ name: 'tier:small' })] });
+
+      expect(lines.filter((line) => line.includes('Input labels'))).toEqual([]);
+      expect(lines).toContain('  + tier:small (missing)');
+    });
+
+    it('groups a drifted label the same way it groups a missing one', () => {
+      const lines = report({
+        changed: [
+          {
+            ...label({ name: 'needs:cost-reporting' }),
+            differences: ['description'],
+          },
+        ],
+      });
+
+      expect(lines[0]).toContain('Routing labels');
+      expect(lines[1]).toBe('  ± needs:cost-reporting (description)');
+    });
+
+    it('still reports an undeclared label, tagged with its kind', () => {
+      const lines = report({ extra: ['tier:huge', 'someone-elses'] });
+
+      expect(lines[0]).toContain('tier:huge [routing]');
+      expect(lines[0]).toContain('never deleted');
+      expect(lines[1]).toContain('someone-elses [other]');
+    });
+
+    it('says nothing at all when nothing has drifted', () => {
+      // main() prints its own "all present and match" line; an empty report
+      // must not put a bare heading above it.
+      expect(report({})).toEqual([]);
     });
   });
 });
