@@ -385,8 +385,8 @@ concern, all under `/api`:
 | Activity feed   | `events.controller.ts`      | `GET /api/events`                                                                             |
 
 Adjacent, related read/write surfaces registered alongside cockpit:
-`repositories.controller.ts` (`/api/repositories`, repository registration —
-see `docs/RUNBOOK-observation-week.md` §4), `quota.controller.ts`
+`repositories.controller.ts` and `projects.controller.ts` (`/api/repositories`,
+`/api/projects` — repository and project management, §3.10), `quota.controller.ts`
 (`/api/quota`), `escalations.controller.ts`, and `reconciler.controller.ts`
 (the tick log, §3.1).
 
@@ -444,6 +444,130 @@ exists in this repository, gated behind the flags above. Treat this table,
 not the roadmap, as the answer to "is X actually happening in a given
 deployment" — and see `docs/RUNBOOK-observation-week.md` for the sequence in
 which an operator turns these on.
+
+### 3.10 Repositories and projects
+
+`apps/api/src/repositories/` and `apps/api/src/projects/` — what Opifex
+watches, and the grouping it is optionally filed into. Both are gated on the
+same `projects:read` / `projects:write` pair, on purpose: a project is
+administered by whoever administers the repositories in it, and it carries no
+authority of its own — nothing anywhere in the reconciler, dispatch or
+supervisor reads `projectId` to decide whether something may happen. VISION
+§11's single-operator premise is the reason a project is not a tenancy
+boundary or a permission scope; it is a label, and this section states what
+follows from that.
+
+**Unassigned is a stored state, not a migration nobody ran.** `Repository.projectId`
+is nullable, and every repository registered before `ProjectsController`
+existed (#404) still reads `projectId: null` — it is observed, dispatchable
+and walked up the enablement ladder exactly like an assigned one, because the
+ladder does not read `projectId` at all. `GET /api/repositories?projectId=none`
+asks for that bucket. `none` is a member of the `projectId` filter rather than
+a separate `unassigned` boolean, because unassigned is an **answer** to "which
+project", not a different question (`repository.dto.ts`'s own comment on
+`listRepositoriesQuerySchema`) — a second flag would have made the same fact
+askable two contradictory ways. `apps/web/src/pages/ProjectsPage.tsx` treats
+the bucket as first-class for the identical reason: it is the default
+selection, not a corner of the screen.
+
+A project's `slug` follows one rule, in `apps/api/src/projects/slug.ts`:
+supplied by the operator when they give one, derived from `name` exactly once
+— at creation — when they do not. Renaming a project never re-derives the
+slug, because the slug is the stable handle everything else references, and a
+rename is a change of label, not of identity. A collision **refuses** with a
+409 that names the taken slug, including a derived one the operator never
+typed; it is never silently suffixed, because a `-2` would hand back a handle
+nobody chose and leave every later reference to the original resolving to
+somebody else's project with no signal that a collision happened at all.
+
+**Retire is a distinct operation from delete, and the difference is not
+cosmetic.** `DELETE /api/repositories/:id` is refused with `400` while the
+repository has any work order, because deleting it would cascade its runs
+and their provenance away, and VISION §5's premise is that a hole in that
+graph is not detectable after the fact — the same reasoning `WorkOrder.repository`'s
+own cascading foreign key would otherwise contradict. Retire
+(`POST /api/repositories/:id/retire`, `repositories.service.ts`) is what the
+system wants instead for anything with history: the whole ladder —
+`observeEnabled`, `mirrorLabelsEnabled`, `specFeedbackEnabled`,
+`dispatchEnabled` — off in one atomic, audited act, with every work order,
+run and event left exactly where it was. It is idempotent, so a retry after a
+dropped connection is not a second decision and writes no second audit row.
+While a repository is retired, `PATCH /api/repositories/:id` refuses to turn
+any rung back on (`400`, pointing at `POST /api/repositories/:id/unretire`) —
+allowing it would let a routine PATCH silently undo a stand-down. Un-retiring
+returns the repository to the **bottom** of the ladder — observation on,
+every outward write off, the same position a fresh registration lands in —
+**never to the rungs it previously held**: an undo that silently switched
+dispatch back on would re-enable the factory's most consequential permission
+as a side effect of a button labelled "un-retire". The rungs it was standing
+on when retired survive nowhere else but the retire audit row's
+`meta.ladderBefore` (`audit_events`, action `repository.retired`) — that is
+deliberately the only place "what was this allowed to do before?" can be
+answered.
+
+**Why "retired" is a stored fact and not a reading of the four flags (#405).**
+All four rungs off is reachable without anyone deciding anything — four
+independent `PATCH`es, or a registration with `observeEnabled: false` — so an
+operator who paused observation for an afternoon and a genuine stand-down
+would be indistinguishable under a derived reading. Un-retiring would then
+have nothing to undo: the same button that ends a real retirement would also
+silently end the afternoon pause. And the audit row would record the _act_
+while nothing recorded the resulting _state_, so "is this repository retired
+right now?" could only be answered by replaying `audit_events` forward
+against every later `PATCH` — VISION §5's own argument about provenance run
+backwards, since a fact that exists only as a reconstruction is a fact nobody
+will reconstruct. `Repository.retiredAt` / `retiredById` (nullable, `SetNull`
+on the user relation) cost two columns and no backfill — `NULL` is already
+true of every row that predates this feature — and `RepositoriesService.update`
+enforces that a retired repository cannot drift back to a state that
+contradicts them.
+
+**Deleting a project does not cascade, and the argument is the inverse of the
+repository one.** `Project.id` is referenced by `Repository.projectId` with
+`onDelete: SetNull` (`schema.prisma`), not `Cascade`. A project owns no work
+order, no run and no event — nothing in the provenance graph VISION §5
+protects depends on it — so unlike a repository, `DELETE /api/projects/:id`
+is never refused for having contents: its repositories survive, unassigned,
+still registered and still on whatever rung of the ladder they were already
+on. The response (`ProjectDeletionResponseDto`) reports
+`unassignedRepositories` rather than answering `204`, so the non-cascade
+guarantee is visible in the API's own answer instead of something a caller
+has to go and confirm against the schema. `ProjectsService.remove` does not
+null the column itself first, deliberately — doing so would hide a schema
+regression behind application code, and the guarantee has to hold for a
+`DELETE` issued by hand against the database exactly as it does through the
+API; `project-delete-non-cascade.integration.spec.ts` proves it against a
+real Postgres for that reason.
+
+**Registering several repositories from the picker is one request per
+repository, sequential rather than concurrent, by design (#407).**
+`AddRepositoryDialog` (`apps/web/src/components/projects/`) takes a
+multi-selection from `GET /api/repositories/available`, and `registerMany`
+then issues one `POST /api/repositories` per repository, awaiting each before
+the next — there is no batched or transactional endpoint behind it. That is
+deliberate rather than an omission, for two reasons.
+
+A batch endpoint would move the problem rather than remove it: a batch of
+eight where two are already registered cannot answer one status honestly, so
+it would have to duplicate the per-repository 400/409/503 semantics that
+already work. The only thing it could add is a transaction, and a transaction
+is the outcome this explicitly does not want.
+
+Sequential rather than concurrent, because
+`RepositoriesService.register`'s reachability check (`verifyReachable`) is a
+real call against GitHub, drawn from the same rate-limit budget that
+`github.rateLimitReserve` holds a reserve back from for interactive use
+(`GitHubHttpService.canSpend`) — so adding thirty repositories spends that
+shared budget one request at a time rather than in a burst that would trip a
+secondary limit. The batch runs to the end rather than stopping at the first
+refusal, so the answer does not depend on the order the rows happened to be
+in. Nothing rolls
+back across repositories either: if the third of four is refused
+(rate-limited, or the token's access narrowed mid-session), the first two
+stay registered. Partial success is the designed outcome, not a failure to
+recover from — each registration is independently correct or independently
+refused, and composing several into one all-or-nothing act would make a
+single unrelated refusal undo work that had already succeeded.
 
 ---
 

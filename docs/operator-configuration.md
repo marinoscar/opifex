@@ -69,8 +69,27 @@ with several sections, selected by `?section=`, declared in
 | **Interface**     | Application-wide UI policy — `ui.allowUserThemeOverride` and friends — stored in `system_settings`, a different document from everything else on this page (see below).                               | live (#347)       |
 | **Configuration** | Every operator-managed key from the registry, generated — not hand-listed — from `GET /api/operator-settings`. This is the screen this document is mostly about.                                      | live (#348)       |
 | **Credentials**   | The Claude credential, the GitHub token and the spend ceilings, stored encrypted, shown masked, and tested rather than assumed. Also where a Claude subscription is connected without a shell (#386). | live (#349, #386) |
-| **Repositories**  | The enablement ladder — register, observe, then dispatch.                                                                                                                                             | live (#350)       |
+| **Repositories**  | A signpost, not a screen. The enablement ladder that used to live here moved to `/projects` (#406) — see below.                                                                                       | signpost (#406)   |
 | **History**       | Who changed which setting, when, and what it was before.                                                                                                                                              | live (#351)       |
+
+**Repositories is a signpost rather than a screen, and that is a change from
+how this table used to read.** The operator's own objection is recorded in
+`ProjectsPage.tsx`'s header comment: _"repository selection should not be a
+configuration, should be a main feature like projects, make sure is part of
+the main menu."_ Until #406, the enablement ladder — register, observe, then
+dispatch — lived on this Control Center section, reached only by an Admin who
+also held `system_settings:read`. It now lives on `/projects`
+(`apps/web/src/pages/ProjectsPage.tsx`), gated on `projects:read` /
+`projects:write` — the pair `RepositoriesController` and `ProjectsController`
+already enforced — so an account that manages repositories but is not a
+Control Center Admin can reach it directly instead of being handed a
+permission it does not need. The Repositories section here now renders no
+repository list at all: it says where the ladder went and links there, the
+same treatment the supervisor model panel got when it moved to Credentials
+(#394). If a runbook or an older screenshot still says "Control Center →
+Repositories → Add repository", that instruction is stale — the destination
+is `/projects` now, and `docs/RUNBOOK-observation-week.md` §4 has been
+corrected to match.
 
 **Configuration and Credentials are not the same screen, and the split is
 deliberate.** `GET /api/operator-settings` returns every managed key, secrets

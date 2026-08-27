@@ -272,9 +272,20 @@ action evidence instead of the label itself.
 
 ## 4. Register a repository
 
-### Pick it from the Control Center; do not type it
+### Pick it from the Projects screen; do not type it
 
-`/admin/settings` → **Repositories** → **Add repository**.
+`/projects` → **Unassigned** (the default pane, and where this repository
+lands unless you also file it into a project you have already created) →
+**Add repository**.
+
+Not the Control Center. Registering used to live at `/admin/settings` →
+Repositories, which meant it needed an Admin's `system_settings:read` on top
+of the permission that actually gates it; #406 moved it to `/projects`, which
+needs only `projects:read` / `projects:write` — the pair `RepositoriesController`
+has enforced all along. The Control Center's Repositories section is now a
+signpost pointing here, not a second copy of the ladder (see
+[`operator-configuration.md`](operator-configuration.md) if you land on it
+looking for this dialog).
 
 The dialog lists the repositories the **configured GitHub credential can
 actually reach**, and you choose one. There is no `owner/name` box, on purpose:
@@ -296,14 +307,29 @@ would reach repositories Opifex was never meant to touch. So a short list is
 the scope showing, and it is the honest picture of what Opifex could reach.
 
 Choose a row and press **Register `owner/name`**. Only `owner` and `name` are
-sent: every policy default lives in the database schema, so what lands is
-observed and never dispatched.
+sent, plus the project you opened the dialog from if any: every policy
+default lives in the database schema, so what lands is observed and never
+dispatched.
 
-**Observable:** the repository appears in the **Repositories** list behind the
-dialog straight away, with its ladder at rung 1 — no page reload, no manual
-refresh. The dialog stays open, the row you just added flips to _already
-registered_, and you can add a second. Adding a second was the thing that was
-impossible before (#401).
+**Observable:** the repository appears in the panel behind the dialog straight
+away, with its ladder at rung 1 — no page reload, no manual refresh. The
+dialog stays open, the row you just added flips to _already registered_, and
+you can add a second. Adding a second was the thing that was impossible
+before (#401).
+
+**Select several at once, but they register one at a time.** Tick the rows
+you want — the picker bounds **Select all** to the addable rows of the page
+you are looking at, so it can never quietly include something you cannot see
+— and one `POST /api/repositories` goes out per repository, awaited before
+the next. Never several at once, because the reachability check behind each
+one (`verifyReachable`) is a real GitHub call spent against the same
+rate-limit budget `github.rateLimitReserve` reserves for your own interactive
+use. You get a progress line per repository rather than a blank spinner. Nothing rolls back across repositories either: if the third one you add
+is refused (rate-limited, or the token's access narrowed mid-session), the
+first two stay registered. That partial success is the intended outcome, not
+a failure to clean up after — the report names every repository and what
+happened to it, successes drop out of the selection, and refusals stay
+selected so a retry re-sends only what has not already worked.
 
 Two things the dialog says that are worth reading rather than skipping:
 
