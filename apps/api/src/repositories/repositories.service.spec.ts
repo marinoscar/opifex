@@ -34,33 +34,92 @@ function repositoryRow(overrides: Record<string, unknown> = {}) {
     wallClockTimeoutMinutes: null,
     pathConstraints: [],
     lastObservedAt: null,
+    retiredAt: null,
+    retiredById: null,
     createdAt: new Date('2026-08-01T10:00:00Z'),
     updatedAt: new Date('2026-08-01T10:00:00Z'),
     ...overrides,
   };
 }
 
-describe('RepositoriesService', () => {
-  let prisma: {
-    repository: Record<string, jest.Mock>;
-    project: Record<string, jest.Mock>;
+const ACTOR = '99999999-9999-9999-9999-999999999999';
+const REPO_ID = '11111111-1111-1111-1111-111111111111';
+
+type Delegates = Record<string, Record<string, jest.Mock>>;
+
+/**
+ * The delegates a Prisma double offers.
+ *
+ * `workOrder`, `run`, `runEvent` and `dispatchAttempt` are here despite the
+ * service never naming them: #405 requires that retiring reaches no run, work
+ * order or provenance record, and a delegate that does not exist on the double
+ * would fail with a TypeError that reads like a broken test rather than the
+ * assertion failing for the reason it was written.
+ */
+function delegates(): Delegates {
+  const model = () => ({
+    findUnique: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    count: jest.fn(),
+    create: jest.fn(),
+    createMany: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+    delete: jest.fn(),
+    deleteMany: jest.fn(),
+  });
+
+  return {
+    repository: model(),
+    project: model(),
+    auditEvent: model(),
+    workOrder: model(),
+    run: model(),
+    runEvent: model(),
+    dispatchAttempt: model(),
   };
+}
+
+describe('RepositoriesService', () => {
+  let prisma: Delegates & { $transaction: jest.Mock };
+  /**
+   * The client handed to a `$transaction` callback. A SEPARATE object from
+   * `prisma` on purpose: it is the only way a unit test can tell a write that
+   * happened inside the transaction from one that happened beside it, and
+   * "inside" is the whole atomicity claim of #405.
+   */
+  let tx: Delegates;
+  /**
+   * Which MODEL delegates the code under test actually reached for, by name.
+   * `$`-prefixed client methods are excluded — `$transaction` is machinery,
+   * not a table.
+   */
+  let touched: Set<string>;
   let github: { getRepository: jest.Mock };
   let etags: { invalidateRepository: jest.Mock };
   let service: RepositoriesService;
 
   beforeEach(() => {
-    prisma = {
-      repository: {
-        findUnique: jest.fn(),
-        findMany: jest.fn(),
-        count: jest.fn(),
-        create: jest.fn(),
-        update: jest.fn(),
-        delete: jest.fn(),
-      },
-      project: { findUnique: jest.fn() },
-    };
+    touched = new Set<string>();
+    const record = (target: Delegates) =>
+      new Proxy(target, {
+        get(inner, key: string) {
+          if (key in inner && !key.startsWith('$')) touched.add(key);
+          return inner[key];
+        },
+      });
+
+    const txDelegates = delegates();
+    tx = record(txDelegates);
+
+    const outer = delegates();
+    prisma = Object.assign(record(outer) as Delegates, {
+      $transaction: jest.fn(
+        async (fn: (client: Delegates) => Promise<unknown>) => fn(tx),
+      ),
+    });
+
     github = { getRepository: jest.fn().mockResolvedValue(REACHABLE) };
     etags = { invalidateRepository: jest.fn() };
 
@@ -70,6 +129,12 @@ describe('RepositoriesService', () => {
       etags as unknown as EtagCacheService,
     );
   });
+
+  /** The `data` of the nth call to a mocked Prisma write. */
+  function dataOf(mock: jest.Mock, call = 0): Record<string, unknown> {
+    const [args] = mock.mock.calls[call] as [{ data: Record<string, unknown> }];
+    return args.data;
+  }
 
   describe('register', () => {
     beforeEach(() => {
@@ -295,6 +360,390 @@ describe('RepositoriesService', () => {
           observeEnabled: false,
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  /**
+   * Retire (#405, epic #403).
+   *
+   * The decision these tests encode: "retired" is an EXPLICIT stored fact
+   * (`retiredAt`), not "all four ladder flags are off". All four off is
+   * reachable by four independent PATCHes, or by one registration passing
+   * `observeEnabled: false`, so the derived reading cannot distinguish a
+   * deliberate stand-down from an operator who muted observation for an
+   * afternoon. See the `Repository` model in schema.prisma for the argument in
+   * full.
+   */
+  describe('retire', () => {
+    /** A retired row. Every rung off, `retiredAt` set — the invariant. */
+    function retiredRow(overrides: Record<string, unknown> = {}) {
+      return repositoryRow({
+        observeEnabled: false,
+        mirrorLabelsEnabled: false,
+        specFeedbackEnabled: false,
+        dispatchEnabled: false,
+        retiredAt: new Date('2026-08-20T09:00:00Z'),
+        retiredById: ACTOR,
+        ...overrides,
+      });
+    }
+
+    beforeEach(() => {
+      tx.repository.findUnique.mockResolvedValue(
+        repositoryRow({
+          observeEnabled: true,
+          mirrorLabelsEnabled: true,
+          specFeedbackEnabled: false,
+          dispatchEnabled: true,
+        }),
+      );
+      tx.repository.update.mockImplementation(
+        async ({ data }: { data: Record<string, unknown> }) =>
+          repositoryRow(data),
+      );
+    });
+
+    it('turns every rung of the ladder off in ONE write', async () => {
+      // Not four. An operator who retires a repository and loses their
+      // connection halfway must not leave it observed-but-still-dispatching,
+      // and four client-side PATCHes make exactly that reachable.
+      const result = await service.retire(REPO_ID, {}, ACTOR);
+
+      expect(tx.repository.update).toHaveBeenCalledTimes(1);
+      expect(dataOf(tx.repository.update)).toMatchObject({
+        observeEnabled: false,
+        mirrorLabelsEnabled: false,
+        specFeedbackEnabled: false,
+        dispatchEnabled: false,
+      });
+      expect(result.observeEnabled).toBe(false);
+      expect(result.dispatchEnabled).toBe(false);
+    });
+
+    it('stores the retirement as a fact rather than leaving it to be inferred', async () => {
+      // The explicit-over-derived decision, asserted. Without these two
+      // columns nothing distinguishes this row from one whose observation was
+      // switched off for an afternoon.
+      const result = await service.retire(REPO_ID, {}, ACTOR);
+      const data = dataOf(tx.repository.update);
+
+      expect(data.retiredAt).toBeInstanceOf(Date);
+      expect(data.retiredById).toBe(ACTOR);
+      expect(result.retiredAt).toEqual(expect.any(String));
+      expect(result.retiredById).toBe(ACTOR);
+    });
+
+    it('writes the ladder change and the audit row in the SAME transaction', async () => {
+      // Atomicity is the requirement, and this is the only way a unit test can
+      // see it: both writes go through the client `$transaction` handed the
+      // callback, and neither goes through the connection beside it. A retired
+      // repository with no record of who retired it is then not reachable.
+      await service.retire(REPO_ID, {}, ACTOR);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(tx.repository.update).toHaveBeenCalledTimes(1);
+      expect(tx.auditEvent.create).toHaveBeenCalledTimes(1);
+      expect(prisma.repository.update).not.toHaveBeenCalled();
+      expect(prisma.auditEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('fails the whole act when the audit row cannot be written', async () => {
+      // The rollback itself is Postgres's; what is asserted here is that the
+      // caller is told, rather than being handed a retired repository whose
+      // record of the decision silently did not land. This is deliberately
+      // the opposite of the operator-settings write path, which swallows the
+      // same failure — there the change is already in force and this one is
+      // not, so the safe direction to fail is closed.
+      tx.auditEvent.create.mockRejectedValue(new Error('audit table is full'));
+
+      await expect(service.retire(REPO_ID, {}, ACTOR)).rejects.toThrow(
+        'audit table is full',
+      );
+    });
+
+    it('records who, what, and the rungs it was standing on', async () => {
+      await service.retire(
+        REPO_ID,
+        { reason: 'superseded by acme/app2' },
+        ACTOR,
+      );
+
+      const data = dataOf(tx.auditEvent.create);
+      expect(data).toMatchObject({
+        actorUserId: ACTOR,
+        action: 'repository.retired',
+        targetType: 'repository',
+        targetId: REPO_ID,
+      });
+      expect(data.meta).toMatchObject({
+        repository: 'acme/app',
+        reason: 'superseded by acme/app2',
+        // Un-retire deliberately does not restore these, so this row is the
+        // only place the previous ladder position survives.
+        ladderBefore: {
+          observeEnabled: true,
+          mirrorLabelsEnabled: true,
+          specFeedbackEnabled: false,
+          dispatchEnabled: true,
+        },
+      });
+    });
+
+    it('reaches no work order, run or provenance record', async () => {
+      // #405's last acceptance criterion, and the reason retire exists at all:
+      // `DELETE` is refused on a used repository because cascading its runs
+      // away would put a hole in VISION §5's graph. Retiring must not do
+      // quietly what delete is refused for doing loudly.
+      await service.retire(REPO_ID, {}, ACTOR);
+
+      // Nothing but the row itself and the audit trail was even reached for.
+      expect([...touched].sort()).toEqual(['auditEvent', 'repository']);
+      for (const model of ['workOrder', 'run', 'runEvent', 'dispatchAttempt']) {
+        for (const method of Object.values(tx[model])) {
+          expect(method).not.toHaveBeenCalled();
+        }
+      }
+      expect(tx.repository.delete).not.toHaveBeenCalled();
+      expect(tx.repository.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent, and a retry is not a second decision', async () => {
+      // The dropped-connection case the one-act requirement is about: the
+      // operator retries, and the second call must neither rewrite the row nor
+      // make one act look like two in the audit log.
+      tx.repository.findUnique.mockResolvedValue(retiredRow());
+
+      const result = await service.retire(REPO_ID, {}, ACTOR);
+
+      expect(tx.repository.update).not.toHaveBeenCalled();
+      expect(tx.auditEvent.create).not.toHaveBeenCalled();
+      expect(result.retiredAt).toBe('2026-08-20T09:00:00.000Z');
+    });
+
+    it('makes no GitHub call', async () => {
+      // Retiring enables nothing, so there is nothing to re-verify — and a
+      // network round trip inside a transaction would hold a connection open
+      // for the length of GitHub's latency.
+      await service.retire(REPO_ID, {}, ACTOR);
+
+      expect(github.getRepository).not.toHaveBeenCalled();
+    });
+
+    it('404s on an unknown repository', async () => {
+      tx.repository.findUnique.mockResolvedValue(null);
+
+      await expect(service.retire(REPO_ID, {}, ACTOR)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('leaves a retired repository listed', async () => {
+      // Hiding it would leave an operator unable to find the thing they just
+      // retired in order to un-retire it. Omitting the filter means BOTH.
+      prisma.repository.findMany.mockResolvedValue([retiredRow()]);
+      prisma.repository.count.mockResolvedValue(1);
+
+      const result = await service.list({ page: 1, pageSize: 25 });
+
+      const [args] = prisma.repository.findMany.mock.calls[0] as [
+        { where: Record<string, unknown> },
+      ];
+      expect(args.where).not.toHaveProperty('retiredAt');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]?.retiredAt).toBe('2026-08-20T09:00:00.000Z');
+    });
+
+    it('can be filtered for, and filtered out', async () => {
+      prisma.repository.findMany.mockResolvedValue([]);
+      prisma.repository.count.mockResolvedValue(0);
+
+      await service.list({ page: 1, pageSize: 25, retired: true });
+      await service.list({ page: 1, pageSize: 25, retired: false });
+
+      const wheres = prisma.repository.findMany.mock.calls.map(
+        ([args]) => (args as { where: Record<string, unknown> }).where,
+      );
+      expect(wheres[0]).toMatchObject({ retiredAt: { not: null } });
+      expect(wheres[1]).toMatchObject({ retiredAt: null });
+    });
+  });
+
+  describe('unretire', () => {
+    beforeEach(() => {
+      tx.repository.findUnique.mockResolvedValue(
+        repositoryRow({
+          observeEnabled: false,
+          mirrorLabelsEnabled: false,
+          specFeedbackEnabled: false,
+          dispatchEnabled: false,
+          retiredAt: new Date('2026-08-20T09:00:00Z'),
+          retiredById: ACTOR,
+        }),
+      );
+      tx.repository.update.mockImplementation(
+        async ({ data }: { data: Record<string, unknown> }) =>
+          repositoryRow(data),
+      );
+    });
+
+    it('returns the repository to the BOTTOM of the ladder', async () => {
+      // Observation on, every outward write off — the position `register`
+      // leaves a new repository in, and what VISION §12's staged rollout means
+      // by the first rung. The bottom is observation, not nothing: "nothing"
+      // is the state being undone.
+      const result = await service.unretire(REPO_ID, {}, ACTOR);
+
+      expect(result.observeEnabled).toBe(true);
+      expect(result.mirrorLabelsEnabled).toBe(false);
+      expect(result.specFeedbackEnabled).toBe(false);
+      expect(result.dispatchEnabled).toBe(false);
+    });
+
+    it('writes every write-flag off explicitly rather than leaving it alone', async () => {
+      // The sharp end of "not restored to whatever rungs it previously held".
+      // An implementation that only set `observeEnabled` and cleared
+      // `retiredAt` would pass the test above and fail this one — and would
+      // re-enable dispatch by surprise the day the ladder is restored from
+      // anywhere but a freshly-zeroed row.
+      await service.unretire(REPO_ID, {}, ACTOR);
+
+      expect(dataOf(tx.repository.update)).toEqual({
+        observeEnabled: true,
+        mirrorLabelsEnabled: false,
+        specFeedbackEnabled: false,
+        dispatchEnabled: false,
+        retiredAt: null,
+        retiredById: null,
+      });
+    });
+
+    it('clears the actor with the timestamp', async () => {
+      // Who retired it is history and lives in `audit_events`. An actor beside
+      // a null timestamp would be a state with no meaning.
+      const result = await service.unretire(REPO_ID, {}, ACTOR);
+
+      expect(result.retiredAt).toBeNull();
+      expect(result.retiredById).toBeNull();
+    });
+
+    it('records the act, and what it restored the repository to', async () => {
+      await service.unretire(REPO_ID, { reason: 'back in service' }, ACTOR);
+
+      const data = dataOf(tx.auditEvent.create);
+      expect(data).toMatchObject({
+        actorUserId: ACTOR,
+        action: 'repository.unretired',
+        targetType: 'repository',
+        targetId: REPO_ID,
+      });
+      expect(data.meta).toMatchObject({
+        repository: 'acme/app',
+        reason: 'back in service',
+        retiredAt: '2026-08-20T09:00:00.000Z',
+        restoredTo: 'observe',
+      });
+    });
+
+    it('writes the change and the audit row in the SAME transaction', async () => {
+      await service.unretire(REPO_ID, {}, ACTOR);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(tx.auditEvent.create).toHaveBeenCalledTimes(1);
+      expect(prisma.repository.update).not.toHaveBeenCalled();
+      expect(prisma.auditEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('does not reset the ladder of a repository nobody retired', async () => {
+      // Idempotent, and this is the consequence that matters: a stray call
+      // must not switch dispatch off on a live repository.
+      tx.repository.findUnique.mockResolvedValue(
+        repositoryRow({ dispatchEnabled: true, retiredAt: null }),
+      );
+
+      const result = await service.unretire(REPO_ID, {}, ACTOR);
+
+      expect(tx.repository.update).not.toHaveBeenCalled();
+      expect(tx.auditEvent.create).not.toHaveBeenCalled();
+      expect(result.dispatchEnabled).toBe(true);
+    });
+
+    it('makes no GitHub call', async () => {
+      // It enables observation and nothing else. Dispatch is re-verified when
+      // somebody asks for it back, by the PATCH that always did.
+      await service.unretire(REPO_ID, {}, ACTOR);
+
+      expect(github.getRepository).not.toHaveBeenCalled();
+    });
+
+    it('404s on an unknown repository', async () => {
+      tx.repository.findUnique.mockResolvedValue(null);
+
+      await expect(service.unretire(REPO_ID, {}, ACTOR)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('update, on a retired repository', () => {
+    beforeEach(() => {
+      prisma.repository.findUnique.mockResolvedValue(
+        repositoryRow({
+          observeEnabled: false,
+          retiredAt: new Date('2026-08-20T09:00:00Z'),
+          retiredById: ACTOR,
+        }),
+      );
+      prisma.repository.update.mockResolvedValue(repositoryRow());
+    });
+
+    it('refuses to put a rung back on, and names the way to do it', async () => {
+      // Otherwise `retiredAt` could sit on a repository that is being
+      // dispatched to — a row saying two contradictory things, and the
+      // invariant every reader of `retiredAt` depends on.
+      const error = await service
+        .update(REPO_ID, { dispatchEnabled: true })
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as Error).message).toMatch(/dispatchEnabled/);
+      expect((error as Error).message).toMatch(/unretire/);
+      expect(prisma.repository.update).not.toHaveBeenCalled();
+    });
+
+    it('names every rung the caller tried to enable', async () => {
+      const error = await service
+        .update(REPO_ID, { observeEnabled: true, mirrorLabelsEnabled: true })
+        .catch((e: unknown) => e);
+
+      expect((error as Error).message).toMatch(/observeEnabled/);
+      expect((error as Error).message).toMatch(/mirrorLabelsEnabled/);
+    });
+
+    it('refuses BEFORE spending a GitHub request to verify reachability', async () => {
+      await service
+        .update(REPO_ID, { dispatchEnabled: true })
+        .catch(() => undefined);
+
+      expect(github.getRepository).not.toHaveBeenCalled();
+    });
+
+    it('still allows everything that is not a rung', async () => {
+      // A retired repository's budget, timeout, path constraints and project
+      // change what a future run would be allowed to do, not whether one can
+      // happen. Refusing those would make retirement a lock rather than a
+      // stand-down.
+      await service.update(REPO_ID, {
+        budgetCeilingUsd: 5,
+        pathConstraints: ['src/**'],
+      });
+
+      expect(prisma.repository.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('still allows a rung to be turned off', async () => {
+      await service.update(REPO_ID, { dispatchEnabled: false });
+
+      expect(prisma.repository.update).toHaveBeenCalledTimes(1);
     });
   });
 
