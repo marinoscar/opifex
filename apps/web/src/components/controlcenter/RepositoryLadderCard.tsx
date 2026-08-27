@@ -68,6 +68,16 @@ import type { RepositorySummary } from '../../types/cockpit';
 
 export interface RepositoryLadderCardProps {
   repository: RepositorySummary;
+  /**
+   * The picker pointed at this registration (#401).
+   *
+   * A row in the Add dialog marked `already registered` carries the existing
+   * `repositoryId`, so it does better than refuse the add: it sends the
+   * operator here. The card marks itself rather than only being scrolled to,
+   * because scrolling moves the sighted reader and nobody else — `aria-current`
+   * is what makes that answer mean the same thing for everyone.
+   */
+  isRevealed?: boolean;
   /** `projects:write`. Without it every control is disabled and says why. */
   canWrite: boolean;
   isSaving: boolean;
@@ -90,6 +100,7 @@ function stateOf(repository: RepositorySummary): LadderState {
 
 export function RepositoryLadderCard({
   repository,
+  isRevealed = false,
   canWrite,
   isSaving,
   onSave,
@@ -188,9 +199,20 @@ export function RepositoryLadderCard({
   return (
     <Paper
       component="li"
+      // The anchor the picker's "Show it in the list" scrolls to. Always
+      // rendered, so revealing a repository never depends on having already
+      // been asked to reveal one.
+      id={`repository-${repository.id}`}
       variant="outlined"
-      sx={{ p: { xs: 2, sm: 3 }, listStyle: 'none' }}
+      sx={{
+        p: { xs: 2, sm: 3 },
+        listStyle: 'none',
+        ...(isRevealed
+          ? { borderColor: 'primary.main', borderWidth: 2 }
+          : null),
+      }}
       aria-label={`Repository ${repository.fullName}`}
+      aria-current={isRevealed ? 'true' : undefined}
     >
       <Stack
         direction={{ xs: 'column', sm: 'row' }}

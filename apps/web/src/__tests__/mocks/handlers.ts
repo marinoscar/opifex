@@ -413,6 +413,40 @@ export const handlers = [
   }),
 
   /**
+   * `GET /repositories/available` — the picker's listing (#401).
+   *
+   * DECLARED BEFORE `GET /repositories`, mirroring the controller, where the
+   * literal route has to precede `:id` or be swallowed by it.
+   *
+   * `no_credential` by default, with `reachable: 0` — the state a deployment
+   * that has not configured a GitHub token is actually in, and a 200 rather
+   * than an error because that is how the endpoint answers every finding.
+   */
+  http.get(`${API_BASE}/repositories/available`, ({ request }) => {
+    const url = new URL(request.url);
+
+    return HttpResponse.json({
+      data: {
+        status: 'no_credential',
+        detail:
+          'No GitHub credential is configured, so there is nothing to list ' +
+          'yet. Set `github.token` to a fine-grained personal access token ' +
+          'granted access to the repositories Opifex should watch, then list ' +
+          'again.',
+        repositories: [],
+        page: Number(url.searchParams.get('page') ?? '1'),
+        pageSize: Number(url.searchParams.get('pageSize') ?? '25'),
+        total: 0,
+        totalPages: 0,
+        reachable: 0,
+        search: url.searchParams.get('search'),
+        truncated: false,
+        checkedAt: new Date().toISOString(),
+      },
+    });
+  }),
+
+  /**
    * `GET /repositories` — honours the two boolean filters the endpoint really
    * does, so the readiness chain's "how many may be dispatched into" question
    * gets a different answer from its "how many are registered" one.

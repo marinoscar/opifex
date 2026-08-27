@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { GitHubReadModule } from '../github/read/github-read.module';
+import { AvailableRepositoriesService } from './available-repositories.service';
 import { RepositoriesController } from './repositories.controller';
 import { RepositoriesService } from './repositories.service';
 
@@ -14,7 +15,7 @@ import { RepositoriesService } from './repositories.service';
 @Module({
   imports: [GitHubReadModule],
   controllers: [RepositoriesController],
-  providers: [RepositoriesService],
+  providers: [RepositoriesService, AvailableRepositoriesService],
   exports: [RepositoriesService],
 })
 export class RepositoriesModule {}

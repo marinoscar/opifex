@@ -333,7 +333,10 @@ export class GitHubHttpService {
     } catch (error) {
       // A timeout or socket failure. No headers, so no rate-limit news.
       throw new GitHubTransientError(
-        error instanceof Error ? error.message : 'Network failure',
+        withoutToken(
+          error instanceof Error ? error.message : 'Network failure',
+          policy.token,
+        ),
         null,
         method,
         path,
@@ -376,12 +379,26 @@ export class GitHubHttpService {
       return { data, status: response.status, fromCache: false, link, etag };
     }
 
-    throw await this.toError(response, method, path);
+    throw await this.toError(response, method, path, policy.token);
   }
 
-  private async toError(response: Response, method: string, path: string) {
+  private async toError(
+    response: Response,
+    method: string,
+    path: string,
+    token: string | undefined,
+  ) {
     const body = await parseBody(response).catch(() => undefined);
-    const message = extractMessage(body) ?? response.statusText;
+    // Redacted HERE, at the one place that holds the credential, rather than
+    // by each consumer. ADR-0001: the token is consumed in exactly one place,
+    // so this is the only layer that CAN take it back out — and these messages
+    // are logged and rendered several frames up. GitHub itself never echoes a
+    // bearer token, but `github.apiBaseUrl` is an operator-settable override
+    // and a proxy sitting on it is under nobody's control.
+    const message = withoutToken(
+      extractMessage(body) ?? response.statusText,
+      token,
+    );
 
     if (response.status === 401) {
       return new GitHubAuthError(
@@ -520,6 +537,25 @@ export class GitHubHttpService {
     }
     return url.toString();
   }
+}
+
+/**
+ * A message with the credential that was sent taken out of it.
+ *
+ * Whole-token only, and never a heuristic: anything clever enough to redact
+ * "something token-shaped" would also mangle the commit SHAs and request ids
+ * that make a GitHub failure diagnosable. What this guarantees is the one
+ * thing worth guaranteeing — the exact secret we sent never comes back out of
+ * an error message, into a log line or onto a screen.
+ */
+export function withoutToken(
+  message: string,
+  token: string | undefined,
+): string {
+  // Short enough to be a placeholder rather than a credential, and splitting
+  // on it would shred an unrelated message.
+  if (token === undefined || token.length < 8) return message;
+  return message.split(token).join('[redacted]');
 }
 
 async function parseBody(response: Response): Promise<unknown> {

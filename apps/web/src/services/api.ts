@@ -234,6 +234,7 @@ import type {
   OperatorProbeResult,
 } from '../types/operatorProbes';
 import type { SupervisorModelCatalog } from '../types/supervisorModels';
+import type { AvailableRepositories } from '../types/repositories';
 import type {
   MetricsSummary,
   QueueEntry,
@@ -341,6 +342,86 @@ export async function updateRepository(
     input,
     { signal },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Registering a repository, chosen from a list (#401)
+// ---------------------------------------------------------------------------
+
+/**
+ * `GET /repositories/available` — what the configured GitHub credential can
+ * actually reach.
+ *
+ * Requires `projects:read`, the same permission the registered list above
+ * enforces.
+ *
+ * **This resolves for every finding.** A missing credential, a rejected one,
+ * a refused one, an exhausted rate limit and an unreachable GitHub all arrive
+ * as 200s carrying a `status`, because "the request failed" and "the request
+ * found a failure" are the two things this endpoint exists to tell apart. A
+ * rejection from here therefore means the REQUEST failed — the account may not
+ * read repositories, or the API is down — and never that the credential is
+ * bad.
+ */
+export async function getAvailableRepositories(
+  params: { page?: number; pageSize?: number; search?: string } = {},
+  signal?: AbortSignal,
+): Promise<AvailableRepositories> {
+  const searchParams = new URLSearchParams();
+  if (params.page) searchParams.set('page', String(params.page));
+  if (params.pageSize) searchParams.set('pageSize', String(params.pageSize));
+  // Trimmed and dropped when empty: the API's schema rejects a blank `search`
+  // with a 400, and "I cleared the box" means no filter rather than a filter
+  // matching nothing.
+  const search = params.search?.trim() ?? '';
+  if (search !== '') searchParams.set('search', search);
+
+  const query = searchParams.toString();
+  return api.get<AvailableRepositories>(
+    query ? `/repositories/available?${query}` : '/repositories/available',
+    { signal },
+  );
+}
+
+/**
+ * What `POST /repositories` accepts. Deliberately the two identifying fields
+ * and nothing else.
+ *
+ * Every policy flag is optional and every default lives in the Prisma schema,
+ * so omitting them is how a registration gets the defaults the API documents:
+ * `observeEnabled` true, `dispatchEnabled`, `mirrorLabelsEnabled` and
+ * `specFeedbackEnabled` false. A newly added repository is therefore observed
+ * and never run — VISION §12's staged rollout, expressed by sending less
+ * rather than by sending a copy of the defaults that could drift from them.
+ */
+export interface CreateRepositoryInput {
+  owner: string;
+  name: string;
+  projectId?: string | null;
+}
+
+/**
+ * `POST /repositories` — register a repository for Opifex to watch.
+ *
+ * Requires `projects:write`. The API verifies the repository is reachable with
+ * the configured credential before accepting it, so this call has real
+ * failures the caller must render rather than validation to invent:
+ *
+ *  - **400** — not reachable, archived, or a name GitHub could not hold;
+ *  - **409** — already registered;
+ *  - **503** — the GitHub credential is missing or expired.
+ *
+ * Rejects with `ApiError`, whose `status` is how those are told apart. The
+ * picker marks the rows that would produce a 400 or a 409 so an operator is
+ * not walked into one, but the token is resolved per request and can change
+ * between the listing and the write — so these stay real states, not
+ * impossible ones.
+ */
+export async function createRepository(
+  input: CreateRepositoryInput,
+  signal?: AbortSignal,
+): Promise<RepositorySummary> {
+  return api.post<RepositorySummary>('/repositories', input, { signal });
 }
 
 /**
