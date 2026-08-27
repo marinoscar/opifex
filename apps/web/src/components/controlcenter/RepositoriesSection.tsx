@@ -104,36 +104,33 @@ export function RepositoriesSection({ canWrite }: RepositoriesSectionProps) {
     </Button>
   );
 
-  if (isLoading) {
-    return <LoadingSpinner />;
-  }
-
-  if (error) {
-    return (
-      <Alert severity="error">
-        {error} Reading the repository list needs <code>projects:read</code>,
-        which is a different permission from the one that opens this screen.
+  // ONE tree, with the picker always at the same position in it.
+  //
+  // Registering the first repository moves this section from its empty state
+  // to its populated one, and an early `return` per state would put the dialog
+  // in a different place in each — so React would unmount and remount it on
+  // exactly the render that reported success, throwing away the confirmation
+  // and firing a second GitHub listing. The picker is a sibling of whichever
+  // body is rendered, and survives the swap.
+  const body = isLoading ? (
+    <LoadingSpinner />
+  ) : error ? (
+    <Alert severity="error">
+      {error} Reading the repository list needs <code>projects:read</code>,
+      which is a different permission from the one that opens this screen.
+    </Alert>
+  ) : repositories.length === 0 ? (
+    <Box>
+      <Alert severity="info" sx={{ mb: 2 }}>
+        No repository is registered, so there is no ladder to climb yet. Opifex
+        only observes repositories it has been told about, and registration
+        verifies the repository is reachable with the configured token before
+        accepting it. Add one below — the list offered is what the configured
+        credential can actually reach.
       </Alert>
-    );
-  }
-
-  if (repositories.length === 0) {
-    return (
-      <Box>
-        <Alert severity="info" sx={{ mb: 2 }}>
-          No repository is registered, so there is no ladder to climb yet.
-          Opifex only observes repositories it has been told about, and
-          registration verifies the repository is reachable with the configured
-          token before accepting it. Add one below — the list offered is what
-          the configured credential can actually reach.
-        </Alert>
-        {addButton}
-        {picker}
-      </Box>
-    );
-  }
-
-  return (
+      {addButton}
+    </Box>
+  ) : (
     <Box>
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
@@ -172,7 +169,12 @@ export function RepositoriesSection({ canWrite }: RepositoriesSectionProps) {
           />
         ))}
       </Stack>
+    </Box>
+  );
 
+  return (
+    <Box>
+      {body}
       {picker}
     </Box>
   );
