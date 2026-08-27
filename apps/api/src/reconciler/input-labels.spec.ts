@@ -8,6 +8,10 @@ import {
   ALL_MIRROR_LABELS,
   INPUT_LABELS,
 } from '../github/labels/factory-labels';
+import {
+  MODEL_TIER_BY_LABEL,
+  NEEDS_BY_LABEL,
+} from '../github/labels/ignored-labels';
 import { RateLimitService } from '../github/rate-limit.service';
 import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -341,6 +345,75 @@ describe('conformance with .github/labels.yml', () => {
     for (const label of ALL_MIRROR_LABELS) {
       const block = labelsYml.slice(labelsYml.indexOf(`- name: "${label}"`));
       expect(block.slice(0, 300)).toMatch(/Visibility only/);
+    }
+  });
+});
+
+describe('routing labels in .github/labels.yml', () => {
+  /**
+   * #303. The `needs:` (#64) and `tier:` (#273) vocabularies were implemented
+   * in code and declared nowhere, so `scripts/sync-labels.mjs` — whose entire
+   * purpose is making sure the labels an operator needs exist on a repository
+   * — could not create them. A label that does not exist cannot be put on an
+   * issue, so the tier never reached a work order and `servesTier` never
+   * refused anything: #273's complaint, arriving again by a different route.
+   *
+   * This is the assertion that stops it reopening. The vocabularies live in
+   * `ignored-labels.ts`; adding an entry there without declaring it here now
+   * fails, in both directions — a label declared in the file that the factory
+   * does not understand is the mirror-image bug, an operator applying
+   * something that will be ignored with the taxonomy's blessing.
+   */
+  const labelsYml = readFileSync(
+    join(__dirname, '..', '..', '..', '..', '.github', 'labels.yml'),
+    'utf8',
+  );
+
+  const declared = [
+    ...labelsYml.matchAll(/^- name: "((?:needs|tier):[^"]+)"$/gm),
+  ].map((m) => m[1]);
+
+  const implemented = [
+    ...Object.keys(NEEDS_BY_LABEL),
+    ...Object.keys(MODEL_TIER_BY_LABEL),
+  ];
+
+  it('finds routing labels in the taxonomy file at all', () => {
+    // Guards the guard, as above: a parser that matched nothing would make
+    // every assertion below pass against an empty file, which is exactly the
+    // state #303 found.
+    expect(declared.length).toBeGreaterThanOrEqual(7);
+  });
+
+  it('declares every needs: label the factory understands', () => {
+    const declaredNeeds = declared.filter((name) => name.startsWith('needs:'));
+
+    expect(declaredNeeds.sort()).toEqual(Object.keys(NEEDS_BY_LABEL).sort());
+  });
+
+  it('declares every tier: label the factory understands', () => {
+    const declaredTiers = declared.filter((name) => name.startsWith('tier:'));
+
+    expect(declaredTiers.sort()).toEqual(
+      Object.keys(MODEL_TIER_BY_LABEL).sort(),
+    );
+  });
+
+  it('declares no routing label the factory would ignore', () => {
+    // The other direction. A `tier:huge` in the file would be created by the
+    // sync script, applied by an operator who read the taxonomy, and then
+    // silently ignored — worse than never having offered it.
+    expect(declared.sort()).toEqual([...implemented].sort());
+  });
+
+  it('describes each routing label as routing input', () => {
+    // The taxonomy's own promise, in the register the two existing families
+    // already use ("Obeyed by the reconciler", "Visibility only"). These are
+    // input a human sets, not state Opifex writes, and the description is
+    // where an operator finds that out.
+    for (const label of implemented) {
+      const block = labelsYml.slice(labelsYml.indexOf(`- name: "${label}"`));
+      expect(block.slice(0, 300)).toMatch(/Routing input/);
     }
   });
 });
