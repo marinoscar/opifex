@@ -78,8 +78,15 @@ import type {
  * provider.
  */
 
-/** The version header Anthropic requires on every Messages API request. */
-const ANTHROPIC_VERSION = '2023-06-01';
+/**
+ * The version header Anthropic requires on every request.
+ *
+ * Exported since #393 so that the model catalogue sends the same one: two
+ * copies of a required header is two things to update when it moves, and the
+ * one that gets missed fails as a rejected request rather than as a compile
+ * error.
+ */
+export const ANTHROPIC_VERSION = '2023-06-01';
 
 export class AnthropicSupervisorModel implements SupervisorModel {
   private readonly logger = new Logger(AnthropicSupervisorModel.name);
