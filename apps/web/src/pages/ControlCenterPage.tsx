@@ -328,6 +328,9 @@ function SectionBody({
           fleet={readiness.fleet}
           onSaved={onSaved}
           onSaveError={onSaveError}
+          // The supervisor model keys are configured on Credentials (#394);
+          // the signpost that says so needs a way to get there.
+          onNavigateToSection={onNavigateToSection}
         />
       );
     case 'credentials':

@@ -19,6 +19,16 @@
  * that has nothing to do with it — or worse, apply half of it. Each card
  * sends its own key.
  *
+ * ## One credential is not on its own card, and that is the point
+ *
+ * `supervisor.model.apiKey` is rendered INSIDE `SupervisorModelPanel` (#394,
+ * epic #391) rather than in the list above it. The key on its own was never
+ * the operator's problem: they saved it here, pressed Test, and were told a
+ * model name they had never heard of was unset — on another tab, in a
+ * free-text box. So the key, the provider and the model are one control, and
+ * the card itself is passed into that control rather than reimplemented, so
+ * the write-only discipline below holds for it unchanged.
+ *
  * ## Nothing here shows a secret, because nothing here has one
  *
  * The response has no `value` on the secret arm at all, so there is no value
@@ -40,7 +50,9 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ClaudeAuthPanel } from './ClaudeAuthPanel';
 import { SecretCredentialCard } from './SecretCredentialCard';
 import { SpendCeilingsPanel } from './SpendCeilingsPanel';
+import { SupervisorModelPanel } from './SupervisorModelPanel';
 import { supportsGuidedSignIn } from '../../config/claudeAuth';
+import { SUPERVISOR_API_KEY_KEY } from '../../config/supervisorModel';
 import type {
   ProbeDescriptor,
   ProbeObservation,
@@ -53,6 +65,7 @@ import type {
   OperatorSettingsPatch,
   SecretOperatorSetting,
 } from '../../types/operatorSettings';
+import type { SupervisorModelCatalog } from '../../types/supervisorModels';
 
 export interface CredentialsSectionProps {
   document: OperatorSettingsDocument | null;
@@ -71,6 +84,12 @@ export interface CredentialsSectionProps {
   spendIsLoading: boolean;
   spendProblem: CeilingSpendProblem | null;
   onSave: (patch: OperatorSettingsPatch) => Promise<void>;
+  /** The provider's answer to "what can this key reach?" (#394). */
+  catalog: SupervisorModelCatalog | null;
+  catalogIsLoading: boolean;
+  /** Why the catalogue REQUEST failed. Never a verdict on the credential. */
+  catalogError: string | null;
+  onRefreshCatalog: () => void;
   /**
    * Re-read the document after a guided sign-in wrote a credential (#386).
    *
@@ -94,6 +113,10 @@ export function CredentialsSection({
   spend,
   spendIsLoading,
   spendProblem,
+  catalog,
+  catalogIsLoading,
+  catalogError,
+  onRefreshCatalog,
   onSave,
   onConnected,
 }: CredentialsSectionProps) {
@@ -111,6 +134,43 @@ export function CredentialsSection({
 
   const secrets = document.settings.filter(
     (entry): entry is SecretOperatorSetting => entry.secret,
+  );
+
+  // The supervisor key is not listed with the others; it is composed into the
+  // panel that also owns the provider and the model. Filtering by key is a
+  // named exception, declared in `config/supervisorModel.ts` with its reason,
+  // rather than a lost property: every other secret the registry publishes
+  // still gets a card here with no frontend change.
+  const listedSecrets = secrets.filter(
+    (entry) => entry.key !== SUPERVISOR_API_KEY_KEY,
+  );
+  const supervisorKey =
+    secrets.find((entry) => entry.key === SUPERVISOR_API_KEY_KEY) ?? null;
+
+  const secretCard = (entry: SecretOperatorSetting) => (
+    <SecretCredentialCard
+      key={entry.key}
+      entry={entry}
+      settings={document.settings}
+      canWrite={canWrite}
+      canWriteSecret={canWriteSecret}
+      storageConfigured={document.secretStorage.configured}
+      isSaving={isSaving}
+      observations={observations}
+      runningProbe={runningProbe}
+      onRunProbe={onRunProbe}
+      onSave={onSave}
+      guidedSignIn={
+        supportsGuidedSignIn(entry.key) ? (
+          <ClaudeAuthPanel
+            configured={entry.configured}
+            canStart={canWrite && canWriteSecret}
+            storageConfigured={document.secretStorage.configured}
+            onConnected={onConnected}
+          />
+        ) : undefined
+      }
+    />
   );
 
   return (
@@ -154,31 +214,7 @@ export function CredentialsSection({
       </Typography>
 
       <Stack component="ul" spacing={2} sx={{ p: 0, m: 0, mb: 4 }}>
-        {secrets.map((entry) => (
-          <SecretCredentialCard
-            key={entry.key}
-            entry={entry}
-            settings={document.settings}
-            canWrite={canWrite}
-            canWriteSecret={canWriteSecret}
-            storageConfigured={document.secretStorage.configured}
-            isSaving={isSaving}
-            observations={observations}
-            runningProbe={runningProbe}
-            onRunProbe={onRunProbe}
-            onSave={onSave}
-            guidedSignIn={
-              supportsGuidedSignIn(entry.key) ? (
-                <ClaudeAuthPanel
-                  configured={entry.configured}
-                  canStart={canWrite && canWriteSecret}
-                  storageConfigured={document.secretStorage.configured}
-                  onConnected={onConnected}
-                />
-              ) : undefined
-            }
-          />
-        ))}
+        {listedSecrets.map((entry) => secretCard(entry))}
       </Stack>
 
       {secrets.length === 0 && (
@@ -187,6 +223,28 @@ export function CredentialsSection({
           nothing to rotate here.
         </Alert>
       )}
+
+      <Divider sx={{ mb: 3 }} />
+
+      <SupervisorModelPanel
+        document={document}
+        canWrite={canWrite}
+        isSaving={isSaving}
+        catalog={catalog}
+        catalogIsLoading={catalogIsLoading}
+        catalogError={catalogError}
+        onRefreshCatalog={onRefreshCatalog}
+        onSave={onSave}
+        // The card, not a second key input. See this file's header and
+        // `SupervisorModelPanel`'s `keyCard` prop.
+        keyCard={
+          supervisorKey ? (
+            <Stack component="ul" sx={{ p: 0, m: 0 }}>
+              {secretCard(supervisorKey)}
+            </Stack>
+          ) : null
+        }
+      />
 
       <Divider sx={{ mb: 3 }} />
 
