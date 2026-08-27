@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
 import { PERMISSION_MODES } from '../../runners/claude-code-local/claude-code-invocation';
+import {
+  DEFAULT_SUPERVISOR_MODEL_PROVIDER,
+  SUPERVISOR_MODEL_PROVIDERS,
+} from '../../supervisor/invocation/supervisor-model.config';
 
 // =============================================================================
 // The operator settings registry (#335, epic #332)
@@ -825,6 +829,27 @@ export const OPERATOR_SETTINGS = {
     help: 'Whether the AI supervisor runs. Since ADR-0015 it spends real money on a separately metered API key, so a deployment that has not decided to run one must not start spending because a default said yes. The next invocation honours a change.',
   }),
 
+  'supervisor.model.provider': enumSetting({
+    envVar: 'SUPERVISOR_MODEL_PROVIDER',
+    // The single declaration of the legal providers lives in
+    // `supervisor/invocation/supervisor-model.config.ts`, next to the adapters
+    // that implement them, exactly as `permissionMode` above takes its values
+    // from the file that writes them into argv. Restating them here would make
+    // this registry a second place that names a model vendor, which is the one
+    // thing `supervisor-model.port.ts` says must not happen.
+    values: SUPERVISOR_MODEL_PROVIDERS,
+    default: DEFAULT_SUPERVISOR_MODEL_PROVIDER,
+    secret: false,
+    // Resolved per call inside the adapter (#344, #392), so a provider changed
+    // in the Control Center answers the next invocation rather than the next
+    // restart.
+    reload: 'live',
+    group: 'supervisor',
+    label: 'Supervisor model provider',
+    dangerous: true,
+    help: 'Which vendor the supervisor asks. The API key and the model name are sent to whichever provider is selected here, and the base URL below follows it — so switching provider is one change, not two. Changing this without also changing the key sends a credential to a host that will reject it, which is why it is marked dangerous. The next invocation honours a change.',
+  }),
+
   'supervisor.model.apiKey': stringSetting({
     envVar: 'SUPERVISOR_MODEL_API_KEY',
     default: '',
@@ -853,14 +878,21 @@ export const OPERATOR_SETTINGS = {
 
   'supervisor.model.baseUrl': stringSetting({
     envVar: 'SUPERVISOR_MODEL_BASE_URL',
-    default: 'https://api.anthropic.com',
+    // EMPTY, not a host (#392). It used to default to Anthropic's endpoint,
+    // which made this key a second thing to remember when switching provider
+    // and made forgetting it post an OpenAI credential to Anthropic. Empty
+    // means "follow `supervisor.model.provider`", which is both the honest
+    // default and the only way an operator can EXPRESS "follow it" once they
+    // have typed something here and want to undo it.
+    default: '',
+    allowEmpty: true,
     format: 'url',
     secret: false,
     reload: 'live',
     group: 'supervisor',
     label: 'Supervisor model base URL',
     dangerous: true,
-    help: 'An override point for proxies and tests. The supervisor model API key is sent to whatever host is named here.',
+    help: 'Leave empty and the supervisor calls the selected provider’s own endpoint. Set it only for a proxy, a gateway or a test server: the supervisor model API key is sent to whatever host is named here. Naming a provider’s own published host is treated as empty, so a deployment that pinned one before switching provider still reaches the right vendor.',
   }),
 
   'supervisor.model.timeoutMs': integerSetting({

@@ -65,10 +65,70 @@ describe('priceUsd (ADR-0015)', () => {
       expect(typeof rate.inputPerMillionUsd).toBe('number');
       expect(typeof rate.outputPerMillionUsd).toBe('number');
       expect(rate.inputPerMillionUsd).toBeGreaterThan(0);
-      // Output is dearer than input for every model Anthropic has published,
-      // so an inverted pair is a transcription error rather than a bargain.
+      // Output is dearer than input for every model either vendor has
+      // published, so an inverted pair is a transcription error rather than a
+      // bargain.
       expect(rate.outputPerMillionUsd).toBeGreaterThan(rate.inputPerMillionUsd);
-      expect(model).toMatch(/^claude-/);
+      // A model string neither vendor could produce is a typo in the table,
+      // and a typo in a KEY is invisible: it prices at null exactly like a
+      // model that has not been added yet.
+      expect(model).toMatch(/^(claude-|gpt-)/);
     }
+  });
+
+  it('prices both vendors, so the ceiling means something on either (#392)', () => {
+    // Shipping the OpenAI adapter without its rates would have left the
+    // supervisor's spend ceiling under-counting every OpenAI call, which is
+    // why the epic put them in the same change. A table that lost its OpenAI
+    // half would pass every other assertion in this file.
+    const models = Object.keys(MODEL_RATES);
+
+    expect(
+      models.filter((model) => model.startsWith('claude-')).length,
+    ).toBeGreaterThan(10);
+    expect(
+      models.filter((model) => model.startsWith('gpt-')).length,
+    ).toBeGreaterThan(10);
+  });
+
+  it('covers the Claude 5 family, which used to price at null', () => {
+    // Named individually rather than by prefix: the epic's whole complaint was
+    // that "the pricing table is behind the model families", and a prefix
+    // assertion would go green on one of them.
+    for (const model of [
+      'claude-opus-5',
+      'claude-sonnet-5',
+      'claude-fable-5',
+      'claude-mythos-5',
+    ]) {
+      expect(priceUsd(model, 1_000_000, 0)).not.toBeNull();
+    }
+  });
+
+  it('prices Sonnet 5 below Sonnet 4.6, which is why family matching is wrong', () => {
+    // A concrete instance of the header's argument. Sonnet 5 is CHEAPER than
+    // the version before it, so a "claude-sonnet-*" rule would not merely be
+    // imprecise — it would over-count by half.
+    const sonnet5 = priceUsd('claude-sonnet-5', 1_000_000, 1_000_000);
+    const sonnet46 = priceUsd('claude-sonnet-4-6', 1_000_000, 1_000_000);
+
+    expect(sonnet5).not.toBeNull();
+    expect(sonnet46).not.toBeNull();
+    expect(sonnet5).toBeLessThan(sonnet46 as number);
+  });
+
+  it('leaves the repointing aliases unpriced, deliberately', () => {
+    // `daybreak-blue-latest` and `daybreak-red-latest` follow whichever model
+    // is current AND their price moves with it, so a fixed rate keyed on
+    // either would be silently wrong the day the alias moves. Null is the
+    // right answer here and is not an omission to be fixed.
+    expect(priceUsd('daybreak-blue-latest', 1000, 500)).toBeNull();
+    expect(priceUsd('daybreak-red-latest', 1000, 500)).toBeNull();
+  });
+
+  it('prices an OpenAI call from its token counts', () => {
+    // gpt-5.6-luna at $0.20/$1.20 per million: 1000 in and 500 out is
+    // 0.0002 + 0.0006.
+    expect(priceUsd('gpt-5.6-luna', 1000, 500)).toBe(0.0008);
   });
 });

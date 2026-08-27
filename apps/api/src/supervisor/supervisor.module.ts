@@ -7,7 +7,7 @@ import { DailyBriefService } from './brief/daily-brief.service';
 import { DailyBriefTask } from './brief/daily-brief.task';
 import { DecisionLogController } from './decision-log/decision-log.controller';
 import { DecisionLogService } from './decision-log/decision-log.service';
-import { createSupervisorModel } from './invocation/anthropic-supervisor-model';
+import { createSupervisorModel } from './invocation/supervisor-model.factory';
 import { SupervisorService } from './invocation/supervisor.service';
 import { SupervisorSpendCeilingService } from './invocation/supervisor-spend-ceiling';
 import { SupervisorSpendLedgerService } from './invocation/supervisor-spend-ledger.service';
@@ -90,11 +90,15 @@ import { TrustDigestSource } from './brief/trust-digest.source';
       // recorded in the decision log rather than crashing the API at boot or
       // quietly disabling the supervisor.
       //
-      // Still a factory rather than a class provider, for what is now the only
-      // remaining reason: choosing between vendors is this function's job the
-      // day there are two. Nothing outside `invocation/` names a model
-      // provider, so the seam stays vendor-neutral even though there is
-      // exactly one vendor behind it.
+      // Still a factory rather than a class provider, and since #392 the
+      // reason is live rather than anticipated: there ARE two vendors, and
+      // choosing between them is that function's job. It is imported from
+      // `supervisor-model.factory.ts` rather than from an adapter file so that
+      // this module's import list names no vendor either — the seam is
+      // vendor-neutral in the import graph and not only in the code. The
+      // choice itself is made per call, not here: a factory runs once, and a
+      // provider decided at boot would be the same stale copy of a live
+      // setting that #344 removed for the API key.
       provide: SUPERVISOR_MODEL,
       inject: [OperatorSettingsService],
       useFactory: createSupervisorModel,

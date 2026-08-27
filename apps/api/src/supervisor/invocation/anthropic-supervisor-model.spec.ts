@@ -9,11 +9,12 @@ import type { InvocationDraft } from '../decision-log/decision-log.types';
 import { SnapshotService } from '../snapshot/snapshot.service';
 import type { SnapshotInput } from '../snapshot/snapshot.types';
 import { SupervisorModule } from '../supervisor.module';
+import { AnthropicSupervisorModel } from './anthropic-supervisor-model';
+import { SupervisorModelError } from './supervisor-model.config';
 import {
-  AnthropicSupervisorModel,
-  SupervisorModelError,
+  ProviderRoutingSupervisorModel,
   createSupervisorModel,
-} from './anthropic-supervisor-model';
+} from './supervisor-model.factory';
 import {
   SUPERVISOR_MODEL,
   UnavailableSupervisorModel,
@@ -50,8 +51,21 @@ function operatorSettings(overrides: OperatorSettingsOverrides = {}) {
   return makeOperatorSettings({ overrides: { ...SETTINGS, ...overrides } });
 }
 
+/**
+ * The adapter as production builds it — through the factory, so every
+ * assertion below is about the object `SupervisorModule` actually binds.
+ *
+ * With `supervisor.model.provider` at its default the router selects the
+ * Anthropic adapter, which is what makes this suite still a suite about that
+ * adapter after #392 put a router in front of it.
+ */
 function adapter(overrides: OperatorSettingsOverrides = {}) {
   return createSupervisorModel(operatorSettings(overrides));
+}
+
+/** The Anthropic adapter alone, with no router in the way. */
+function bareAdapter(overrides: OperatorSettingsOverrides = {}) {
+  return new AnthropicSupervisorModel(operatorSettings(overrides));
 }
 
 /**
@@ -400,11 +414,11 @@ describe('AnthropicSupervisorModel (ADR-0015)', () => {
   });
 });
 
-describe('createSupervisorModel (ADR-0015, #344)', () => {
+describe('createSupervisorModel (ADR-0015, #344, #392)', () => {
   it('builds the adapter when an API key is configured', () => {
     const model = createSupervisorModel(operatorSettings());
 
-    expect(model).toBeInstanceOf(AnthropicSupervisorModel);
+    expect(model).toBeInstanceOf(ProviderRoutingSupervisorModel);
     expect(model.name).toBe(MODEL);
   });
 
@@ -416,7 +430,7 @@ describe('createSupervisorModel (ADR-0015, #344)', () => {
       createSupervisorModel(
         operatorSettings({ 'supervisor.model.apiKey': '' }),
       ),
-    ).toBeInstanceOf(AnthropicSupervisorModel);
+    ).toBeInstanceOf(ProviderRoutingSupervisorModel);
   });
 
   it('does not throw when nothing at all is configured', () => {
@@ -425,7 +439,20 @@ describe('createSupervisorModel (ADR-0015, #344)', () => {
     const empty = makeOperatorSettings();
     expect(() => createSupervisorModel(empty)).not.toThrow();
     expect(createSupervisorModel(empty)).toBeInstanceOf(
-      AnthropicSupervisorModel,
+      ProviderRoutingSupervisorModel,
+    );
+  });
+
+  it('reports the same three names whether or not the router is in the way', () => {
+    // The router delegates `name` rather than resolving it itself, so that the
+    // decision log's `model` column comes from the object that made the call.
+    // If it ever stopped delegating, these would drift apart silently.
+    expect(adapter().name).toBe(bareAdapter().name);
+    expect(adapter({ 'supervisor.model.name': '' }).name).toBe(
+      bareAdapter({ 'supervisor.model.name': '' }).name,
+    );
+    expect(adapter({ 'supervisor.model.apiKey': '' }).name).toBe(
+      bareAdapter({ 'supervisor.model.apiKey': '' }).name,
     );
   });
 
@@ -658,7 +685,7 @@ describe('SupervisorModule binding (ADR-0015)', () => {
       'supervisor.enabled': true,
     });
 
-    expect(bound).toBeInstanceOf(AnthropicSupervisorModel);
+    expect(bound).toBeInstanceOf(ProviderRoutingSupervisorModel);
     await service.invoke(NOW);
 
     const draft = recorded();
@@ -680,7 +707,7 @@ describe('SupervisorModule binding (ADR-0015)', () => {
     // #344: the adapter IS in the graph now — that is the change — and the row
     // it produces is the one an unconfigured deployment produced before, when
     // @Optional() saw undefined and `?? new UnavailableSupervisorModel()` won.
-    expect(bound).toBeInstanceOf(AnthropicSupervisorModel);
+    expect(bound).toBeInstanceOf(ProviderRoutingSupervisorModel);
 
     await service.invoke(NOW);
 
