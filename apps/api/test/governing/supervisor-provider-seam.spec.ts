@@ -48,12 +48,27 @@ import {
  * `invocation/` rather than restating it, which is what keeps the settings
  * layer honest about (1).
  *
+ * ## What it does NOT claim
+ *
+ * It says nothing about `.spec.ts` files, and skips them exactly as
+ * `supervisor-offline.spec.ts` skips them in its own structural half. A spec
+ * that proves a consumer FOLLOWS the provider setting has to name a provider
+ * to prove it — `runner.seam.spec.ts` lists `anthropic` and `openai` among the
+ * vendors it proves the runner seam never types, and the probe suite names one
+ * to prove the Test button reaches the configured host rather than a fixed
+ * one. A rule that fired on those would be forbidding the assertion instead of
+ * the leak.
+ *
+ * The claim that is left is the one the port's sentence is actually about: no
+ * PRODUCTION code outside `invocation/` names a provider. A leak is a branch,
+ * a default or an import in shipping code, and a spec cannot put one there.
+ *
  * ## When this fails
  *
  * Read the provider through `resolveSupervisorModelConfig` and branch inside
- * `invocation/`, or add an adapter there. Do not add a file to the exclusion
- * list below — there are two, both of them tests that name vendors in order to
- * forbid them, which is what this file does too.
+ * `invocation/`, or add an adapter there. Do not add an exclusion list — there
+ * is deliberately none, because the one file that would want to be on it is
+ * this one, and skipping specs already covers it.
  */
 
 const API_ROOT = join(__dirname, '..', '..');
@@ -61,38 +76,24 @@ const API_ROOT = join(__dirname, '..', '..');
 /** The one directory allowed to know which vendors exist. */
 const INVOCATION_DIR = join('src', 'supervisor', 'invocation').concat(sep);
 
-/**
- * The two files that name vendors in order to assert their absence.
- *
- * `runner.seam.spec.ts` is #60's version of this same test for the RUNNER
- * seam, and it lists `anthropic` and `openai` among the vendors it proves the
- * seam never types. Excluding it is not a hole: it is the same claim, made
- * about a different seam, and a rule that fired on it would be forbidding the
- * assertion rather than the leak.
- */
-const EXCLUDED = [
-  join('src', 'runners', 'runner.seam.spec.ts'),
-  join('test', 'governing', 'supervisor-provider-seam.spec.ts'),
-];
-
+/** Every non-spec `.ts` under a directory. See "What it does NOT claim". */
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) out.push(...sourceFiles(full));
-    else if (entry.endsWith('.ts')) out.push(full);
+    else if (entry.endsWith('.ts') && !entry.endsWith('.spec.ts'))
+      out.push(full);
   }
   return out;
 }
 
-/** Every `.ts` under `src/` and `test/`, as API-relative paths. */
+/** Every production `.ts` under `src/` and `test/`, as API-relative paths. */
 function scannedFiles(): string[] {
   return [
     ...sourceFiles(join(API_ROOT, 'src')),
     ...sourceFiles(join(API_ROOT, 'test')),
-  ]
-    .map((full) => relative(API_ROOT, full))
-    .filter((path) => !EXCLUDED.includes(path));
+  ].map((full) => relative(API_ROOT, full));
 }
 
 /**
@@ -145,6 +146,11 @@ describe('GOVERNING TEST: the supervisor model seam names no vendor (#392)', () 
     // reason a structural test is most exposed to.
     expect(files.length).toBeGreaterThan(200);
     expect(outside.length).toBeGreaterThan(200);
+    // A production file that would obviously be tempted to name a vendor: the
+    // module whose import list did exactly that before #392.
+    expect(outside).toContain(
+      join('src', 'supervisor', 'supervisor.module.ts'),
+    );
     expect(inside).toContain(
       join('src', 'supervisor', 'invocation', 'supervisor-model.config.ts'),
     );
