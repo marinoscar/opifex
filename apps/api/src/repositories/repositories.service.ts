@@ -48,7 +48,12 @@ export class RepositoriesService {
       ...(query.dispatchEnabled !== undefined && {
         dispatchEnabled: query.dispatchEnabled,
       }),
-      ...(query.projectId !== undefined && { projectId: query.projectId }),
+      // `none` is the literal the query schema admits alongside a uuid, and
+      // it maps to SQL NULL: "in no project" is a real filter, not the absence
+      // of one, so it must not fall through to "any project" here.
+      ...(query.projectId !== undefined && {
+        projectId: query.projectId === 'none' ? null : query.projectId,
+      }),
     };
 
     const [items, total] = await Promise.all([

@@ -67,7 +67,11 @@ export class RepositoriesController {
     name: 'projectId',
     required: false,
     type: String,
-    format: 'uuid',
+    description:
+      'A project id, or the literal `none` for repositories in no project at all. ' +
+      '`none` is a first-class answer rather than a missing one: every repository registered ' +
+      'before projects existed is unassigned, and such a repository is still observed, still ' +
+      'dispatchable and still walked up the enablement ladder.',
   })
   @ApiDataResponse(RepositoryResponseDto, {
     pagination: 'flat',

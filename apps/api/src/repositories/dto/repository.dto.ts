@@ -135,7 +135,17 @@ export const listRepositoriesQuerySchema = z.object({
   /** Filter to what the reconciler actually reads. */
   observeEnabled: z.stringbool().optional(),
   dispatchEnabled: z.stringbool().optional(),
-  projectId: z.uuid().optional(),
+  /**
+   * Which project's repositories to return — or `none` for the ones in no
+   * project at all.
+   *
+   * `none` is a member of this filter rather than a separate `unassigned` flag
+   * because unassigned is an ANSWER to "which project", not a different
+   * question. Every repository registered before projects existed is in that
+   * bucket (#404), and without a way to ask for it the one group an operator
+   * most needs to find would be the only group with no query that returns it.
+   */
+  projectId: z.union([z.uuid(), z.literal('none')]).optional(),
 });
 
 export class ListRepositoriesQueryDto extends createZodDto(
