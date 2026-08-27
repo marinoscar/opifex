@@ -28,7 +28,7 @@ You need:
 
 |                                                  | Why                                                              |
 | ------------------------------------------------ | ---------------------------------------------------------------- |
-| A GitHub token with `repo` read scope            | The reconciler reads issues, labels, commits, PRs and check runs |
+| A fine-grained GitHub token, read access         | The reconciler reads issues, labels, commits, PRs and check runs |
 | A PostgreSQL 16 database                         | Migrations are applied on deploy                                 |
 | A phone that can open the cockpit over **HTTPS** | Web Push refuses to subscribe on a plain-HTTP origin             |
 | Google OAuth credentials                         | See the papercut below — you need them even if nobody logs in    |
@@ -272,6 +272,53 @@ action evidence instead of the label itself.
 
 ## 4. Register a repository
 
+### First, see what your token can reach
+
+Do not type a repository name. Ask which ones Opifex could watch:
+
+```bash
+curl 'http://localhost:3535/api/repositories/available' \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+From the cockpit, the same list is the **Repositories** section of the Control
+Center, which offers these as a picker rather than a text field.
+
+**This list is your token's scope, not your account's inventory.** ADR-0001
+chose a _fine-grained_ personal access token precisely so that the reachable
+set is a list somebody chose — a classic token's account-wide `repo` scope
+would reach repositories Opifex was never meant to touch. So a short list is
+the scope showing, and it is the honest picture of what Opifex could reach.
+
+Every row carries an `admission`, and none is ever hidden:
+
+| `admission`  | What it means                                                                                               |
+| ------------ | ----------------------------------------------------------------------------------------------------------- |
+| `available`  | Registrable right now.                                                                                      |
+| `registered` | Already in the table. `repositoryId` names the existing row — this is the 409 the list exists to spare you. |
+| `archived`   | GitHub archived it. Registration refuses it, so it is marked rather than offered as if it would work.       |
+
+The answer as a whole carries a `status`, and **a failure comes back as a 200
+carrying that status rather than as an error code** — "the request failed" and
+"the request found a failure" are two different things, and one HTTP status
+cannot say which. Each value has its own remedy:
+
+| `status`             | What is actually wrong                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ok`                 | GitHub answered. **`reachable: 0` is still `ok`** — the token works and its scope covers nothing. Grant it a repository, do not reissue it. |
+| `no_credential`      | No `github.token` is set. Control Center → **Configuration** → the **GitHub** group.                                                        |
+| `invalid_credential` | GitHub rejected it (401). A fine-grained token expires on a fixed date and then fails exactly like this.                                    |
+| `refused`            | It authenticated and was refused (403). Widen the token's permissions; do not replace the token.                                            |
+| `rate_limited`       | The hourly budget is spent; `detail` says until when. ADR-0001 notes this budget is shared with your own use of GitHub.                     |
+| `unreachable`        | Nothing answered. This says **nothing** about the token — check the network, the proxy and `github.apiBaseUrl`.                             |
+
+A long list is paginated: `?search=billing`, `?page=2`, `?pageSize=50`.
+`total` counts the search matches and `reachable` counts what the token sees
+before searching, so an empty search is distinguishable from an empty scope. If
+`truncated` is `true`, the page cap was hit and the list is **not** complete.
+
+### Then register the one you picked
+
 Registration **verifies the repository is reachable** with your token before
 accepting it — an entry Opifex cannot read would turn every subsequent tick into
 a 404.
@@ -282,6 +329,12 @@ curl -X POST http://localhost:3535/api/repositories \
   -H 'Content-Type: application/json' \
   -d '{"owner":"marinoscar","name":"opifex","observeEnabled":true}'
 ```
+
+A success answers `201` with the row, including the `defaultBranch` read from
+GitHub rather than guessed. A repository you took from the list above should
+never answer `409` (already registered) or `400` (archived, or unreachable) —
+if it does, the list was read against a different token than the one in force
+now, which is possible because `github.token` is resolved per request.
 
 `dispatchEnabled` and `mirrorLabelsEnabled` both default to **false**, and leave
 them there. The three switches are separate precisely so the week can end in
