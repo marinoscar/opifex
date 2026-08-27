@@ -384,6 +384,77 @@ describe('SupervisorModelPanel', () => {
       expect(ids).not.toContain('claude-opus-4-6');
     });
 
+    it('drops the previous list the moment it asks, not when the answer lands', async () => {
+      // The requirement is that a list never outlives the provider it belongs
+      // to, and the window where that can go wrong is the one BETWEEN asking
+      // and being answered — where the previous vendor's models would sit,
+      // selectable, under a provider that no longer matches them. So the
+      // second answer is gated open by the test, and the assertion happens
+      // while it is still in flight.
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const calls = { count: 0 };
+
+      server.use(
+        http.get(
+          `${API_BASE}/operator-settings/supervisor-models`,
+          async () => {
+            calls.count += 1;
+            if (calls.count === 1) {
+              return HttpResponse.json({
+                data: supervisorModelCatalogFixture(),
+              });
+            }
+            await gate;
+            return HttpResponse.json({
+              data: supervisorModelCatalogFixture({
+                provider: 'openai',
+                minimumVersion: '5.4',
+                detail:
+                  'OpenAI listed 3 models; 1 is at or above the 5.4 floor.',
+                models: OPENAI_MODELS,
+              }),
+            });
+          },
+        ),
+      );
+      recordPatch(
+        operatorSettingsFixture({
+          revision: 8,
+          settings: withEntry('supervisor.model.provider', {
+            value: 'openai',
+            source: 'database',
+          }),
+        }),
+      );
+
+      const user = userEvent.setup();
+      renderSection();
+      await panel();
+      expect(
+        await screen.findByText(/Anthropic listed 4 models/),
+      ).toBeInTheDocument();
+
+      await openSelect(user, 'Supervisor model provider');
+      await user.click(screen.getByRole('option', { name: 'openai' }));
+
+      // Mid-flight: the Anthropic answer is gone and nothing has replaced it.
+      await screen.findByRole('button', { name: 'Asking the provider…' });
+      expect(
+        screen.queryByText(/Anthropic listed 4 models/),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('option', { name: /claude-opus-4-6/ }),
+      ).not.toBeInTheDocument();
+
+      release();
+      expect(
+        await screen.findByText(/OpenAI listed 3 models/),
+      ).toBeInTheDocument();
+    });
+
     it('re-resolves after the key is replaced, too', async () => {
       // A new credential reaches a different set of models. Leaving the
       // previous list up would make the dropdown a claim about a key that is
