@@ -1,11 +1,26 @@
 /**
- * Repositories — the enablement ladder (#350, epic #332).
+ * Repositories — registration (#401) and the enablement ladder (#350, epic
+ * #332).
  *
  * Every registered repository, each with the four flags rendered as the
  * ordered progression `repository.dto.ts` documents: observe, mirror labels,
  * spec feedback, dispatch. This replaces `ProjectsPage`'s instruction to run
  * `curl -d '{"observeEnabled":true}'`, which was the only way to move any of
  * them.
+ *
+ * ## Adding one is now possible here at all
+ *
+ * `POST /api/repositories` has always existed and nothing in `apps/web` called
+ * it, so an operator saw whatever was curl'd in once and could not add a
+ * second — the gap #350 closed for ENABLING a repository and never covered for
+ * adding one. The Add affordance below opens a picker over what the configured
+ * credential can actually reach, rather than a text field for a value the
+ * system can enumerate.
+ *
+ * The button is rendered in every state that has one, including the empty one:
+ * a deployment with nothing registered is exactly when somebody needs to add
+ * something, and putting the affordance behind a populated list would be the
+ * same dead end in a new place.
  *
  * ## Read-only is a state, not a disabled screen
  *
@@ -17,8 +32,10 @@
  * may not ask is the failure mode this epic keeps naming.
  */
 
-import { Alert, Box, Stack, Typography } from '@mui/material';
+import { useState } from 'react';
+import { Alert, Box, Button, Stack, Typography } from '@mui/material';
 
+import { AddRepositoryDialog } from './AddRepositoryDialog';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { RepositoryLadderCard } from './RepositoryLadderCard';
 import { LADDER_RUNGS } from '../../config/repositoryLadder';
@@ -45,7 +62,47 @@ export function RepositoriesSection({ canWrite }: RepositoriesSectionProps) {
     probes,
     save,
     testAccess,
+    adopt,
   } = ladder;
+
+  // Mounted only while open, so the picker's GitHub request happens when the
+  // operator asks for it rather than on every load of this section.
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  /** The registration a picker row pointed at. Highlighted, never scrolled to
+   * blindly. */
+  const [revealedId, setRevealedId] = useState<string | null>(null);
+
+  const showRegistered = (repositoryId: string) => {
+    setIsPickerOpen(false);
+    setRevealedId(repositoryId);
+    // Optional-called: jsdom does not implement `scrollIntoView`, and the
+    // highlight above is what actually carries the meaning — the same
+    // treatment `useHashScroll` gives it. The card is already mounted behind
+    // the dialog, so there is nothing to wait for.
+    document
+      .getElementById(`repository-${repositoryId}`)
+      ?.scrollIntoView?.({ block: 'center' });
+  };
+
+  const picker = isPickerOpen && (
+    <AddRepositoryDialog
+      canWrite={canWrite}
+      onClose={() => setIsPickerOpen(false)}
+      onRegistered={adopt}
+      onShowRegistered={showRegistered}
+    />
+  );
+
+  const addButton = (
+    <Button
+      variant="contained"
+      size="small"
+      onClick={() => setIsPickerOpen(true)}
+      disabled={!canWrite}
+    >
+      Add repository
+    </Button>
+  );
 
   if (isLoading) {
     return <LoadingSpinner />;
@@ -62,20 +119,36 @@ export function RepositoriesSection({ canWrite }: RepositoriesSectionProps) {
 
   if (repositories.length === 0) {
     return (
-      <Alert severity="info">
-        No repository is registered, so there is no ladder to climb yet. Opifex
-        only observes repositories it has been told about, and registration
-        verifies the repository is reachable with the configured token before
-        accepting it — see <code>POST /api/repositories</code> and the runbook.
-      </Alert>
+      <Box>
+        <Alert severity="info" sx={{ mb: 2 }}>
+          No repository is registered, so there is no ladder to climb yet.
+          Opifex only observes repositories it has been told about, and
+          registration verifies the repository is reachable with the configured
+          token before accepting it. Add one below — the list offered is what
+          the configured credential can actually reach.
+        </Alert>
+        {addButton}
+        {picker}
+      </Box>
     );
   }
 
   return (
     <Box>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        {ladderSentence()}
-      </Typography>
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        spacing={2}
+        sx={{
+          mb: 2,
+          alignItems: { sm: 'flex-start' },
+          justifyContent: 'space-between',
+        }}
+      >
+        <Typography variant="body2" color="text.secondary">
+          {ladderSentence()}
+        </Typography>
+        <Box sx={{ flexShrink: 0 }}>{addButton}</Box>
+      </Stack>
 
       {total > repositories.length && (
         <Alert severity="info" sx={{ mb: 2 }}>
@@ -95,9 +168,12 @@ export function RepositoriesSection({ canWrite }: RepositoriesSectionProps) {
             probe={probes[repository.id]}
             isProbing={probingId === repository.id}
             onTestAccess={() => void testAccess(repository.id)}
+            isRevealed={revealedId === repository.id}
           />
         ))}
       </Stack>
+
+      {picker}
     </Box>
   );
 }

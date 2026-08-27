@@ -58,6 +58,21 @@ export interface UseRepositoryLadderResult {
   /** Throws on failure, so the caller can show the API's own refusal. */
   save: (id: string, input: UpdateRepositoryInput) => Promise<void>;
   testAccess: (id: string) => Promise<void>;
+  /**
+   * Take in a repository `POST /repositories` just created (#401).
+   *
+   * Not a `refresh`, deliberately. A re-read sets `isLoading`, and the section
+   * renders a spinner in place of everything while it is true — including the
+   * picker dialog the operator is still standing in, which would be unmounted
+   * mid-flow by the very registration that succeeded.
+   *
+   * Not optimistic either: the argument is the row the API RETURNED, so what
+   * lands in the list is the API's account of the registration rather than the
+   * request that asked for it. Inserted in the API's own order (owner, then
+   * name) so the list looks the same as it will after the next real read, and
+   * idempotent by id so a double delivery cannot duplicate a row.
+   */
+  adopt: (repository: RepositorySummary) => void;
 }
 
 export function useRepositoryLadder(): UseRepositoryLadderResult {
@@ -146,6 +161,21 @@ export function useRepositoryLadder(): UseRepositoryLadderResult {
     [isMounted],
   );
 
+  const adopt = useCallback(
+    (repository: RepositorySummary) => {
+      // The guard is outside the updater on purpose: `total` has to move with
+      // the array or the section reports "showing 3 of 4" for a list of three.
+      // Two separate updaters cannot agree on whether a row was new.
+      if (repositories.some((row) => row.id === repository.id)) return;
+
+      setRepositories((current) =>
+        [...current, repository].sort(byOwnerThenName),
+      );
+      setTotal((current) => current + 1);
+    },
+    [repositories],
+  );
+
   return {
     repositories,
     total,
@@ -157,7 +187,18 @@ export function useRepositoryLadder(): UseRepositoryLadderResult {
     refresh,
     save,
     testAccess,
+    adopt,
   };
+}
+
+/** The API's `orderBy: [{ owner: 'asc' }, { name: 'asc' }]`, restated. */
+function byOwnerThenName(
+  left: RepositorySummary,
+  right: RepositorySummary,
+): number {
+  return (
+    left.owner.localeCompare(right.owner) || left.name.localeCompare(right.name)
+  );
 }
 
 export default useRepositoryLadder;

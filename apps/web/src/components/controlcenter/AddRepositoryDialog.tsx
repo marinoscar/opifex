@@ -439,19 +439,18 @@ function RepositoryRow({
   );
 
   if (!mark.addable) {
+    // Narrowed to a const, so the callback closes over a `string` instead of
+    // over a field TypeScript would have to re-narrow inside the closure.
+    const existing = repository.repositoryId;
+
     return (
       <ListItem
         divider
         aria-label={label}
         alignItems="flex-start"
         secondaryAction={
-          repository.repositoryId !== null ? (
-            <Button
-              size="small"
-              onClick={() =>
-                onShowRegistered(repository.repositoryId as string)
-              }
-            >
+          existing !== null ? (
+            <Button size="small" onClick={() => onShowRegistered(existing)}>
               Show it in the list
             </Button>
           ) : undefined
