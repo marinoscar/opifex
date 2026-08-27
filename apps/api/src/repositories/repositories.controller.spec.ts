@@ -82,9 +82,13 @@ describe('RepositoriesController (#401)', () => {
         unretire,
       } as unknown as Partial<RepositoriesService>);
 
-      await controller.unretire('r1', {}, 'user-1');
+      await controller.unretire('r1', { reason: 'back in service' }, 'user-1');
 
-      expect(unretire).toHaveBeenCalledWith('r1', {}, 'user-1');
+      expect(unretire).toHaveBeenCalledWith(
+        'r1',
+        { reason: 'back in service' },
+        'user-1',
+      );
     });
 
     it('answers 200 rather than 204, because the new state is the answer', async () => {
