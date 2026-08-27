@@ -14,6 +14,20 @@
  * field set was not an option: it drifts from the registry the first time
  * somebody adds a key, and nothing fails when it does.
  *
+ * ## Four keys are shown here as a signpost rather than as controls
+ *
+ * `supervisor.model.{provider,apiKey,name,baseUrl}` are configured together on
+ * the Credentials tab (#394, epic #391). Rendering a second, free-text editor
+ * for the model here would recreate at half scale the exact split that epic
+ * exists to remove — an operator setting a key on one tab and being told about
+ * a model setting on another. So this section names them, says where they
+ * went, and offers a way to get there.
+ *
+ * That is a NAMED exception to the paragraph above, not a hole in it: the list
+ * lives in `config/supervisorModel.ts` with its justification, every other key
+ * the registry publishes still renders here with no frontend change, and a key
+ * on that list which the response does not carry simply produces no signpost.
+ *
  * ## The draft is re-seeded during render, not in an effect
  *
  * A save returns the registry re-resolved, so a new document object means the
@@ -53,11 +67,13 @@ import {
 import { SettingRow } from './SettingRow';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { groupSettings, observedFor } from '../../config/operatorSettings';
+import { isSupervisorModelKey } from '../../config/supervisorModel';
 import {
   buildPatch,
   type DraftFieldValue,
   type SettingsDraft,
 } from '../../config/operatorSettingsDraft';
+import type { ControlCenterSectionKey } from '../../config/controlCenter';
 import type { FleetHealth } from '../../types/health';
 import type {
   OperatorSettingsDocument,
@@ -75,6 +91,8 @@ export interface SettingsSectionProps {
   fleet: FleetHealth | null;
   /** Sends exactly the keys given. Rejects to the caller's handler. */
   onSave: (changes: OperatorSettingsPatch) => Promise<void>;
+  /** Takes the operator to the tab that owns the promoted keys (#394). */
+  onNavigateToSection: (key: ControlCenterSectionKey) => void;
 }
 
 export function SettingsSection({
@@ -85,6 +103,7 @@ export function SettingsSection({
   canWrite,
   fleet,
   onSave,
+  onNavigateToSection,
 }: SettingsSectionProps) {
   const [draft, setDraft] = useState<SettingsDraft>({});
 
@@ -127,6 +146,10 @@ export function SettingsSection({
   const { changes, problems } = buildPatch(document.settings, draft);
   const changedKeys = Object.keys(changes);
   const problemKeys = Object.keys(problems);
+  // The promoted keys are removed from the generated rows and accounted for by
+  // a signpost in whichever group they came from. `groupSettings` still sees
+  // the whole document, so a group that consists ONLY of promoted keys still
+  // gets its heading and its signpost rather than vanishing.
   const groups = groupSettings(document.settings);
 
   const save = () => {
@@ -188,21 +211,31 @@ export function SettingsSection({
             {group.label}
           </Typography>
           <Divider sx={{ mb: 2 }} />
+          {group.entries.some((entry) => isSupervisorModelKey(entry.key)) && (
+            <PromotedKeysSignpost
+              keys={group.entries
+                .filter((entry) => isSupervisorModelKey(entry.key))
+                .map((entry) => entry.key)}
+              onNavigateToSection={onNavigateToSection}
+            />
+          )}
           <Stack component="ul" spacing={2} sx={{ p: 0, m: 0 }}>
-            {group.entries.map((entry) => (
-              <SettingRow
-                key={entry.key}
-                entry={entry}
-                draft={draft[entry.key]}
-                observed={observedFor(entry, fleet)}
-                canWrite={canWrite}
-                disabled={isSaving}
-                problem={problems[entry.key]}
-                onChange={change}
-                onRevert={revert}
-                onDiscard={discard}
-              />
-            ))}
+            {group.entries
+              .filter((entry) => !isSupervisorModelKey(entry.key))
+              .map((entry) => (
+                <SettingRow
+                  key={entry.key}
+                  entry={entry}
+                  draft={draft[entry.key]}
+                  observed={observedFor(entry, fleet)}
+                  canWrite={canWrite}
+                  disabled={isSaving}
+                  problem={problems[entry.key]}
+                  onChange={change}
+                  onRevert={revert}
+                  onDiscard={discard}
+                />
+              ))}
           </Stack>
         </Box>
       ))}
@@ -294,6 +327,48 @@ function OverlayBanner({ document }: { document: OperatorSettingsDocument }) {
           ? `Last attempted ${new Date(document.overlay.attemptedAt).toLocaleString()}.`
           : 'No load has been attempted yet.'}
       </Typography>
+    </Alert>
+  );
+}
+
+/**
+ * Where four keys went, and why they are not editable here.
+ *
+ * Named rather than hidden. An operator who came looking for
+ * `supervisor.model.name` — the setting the Test button on the other tab used
+ * to name at them — finds the string they were looking for, in the group they
+ * expected it in, with a way to get to it. Silently omitting the rows would
+ * make this section quietly incomplete, which is worse than a duplicate
+ * editor, not better.
+ */
+function PromotedKeysSignpost({
+  keys,
+  onNavigateToSection,
+}: {
+  keys: readonly string[];
+  onNavigateToSection: (key: ControlCenterSectionKey) => void;
+}) {
+  return (
+    <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+      <AlertTitle>Configured on the Credentials tab</AlertTitle>
+      <Stack
+        direction="row"
+        spacing={0.5}
+        sx={{ flexWrap: 'wrap', rowGap: 0.5, mb: 1 }}
+      >
+        {keys.map((key) => (
+          <Chip key={key} size="small" label={key} />
+        ))}
+      </Stack>
+      Choosing a model means asking the provider what the key can reach, so
+      these are one control there rather than a free-text box here. That split —
+      the key on one tab, the model name on another — is what sent an operator
+      looking for a setting the Test button had just named at them.
+      <Box sx={{ mt: 1 }}>
+        <Button size="small" onClick={() => onNavigateToSection('credentials')}>
+          Go to Credentials
+        </Button>
+      </Box>
     </Alert>
   );
 }

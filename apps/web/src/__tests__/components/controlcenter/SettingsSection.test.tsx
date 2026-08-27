@@ -24,6 +24,10 @@ import {
   operatorSettingsFixture,
 } from '../../mocks/operatorSettings';
 import { SettingsSectionContainer } from '../../../components/controlcenter/SettingsSectionContainer';
+import {
+  SUPERVISOR_MODEL_KEYS,
+  isSupervisorModelKey,
+} from '../../../config/supervisorModel';
 import type {
   OperatorSetting,
   OperatorSettingsDocument,
@@ -48,6 +52,7 @@ const FLEET = {
 interface Harness {
   onSaved: ReturnType<typeof vi.fn>;
   onSaveError: ReturnType<typeof vi.fn>;
+  onNavigateToSection: ReturnType<typeof vi.fn>;
 }
 
 function renderSection(
@@ -55,6 +60,7 @@ function renderSection(
 ): Harness {
   const onSaved = vi.fn();
   const onSaveError = vi.fn();
+  const onNavigateToSection = vi.fn();
 
   render(
     <SettingsSectionContainer
@@ -62,10 +68,11 @@ function renderSection(
       fleet={options.fleet === undefined ? FLEET : options.fleet}
       onSaved={onSaved}
       onSaveError={onSaveError}
+      onNavigateToSection={onNavigateToSection}
     />,
   );
 
-  return { onSaved, onSaveError };
+  return { onSaved, onSaveError, onNavigateToSection };
 }
 
 /** Serve this document instead of the default fixture. */
@@ -110,7 +117,11 @@ describe('SettingsSection', () => {
     it('renders every key the response carried, grouped', async () => {
       renderSection();
 
+      // Every key EXCEPT the four the supervisor model control took over
+      // (#394) — those are accounted for by the signpost below rather than by
+      // a row, and the next test is the one that holds that line.
       for (const entry of OPERATOR_SETTINGS_FIXTURE) {
+        if (isSupervisorModelKey(entry.key)) continue;
         expect(await row(entry.key)).toBeInTheDocument();
       }
       expect(
@@ -119,6 +130,30 @@ describe('SettingsSection', () => {
       expect(
         screen.getByRole('heading', { name: 'Execution' }),
       ).toBeInTheDocument();
+    });
+
+    it('shows the supervisor model keys as a signpost, not as controls', async () => {
+      // The one deliberate exception to "every key renders here", and the
+      // reason it exists: a free-text model box on this tab is precisely the
+      // split epic #391 removes. Leaving one behind would recreate it at half
+      // scale, so the keys are NAMED, their destination is said, and there is
+      // a way to get there — but there is no second editor.
+      const user = userEvent.setup();
+      const { onNavigateToSection } = renderSection();
+
+      await row('supervisor.hardSpendCeilingUsd');
+
+      for (const key of SUPERVISOR_MODEL_KEYS) {
+        expect(screen.queryByLabelText(key)).not.toBeInTheDocument();
+        // Named, so an operator who came looking for the setting the Test
+        // button shouted at them finds the string they were looking for.
+        expect(screen.getByText(key)).toBeInTheDocument();
+      }
+
+      await user.click(
+        screen.getByRole('button', { name: 'Go to Credentials' }),
+      );
+      expect(onNavigateToSection).toHaveBeenCalledWith('credentials');
     });
 
     it('renders a key and a group this build has never heard of', async () => {

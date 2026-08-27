@@ -23,6 +23,7 @@ import { useCallback } from 'react';
 
 import { SettingsSection } from './SettingsSection';
 import { useOperatorSettings } from '../../hooks/useOperatorSettings';
+import type { ControlCenterSectionKey } from '../../config/controlCenter';
 import type { FleetHealth } from '../../types/health';
 import type { OperatorSettingsPatch } from '../../types/operatorSettings';
 
@@ -31,6 +32,14 @@ export interface SettingsSectionContainerProps {
   fleet: FleetHealth | null;
   onSaved: (message: string) => void;
   onSaveError: (message: string) => void;
+  /**
+   * The shell's section navigator, passed straight through.
+   *
+   * Only the signpost for the promoted supervisor keys uses it (#394): the
+   * Configuration section names those keys and has to be able to take the
+   * operator to the tab that owns them, which is the shell's job to know.
+   */
+  onNavigateToSection: (key: ControlCenterSectionKey) => void;
 }
 
 export function SettingsSectionContainer({
@@ -38,6 +47,7 @@ export function SettingsSectionContainer({
   fleet,
   onSaved,
   onSaveError,
+  onNavigateToSection,
 }: SettingsSectionContainerProps) {
   const { document, isLoading, error, isSaving, save } = useOperatorSettings();
 
@@ -74,6 +84,7 @@ export function SettingsSectionContainer({
       canWrite={canWrite}
       fleet={fleet}
       onSave={handleSave}
+      onNavigateToSection={onNavigateToSection}
     />
   );
 }
