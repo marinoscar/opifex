@@ -342,6 +342,72 @@ describe('RepositoriesService', () => {
     });
   });
 
+  describe('list, and the unassigned bucket (#404)', () => {
+    beforeEach(() => {
+      prisma.repository.findMany.mockResolvedValue([]);
+      prisma.repository.count.mockResolvedValue(0);
+    });
+
+    function whereOf(): Record<string, unknown> {
+      return (
+        prisma.repository.findMany.mock.calls[0][0] as {
+          where: Record<string, unknown>;
+        }
+      ).where;
+    }
+
+    it('applies no project filter when none is asked for', async () => {
+      await service.list({ page: 1, pageSize: 25 } as never);
+      expect(whereOf()).not.toHaveProperty('projectId');
+    });
+
+    it('filters to one project by id', async () => {
+      const projectId = '33333333-3333-3333-3333-333333333333';
+      await service.list({ page: 1, pageSize: 25, projectId } as never);
+      expect(whereOf()).toMatchObject({ projectId });
+    });
+
+    it('translates `none` into a NULL project, not into no filter at all', async () => {
+      // The whole point of #404's unassigned bucket: every repository
+      // registered before projects existed is in it, so if `none` fell through
+      // to "any project" the one group an operator most needs to find would
+      // silently return everything instead.
+      await service.list({ page: 1, pageSize: 25, projectId: 'none' } as never);
+      expect(whereOf()).toMatchObject({ projectId: null });
+    });
+
+    it('still lists an unassigned repository under no filter', async () => {
+      // `projectId: null` is a state, not an omission — an unassigned
+      // repository is a full member of the registry.
+      prisma.repository.findMany.mockResolvedValue([
+        repositoryRow({ projectId: null }),
+      ]);
+      prisma.repository.count.mockResolvedValue(1);
+
+      const result = await service.list({ page: 1, pageSize: 25 } as never);
+
+      expect(result.total).toBe(1);
+      expect(result.items[0].projectId).toBeNull();
+    });
+
+    it('enables an unassigned repository without ever consulting a project', async () => {
+      // The enablement ladder does not read `projectId`, and #404 must not
+      // make it start: a repository in no project is still dispatchable.
+      const row = repositoryRow({ projectId: null, dispatchEnabled: false });
+      prisma.repository.findUnique.mockResolvedValue(row);
+      prisma.repository.update.mockResolvedValue({
+        ...row,
+        dispatchEnabled: true,
+      });
+
+      const updated = await service.update(row.id, { dispatchEnabled: true });
+
+      expect(updated.dispatchEnabled).toBe(true);
+      expect(updated.projectId).toBeNull();
+      expect(prisma.project.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
   describe('listObserved', () => {
     it('returns observed repositories, longest-waiting first', async () => {
       // A tick that runs out of rate-limit budget has still made progress on

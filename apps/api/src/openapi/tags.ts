@@ -253,6 +253,16 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
           'number recomputed from a second copy of the thresholds.',
       },
       {
+        name: 'Projects',
+        description:
+          'Groupings of repositories. A project is organisational only \u2014 VISION \u00a711 makes ' +
+          'Opifex single-operator by design, so a project is not a tenancy boundary, not a ' +
+          'permission scope and not something the dispatcher reads. Repositories are managed ' +
+          'inside one, and a repository with NO project is a first-class state rather than a ' +
+          'gap: it is still observed, still dispatchable, and it is what deleting a project ' +
+          'leaves behind, since removing a grouping never removes the things grouped.',
+      },
+      {
         name: 'Repositories',
         description:
           'Which repositories Opifex watches, and the policy for each: whether the reconciler ' +
