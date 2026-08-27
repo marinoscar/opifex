@@ -42,7 +42,7 @@ function repositoryRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const ACTOR = '99999999-9999-9999-9999-999999999999';
+const ACTOR = '3f6d9e5a-2b1c-4a7e-9c8d-5e4f3a2b1c0d';
 const REPO_ID = '11111111-1111-1111-1111-111111111111';
 
 type Delegates = Record<string, Record<string, jest.Mock>>;
