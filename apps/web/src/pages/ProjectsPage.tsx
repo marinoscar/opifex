@@ -61,9 +61,17 @@ import type { Project, ProjectScope } from '../types/projects';
 /** The permission `ProjectsController` and `RepositoriesController` enforce. */
 const WRITE_PERMISSION = 'projects:write';
 
-/** What it takes to open the Control Center, which now signposts back here. */
+/** What it takes to open the Control Center. */
 const CONTROL_CENTER_PERMISSION = 'system_settings:read';
-const CONTROL_CENTER_PATH = '/admin/settings?section=repositories';
+/**
+ * The Control Center's LANDING section, not its Repositories one.
+ *
+ * That section is now a signpost back to this page (#406), so deep-linking to
+ * it would send an operator on a round trip to be told to come back. What is
+ * actually next door is the GitHub credential and the readiness chain — which
+ * is where somebody whose repository will not register needs to go.
+ */
+const CONTROL_CENTER_PATH = '/admin/settings';
 
 /**
  * Which group is open.

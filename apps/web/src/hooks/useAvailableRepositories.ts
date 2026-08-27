@@ -181,7 +181,7 @@ export function useAvailableRepositories(): UseAvailableRepositoriesResult {
  * Why the REQUEST failed, in the operator's terms.
  *
  * The 403 is called out for the same reason `useOperatorSettings` calls it
- * out: an account can reach the Control Center and still be refused this list,
+ * out: an account can reach the Projects screen and still be refused this list,
  * and that is a fact about the account rather than about the credential.
  */
 function describe(error: unknown): string {

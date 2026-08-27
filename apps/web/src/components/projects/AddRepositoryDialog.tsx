@@ -109,7 +109,7 @@ export interface AddRepositoryDialogProps {
 
 /**
  * Mounted only while it is open, so the listing is read when the operator asks
- * for it rather than on every Control Center page load — a GitHub request is
+ * for it rather than on every load of the Projects panel — a GitHub request is
  * not free, and `useAvailableRepositories` reads on mount.
  */
 export function AddRepositoryDialog({
