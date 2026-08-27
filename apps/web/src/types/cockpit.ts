@@ -522,6 +522,18 @@ export interface RepositorySummary {
   wallClockTimeoutMinutes: number | null;
   pathConstraints: string[];
   lastObservedAt: string | null;
+  /**
+   * When this repository was stood down, or null if it never has been (#405).
+   *
+   * STORED, not derived from the four flags above. All four off is reachable
+   * without anyone deciding anything — four PATCHes, or a registration that
+   * passed `observeEnabled: false` — so the flags cannot tell a stand-down
+   * from a pause. Read THIS field to decide whether to offer retire or
+   * un-retire, never the flags.
+   */
+  retiredAt: string | null;
+  /** Who stood it down. Null when not retired, or when that account is gone. */
+  retiredById: string | null;
   createdAt: string;
   updatedAt: string;
 }

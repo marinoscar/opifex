@@ -236,6 +236,11 @@ import type {
 import type { SupervisorModelCatalog } from '../types/supervisorModels';
 import type { AvailableRepositories } from '../types/repositories';
 import type {
+  Project,
+  ProjectDeletion,
+  ProjectListPage,
+} from '../types/projects';
+import type {
   MetricsSummary,
   QueueEntry,
   RunDetail,
@@ -271,13 +276,27 @@ export interface RepositoriesPage {
   pageSize: number;
 }
 
-/** `GET /repositories` — every repository Opifex is registered against. */
+/**
+ * `GET /repositories` — every repository Opifex is registered against.
+ *
+ * `projectId` takes a uuid or the literal `'none'`, which is the unassigned
+ * bucket. That is a member of the filter rather than a separate flag because
+ * unassigned is an ANSWER to "which project", and every repository registered
+ * before #404 is in it.
+ *
+ * `retired` OMITTED means both. Defaulting it to `false` here would hide a
+ * repository the moment it was retired, leaving an operator unable to find the
+ * thing they just stood down in order to un-retire it.
+ */
 export async function getRepositories(
   params: {
     page?: number;
     pageSize?: number;
     observeEnabled?: boolean;
     dispatchEnabled?: boolean;
+    /** A project id, or `'none'` for the repositories in no project at all. */
+    projectId?: string;
+    retired?: boolean;
   } = {},
   signal?: AbortSignal,
 ): Promise<RepositoriesPage> {
@@ -289,6 +308,12 @@ export async function getRepositories(
   }
   if (params.dispatchEnabled !== undefined) {
     searchParams.set('dispatchEnabled', String(params.dispatchEnabled));
+  }
+  if (params.projectId !== undefined) {
+    searchParams.set('projectId', params.projectId);
+  }
+  if (params.retired !== undefined) {
+    searchParams.set('retired', String(params.retired));
   }
 
   const query = searchParams.toString();
@@ -422,6 +447,204 @@ export async function createRepository(
   signal?: AbortSignal,
 ): Promise<RepositorySummary> {
   return api.post<RepositorySummary>('/repositories', input, { signal });
+}
+
+// ---------------------------------------------------------------------------
+// Standing a repository down, and taking it away (#405)
+// ---------------------------------------------------------------------------
+
+/**
+ * `POST /repositories/:id/retire` — stand a repository down, keeping its
+ * history.
+ *
+ * This is the removal action for anything that has ever run. It turns all four
+ * rungs off in one act and STORES `retiredAt`, which is why a retired
+ * repository can be told apart from one that was merely never enabled — the
+ * flags alone cannot make that distinction, and un-retire would have nothing
+ * to undo.
+ *
+ * Idempotent: retiring an already-retired repository returns it unchanged and
+ * writes no second audit row. `reason` is optional, because requiring a
+ * justification produces the string "asdf".
+ */
+export async function retireRepository(
+  id: string,
+  reason?: string,
+  signal?: AbortSignal,
+): Promise<RepositorySummary> {
+  return api.post<RepositorySummary>(
+    `/repositories/${encodeURIComponent(id)}/retire`,
+    reason ? { reason } : {},
+    { signal },
+  );
+}
+
+/**
+ * `POST /repositories/:id/unretire` — put a retired repository back on the
+ * ladder.
+ *
+ * Clears `retiredAt`. It does NOT restore the rungs that were on before:
+ * un-retiring returns the repository to the bottom of the ladder, and the
+ * operator climbs it again deliberately.
+ */
+export async function unretireRepository(
+  id: string,
+  reason?: string,
+  signal?: AbortSignal,
+): Promise<RepositorySummary> {
+  return api.post<RepositorySummary>(
+    `/repositories/${encodeURIComponent(id)}/unretire`,
+    reason ? { reason } : {},
+    { signal },
+  );
+}
+
+/**
+ * `DELETE /repositories/:id` — de-register a repository entirely. 204.
+ *
+ * **Refused with a 400 while the repository has work orders**, because
+ * deleting would cascade away runs and their provenance — the graph VISION §5
+ * calls the product. This is therefore only honest for a repository nothing
+ * has ever happened in; anything with history is retired instead.
+ */
+export async function deleteRepository(
+  id: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await api.delete<void>(`/repositories/${encodeURIComponent(id)}`, { signal });
+}
+
+// ---------------------------------------------------------------------------
+// Projects (#404, epic #403)
+// ---------------------------------------------------------------------------
+
+/**
+ * `GET /projects` — the groups, each carrying how many repositories are in it.
+ *
+ * Repositories with no project are NOT listed here and are not missing: ask
+ * for them with `getRepositories({ projectId: 'none' })`.
+ */
+export async function getProjects(
+  params: { page?: number; pageSize?: number; search?: string } = {},
+  signal?: AbortSignal,
+): Promise<ProjectListPage> {
+  const searchParams = new URLSearchParams();
+  if (params.page) searchParams.set('page', String(params.page));
+  if (params.pageSize) searchParams.set('pageSize', String(params.pageSize));
+  // Trimmed and dropped when empty: the API's schema rejects a blank `search`
+  // with a 400, and "I cleared the box" means no filter rather than a filter
+  // matching nothing.
+  const search = params.search?.trim() ?? '';
+  if (search !== '') searchParams.set('search', search);
+
+  const query = searchParams.toString();
+  return api.get<ProjectListPage>(query ? `/projects?${query}` : '/projects', {
+    signal,
+  });
+}
+
+/**
+ * What `POST /projects` accepts.
+ *
+ * `slug` is optional and derived from `name` when omitted. Supplying one is
+ * how an operator gets a handle shorter or steadier than the name.
+ */
+export interface CreateProjectInput {
+  name: string;
+  slug?: string;
+  description?: string | null;
+}
+
+/**
+ * `POST /projects` — 201 with the created project.
+ *
+ * Rejects with `ApiError`:
+ *  - **409** — that slug is taken. Never silently suffixed, and the message
+ *    names the slug even when it was derived and nobody typed it.
+ *  - **400** — a name with no character in the slug alphabet derives nothing,
+ *    so an explicit slug is asked for rather than an identifier invented.
+ */
+export async function createProject(
+  input: CreateProjectInput,
+  signal?: AbortSignal,
+): Promise<Project> {
+  return api.post<Project>('/projects', input, { signal });
+}
+
+/**
+ * What `PATCH /projects/:id` accepts. Omitted fields are left alone, and at
+ * least one of the three must be present — a body with none is a 400 rather
+ * than a 200 reporting success for a write that did nothing.
+ *
+ * **Renaming does not move the slug.** Derivation happens once, at creation.
+ */
+export interface UpdateProjectInput {
+  name?: string;
+  slug?: string;
+  description?: string | null;
+}
+
+export async function updateProject(
+  id: string,
+  input: UpdateProjectInput,
+  signal?: AbortSignal,
+): Promise<Project> {
+  return api.patch<Project>(`/projects/${encodeURIComponent(id)}`, input, {
+    signal,
+  });
+}
+
+/**
+ * `DELETE /projects/:id` — removes the label, never the repositories.
+ *
+ * They become unassigned: still registered, still observed, still dispatchable.
+ * The response says how many, so a caller can report the non-cascade rather
+ * than assert it. Unlike deleting a repository this is never refused for
+ * having contents — a project owns no work orders, runs or events.
+ */
+export async function deleteProject(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ProjectDeletion> {
+  return api.delete<ProjectDeletion>(`/projects/${encodeURIComponent(id)}`, {
+    signal,
+  });
+}
+
+/**
+ * `PUT /projects/:id/repositories/:repositoryId` — file a repository here.
+ *
+ * Idempotent, and it MOVES: a repository already in another project is
+ * reassigned to this one rather than refused.
+ */
+export async function assignRepositoryToProject(
+  projectId: string,
+  repositoryId: string,
+  signal?: AbortSignal,
+): Promise<RepositorySummary> {
+  return api.put<RepositorySummary>(
+    `/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repositoryId)}`,
+    undefined,
+    { signal },
+  );
+}
+
+/**
+ * `DELETE /projects/:id/repositories/:repositoryId` — remove the grouping, not
+ * the repository. It stays registered and becomes unassigned.
+ *
+ * 404 when the repository is in a DIFFERENT project: the path asserts it is in
+ * this one, so a stale screen cannot unassign it from wherever it really went.
+ */
+export async function unassignRepositoryFromProject(
+  projectId: string,
+  repositoryId: string,
+  signal?: AbortSignal,
+): Promise<RepositorySummary> {
+  return api.delete<RepositorySummary>(
+    `/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repositoryId)}`,
+    { signal },
+  );
 }
 
 /**
