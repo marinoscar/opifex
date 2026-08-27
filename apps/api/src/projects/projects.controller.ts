@@ -115,7 +115,11 @@ export class ProjectsController {
     description:
       'Omitted fields are left unchanged. **Renaming does not move the slug**: derivation happens ' +
       'once, at creation, because the slug is the stable handle everything else referenced. ' +
-      'Changing it is possible and has to be asked for explicitly.',
+      'Changing it is possible and has to be asked for explicitly.\n\nAt least one of `name`, ' +
+      '`slug` or `description` must be present — a body with none of them is a 400 rather than ' +
+      'a 200 reporting success for a write that did nothing. That rule is a zod refinement and ' +
+      'so has no JSON Schema form; it is stated here because the request schema below cannot ' +
+      'express it.',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiDataResponse(ProjectResponseDto, { description: 'The updated project' })
