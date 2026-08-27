@@ -121,6 +121,18 @@ export const repositoryResponseSchema = z.object({
   wallClockTimeoutMinutes: z.number().int().nullable(),
   pathConstraints: z.array(z.string()),
   lastObservedAt: z.iso.datetime().nullable(),
+  /**
+   * When this repository was stood down, or null if it never has been (#405).
+   *
+   * Stored, not derived from the four flags above. All four off is reachable
+   * without anyone deciding anything — four PATCHes, or a registration that
+   * passed `observeEnabled: false` — so it cannot distinguish a stand-down
+   * from a pause. A client should read THIS field to decide whether to offer
+   * "retire" or "un-retire", never the flags.
+   */
+  retiredAt: z.iso.datetime().nullable(),
+  /** Who stood it down. Null when not retired, or when that account is gone. */
+  retiredById: z.uuid().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -146,8 +158,34 @@ export const listRepositoriesQuerySchema = z.object({
    * most needs to find would be the only group with no query that returns it.
    */
   projectId: z.union([z.uuid(), z.literal('none')]).optional(),
+  /**
+   * Filter on retirement. Omitted means BOTH — a retired repository is still
+   * listed, because hiding it would leave an operator unable to find the thing
+   * they just retired in order to un-retire it.
+   */
+  retired: z.stringbool().optional(),
 });
 
 export class ListRepositoriesQueryDto extends createZodDto(
   listRepositoriesQuerySchema,
 ) {}
+
+/**
+ * The body of a retire or un-retire request.
+ *
+ * Both are actions rather than resource edits, so the body carries nothing
+ * about the resulting state — the whole point of #405 is that the state is not
+ * the caller's to compose. All it may carry is why.
+ */
+export const retireRepositorySchema = z.object({
+  /**
+   * Free prose, recorded on the audit row.
+   *
+   * Optional, because requiring a justification produces the string "asdf".
+   * It is the one field that can answer "was this a decision, and whose?" in
+   * the operator's own words rather than by inference from a timestamp.
+   */
+  reason: z.string().trim().min(1).max(500).optional(),
+});
+
+export class RetireRepositoryDto extends createZodDto(retireRepositorySchema) {}

@@ -15,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type {
   ListRepositoriesQueryDto,
   RegisterRepositoryDto,
+  RetireRepositoryDto,
   UpdateRepositoryDto,
 } from './dto/repository.dto';
 
@@ -53,6 +54,12 @@ export class RepositoriesService {
       // of one, so it must not fall through to "any project" here.
       ...(query.projectId !== undefined && {
         projectId: query.projectId === 'none' ? null : query.projectId,
+      }),
+      // Omitting `retired` means BOTH, deliberately: a retired repository is
+      // still listed. Hiding it would leave an operator unable to find the
+      // thing they just retired in order to un-retire it.
+      ...(query.retired !== undefined && {
+        retiredAt: query.retired ? { not: null } : null,
       }),
     };
 
@@ -159,6 +166,34 @@ export class RepositoriesService {
       }
     }
 
+    // A retired repository is OFF the ladder, and a PATCH must not be able to
+    // put one rung back on. Allowing it would leave `retiredAt` set on a
+    // repository that is being observed or dispatched to — a row that says two
+    // contradictory things, and the invariant every reader of `retiredAt`
+    // depends on. Turning a rung ON while retired IS un-retiring, so the
+    // remedy is the endpoint that says so and writes the audit row.
+    //
+    // Everything else about a retired repository stays editable: budget
+    // ceiling, timeout, path constraints, project. Those change what a future
+    // run would be allowed to do, not whether one can happen.
+    if (existing.retiredAt) {
+      const rungs = (
+        [
+          'observeEnabled',
+          'mirrorLabelsEnabled',
+          'specFeedbackEnabled',
+          'dispatchEnabled',
+        ] as const
+      ).filter((rung) => dto[rung] === true);
+
+      if (rungs.length > 0) {
+        throw new BadRequestException(
+          `${existing.owner}/${existing.name} is retired, so ${rungs.join(', ')} cannot be enabled. ` +
+            'Un-retire it first: POST /api/repositories/:id/unretire.',
+        );
+      }
+    }
+
     // Enabling dispatch is the moment a repository stops being observed and
     // starts being written to, so it is re-verified: a token whose access was
     // revoked since registration must not have dispatch turned on against it.
@@ -197,6 +232,187 @@ export class RepositoriesService {
     });
 
     return toResponse(repository);
+  }
+
+  /**
+   * Stand a repository down: the whole ladder off, in one act, recorded.
+   *
+   * ## Why this exists rather than four PATCHes
+   *
+   * `DELETE` is refused on any repository with work orders (see `remove`
+   * below), so the only removal action available fails on exactly the
+   * repositories an operator most wants to tidy — the used ones. Retiring is
+   * what the system actually wants: the repository stops being observed and
+   * stops being written to, and its runs, work orders and provenance are not
+   * touched at all.
+   *
+   * Composing it client-side out of four PATCHes would make a dropped
+   * connection halfway through leave a HALF-retired repository — observation
+   * off, dispatch still on — which is the one intermediate state nobody would
+   * choose. One request, one transaction.
+   *
+   * ## Why `retiredAt` is stored and not read off the flags
+   *
+   * The full argument is on the `Repository` model in schema.prisma. The short
+   * form: all four flags off is reachable without anyone deciding anything, so
+   * the derived reading cannot tell a stand-down from a pause, and un-retire
+   * would have nothing to undo.
+   *
+   * ## Atomic, including the audit row
+   *
+   * The update and the `audit_events` row are one transaction, so a retired
+   * repository without a record of who retired it is not a reachable state.
+   * This is the opposite of the operator-settings write path, which swallows a
+   * failed audit write because the change is already in force — here the
+   * change is not yet in force, and the safe direction to fail is closed: a
+   * repository that stayed on the ladder is the status quo, and the operator
+   * gets an error rather than silence.
+   *
+   * No GitHub call happens in here, deliberately. Retiring enables nothing, so
+   * there is nothing to re-verify, and a network round trip inside a
+   * transaction would hold a connection open for the length of GitHub's
+   * latency.
+   */
+  async retire(id: string, dto: RetireRepositoryDto, actorUserId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.repository.findUnique({ where: { id } });
+      if (!existing) {
+        throw new NotFoundException(`Repository ${id} not found`);
+      }
+
+      // Idempotent, and that is the point of the requirement it serves: an
+      // operator whose connection dropped mid-request retries, and the retry
+      // must not be a second decision. No second audit row either — one act
+      // recorded twice would read as two.
+      if (existing.retiredAt) {
+        return toResponse(existing);
+      }
+
+      const repository = await tx.repository.update({
+        where: { id },
+        data: {
+          // All four, unconditionally. Not "the ones currently on": the caller
+          // asked for the repository to be off the ladder, and a conditional
+          // write would make the result depend on a read that raced.
+          observeEnabled: false,
+          mirrorLabelsEnabled: false,
+          specFeedbackEnabled: false,
+          dispatchEnabled: false,
+          retiredAt: new Date(),
+          retiredById: actorUserId,
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          actorUserId,
+          action: 'repository.retired',
+          targetType: 'repository',
+          targetId: repository.id,
+          meta: {
+            repository: `${repository.owner}/${repository.name}`,
+            reason: dto.reason ?? null,
+            // The rungs it was standing on when it was stood down. Recorded
+            // HERE because un-retire deliberately does not restore them, so
+            // this row is the only place the previous ladder position
+            // survives — and "what was this allowed to do before?" is the
+            // question an audit of a retirement is asked.
+            //
+            // Not redacted: four booleans and an `owner/name`, none of which
+            // is a credential. `common/crypto/redact.ts` guards secret VALUES,
+            // and there are none in this payload.
+            ladderBefore: {
+              observeEnabled: existing.observeEnabled,
+              mirrorLabelsEnabled: existing.mirrorLabelsEnabled,
+              specFeedbackEnabled: existing.specFeedbackEnabled,
+              dispatchEnabled: existing.dispatchEnabled,
+            },
+          } as never,
+        },
+      });
+
+      this.logger.log(
+        `Retired ${repository.owner}/${repository.name} by ${actorUserId}` +
+          (dto.reason ? `: ${dto.reason}` : ''),
+      );
+
+      return toResponse(repository);
+    });
+  }
+
+  /**
+   * Put a retired repository back on the ladder, at the BOTTOM.
+   *
+   * Observation on, every outward write off — which is exactly where
+   * `register` puts a newly registered repository, and exactly what VISION
+   * §12's staged rollout means by the first rung. The bottom of the ladder is
+   * observation, not nothing: a repository nobody observes is invisible, and
+   * "off the ladder entirely" is the state this is undoing.
+   *
+   * Emphatically NOT a restore of the rungs it previously held. Retiring is
+   * often the response to a repository that was doing something unwanted, and
+   * an un-retire that silently switched dispatch back on would re-enable the
+   * factory's most consequential permission as a side effect of a button
+   * labelled "un-retire". Whoever wants dispatch back can ask for it, and that
+   * PATCH re-verifies reachability the way it always has.
+   *
+   * `retiredById` is cleared with `retiredAt`: who retired it is history, and
+   * history lives in `audit_events`. An actor beside a null timestamp would be
+   * a state with no meaning.
+   */
+  async unretire(id: string, dto: RetireRepositoryDto, actorUserId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.repository.findUnique({ where: { id } });
+      if (!existing) {
+        throw new NotFoundException(`Repository ${id} not found`);
+      }
+
+      // Idempotent for the same reason as `retire`, and with one extra
+      // consequence worth naming: un-retiring a repository that is not retired
+      // must NOT reset its ladder. Otherwise a stray call would turn off
+      // dispatch on a repository nobody retired.
+      if (!existing.retiredAt) {
+        return toResponse(existing);
+      }
+
+      const repository = await tx.repository.update({
+        where: { id },
+        data: {
+          observeEnabled: true,
+          mirrorLabelsEnabled: false,
+          specFeedbackEnabled: false,
+          dispatchEnabled: false,
+          retiredAt: null,
+          retiredById: null,
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          actorUserId,
+          action: 'repository.unretired',
+          targetType: 'repository',
+          targetId: repository.id,
+          meta: {
+            repository: `${repository.owner}/${repository.name}`,
+            reason: dto.reason ?? null,
+            retiredAt: existing.retiredAt.toISOString(),
+            retiredById: existing.retiredById,
+            // Stated in the row rather than left to be inferred from the
+            // flags, so an auditor reading this event alone knows the
+            // repository came back observed and nothing more.
+            restoredTo: 'observe',
+          } as never,
+        },
+      });
+
+      this.logger.log(
+        `Un-retired ${repository.owner}/${repository.name} by ${actorUserId}; ` +
+          'back at the bottom of the ladder (observe only)',
+      );
+
+      return toResponse(repository);
+    });
   }
 
   /**
@@ -305,6 +521,8 @@ function toResponse(repository: Repository) {
     wallClockTimeoutMinutes: repository.wallClockTimeoutMinutes,
     pathConstraints: repository.pathConstraints,
     lastObservedAt: repository.lastObservedAt?.toISOString() ?? null,
+    retiredAt: repository.retiredAt?.toISOString() ?? null,
+    retiredById: repository.retiredById,
     createdAt: repository.createdAt.toISOString(),
     updatedAt: repository.updatedAt.toISOString(),
   };
