@@ -35,6 +35,28 @@
  * against different credentials and a row that was addable a moment ago can be
  * refused now. 400, 409 and 503 are therefore rendered from the API's own
  * answer rather than treated as impossible.
+ *
+ * ## Several at once, and partial success as the ORDINARY outcome (#407)
+ *
+ * Onboarding a team's repositories used to be this whole flow per row — open,
+ * search, select, confirm, reopen. Selection is now a set, and the transport
+ * is N sequential `POST /repositories` calls, argued on
+ * `useAvailableRepositories.registerMany`. Three consequences are visible
+ * here:
+ *
+ *  - **The report is per repository.** A batch of eight where two are already
+ *    registered and one is unreachable is a normal answer, not an error, so
+ *    the outcome list says what each row did and nothing is rolled back.
+ *  - **The selection is bounded by what is on screen.** `selectedNames` is
+ *    pruned to the addable rows of the ANSWERED page on every new listing, and
+ *    select-all covers that same set. Selecting rows an operator cannot see —
+ *    on another page, or under a search they have since changed — is how the
+ *    wrong repository gets registered.
+ *  - **After a mixed result the successes drop out of the selection and the
+ *    refusals stay in.** Clearing everything would lose the record of what to
+ *    retry; keeping everything would invite a second `POST` for a repository
+ *    that already registered, whose only possible answer is a 409 that means
+ *    nothing.
  */
 
 import { useState } from 'react';
@@ -43,6 +65,7 @@ import {
   AlertTitle,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -50,10 +73,12 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
   LinearProgress,
   List,
   ListItem,
   ListItemButton,
+  ListItemIcon,
   ListItemText,
   Stack,
   TextField,
@@ -62,16 +87,19 @@ import {
 } from '@mui/material';
 
 import {
+  batchPresentation,
   listingPresentation,
   markFor,
   pageSummary,
   pushedNote,
+  refusalRemedies,
+  refusedResults,
   registrationRefusal,
+  resultLine,
   truncationNote,
-  type RegistrationRefusal,
+  type RegistrationResult,
 } from '../../config/availableRepositories';
 import { useAvailableRepositories } from '../../hooks/useAvailableRepositories';
-import { ApiError } from '../../services/api';
 import type { RepositorySummary } from '../../types/cockpit';
 import type {
   AvailableRepositories,
@@ -99,8 +127,13 @@ export interface AddRepositoryDialogProps {
   projectName?: string;
   onClose: () => void;
   /**
-   * The row the API created. The section adds it to its list, so a
-   * registration shows up without a manual refresh.
+   * A row the API created. The panel adds it to its list, so a registration
+   * shows up without a manual refresh.
+   *
+   * Called ONCE PER SUCCESSFUL registration, so a batch that half succeeded
+   * still puts everything that landed into the list behind. The refusals are
+   * reported in this dialog and are not announced to the panel — there is no
+   * row to add for them.
    */
   onRegistered: (repository: RepositorySummary) => void;
   /** Send the operator to a registration that already exists, in the list behind. */
@@ -128,33 +161,49 @@ export function AddRepositoryDialog({
     goToPage,
     applySearch,
     refresh,
-    isRegistering,
-    register,
+    progress,
+    registerMany,
   } = useAvailableRepositories();
 
   /** What the operator is typing. The APPLIED search is the hook's. */
   const [searchDraft, setSearchDraft] = useState('');
-  const [selected, setSelected] = useState<string | null>(null);
-  const [refusal, setRefusal] = useState<
-    (RegistrationRefusal & { detail: string }) | null
-  >(null);
-  const [registered, setRegistered] = useState<string | null>(null);
+  /** The chosen repositories, by full name. Never contains a row that is not
+   * addable on the page currently answered — see the prune below. */
+  const [selectedNames, setSelectedNames] = useState<string[]>([]);
+  /** What the last batch did, per repository. Null before there has been one. */
+  const [results, setResults] = useState<RegistrationResult[] | null>(null);
+
+  const rows = listing?.repositories ?? [];
+  const addable = rows.filter((row) => markFor(row).addable);
 
   // Re-seed on a fresh answer — a new page, a new search, a refresh after a
   // write. During render rather than in an effect, the way
   // `SupervisorModelPanel` does it, so no control paints a stale value for a
   // frame and the repo's `react-hooks/set-state-in-effect` lint stays
-  // satisfied. The success note deliberately survives: the refresh that
-  // follows a registration is the one that proves it landed.
+  // satisfied. The report deliberately survives: the refresh that follows a
+  // batch is the one that proves what landed.
+  //
+  // The selection is PRUNED rather than cleared, and that single rule is what
+  // bounds it. A row that is not addable on the answered page drops out — so
+  // paging or searching empties the selection, since none of the old rows are
+  // in the new answer, while the re-list after a batch drops exactly the
+  // repositories that just became `already registered` and keeps the refusals
+  // the operator may want to try again. Nothing can be registered that is not
+  // on the page in front of them.
   const [seededFrom, setSeededFrom] = useState(listing);
   if (listing !== seededFrom) {
     setSeededFrom(listing);
-    setSelected(null);
-    setRefusal(null);
+    const stillAddable = new Set(addable.map((row) => row.fullName));
+    setSelectedNames((current) =>
+      current.filter((name) => stillAddable.has(name)),
+    );
   }
 
-  const rows = listing?.repositories ?? [];
-  const chosen = rows.find((row) => row.fullName === selected) ?? null;
+  // In the API's order rather than in click order: what is registered should
+  // be what the operator can see, top to bottom, and a set has no order of its
+  // own to prefer.
+  const chosen = rows.filter((row) => selectedNames.includes(row.fullName));
+  const allSelected = addable.length > 0 && chosen.length === addable.length;
 
   const submitSearch = (event: React.FormEvent) => {
     event.preventDefault();
@@ -166,53 +215,79 @@ export function AddRepositoryDialog({
     applySearch('');
   };
 
-  const registerChosen = async () => {
-    if (chosen === null) return;
-    setRefusal(null);
-    setRegistered(null);
+  /** Select-all, over the rows on THIS page under THIS search, and no others. */
+  const toggleAll = () => {
+    setSelectedNames(allSelected ? [] : addable.map((row) => row.fullName));
+  };
 
-    try {
-      const created = await register(chosen, projectId);
-      setRegistered(created.fullName);
-      // The section's list is told before this dialog re-reads anything, so
-      // the new repository is behind the dialog the moment it is created.
-      onRegistered(created);
-      // And the picker itself re-reads, so the row the operator just added
-      // flips to `already registered` instead of inviting a second attempt.
-      await refresh();
-    } catch (error) {
-      const status = error instanceof ApiError ? error.status : null;
-      setRefusal({
-        ...registrationRefusal(status, chosen.fullName),
-        detail:
-          error instanceof Error
-            ? error.message
-            : 'The API gave no reason for the refusal.',
-      });
+  const toggleOne = (fullName: string) => {
+    setSelectedNames((current) =>
+      current.includes(fullName)
+        ? current.filter((name) => name !== fullName)
+        : [...current, fullName],
+    );
+  };
+
+  const registerChosen = async () => {
+    if (chosen.length === 0) return;
+    // Dropped before the batch starts rather than left underneath it: a report
+    // from the previous attempt sitting above a running one would be read as
+    // this one's answer.
+    setResults(null);
+
+    // Never rejects — a refusal is one entry in the answer, not a thrown
+    // error. See `registerMany`.
+    const outcomes = await registerMany(chosen, projectId);
+    setResults(outcomes);
+
+    // The panel's list is told before this dialog re-reads anything, so every
+    // repository that landed is behind the dialog the moment it exists.
+    for (const outcome of outcomes) {
+      if (outcome.repository !== null) onRegistered(outcome.repository);
     }
+
+    // What succeeded leaves the selection; what was refused stays in it. A
+    // retry then re-sends only the ones that have not already worked, and the
+    // operator does not have to re-find them.
+    const succeeded = new Set(
+      outcomes
+        .filter((outcome) => outcome.refusal === null)
+        .map((outcome) => outcome.fullName),
+    );
+    setSelectedNames((current) =>
+      current.filter((name) => !succeeded.has(name)),
+    );
+
+    // And the picker re-reads, so the rows just added flip to `already
+    // registered` instead of inviting a second attempt.
+    await refresh();
   };
 
   return (
     <Dialog
       open
-      onClose={onClose}
+      // Refused while a batch is running: closing would take away the only
+      // place the per-repository report is about to be shown, for
+      // registrations that are being written either way.
+      onClose={progress === null ? onClose : undefined}
       fullWidth
       maxWidth="md"
       aria-labelledby="add-repository-title"
     >
       <DialogTitle id="add-repository-title">
         {projectName === undefined
-          ? 'Add a repository'
-          : `Add a repository to ${projectName}`}
+          ? 'Add repositories'
+          : `Add repositories to ${projectName}`}
       </DialogTitle>
 
       <DialogContent dividers>
         {projectName === undefined && (
           <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
-            This registers the repository into no project. That is a normal
-            place for it to live — unassigned repositories are observed,
-            dispatchable and walked up the ladder exactly like any other — and
-            it can be filed into a project at any time afterwards.
+            Anything registered here goes into no project. That is a normal
+            place for a repository to live — unassigned repositories are
+            observed, dispatchable and walked up the ladder exactly like any
+            other — and any of them can be filed into a project at any time
+            afterwards.
           </Alert>
         )}
 
@@ -262,27 +337,8 @@ export function AddRepositoryDialog({
           </Alert>
         )}
 
-        {registered !== null && (
-          <Alert severity="success" sx={{ mb: 2 }}>
-            <AlertTitle>
-              {registered} is registered
-              {projectName === undefined ? '' : ` in ${projectName}`}
-            </AlertTitle>
-            It is in the list behind this dialog, observed and not dispatched —
-            dispatch, mirror labels and spec feedback all start off, and are
-            enabled one rung at a time. Another repository can be added without
-            closing this.
-          </Alert>
-        )}
-
-        {refusal !== null && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            <AlertTitle>{refusal.title}</AlertTitle>
-            {refusal.remedy}
-            <Typography variant="body2" sx={{ mt: 1 }}>
-              {refusal.detail}
-            </Typography>
-          </Alert>
+        {results !== null && (
+          <RegistrationReport results={results} projectName={projectName} />
         )}
 
         {listing !== null && <ListingState listing={listing} />}
@@ -300,6 +356,33 @@ export function AddRepositoryDialog({
               {pageSummary(listing)}
             </Typography>
 
+            {addable.length > 0 && (
+              <Box sx={{ mt: 1 }}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={allSelected}
+                      indeterminate={chosen.length > 0 && !allSelected}
+                      onChange={toggleAll}
+                      disabled={!canWrite}
+                    />
+                  }
+                  label={`Select the ${addable.length} that can be added on this page`}
+                />
+                <Typography
+                  variant="caption"
+                  component="p"
+                  color="text.secondary"
+                >
+                  This covers what is listed above and nothing else — the
+                  current page, under the current search. Rows on another page,
+                  or excluded by the search, are not selected, because
+                  registering something you cannot see is how the wrong
+                  repository gets registered.
+                </Typography>
+              </Box>
+            )}
+
             <List
               aria-label="Repositories the credential can reach"
               sx={{ mt: 1 }}
@@ -308,9 +391,9 @@ export function AddRepositoryDialog({
                 <RepositoryRow
                   key={repository.fullName}
                   repository={repository}
-                  isSelected={repository.fullName === selected}
+                  isSelected={selectedNames.includes(repository.fullName)}
                   canWrite={canWrite}
-                  onSelect={() => setSelected(repository.fullName)}
+                  onSelect={() => toggleOne(repository.fullName)}
                   onShowRegistered={onShowRegistered}
                 />
               ))}
@@ -337,19 +420,27 @@ export function AddRepositoryDialog({
       <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
         <Button
           onClick={() => void refresh()}
-          disabled={isLoading}
+          disabled={isLoading || progress !== null}
           startIcon={isLoading ? <CircularProgress size={14} /> : undefined}
         >
           {isLoading ? 'Asking GitHub…' : 'List again'}
         </Button>
         <Box sx={{ flexGrow: 1 }} />
-        <Button onClick={onClose}>Close</Button>
+        {progress !== null && (
+          <Typography variant="body2" color="text.secondary">
+            Registering {progress.done + 1} of {progress.total} —{' '}
+            {progress.current}
+          </Typography>
+        )}
+        <Button onClick={onClose} disabled={progress !== null}>
+          Close
+        </Button>
         <Button
           variant="contained"
           onClick={() => void registerChosen()}
-          disabled={chosen === null || !canWrite || isRegistering}
+          disabled={chosen.length === 0 || !canWrite || progress !== null}
         >
-          {chosen === null ? 'Register' : `Register ${chosen.fullName}`}
+          {registerLabel(chosen.map((row) => row.fullName))}
         </Button>
       </DialogActions>
     </Dialog>
@@ -499,9 +590,130 @@ function RepositoryRow({
         disabled={!canWrite}
         aria-pressed={isSelected}
       >
+        {/* The whole row stays the control — one button per repository, with
+            its `aria-pressed` carrying the state — and this checkbox is the
+            visual mark on it. `tabIndex={-1}` keeps it out of the tab order so
+            a selection is never two stops, and `aria-hidden` keeps the row
+            from announcing its state twice. */}
+        <ListItemIcon sx={{ minWidth: 0, mr: 1.5, mt: 0.5 }}>
+          <Checkbox
+            edge="start"
+            checked={isSelected}
+            tabIndex={-1}
+            disableRipple
+            slotProps={{ input: { 'aria-hidden': true, tabIndex: -1 } }}
+          />
+        </ListItemIcon>
         {text}
       </ListItemButton>
     </ListItem>
+  );
+}
+
+/**
+ * What the action button says.
+ *
+ * Names the repository when there is exactly one, because "Register" beside a
+ * list of twenty is not a description of what is about to happen and a single
+ * add is still the common case.
+ */
+function registerLabel(fullNames: readonly string[]): string {
+  if (fullNames.length === 0) return 'Register';
+  if (fullNames.length === 1) return `Register ${fullNames[0]}`;
+  return `Register ${fullNames.length} repositories`;
+}
+
+/**
+ * What a finished batch did, per repository.
+ *
+ * ## A batch of one is reported as it always was
+ *
+ * `batchPresentation` returns null for a single refusal, and this renders that
+ * repository's own refusal instead — the same alert a single registration has
+ * shown since #401. There is no per-row list either, because a list of one row
+ * repeats the heading above it. Everything else about the batch is unchanged
+ * by its size.
+ *
+ * ## Per repository above, per REASON below
+ *
+ * Each row carries the API's own `detail`, so eight refusals produce eight
+ * accounts of what happened. The remedies are deduplicated underneath, because
+ * a remedy is a fact about the kind of refusal rather than about the
+ * repository, and eight copies of "replace github.token" is a wall rather than
+ * a report.
+ */
+function RegistrationReport({
+  results,
+  projectName,
+}: {
+  results: RegistrationResult[];
+  projectName?: string;
+}) {
+  const presentation = batchPresentation(results, projectName);
+  const refused = refusedResults(results);
+
+  if (presentation === null) {
+    const only = refused[0];
+    const refusal = registrationRefusal(only.refusal.status, only.fullName);
+
+    return (
+      <Alert severity="error" sx={{ mb: 2 }}>
+        <AlertTitle>{refusal.title}</AlertTitle>
+        {refusal.remedy}
+        <Typography variant="body2" sx={{ mt: 1 }}>
+          {only.refusal.detail}
+        </Typography>
+      </Alert>
+    );
+  }
+
+  return (
+    <Alert severity={presentation.severity} sx={{ mb: 2 }}>
+      <AlertTitle>{presentation.title}</AlertTitle>
+      {presentation.body}
+
+      {results.length > 1 && (
+        <List
+          dense
+          aria-label="What happened to each repository"
+          sx={{ mt: 1 }}
+        >
+          {results.map((result) => (
+            <ListItem
+              key={result.fullName}
+              disableGutters
+              aria-label={`Registration result for ${result.fullName}`}
+            >
+              <ListItemText
+                primary={
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}
+                  >
+                    <span>{result.fullName}</span>
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      color={result.refusal === null ? 'success' : 'error'}
+                      label={result.refusal === null ? 'registered' : 'refused'}
+                    />
+                  </Stack>
+                }
+                secondary={resultLine(result)}
+              />
+            </ListItem>
+          ))}
+        </List>
+      )}
+
+      {results.length > 1 &&
+        refusalRemedies(results).map((remedy) => (
+          <Typography key={remedy} variant="body2" sx={{ mt: 1 }}>
+            {remedy}
+          </Typography>
+        ))}
+    </Alert>
   );
 }
 

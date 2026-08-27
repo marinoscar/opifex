@@ -30,7 +30,7 @@
 import { describe, expect, it } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 
 import { render } from '../../utils/test-utils';
 import { expectNoLeak, findLeaks } from '../../utils/domSecrets';
@@ -46,7 +46,10 @@ import {
 } from '../../mocks/availableRepositories';
 import { ProjectRepositoriesPanel } from '../../../components/projects/ProjectRepositoriesPanel';
 import type { RepositorySummary } from '../../../types/cockpit';
-import type { AvailableRepositories } from '../../../types/repositories';
+import type {
+  AvailableRepositories,
+  AvailableRepository,
+} from '../../../types/repositories';
 
 const API_BASE = '*/api';
 
@@ -278,7 +281,7 @@ describe('AddRepositoryDialog', () => {
 
       const dialog = await openPicker(user);
       expect(
-        within(dialog).getByText(/registers the repository into no project/i),
+        within(dialog).getByText(/registered here goes into no project/i),
       ).toBeInTheDocument();
 
       await user.click(
@@ -1012,6 +1015,718 @@ describe('AddRepositoryDialog', () => {
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
       );
       expect(bodies).toHaveLength(0);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Several at once (#407)
+// ---------------------------------------------------------------------------
+
+/** Three addable rows, plus the registered and archived ones from #401. */
+const THREE_ADDABLE: AvailableRepository[] = [
+  availableRepository({ name: 'alpha', pushedAt: '2026-08-24T09:00:00.000Z' }),
+  availableRepository({ name: 'beta', pushedAt: '2026-08-23T09:00:00.000Z' }),
+  availableRepository({ name: 'gamma', pushedAt: '2026-08-22T09:00:00.000Z' }),
+  availableRepository({
+    name: 'sprockets',
+    admission: 'registered',
+    repositoryId: REGISTERED_ID,
+    pushedAt: '2026-08-21T09:00:00.000Z',
+  }),
+  availableRepository({
+    name: 'legacy',
+    archived: true,
+    admission: 'archived',
+    pushedAt: '2024-01-04T09:00:00.000Z',
+  }),
+];
+
+/** What the API should do with one repository. */
+type Answer = { status: number; message: string } | RepositorySummary;
+
+/**
+ * `POST /repositories`, answering per repository and recording the shape of
+ * the traffic.
+ *
+ * `peak` is what makes the transport decision testable rather than merely
+ * documented: N requests are only kinder to `github.rateLimitReserve` than a
+ * batch endpoint if they are actually issued one at a time, and a `Promise.all`
+ * would satisfy every other assertion in this file while bursting five
+ * reachability checks at GitHub at once.
+ */
+function serveEachRegistration(outcome: (fullName: string) => Answer) {
+  const attempts: string[] = [];
+  let inFlight = 0;
+  let peak = 0;
+
+  server.use(
+    http.post(`${API_BASE}/repositories`, async ({ request }) => {
+      const body = (await request.json()) as { owner: string; name: string };
+      const fullName = `${body.owner}/${body.name}`;
+      attempts.push(fullName);
+
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await delay(5);
+      inFlight -= 1;
+
+      const answer = outcome(fullName);
+      return 'status' in answer
+        ? HttpResponse.json(
+            { message: answer.message },
+            { status: answer.status },
+          )
+        : HttpResponse.json({ data: answer }, { status: 201 });
+    }),
+  );
+
+  return { attempts, peak: () => peak };
+}
+
+/** The created row for `acme/<name>`, with an id nothing else uses. */
+function created(name: string): RepositorySummary {
+  return repository({ name, id: `created-${name}` });
+}
+
+describe('Adding several at once', () => {
+  describe('The selection', () => {
+    it('registers every chosen repository, one request each', async () => {
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({ repositories: THREE_ADDABLE }),
+      );
+      const post = serveEachRegistration((fullName) =>
+        created(fullName.split('/')[1]),
+      );
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('button', { name: /^acme\/alpha/ }),
+      );
+      await user.click(screen.getByRole('button', { name: /^acme\/gamma/ }));
+      await user.click(
+        screen.getByRole('button', { name: 'Register 2 repositories' }),
+      );
+
+      await waitFor(() => expect(post.attempts).toHaveLength(2));
+      // In the API's order — what is on screen, top to bottom — rather than in
+      // the order the rows were clicked.
+      expect(post.attempts).toEqual(['acme/alpha', 'acme/gamma']);
+    });
+
+    it('issues them ONE AT A TIME, never as a burst', async () => {
+      // The transport decision: N requests rather than a batch endpoint, and
+      // sequential rather than concurrent. Each registration makes the API
+      // verify reachability against GitHub, sharing the budget
+      // `github.rateLimitReserve` holds back for the operator's own use, so
+      // firing the selection at once is the shape that trips a secondary rate
+      // limit. `reconciler.service.ts` sweeps sequentially for this reason.
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({ repositories: THREE_ADDABLE }),
+      );
+      const post = serveEachRegistration((fullName) =>
+        created(fullName.split('/')[1]),
+      );
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('checkbox', {
+          name: /select the 3 that can be added/i,
+        }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Register 3 repositories' }),
+      );
+
+      await waitFor(() => expect(post.attempts).toHaveLength(3));
+      expect(post.peak()).toBe(1);
+    });
+
+    it('names the one repository when only one is chosen', async () => {
+      // The common case is still a single add, and "Register" beside a list is
+      // not a description of what is about to happen.
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({ repositories: THREE_ADDABLE }),
+      );
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('button', { name: /^acme\/beta/ }),
+      );
+      expect(
+        screen.getByRole('button', { name: 'Register acme/beta' }),
+      ).toBeEnabled();
+    });
+
+    it('deselects a row that is clicked twice', async () => {
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({ repositories: THREE_ADDABLE }),
+      );
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      const row = await screen.findByRole('button', { name: /^acme\/beta/ });
+      await user.click(row);
+      expect(row).toHaveAttribute('aria-pressed', 'true');
+      await user.click(row);
+      expect(row).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByRole('button', { name: 'Register' })).toBeDisabled();
+    });
+  });
+
+  describe('Select-all, bounded by what is on screen', () => {
+    it('selects the addable rows and leaves the marked ones alone', async () => {
+      // Already-registered and archived rows stay visible and unselectable, so
+      // a bulk selection cannot contain one that would fail for a reason
+      // already known before asking.
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({ repositories: THREE_ADDABLE }),
+      );
+      const post = serveEachRegistration((fullName) =>
+        created(fullName.split('/')[1]),
+      );
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('checkbox', {
+          name: /select the 3 that can be added/i,
+        }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Register 3 repositories' }),
+      );
+
+      await waitFor(() => expect(post.attempts).toHaveLength(3));
+      expect(post.attempts).toEqual(['acme/alpha', 'acme/beta', 'acme/gamma']);
+      expect(post.attempts).not.toContain('acme/sprockets');
+      expect(post.attempts).not.toContain('acme/legacy');
+    });
+
+    it('covers the current page only, never rows on another one', async () => {
+      // Selecting things the operator cannot see is how the wrong repository
+      // gets registered. Page 1's selection does not survive into page 2 and
+      // page 2's select-all covers page 2.
+      registered();
+      serveAvailable((params) =>
+        availableRepositoriesFixture({
+          repositories:
+            params.get('page') === '2'
+              ? [availableRepository({ name: 'later' })]
+              : THREE_ADDABLE,
+          page: Number(params.get('page') ?? '1'),
+          total: 4,
+          totalPages: 2,
+          reachable: 4,
+        }),
+      );
+      const post = serveEachRegistration((fullName) =>
+        created(fullName.split('/')[1]),
+      );
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('checkbox', {
+          name: /select the 3 that can be added/i,
+        }),
+      );
+      expect(
+        screen.getByRole('button', { name: 'Register 3 repositories' }),
+      ).toBeEnabled();
+
+      await user.click(screen.getByRole('button', { name: /^next$/i }));
+      await screen.findByLabelText('Available repository acme/later');
+      // The three from page 1 are gone from the selection, not carried along
+      // invisibly.
+      expect(screen.getByRole('button', { name: 'Register' })).toBeDisabled();
+
+      await user.click(
+        screen.getByRole('checkbox', {
+          name: /select the 1 that can be added/i,
+        }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Register acme/later' }),
+      );
+
+      await waitFor(() => expect(post.attempts).toHaveLength(1));
+      expect(post.attempts).toEqual(['acme/later']);
+    });
+
+    it('covers the current search only, never what it excluded', async () => {
+      registered();
+      serveAvailable((params) =>
+        availableRepositoriesFixture({
+          repositories: params.get('search')
+            ? [availableRepository({ name: 'beta' })]
+            : THREE_ADDABLE,
+          search: params.get('search'),
+          total: params.get('search') ? 1 : 3,
+          reachable: 3,
+        }),
+      );
+      const post = serveEachRegistration((fullName) =>
+        created(fullName.split('/')[1]),
+      );
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('checkbox', {
+          name: /select the 3 that can be added/i,
+        }),
+      );
+      await user.type(screen.getByLabelText(/search repositories/i), 'beta');
+      await user.click(screen.getByRole('button', { name: /^search$/i }));
+
+      await screen.findByRole('checkbox', {
+        name: /select the 1 that can be added/i,
+      });
+      // The narrowed answer narrowed the selection with it: `beta` matched the
+      // search and is still chosen, and the two rows the search excluded are
+      // gone from the selection rather than carried along out of sight.
+      await user.click(
+        await screen.findByRole('button', { name: 'Register acme/beta' }),
+      );
+
+      await waitFor(() => expect(post.attempts).toHaveLength(1));
+      expect(post.attempts).toEqual(['acme/beta']);
+    });
+
+    it('does not resurrect a selection the operator paged away from', async () => {
+      // The bound is on the SELECTION, not only on what the register button
+      // acts over. A selection that survives out of sight and reappears on the
+      // way back is a set of rows nobody chose in this visit to the page — and
+      // the operator has no way to know it is armed.
+      registered();
+      serveAvailable((params) =>
+        availableRepositoriesFixture({
+          repositories:
+            params.get('page') === '2'
+              ? [availableRepository({ name: 'later' })]
+              : THREE_ADDABLE,
+          page: Number(params.get('page') ?? '1'),
+          total: 4,
+          totalPages: 2,
+          reachable: 4,
+        }),
+      );
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('checkbox', {
+          name: /select the 3 that can be added/i,
+        }),
+      );
+      await user.click(screen.getByRole('button', { name: /^next$/i }));
+      await screen.findByLabelText('Available repository acme/later');
+      await user.click(screen.getByRole('button', { name: /^previous$/i }));
+
+      const alpha = await screen.findByRole('button', {
+        name: /^acme\/alpha/,
+      });
+      expect(alpha).toHaveAttribute('aria-pressed', 'false');
+      expect(
+        screen.getByRole('checkbox', {
+          name: /select the 3 that can be added/i,
+        }),
+      ).not.toBeChecked();
+      expect(screen.getByRole('button', { name: 'Register' })).toBeDisabled();
+    });
+
+    it('clears the selection when pressed a second time', async () => {
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({ repositories: THREE_ADDABLE }),
+      );
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      const all = await screen.findByRole('checkbox', {
+        name: /select the 3 that can be added/i,
+      });
+      await user.click(all);
+      expect(
+        screen.getByRole('button', { name: 'Register 3 repositories' }),
+      ).toBeEnabled();
+
+      await user.click(all);
+      expect(screen.getByRole('button', { name: 'Register' })).toBeDisabled();
+    });
+
+    it('is not offered when nothing on the page can be added', async () => {
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({
+          repositories: THREE_ADMISSIONS.filter(
+            (row) => row.admission !== 'available',
+          ),
+        }),
+      );
+      await openPicker(userEvent.setup());
+
+      await screen.findByLabelText('Available repository acme/sprockets');
+      expect(
+        screen.queryByRole('checkbox', {
+          name: /that can be added on this page/i,
+        }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('A mixed outcome, which is an ordinary one', () => {
+    /**
+     * Five chosen: two register, one is already registered, one is archived,
+     * one has no usable credential. The case the whole design exists for.
+     */
+    function serveMixed() {
+      return serveEachRegistration((fullName) => {
+        if (fullName === 'acme/beta') {
+          return {
+            status: 409,
+            message: 'Repository acme/beta is already registered',
+          };
+        }
+        if (fullName === 'acme/gamma') {
+          return { status: 400, message: 'Repository acme/gamma is archived' };
+        }
+        return created(fullName.split('/')[1]);
+      });
+    }
+
+    async function registerThree(user: ReturnType<typeof userEvent.setup>) {
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({ repositories: THREE_ADDABLE }),
+      );
+      const post = serveMixed();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('checkbox', {
+          name: /select the 3 that can be added/i,
+        }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Register 3 repositories' }),
+      );
+      return post;
+    }
+
+    it('attempts every repository, stopping at no refusal', async () => {
+      // Stopping at the first refusal would make the outcome depend on the
+      // order the rows happened to arrive in.
+      const user = userEvent.setup();
+      const post = await registerThree(user);
+
+      await waitFor(() => expect(post.attempts).toHaveLength(3));
+      expect(post.attempts).toEqual(['acme/alpha', 'acme/beta', 'acme/gamma']);
+    });
+
+    it('reports what happened to each one, and counts them honestly', async () => {
+      const user = userEvent.setup();
+      await registerThree(user);
+
+      expect(await screen.findByText('1 of 3 registered')).toBeInTheDocument();
+
+      const succeeded = screen.getByLabelText(
+        'Registration result for acme/alpha',
+      );
+      expect(within(succeeded).getByText('registered')).toBeInTheDocument();
+
+      const conflict = screen.getByLabelText(
+        'Registration result for acme/beta',
+      );
+      expect(within(conflict).getByText('refused')).toBeInTheDocument();
+      // This build's heading for a 409, and the API's own message verbatim.
+      expect(
+        within(conflict).getByText(/acme\/beta is already registered\./),
+      ).toBeInTheDocument();
+      expect(
+        within(conflict).getByText(
+          /Repository acme\/beta is already registered/,
+        ),
+      ).toBeInTheDocument();
+
+      const archived = screen.getByLabelText(
+        'Registration result for acme/gamma',
+      );
+      expect(
+        within(archived).getByText(
+          /GitHub could not offer acme\/gamma for registration\./,
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(archived).getByText(/Repository acme\/gamma is archived/),
+      ).toBeInTheDocument();
+    });
+
+    it('keeps what succeeded, and says so rather than rolling back', async () => {
+      // The successful registrations are exactly what the operator asked for.
+      const user = userEvent.setup();
+      await registerThree(user);
+
+      await screen.findByText('1 of 3 registered');
+      expect(screen.getByText(/stay registered/i)).toBeInTheDocument();
+      // And it is in the list behind, with no manual refresh.
+      expect(
+        await screen.findByLabelText('Repository acme/alpha'),
+      ).toBeInTheDocument();
+    });
+
+    it('leaves only the refusals selected, so a retry re-sends nothing that worked', async () => {
+      // Clearing everything would lose the record of what to try again;
+      // keeping everything would re-POST a registration whose only possible
+      // answer is a 409 that means nothing.
+      const user = userEvent.setup();
+      const post = await registerThree(user);
+      await waitFor(() => expect(post.attempts).toHaveLength(3));
+
+      await screen.findByText('1 of 3 registered');
+      await user.click(
+        await screen.findByRole('button', { name: 'Register 2 repositories' }),
+      );
+
+      await waitFor(() => expect(post.attempts).toHaveLength(5));
+      expect(post.attempts.slice(3)).toEqual(['acme/beta', 'acme/gamma']);
+      expect(post.attempts.slice(3)).not.toContain('acme/alpha');
+    });
+
+    it('does not report a batch as a success', async () => {
+      const user = userEvent.setup();
+      await registerThree(user);
+
+      const alert = (await screen.findByText('1 of 3 registered')).closest(
+        '.MuiAlert-root',
+      );
+      expect(alert).toHaveClass('MuiAlert-colorWarning');
+    });
+
+    it('says every remedy once, however many rows hit it', async () => {
+      // A remedy is a fact about the KIND of refusal, never about which
+      // repository met it, so three 409s earn one sentence rather than three
+      // copies of it.
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({ repositories: THREE_ADDABLE }),
+      );
+      serveEachRegistration((fullName) => ({
+        status: 409,
+        message: `Repository ${fullName} is already registered`,
+      }));
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('checkbox', {
+          name: /select the 3 that can be added/i,
+        }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Register 3 repositories' }),
+      );
+
+      expect(
+        await screen.findByText('None of the 3 could be registered'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getAllByText(/It is in the list behind this dialog/),
+      ).toHaveLength(1);
+      // And each repository is still individually accounted for above it.
+      expect(screen.getAllByText(/is already registered\./)).toHaveLength(3);
+    });
+
+    it('reports a whole batch that worked as one line, not three', async () => {
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({ repositories: THREE_ADDABLE }),
+      );
+      serveEachRegistration((fullName) => created(fullName.split('/')[1]));
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('checkbox', {
+          name: /select the 3 that can be added/i,
+        }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Register 3 repositories' }),
+      );
+
+      expect(
+        await screen.findByText('3 repositories are registered'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByLabelText('Registration result for acme/gamma'),
+      ).toBeInTheDocument();
+    });
+
+    it('names the project the batch landed in', async () => {
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({ repositories: THREE_ADDABLE }),
+      );
+      const post = serveEachRegistration((fullName) =>
+        repository({
+          name: fullName.split('/')[1],
+          id: `created-${fullName}`,
+          projectId: PROJECT_ID,
+        }),
+      );
+      const user = userEvent.setup();
+
+      render(
+        <ProjectRepositoriesPanel
+          scope={{ kind: 'project', id: PROJECT_ID }}
+          project={projectFixture()}
+          canWrite
+          onEditProject={() => {}}
+          onDeleteProject={() => {}}
+          onRepositoryCountChanged={() => {}}
+        />,
+      );
+      await user.click(
+        await screen.findByRole('button', { name: /^add repository$/i }),
+      );
+      await user.click(
+        await screen.findByRole('checkbox', {
+          name: /select the 3 that can be added/i,
+        }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Register 3 repositories' }),
+      );
+
+      await waitFor(() => expect(post.attempts).toHaveLength(3));
+      expect(
+        await screen.findByText(
+          '3 repositories are registered in Billing Platform',
+        ),
+      ).toBeInTheDocument();
+      // Every one carried the project on its own create.
+      expect(post.attempts).toEqual(['acme/alpha', 'acme/beta', 'acme/gamma']);
+    });
+  });
+
+  describe('While the batch runs', () => {
+    it('takes the previous report down before the next batch starts', async () => {
+      // A finished report sitting above a running batch is read as that
+      // batch's answer, which is the one moment this panel can say something
+      // that is true of a different set of repositories.
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({ repositories: THREE_ADDABLE }),
+      );
+      let release: (() => void) | null = null;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let call = 0;
+      server.use(
+        http.post(`${API_BASE}/repositories`, async ({ request }) => {
+          const body = (await request.json()) as {
+            owner: string;
+            name: string;
+          };
+          call += 1;
+          if (call > 1) await held;
+          return HttpResponse.json(
+            { data: created(body.name) },
+            { status: 201 },
+          );
+        }),
+      );
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('button', { name: /^acme\/alpha/ }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Register acme/alpha' }),
+      );
+      expect(
+        await screen.findByText('acme/alpha is registered'),
+      ).toBeInTheDocument();
+
+      await user.click(
+        await screen.findByRole('button', { name: /^acme\/beta/ }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Register acme/beta' }),
+      );
+
+      await screen.findByText(/Registering 1 of 1 — acme\/beta/);
+      expect(
+        screen.queryByText('acme/alpha is registered'),
+      ).not.toBeInTheDocument();
+
+      release?.();
+      expect(
+        await screen.findByText('acme/beta is registered'),
+      ).toBeInTheDocument();
+    });
+
+    it('says which repository the wait is on', async () => {
+      // Sequential registrations of a large selection are a real wait, and an
+      // unmoving spinner and a progressing count are the same duration and not
+      // the same experience.
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({ repositories: THREE_ADDABLE }),
+      );
+      let release: (() => void) | null = null;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let call = 0;
+      server.use(
+        http.post(`${API_BASE}/repositories`, async ({ request }) => {
+          const body = (await request.json()) as {
+            owner: string;
+            name: string;
+          };
+          call += 1;
+          if (call === 1) await held;
+          return HttpResponse.json(
+            { data: created(body.name) },
+            { status: 201 },
+          );
+        }),
+      );
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('checkbox', {
+          name: /select the 3 that can be added/i,
+        }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Register 3 repositories' }),
+      );
+
+      expect(
+        await screen.findByText(/Registering 1 of 3 — acme\/alpha/),
+      ).toBeInTheDocument();
+      // And nothing can be closed out from under the report that is coming.
+      expect(screen.getByRole('button', { name: /^close$/i })).toBeDisabled();
+
+      release?.();
+      expect(
+        await screen.findByText('3 repositories are registered'),
+      ).toBeInTheDocument();
     });
   });
 });

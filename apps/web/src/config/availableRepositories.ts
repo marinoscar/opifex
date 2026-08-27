@@ -33,8 +33,18 @@
  * operator to reissue a credential that is fine. `listingPresentation` splits
  * it out of `ok` for that reason alone — the remedy is the token's repository
  * access, which is a different sentence from "choose one below".
+ *
+ * ## A batch's answer is per repository, and a mixed one is ORDINARY (#407)
+ *
+ * Registering several at once makes partial success the normal case rather
+ * than an edge one, so the presentation at the bottom of this file reports
+ * what happened to each repository and never rolls anything back. The
+ * successful registrations are what the operator asked for; discarding them
+ * to make the batch's answer a single word would throw away the work and the
+ * reason it was requested.
  */
 
+import type { RepositorySummary } from '../types/cockpit';
 import type {
   AvailableRepositories,
   AvailableRepository,
@@ -369,4 +379,157 @@ export function registrationRefusal(
       'The API refused the write and its own answer is below. Nothing was ' +
       'registered.',
   };
+}
+
+// ---------------------------------------------------------------------------
+// Registering several at once (#407)
+// ---------------------------------------------------------------------------
+
+/**
+ * What happened to ONE repository in a batch.
+ *
+ * The unit of the answer is the repository, not the batch, because that is the
+ * unit the operator chose in. Selecting eight where two are already registered
+ * and one is unreachable is an ordinary outcome and not an error, so there is
+ * no shape here for "the batch failed" — there is only a list of what each row
+ * did.
+ */
+export type RegistrationResult =
+  | { fullName: string; refusal: null; repository: RepositorySummary }
+  | { fullName: string; refusal: RegistrationFailure; repository: null };
+
+/** Why one repository was refused. `status` is how the refusals are told apart. */
+export interface RegistrationFailure {
+  /** The HTTP status, or null when the request never got one. */
+  status: number | null;
+  /** The API's own message, rendered verbatim. */
+  detail: string;
+}
+
+/** The refused rows of a batch, narrowed so `refusal` is known to be present. */
+export type RefusedResult = Extract<RegistrationResult, { repository: null }>;
+
+/** The refused rows, in the order they were attempted. */
+export function refusedResults(
+  results: readonly RegistrationResult[],
+): RefusedResult[] {
+  return results.filter((result): result is RefusedResult => {
+    return result.refusal !== null;
+  });
+}
+
+/**
+ * The one sentence a newly registered repository is owed.
+ *
+ * Said once for the whole batch rather than once per row: the staged rollout
+ * is a property of registration, not of any particular repository, and
+ * repeating it eight times would bury the per-row answers it sits above.
+ */
+const OBSERVED_NOT_DISPATCHED =
+  'Observed and not dispatched — dispatch, mirror labels and spec feedback ' +
+  'all start off, and are enabled one rung at a time. More can be added ' +
+  'without closing this.';
+
+export interface BatchPresentation {
+  severity: 'success' | 'warning' | 'error';
+  title: string;
+  body: string;
+}
+
+/**
+ * The headline over a finished batch — or null, when the batch was one
+ * repository that was refused.
+ *
+ * Null is not an omission. A batch of one has no per-repository report to
+ * make that its own refusal does not already make, and stacking "no repository
+ * was registered" on top of "acme/gadgets is already registered" would say the
+ * same thing twice, the second time less usefully. The caller renders
+ * `registrationRefusal` instead, which is exactly what a single registration
+ * showed before batches existed.
+ *
+ * **Nothing here rolls anything back.** A mixed result is reported as a mixed
+ * result: the registrations that succeeded are what the operator asked for,
+ * and undoing them to make the answer tidy would throw away the work and lose
+ * the reason it was requested.
+ */
+export function batchPresentation(
+  results: readonly RegistrationResult[],
+  projectName?: string,
+): BatchPresentation | null {
+  const refused = refusedResults(results);
+  const succeeded = results.length - refused.length;
+  const where = projectName === undefined ? '' : ` in ${projectName}`;
+
+  if (refused.length === 0) {
+    return {
+      severity: 'success',
+      title:
+        results.length === 1
+          ? `${results[0].fullName} is registered${where}`
+          : `${results.length} repositories are registered${where}`,
+      body: OBSERVED_NOT_DISPATCHED,
+    };
+  }
+
+  if (succeeded === 0) {
+    // A single refusal is told by `registrationRefusal`, which names the
+    // repository and the remedy. See above.
+    if (results.length === 1) return null;
+
+    return {
+      severity: 'error',
+      title: `None of the ${results.length} could be registered`,
+      body:
+        'Every one was refused, and the API’s own reason for each is below. ' +
+        'They are still selected, so nothing has to be picked again to try ' +
+        'them once the reason is dealt with.',
+    };
+  }
+
+  return {
+    severity: 'warning',
+    title: `${succeeded} of ${results.length} registered${where}`,
+    body:
+      'The ones that succeeded are registered and stay registered — they are ' +
+      'what was asked for, and undoing them to make this answer tidy would ' +
+      'throw them away. Each refusal is below with the API’s own reason. ' +
+      'Only the refused ones are still selected, so trying again cannot ' +
+      're-send a registration that already worked.',
+  };
+}
+
+/**
+ * What one row in the per-repository report says under its name.
+ *
+ * The refused arm quotes the API verbatim after this build's heading for the
+ * status, so a reason this build has no arm for still arrives intact.
+ */
+export function resultLine(result: RegistrationResult): string {
+  if (result.refusal === null) return 'Registered.';
+  const refusal = registrationRefusal(result.refusal.status, result.fullName);
+  return `${refusal.title}. ${result.refusal.detail}`;
+}
+
+/**
+ * The remedies for a batch's refusals, deduplicated, in first-seen order.
+ *
+ * A remedy is a fact about the KIND of refusal — reissue the credential, widen
+ * its access, list again — and never about which repository hit it. Six 409s
+ * therefore earn one sentence rather than six copies of it, which is the
+ * difference between a report an operator reads and a wall they scroll past.
+ * The per-repository detail above is where the six are still individually
+ * accounted for.
+ */
+export function refusalRemedies(
+  results: readonly RegistrationResult[],
+): string[] {
+  const seen = new Set<string>();
+
+  for (const result of refusedResults(results)) {
+    seen.add(
+      registrationRefusal(result.refusal.status, result.fullName).remedy,
+    );
+  }
+
+  return [...seen];
 }

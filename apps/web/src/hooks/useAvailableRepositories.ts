@@ -26,6 +26,18 @@
  * what the API actually answered — rather than the requested values held here.
  * While a page is in flight the two differ, and only one of them is a fact.
  *
+ * ## Several registrations are N requests, ISSUED ONE AT A TIME (#407)
+ *
+ * `POST /api/repositories` takes one repository, and `registerMany` below
+ * loops it rather than reaching for a batch endpoint. The choice is argued on
+ * `registerMany` itself; the part that belongs here is that the loop is
+ * **sequential**, for the reason `reconciler.service.ts` gives for its own
+ * sweep: parallelism multiplies the burst rate against a shared GitHub budget
+ * (VISION §11) for no wall-clock benefit worth having, and every registration
+ * spends from the same budget `github.rateLimitReserve` holds back so an
+ * operator's interactive use keeps working. Thirty registrations fired at once
+ * is the shape that trips a secondary rate limit.
+ *
  * ## Read when the dialog opens, and only when asked after that
  *
  * Not polled. This is a list beside a picker, and a background refresh landing
@@ -41,7 +53,7 @@ import {
   createRepository,
   getAvailableRepositories,
 } from '../services/api';
-import type { RepositorySummary } from '../types/cockpit';
+import type { RegistrationResult } from '../config/availableRepositories';
 import type {
   AvailableRepositories,
   AvailableRepository,
@@ -67,24 +79,61 @@ export interface UseAvailableRepositoriesResult {
    * not page 4 of the new one. */
   applySearch: (search: string) => void;
   refresh: () => Promise<void>;
-  /** True while a registration is in flight. */
-  isRegistering: boolean;
   /**
-   * Register one repository, optionally filed into a project.
+   * How far a batch has got, or null when none is running.
    *
-   * Resolves with the row the API created and REJECTS with `ApiError` on its
-   * documented refusals — 400, 409, 503 — so the caller renders the API's own
-   * answer rather than a claim of success.
+   * Published because the registrations are sequential and a selection of
+   * thirty is a real wait: an unmoving spinner and a progressing count are the
+   * same duration and not the same experience, and the count is the only
+   * honest way to say which repository the wait is currently on.
+   */
+  progress: RegistrationProgress | null;
+  /**
+   * Register repositories, in order, optionally filed into a project.
    *
-   * `projectId` is passed on the CREATE rather than followed by an assignment
+   * ## Why N requests and not a batch endpoint
+   *
+   * `POST /repositories` verifies per repository that it is reachable with the
+   * configured credential, and answers 400, 409 and 503 for the three ways one
+   * can be refused. A batch endpoint would be new API surface that has to
+   * decide its own partial-failure semantics ANYWAY — a batch of eight where
+   * two are already registered cannot answer one status honestly — so it would
+   * relocate this problem rather than remove it, and it would do so by
+   * duplicating refusal semantics that already work. The one thing it could
+   * add that N requests cannot is a transaction, and a transaction is the
+   * outcome this feature explicitly does not want: rolling back six good
+   * registrations because the seventh was archived throws away exactly what
+   * the operator asked for.
+   *
+   * ## Why it never rejects
+   *
+   * Resolves with one `RegistrationResult` per repository, in the order they
+   * were attempted, and does not reject: a refusal partway through is an
+   * ordinary outcome of a batch and not a failure of it, and throwing would
+   * discard the answers for the repositories that had already succeeded. The
+   * loop therefore runs to the end rather than stopping at the first refusal,
+   * so what an operator gets back does not depend on the order the rows
+   * happened to be in.
+   *
+   * `projectId` is passed on each CREATE rather than followed by an assignment
    * call: two requests would leave a window in which the repository exists and
    * is in no project, and a failure in the second would strand it there
    * looking like an unassigned registration nobody made.
    */
-  register: (
-    repository: AvailableRepository,
+  registerMany: (
+    repositories: readonly AvailableRepository[],
     projectId?: string,
-  ) => Promise<RepositorySummary>;
+  ) => Promise<RegistrationResult[]>;
+}
+
+/** Which repository a running batch is on, and how many are done. */
+export interface RegistrationProgress {
+  /** Registrations that have ANSWERED — refusals included, since a refusal is
+   * an answer and the batch has moved past it. */
+  done: number;
+  total: number;
+  /** The one in flight. */
+  current: string;
 }
 
 export function useAvailableRepositories(): UseAvailableRepositoriesResult {
@@ -93,7 +142,7 @@ export function useAvailableRepositories(): UseAvailableRepositoriesResult {
   const [requestError, setRequestError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
+  const [progress, setProgress] = useState<RegistrationProgress | null>(null);
   // Every `setState` past an `await` is guarded: a request settling after the
   // dialog is closed must not schedule an update on a gone component.
   const isMounted = useIsMounted();
@@ -143,22 +192,60 @@ export function useAvailableRepositories(): UseAvailableRepositoriesResult {
     setPage(1);
   }, []);
 
-  const register = useCallback(
-    async (repository: AvailableRepository, projectId?: string) => {
-      setIsRegistering(true);
+  const registerMany = useCallback(
+    async (
+      repositories: readonly AvailableRepository[],
+      projectId?: string,
+    ) => {
+      const results: RegistrationResult[] = [];
+
       try {
-        // The two identifying fields, plus the project when there is one. No
-        // policy flag is sent: every default lives in the Prisma schema, so
-        // what lands is observed and never dispatched — see
-        // `CreateRepositoryInput`.
-        return await createRepository({
-          owner: repository.owner,
-          name: repository.name,
-          ...(projectId !== undefined && { projectId }),
-        });
+        for (const repository of repositories) {
+          if (isMounted()) {
+            setProgress({
+              done: results.length,
+              total: repositories.length,
+              current: repository.fullName,
+            });
+          }
+
+          try {
+            // The two identifying fields, plus the project when there is one.
+            // No policy flag is sent: every default lives in the Prisma
+            // schema, so what lands is observed and never dispatched — see
+            // `CreateRepositoryInput`.
+            const created = await createRepository({
+              owner: repository.owner,
+              name: repository.name,
+              ...(projectId !== undefined && { projectId }),
+            });
+            results.push({
+              fullName: repository.fullName,
+              refusal: null,
+              repository: created,
+            });
+          } catch (error) {
+            // Caught per repository and never rethrown. The next repository is
+            // still attempted, because one archived row is a fact about that
+            // row and says nothing about the seven behind it.
+            results.push({
+              fullName: repository.fullName,
+              repository: null,
+              refusal: {
+                status: error instanceof ApiError ? error.status : null,
+                detail:
+                  error instanceof Error
+                    ? error.message
+                    : 'The API gave no reason for the refusal.',
+              },
+            });
+          }
+        }
       } finally {
-        if (isMounted()) setIsRegistering(false);
+        if (isMounted()) setProgress(null);
       }
+
+      return results;
     },
     [isMounted],
   );
@@ -172,8 +259,8 @@ export function useAvailableRepositories(): UseAvailableRepositoriesResult {
     goToPage,
     applySearch,
     refresh,
-    isRegistering,
-    register,
+    progress,
+    registerMany,
   };
 }
 
