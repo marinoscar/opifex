@@ -1430,6 +1430,110 @@ The storage system provides file upload and management capabilities with support
 
 ---
 
+### Projects
+
+A grouping repositories are optionally filed into (#404, epic #403). Requires
+`projects:read` to read and `projects:write` to change — the same pair
+`RepositoriesController` enforces, because a project is administered by
+whoever administers the repositories in it and carries no authority of its
+own: nothing reads `projectId` to decide whether a run may happen (VISION
+§11's single-operator premise).
+
+#### GET /projects
+
+List projects, paginated. Each row carries `repositoryCount`, so a list is
+useful without one request per project.
+
+**Query parameters:**
+
+| Parameter  | Type   | Default | Description                                       |
+| ---------- | ------ | ------- | ------------------------------------------------- |
+| `page`     | number | `1`     | 1-based page number                               |
+| `pageSize` | number | `25`    | Max 100                                           |
+| `search`   | string | —       | Case-insensitive substring over `name` and `slug` |
+
+**A repository with no project is not listed here and is not missing.**
+`projectId: null` is a first-class state — see [Repositories](#repositories)
+below and `GET /repositories?projectId=none`.
+
+#### GET /projects/{id}
+
+Get one project.
+
+#### POST /projects
+
+Create a project.
+
+**Request:**
+
+```json
+{ "name": "Billing Platform", "slug": "billing", "description": "Optional" }
+```
+
+`slug` is optional and derived from `name` when omitted —
+`"Billing Platform"` becomes `billing-platform`. Derivation happens **once**,
+at creation; renaming a project later does not move its slug.
+
+**A taken slug is refused, never silently suffixed.** Appending `-2` would
+hand back a handle nobody chose and leave every later reference to the
+original resolving to somebody else's project. The `409` names the slug that
+collided, including when it was derived and the caller never typed it. A name
+with no character in the slug alphabet (e.g. `"日本語"`) derives nothing and
+is a `400` asking for an explicit slug.
+
+**Response:** `201` with the project.
+
+**Errors:**
+
+| Status | Cause                                              |
+| ------ | -------------------------------------------------- |
+| `400`  | Invalid, or no slug could be derived from the name |
+| `409`  | That slug is already taken                         |
+
+#### PATCH /projects/{id}
+
+Update `name`, `slug` and/or `description`. Omitted fields are left unchanged.
+At least one field must be present, or the request is a `400` rather than a
+`200` reporting success for a write that did nothing.
+
+**Renaming does not move the slug** — changing it is possible but has to be
+asked for explicitly, since the slug is the stable handle everything else
+referenced.
+
+#### DELETE /projects/{id}
+
+Delete a project. **Its repositories are NOT deleted.** They become
+unassigned — still registered, still observed, still dispatchable — the same
+state every repository was in before projects existed.
+
+**Unlike `DELETE /repositories/{id}`, this is never refused for having
+contents.** A project owns no work orders, no runs and no events, so nothing
+in the provenance graph VISION §5 protects depends on it; the foreign key is
+`ON DELETE SET NULL`, not cascade. The only thing removed is the label.
+
+**Response:** `200` with `{ "id", "slug", "unassignedRepositories" }` rather
+than a bare `204`, so the non-cascade guarantee is visible in the answer
+itself.
+
+#### PUT /projects/{id}/repositories/{repositoryId}
+
+Assign a repository to this project. Idempotent, and it **moves**: a
+repository already in another project is reassigned. Equivalent to
+`PATCH /repositories/{repositoryId}` with `{ "projectId": id }`, and runs the
+same code — this spelling exists because repositories are managed from inside
+a project screen.
+
+#### DELETE /projects/{id}/repositories/{repositoryId}
+
+Remove a repository from this project. **Removes the grouping, not the
+repository** — it stays registered and becomes unassigned.
+
+`404` when the repository is in a _different_ project: this path asserts the
+repository is in `id`, and acting anyway would let a stale screen unassign it
+from wherever it was actually moved to.
+
+---
+
 ### Repositories
 
 Which repositories Opifex watches, and the policy for each. Requires
@@ -1446,13 +1550,46 @@ List registered repositories. Paginated.
 
 **Query parameters:**
 
-| Parameter         | Type    | Default | Description                         |
-| ----------------- | ------- | ------- | ----------------------------------- |
-| `page`            | number  | `1`     | 1-based page number                 |
-| `pageSize`        | number  | `25`    | Max 100                             |
-| `observeEnabled`  | boolean | —       | Filter to what the reconciler reads |
-| `dispatchEnabled` | boolean | —       | Filter to what may be dispatched    |
-| `projectId`       | uuid    | —       | Filter by project                   |
+| Parameter         | Type           | Default | Description                                                                        |
+| ----------------- | -------------- | ------- | ---------------------------------------------------------------------------------- |
+| `page`            | number         | `1`     | 1-based page number                                                                |
+| `pageSize`        | number         | `25`    | Max 100                                                                            |
+| `observeEnabled`  | boolean        | —       | Filter to what the reconciler reads                                                |
+| `dispatchEnabled` | boolean        | —       | Filter to what may be dispatched                                                   |
+| `projectId`       | uuid or `none` | —       | A project's id, or `none` for repositories in no project at all                    |
+| `retired`         | boolean        | —       | Filter on retirement. Omitted returns **both** — a retired repository stays listed |
+
+**`projectId=none` is a first-class answer, not a workaround.** Every
+repository registered before projects existed is unassigned, and unassigned
+is an _answer_ to "which project", not a different question — which is why
+it is a value of this filter rather than a separate `unassigned` flag. See
+[Projects](#projects) above.
+
+#### GET /repositories/available
+
+List the repositories the **configured GitHub credential can reach**, so
+`owner/name` is chosen from a list rather than typed from memory. Paginated,
+with `?search=` applied server-side over the whole reachable set.
+
+Every repository the token can see is returned, and the unaddable ones are
+**marked** rather than filtered out: `admission` is `available`, `registered`
+(with `repositoryId` pointing at the existing row — the `409` this endpoint
+exists to spare a caller) or `archived` (which `POST /repositories` refuses).
+
+**A failure is a `200` carrying a `status`, not an error status** —
+`no_credential`, `invalid_credential`, `refused`, `rate_limited`,
+`unreachable` or `failed`, each with its own `detail`. `reachable: 0` under
+`status: "ok"` is a successful answer: the credential works and its scope
+covers nothing. `truncated: true` means GitHub's own listing hit its page cap
+and the list is not complete.
+
+**Registering several repositories from this list is one request per
+repository, sequential rather than concurrent** — see
+`docs/RUNBOOK-observation-week.md` §4 and `docs/ARCHITECTURE.md` §3.10.
+Each registration's reachability check spends a real GitHub request against
+the budget `github.rateLimitReserve` protects for interactive use, and
+nothing rolls back across repositories: a refusal partway through a batch of
+manual adds leaves the earlier ones registered.
 
 #### GET /repositories/{id}
 
@@ -1473,6 +1610,7 @@ assumed, because a work order pins its base commit on that branch.
 {
   "owner": "marinoscar",
   "name": "opifex",
+  "projectId": null,
   "observeEnabled": true,
   "dispatchEnabled": false,
   "mirrorLabelsEnabled": false,
@@ -1482,10 +1620,11 @@ assumed, because a work order pins its base commit on that branch.
 }
 ```
 
-Only `owner` and `name` are required. `dispatchEnabled` and
-`mirrorLabelsEnabled` both default to **false**: a newly registered repository
-is observed, written to by nothing, and never run, until a human says
-otherwise.
+Only `owner` and `name` are required. `projectId` is optional and defaults to
+unassigned (`null`) — a normal, first-class state, not a placeholder for a
+project to be chosen later. `dispatchEnabled` and `mirrorLabelsEnabled` both
+default to **false**: a newly registered repository is observed, written to
+by nothing, and never run, until a human says otherwise.
 
 The three switches are separate on purpose, so VISION §12's observation week
 can end in stages — observe, then write mirror labels, then dispatch. Proving
@@ -1516,13 +1655,73 @@ access was revoked since registration must not have dispatch turned on against
 it. Disabling never re-verifies: that has to work precisely when GitHub is
 unreachable.
 
+**Refused with `400` while the repository is retired, if the request would
+raise any ladder rung** (`observeEnabled`, `mirrorLabelsEnabled`,
+`specFeedbackEnabled` or `dispatchEnabled` set `true`). The error names the
+rungs and points at `POST /repositories/{id}/unretire`. Everything else —
+`projectId`, budget ceiling, timeout, path constraints — stays editable on a
+retired repository, because those change what a future run would be allowed
+to do, not whether one can happen.
+
+#### POST /repositories/{id}/retire
+
+Stand a repository down: `observeEnabled`, `mirrorLabelsEnabled`,
+`specFeedbackEnabled` and `dispatchEnabled` all set `false`, in one
+transaction, with an `audit_events` row recording who did it, an optional
+free-text `reason`, and the ladder position it was standing on beforehand
+(`meta.ladderBefore`).
+
+**This is not a delete, and nothing is destroyed.** The repository stays
+registered and listed (filter with `?retired=`); its work orders, runs and
+provenance are untouched. That is the point — `DELETE` is refused on a
+repository with work orders precisely because removing it would cascade that
+history away, and retire is the removal action that still works on the
+repositories an operator most wants to tidy: the used ones.
+
+**"Retired" is a stored fact** (`retiredAt`, `retiredById`), not a reading of
+the four flags — see `docs/ARCHITECTURE.md` §3.10 for the full argument
+(#405). All four flags off is also what four separate `PATCH`es produce, and
+an operator who paused observation for an afternoon has not retired
+anything.
+
+**Idempotent.** Retiring an already-retired repository returns it unchanged
+and writes no second audit row.
+
+**Request body (optional):** `{ "reason": "..." }` — up to 500 characters,
+recorded on the audit row.
+
+**Response:** `200` with the retired repository.
+
+#### POST /repositories/{id}/unretire
+
+Return a retired repository to the **bottom** of the enablement ladder:
+`observeEnabled` on, every outward write (`mirrorLabelsEnabled`,
+`specFeedbackEnabled`, `dispatchEnabled`) off — the same position a freshly
+registered repository lands in.
+
+**Does NOT restore the rungs the repository previously held.** Retiring is
+often the response to a repository doing something unwanted; silently
+switching dispatch back on would re-enable the factory's most consequential
+permission as a side effect of an undo. Ask for a rung back explicitly with
+`PATCH`, which re-verifies reachability. The rungs it held before retirement
+survive only in the retire audit row's `meta.ladderBefore` — un-retiring does
+not read them.
+
+**Idempotent.** Un-retiring a repository that is not retired returns it
+unchanged and does not reset its ladder.
+
+**Request body (optional):** `{ "reason": "..." }`, recorded on the audit row.
+
+**Response:** `200` with the repository, back at the bottom of the ladder.
+
 #### DELETE /repositories/{id}
 
 De-register a repository. Returns `204`.
 
 **Refused with `400` while the repository has work orders.** Deleting would
 cascade away runs and their provenance, and VISION §5's premise is that the
-chain survives. Set `observeEnabled` and `dispatchEnabled` to `false` instead.
+chain survives. Retire it instead (`POST /repositories/{id}/retire`), which
+stands the whole ladder down in one act and leaves that history in place.
 
 ---
 
@@ -1881,10 +2080,13 @@ like quota was forgotten. Same absence that makes `quotaBurn` null in
 
 #### Projects and repositories
 
-There is **no cockpit endpoint for these.** `GET /api/repositories` (see
-[Repositories](#repositories)) has been gated on `projects:read` since #43 and
-already answers what the projects screen asks. Adding a read model beside it
-would have been a second way to read the same rows, differing only in shape.
+**Not cockpit read models — a full resource each, with writes.** `GET /api/repositories`
+was gated on `projects:read` since #43 and was, for a while, the only endpoint
+the `/projects` screen needed; that stopped being true once #404/#403 gave
+`Project` its own CRUD and #406 moved repository management (adding,
+enabling, retiring, moving between projects) onto the same screen. See
+[Projects](#projects) and [Repositories](#repositories) above for the actual
+endpoints — there is no separate cockpit-only shape for either.
 
 #### `GET /api/metrics/summary`
 
