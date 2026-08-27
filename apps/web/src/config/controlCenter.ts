@@ -151,7 +151,10 @@ export const CONTROL_CENTER_SECTIONS: readonly ControlCenterSection[] = [
       'on Projects, in the main menu. This section says where it went.',
     Icon: AccountTreeIcon,
     status: 'live',
-    issue: 406,
+    // Still #350. The registry records which issue DELIVERED the section, and
+    // #406 changed what is inside it rather than adding it — rewriting this
+    // would lose the provenance the test beside it exists to keep.
+    issue: 350,
     phase: PHASE,
   },
   {

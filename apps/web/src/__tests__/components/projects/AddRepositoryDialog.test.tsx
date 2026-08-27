@@ -1,9 +1,11 @@
 /**
  * The repository picker (#401).
  *
- * `RepositoriesSection` is exercised rather than the dialog in isolation, so
- * `useAvailableRepositories`, `useRepositoryLadder`, `services/api` and MSW
- * are all in the path. Every claim this control makes is about a request —
+ * `ProjectRepositoriesPanel` is exercised rather than the dialog in isolation,
+ * so `useAvailableRepositories`, `useRepositoryLadder`, `services/api` and MSW
+ * are all in the path. The picker moved there with the ladder in #406; the
+ * claims it makes are unchanged, because they are about requests rather than
+ * about which screen mounts it. Every claim this control makes is about a request —
  * what GitHub answered, what the registration sent, whether the list behind
  * the dialog moved — and a mocked hook would let all of them be true of
  * nothing.
@@ -41,7 +43,7 @@ import {
   availableRepository,
   emptyScopeFixture,
 } from '../../mocks/availableRepositories';
-import { RepositoriesSection } from '../../../components/controlcenter/RepositoriesSection';
+import { ProjectRepositoriesPanel } from '../../../components/projects/ProjectRepositoriesPanel';
 import type { RepositorySummary } from '../../../types/cockpit';
 import type { AvailableRepositories } from '../../../types/repositories';
 
@@ -69,6 +71,10 @@ function repository(
     wallClockTimeoutMinutes: null,
     pathConstraints: [],
     lastObservedAt: null,
+    // Present and null, never absent: `retiredAt !== null` is how a card
+    // decides it is retired, and `undefined` would satisfy it.
+    retiredAt: null,
+    retiredById: null,
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: '2026-08-01T00:00:00.000Z',
     ...overrides,
@@ -140,11 +146,25 @@ function refuseRegistration(status: number, message: string) {
   );
 }
 
+/** The panel that mounts the picker, in the unassigned scope. */
+function renderPanel(canWrite = true) {
+  render(
+    <ProjectRepositoriesPanel
+      scope={{ kind: 'unassigned' }}
+      project={null}
+      canWrite={canWrite}
+      onEditProject={() => {}}
+      onDeleteProject={() => {}}
+      onRepositoryCountChanged={() => {}}
+    />,
+  );
+}
+
 async function openPicker(
   user: ReturnType<typeof userEvent.setup>,
   options: { canWrite?: boolean } = {},
 ) {
-  render(<RepositoriesSection canWrite={options.canWrite ?? true} />);
+  renderPanel(options.canWrite ?? true);
   await user.click(
     await screen.findByRole('button', { name: /^add repository$/i }),
   );
@@ -168,7 +188,7 @@ describe('AddRepositoryDialog', () => {
       // off, which is exactly when one is needed.
       registered();
       serveAvailable();
-      render(<RepositoriesSection canWrite />);
+      renderPanel();
 
       expect(
         await screen.findByRole('button', { name: /^add repository$/i }),
@@ -178,7 +198,7 @@ describe('AddRepositoryDialog', () => {
     it('offers it beside the ladder once something is registered', async () => {
       registered(repository());
       serveAvailable();
-      render(<RepositoriesSection canWrite />);
+      renderPanel();
 
       await screen.findByLabelText('Repository acme/sprockets');
       expect(
@@ -188,7 +208,7 @@ describe('AddRepositoryDialog', () => {
 
     it('disables it without projects:write', async () => {
       registered(repository());
-      render(<RepositoriesSection canWrite={false} />);
+      renderPanel(false);
 
       expect(
         await screen.findByRole('button', { name: /^add repository$/i }),
@@ -200,7 +220,7 @@ describe('AddRepositoryDialog', () => {
       const asked = serveAvailable();
       const user = userEvent.setup();
 
-      render(<RepositoriesSection canWrite />);
+      renderPanel();
       await screen.findByLabelText('Repository acme/sprockets');
       expect(asked).toHaveLength(0);
 
@@ -323,7 +343,7 @@ describe('AddRepositoryDialog', () => {
     it('does not mark a card nobody asked for', async () => {
       registered(repository());
       serveAvailable();
-      render(<RepositoriesSection canWrite />);
+      renderPanel();
 
       const card = await screen.findByLabelText('Repository acme/sprockets');
       expect(card).not.toHaveAttribute('aria-current');
