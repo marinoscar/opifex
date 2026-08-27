@@ -13,6 +13,7 @@ import {
 import { ENCRYPTION_KEY_ENV_VAR } from '../../../common/crypto/secret-box';
 import { REVEALED_SUFFIX_LENGTH } from '../../../common/crypto/redact';
 import { OperatorSettingsController } from '../operator-settings.controller';
+import { SupervisorModelCatalogService } from '../../../supervisor/invocation/model-catalog.service';
 import type { OperatorProbesService } from '../probes/operator-probes.service';
 import type { OperatorSettingsService } from '../operator-settings.service';
 import { ClaudeAuthController } from './claude-auth.controller';
@@ -145,6 +146,7 @@ describe('The Claude sign-in flow never returns the token (#386)', () => {
     const settingsController = new OperatorSettingsController(
       settings,
       {} as unknown as OperatorProbesService,
+      {} as unknown as SupervisorModelCatalogService,
     );
 
     expectNoToken(JSON.stringify(settingsController.list()));
