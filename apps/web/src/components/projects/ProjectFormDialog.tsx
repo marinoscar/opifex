@@ -84,10 +84,14 @@ export function ProjectFormDialog({
     try {
       await onSubmit({
         name: trimmedName,
-        // Omitted rather than sent empty. On create, omitting is what asks the
-        // API to derive one; on edit, omitting is what leaves the handle
-        // exactly where it was.
-        ...(trimmedSlug === '' ? {} : { slug: trimmedSlug }),
+        // Omitted unless the operator actually moved it. On create, omitting
+        // is what asks the API to derive one; on edit, omitting is what leaves
+        // the handle where it is — and sending the stored slug back would
+        // make every rename a slug write, which is the exact thing the API
+        // refuses to do on its own.
+        ...(trimmedSlug === '' || trimmedSlug === project?.slug
+          ? {}
+          : { slug: trimmedSlug }),
         // `null` CLEARS the description and `''` is rejected by the API's
         // `min(1)` after trimming, so an empty box has to send null.
         description: description.trim() === '' ? null : description.trim(),

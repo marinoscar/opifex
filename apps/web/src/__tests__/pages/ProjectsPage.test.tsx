@@ -319,6 +319,117 @@ describe('ProjectsPage', () => {
     });
   });
 
+  describe('Editing a project', () => {
+    it('renames without moving the slug', async () => {
+      // Derivation happens once, at creation. A rename that quietly moved the
+      // handle would break everything that referenced it, so the PATCH carries
+      // no slug unless the operator edited the slug field itself.
+      serveProjects(projectFixture({ repositoryCount: 1 }));
+      serveRepositories({ none: [], [PROJECT_ID]: [] });
+      const bodies: Record<string, unknown>[] = [];
+      server.use(
+        http.patch(`${API_BASE}/projects/:id`, async ({ request }) => {
+          bodies.push((await request.json()) as Record<string, unknown>);
+          return HttpResponse.json({
+            data: projectFixture({ name: 'Billing', repositoryCount: 1 }),
+          });
+        }),
+      );
+      const user = userEvent.setup();
+
+      renderPage();
+      await screen.findByRole('navigation', { name: 'Projects' });
+      await user.click(
+        screen.getByRole('button', { name: /Billing Platform/ }),
+      );
+      await user.click(await screen.findByRole('button', { name: /^edit$/i }));
+
+      const name = await screen.findByLabelText(/^name/i);
+      await user.clear(name);
+      await user.type(name, 'Billing');
+      await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).not.toHaveProperty('slug');
+      expect(bodies[0]).toEqual({
+        name: 'Billing',
+        description: 'Everything that takes money.',
+      });
+      // And the header shows the name the API returned.
+      expect(
+        await screen.findByRole('heading', { name: 'Billing' }),
+      ).toBeInTheDocument();
+    });
+
+    it('sends the slug when the operator moved it deliberately', async () => {
+      serveProjects(projectFixture());
+      serveRepositories({ none: [], [PROJECT_ID]: [] });
+      const bodies: Record<string, unknown>[] = [];
+      server.use(
+        http.patch(`${API_BASE}/projects/:id`, async ({ request }) => {
+          bodies.push((await request.json()) as Record<string, unknown>);
+          return HttpResponse.json({
+            data: projectFixture({ slug: 'billing' }),
+          });
+        }),
+      );
+      const user = userEvent.setup();
+
+      renderPage();
+      await screen.findByRole('navigation', { name: 'Projects' });
+      await user.click(
+        screen.getByRole('button', { name: /Billing Platform/ }),
+      );
+      await user.click(await screen.findByRole('button', { name: /^edit$/i }));
+
+      const slug = await screen.findByLabelText(/^slug/i);
+      await user.clear(slug);
+      await user.type(slug, 'billing');
+      await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toHaveProperty('slug', 'billing');
+    });
+  });
+
+  describe('Paging the project list', () => {
+    it('asks the API for the next page rather than slicing this one', async () => {
+      const pages: string[] = [];
+      server.use(
+        http.get(`${API_BASE}/projects`, ({ request }) => {
+          const page = new URL(request.url).searchParams.get('page') ?? '1';
+          pages.push(page);
+          return HttpResponse.json({
+            data: {
+              items: [
+                projectFixture({
+                  id: page === '1' ? PROJECT_ID : OTHER_PROJECT_ID,
+                  name: page === '1' ? 'Billing Platform' : 'Ledger',
+                  slug: page === '1' ? 'billing-platform' : 'ledger',
+                }),
+              ],
+              total: 2,
+              page: Number(page),
+              pageSize: 1,
+              totalPages: 2,
+            },
+          });
+        }),
+      );
+      serveRepositories({ none: [] });
+      const user = userEvent.setup();
+
+      renderPage();
+      await screen.findByRole('navigation', { name: 'Projects' });
+      await user.click(screen.getByRole('button', { name: /^next$/i }));
+
+      await waitFor(() => expect(pages).toEqual(['1', '2']));
+      expect(
+        await screen.findByRole('button', { name: /Ledger/ }),
+      ).toBeInTheDocument();
+    });
+  });
+
   describe('Deleting a project', () => {
     it('says the repositories become unassigned, not deleted', async () => {
       serveProjects(projectFixture({ repositoryCount: 3 }));
@@ -341,6 +452,34 @@ describe('ProjectsPage', () => {
       expect(
         within(dialog).getByText(/They are not deleted/i),
       ).toBeInTheDocument();
+    });
+
+    it('shows the API refusal rather than closing on a failed deletion', async () => {
+      serveProjects(projectFixture({ repositoryCount: 1 }));
+      serveRepositories({ none: [], [PROJECT_ID]: [] });
+      server.use(
+        http.delete(`${API_BASE}/projects/:id`, () =>
+          HttpResponse.json({ message: 'Project not found' }, { status: 404 }),
+        ),
+      );
+      const user = userEvent.setup();
+
+      renderPage();
+      await screen.findByRole('navigation', { name: 'Projects' });
+      await user.click(
+        screen.getByRole('button', { name: /Billing Platform/ }),
+      );
+      await user.click(
+        await screen.findByRole('button', { name: /delete project/i }),
+      );
+      await user.click(
+        within(await screen.findByRole('dialog')).getByRole('button', {
+          name: /^delete project$/i,
+        }),
+      );
+
+      expect(await screen.findByText(/Project not found/i)).toBeInTheDocument();
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
 
     it('falls back to the unassigned bucket once the project is gone', async () => {

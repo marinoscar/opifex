@@ -1068,6 +1068,42 @@ describe('ProjectRepositoriesPanel', () => {
       );
     });
 
+    it('shows the API refusal and keeps the row where it is', async () => {
+      // A move that failed and closed the dialog anyway would take the API's
+      // reason with it and leave an operator looking at a list that did not
+      // change, with nothing said about why.
+      const stored = repository();
+      listing(stored);
+      server.use(
+        http.get(`${API_BASE}/projects`, () =>
+          HttpResponse.json({
+            data: {
+              items: [projectFixture()],
+              total: 1,
+              page: 1,
+              pageSize: 25,
+              totalPages: 1,
+            },
+          }),
+        ),
+        http.put(`${API_BASE}/projects/:id/repositories/:repositoryId`, () =>
+          HttpResponse.json({ message: 'Project not found' }, { status: 404 }),
+        ),
+      );
+      const user = userEvent.setup();
+
+      renderPanel();
+      await awaitCard();
+      await user.click(screen.getByRole('button', { name: /^move…$/i }));
+      await user.click(
+        await screen.findByRole('button', { name: /Billing Platform/i }),
+      );
+
+      expect(await screen.findByText(/Project not found/i)).toBeInTheDocument();
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(await awaitCard()).toBeInTheDocument();
+    });
+
     it('unassigns through the path that asserts which project it is in', async () => {
       // 404 when the repository is in a DIFFERENT project, which is what stops
       // a stale screen unassigning it from wherever it really went.
