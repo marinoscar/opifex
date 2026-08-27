@@ -278,6 +278,15 @@ export const DESTINATIONS: readonly Destination[] = [
     // on `projects:read` since Phase 1; what was missing was this flip, not an
     // endpoint. Building a cockpit read model beside it would have been a
     // second way to read the same rows.
+    //
+    // As of #406 this destination MANAGES rather than reads: repositories are
+    // added, walked up the enablement ladder, retired and filed into projects
+    // here, and the Control Center keeps a signpost instead of the controls.
+    // The permission is unchanged and is still the right one —
+    // `ProjectsController` (#404) enforces the same `projects:read` pair. The
+    // acting permission, `projects:write`, gates the controls INSIDE the page:
+    // a destination gate is about reachability, and the list is worth reaching
+    // to read.
     status: 'live',
     permission: 'projects:read',
   },

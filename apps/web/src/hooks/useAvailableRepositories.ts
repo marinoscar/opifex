@@ -70,11 +70,21 @@ export interface UseAvailableRepositoriesResult {
   /** True while a registration is in flight. */
   isRegistering: boolean;
   /**
-   * Register one repository. Resolves with the row the API created and
-   * REJECTS with `ApiError` on its documented refusals — 400, 409, 503 — so
-   * the caller renders the API's own answer rather than a claim of success.
+   * Register one repository, optionally filed into a project.
+   *
+   * Resolves with the row the API created and REJECTS with `ApiError` on its
+   * documented refusals — 400, 409, 503 — so the caller renders the API's own
+   * answer rather than a claim of success.
+   *
+   * `projectId` is passed on the CREATE rather than followed by an assignment
+   * call: two requests would leave a window in which the repository exists and
+   * is in no project, and a failure in the second would strand it there
+   * looking like an unassigned registration nobody made.
    */
-  register: (repository: AvailableRepository) => Promise<RepositorySummary>;
+  register: (
+    repository: AvailableRepository,
+    projectId?: string,
+  ) => Promise<RepositorySummary>;
 }
 
 export function useAvailableRepositories(): UseAvailableRepositoriesResult {
@@ -134,15 +144,17 @@ export function useAvailableRepositories(): UseAvailableRepositoriesResult {
   }, []);
 
   const register = useCallback(
-    async (repository: AvailableRepository) => {
+    async (repository: AvailableRepository, projectId?: string) => {
       setIsRegistering(true);
       try {
-        // `owner` and `name` only. The policy defaults live in the Prisma
-        // schema, so what lands is observed and never dispatched — see
+        // The two identifying fields, plus the project when there is one. No
+        // policy flag is sent: every default lives in the Prisma schema, so
+        // what lands is observed and never dispatched — see
         // `CreateRepositoryInput`.
         return await createRepository({
           owner: repository.owner,
           name: repository.name,
+          ...(projectId !== undefined && { projectId }),
         });
       } finally {
         if (isMounted()) setIsRegistering(false);

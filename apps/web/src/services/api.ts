@@ -514,6 +514,57 @@ export async function deleteRepository(
   await api.delete<void>(`/repositories/${encodeURIComponent(id)}`, { signal });
 }
 
+/**
+ * How many work orders exist for one repository — or the honest admission that
+ * this build could not find out.
+ *
+ * `DELETE /repositories/:id` is refused with a 400 while the repository has
+ * work orders, because deleting would cascade away runs and their provenance.
+ * Nothing on `RepositorySummary` says whether that is the case, so offering a
+ * De-register button on every row would mean offering it exactly where it
+ * fails — on the repositories an operator most wants to tidy. This is the
+ * question that tells the two apart, asked once when the removal dialog opens.
+ *
+ * **Resolves for every outcome**, like `probeRepositoryAccess`. The list is
+ * gated on `workorders:read`, which is a different permission from the one
+ * that opens this screen, so a 403 is a fact about the ACCOUNT rather than a
+ * count of zero — and `unknown` renders as "delete is not offered because we
+ * could not check", never as "there is nothing here".
+ */
+export type RepositoryWorkOrderCount =
+  { state: 'counted'; total: number } | { state: 'unknown'; detail: string };
+
+export async function countRepositoryWorkOrders(
+  fullName: string,
+  signal?: AbortSignal,
+): Promise<RepositoryWorkOrderCount> {
+  try {
+    // `pageSize: 1` — only `total` is read, and asking for a page of rows
+    // nobody renders would cost the API a query it does not need to run.
+    const page = await api.get<{ total: number }>(
+      `/work-orders?pageSize=1&repository=${encodeURIComponent(fullName)}`,
+      { signal },
+    );
+    return { state: 'counted', total: page.total };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 403) {
+      return {
+        state: 'unknown',
+        detail:
+          'This account may not read work orders, which needs ' +
+          'workorders:read. That is a fact about the account, not a count.',
+      };
+    }
+    return {
+      state: 'unknown',
+      detail:
+        error instanceof ApiError
+          ? `GET /api/work-orders answered ${error.status}: ${error.message}`
+          : 'The work order count could not be read.',
+    };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Projects (#404, epic #403)
 // ---------------------------------------------------------------------------

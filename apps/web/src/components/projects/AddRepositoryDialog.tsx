@@ -85,6 +85,18 @@ export interface AddRepositoryDialogProps {
    * API refuses the write regardless of what is on screen.
    */
   canWrite: boolean;
+  /**
+   * The project the registration is filed into, or undefined for the
+   * unassigned bucket (#406).
+   *
+   * Undefined is a real destination and not a missing value: `projectId: null`
+   * is the state every repository registered before projects existed is in,
+   * and a repository there is still observed, still dispatchable and still
+   * walked up the ladder.
+   */
+  projectId?: string;
+  /** The project's name, so the dialog can say where the row will land. */
+  projectName?: string;
   onClose: () => void;
   /**
    * The row the API created. The section adds it to its list, so a
@@ -102,6 +114,8 @@ export interface AddRepositoryDialogProps {
  */
 export function AddRepositoryDialog({
   canWrite,
+  projectId,
+  projectName,
   onClose,
   onRegistered,
   onShowRegistered,
@@ -158,7 +172,7 @@ export function AddRepositoryDialog({
     setRegistered(null);
 
     try {
-      const created = await register(chosen);
+      const created = await register(chosen, projectId);
       setRegistered(created.fullName);
       // The section's list is told before this dialog re-reads anything, so
       // the new repository is behind the dialog the moment it is created.
@@ -186,9 +200,22 @@ export function AddRepositoryDialog({
       maxWidth="md"
       aria-labelledby="add-repository-title"
     >
-      <DialogTitle id="add-repository-title">Add a repository</DialogTitle>
+      <DialogTitle id="add-repository-title">
+        {projectName === undefined
+          ? 'Add a repository'
+          : `Add a repository to ${projectName}`}
+      </DialogTitle>
 
       <DialogContent dividers>
+        {projectName === undefined && (
+          <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+            This registers the repository into no project. That is a normal
+            place for it to live — unassigned repositories are observed,
+            dispatchable and walked up the ladder exactly like any other — and
+            it can be filed into a project at any time afterwards.
+          </Alert>
+        )}
+
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           These are the repositories the configured GitHub credential can reach
           —{' '}
@@ -237,7 +264,10 @@ export function AddRepositoryDialog({
 
         {registered !== null && (
           <Alert severity="success" sx={{ mb: 2 }}>
-            <AlertTitle>{registered} is registered</AlertTitle>
+            <AlertTitle>
+              {registered} is registered
+              {projectName === undefined ? '' : ` in ${projectName}`}
+            </AlertTitle>
             It is in the list behind this dialog, observed and not dispatched —
             dispatch, mirror labels and spec feedback all start off, and are
             enabled one rung at a time. Another repository can be added without

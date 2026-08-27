@@ -142,12 +142,16 @@ export const CONTROL_CENTER_SECTIONS: readonly ControlCenterSection[] = [
   {
     key: 'repositories',
     label: 'Repositories',
+    // The section stays and the controls do not (#406). Repositories are
+    // managed on the Projects destination now, and this description says so
+    // rather than describing an editor that is no longer here — the same
+    // treatment #394 gave the supervisor model when it moved to Credentials.
     description:
-      'The enablement ladder: register, observe, then dispatch — one ' +
-      'repository at a time, which is how the observation week ends.',
+      'The enablement ladder — register, observe, then dispatch — now lives ' +
+      'on Projects, in the main menu. This section says where it went.',
     Icon: AccountTreeIcon,
     status: 'live',
-    issue: 350,
+    issue: 406,
     phase: PHASE,
   },
   {

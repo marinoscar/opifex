@@ -155,7 +155,23 @@ function AppRoutes() {
                     </RequirePermission>
                   }
                 />
-                <Route path="/projects" element={<ProjectsPage />} />
+                {/* `projects:read` — the string `ProjectsController` and
+                    `RepositoriesController` both enforce, and the one
+                    `config/destinations.ts` declares for this destination.
+                    The page WRITES now (#406), so reaching it without the read
+                    permission would be a screen of 403s rather than a table
+                    that happened to be empty. */}
+                <Route
+                  path="/projects"
+                  element={
+                    <RequirePermission
+                      permission="projects:read"
+                      fallback={<Navigate to="/" replace />}
+                    >
+                      <ProjectsPage />
+                    </RequirePermission>
+                  }
+                />
                 <Route path="/cost" element={<CostPage />} />
                 <Route path="/settings" element={<UserSettingsPage />} />
                 {/* Route-level AUTHORIZATION, not just authentication.
