@@ -78,8 +78,9 @@ key, mirroring `github`'s existing shape in `configuration.ts`:
   Unset while the API key IS set is a half-configured deployment rather than an
   unconfigured one — see "A key with no model name is half-configured" below.
 - `SUPERVISOR_MODEL_BASE_URL` → `supervisor.model.baseUrl`. Default
-  `https://api.anthropic.com`. Override point for tests, mirroring
-  `github.apiBaseUrl`.
+  `https://api.anthropic.com` at the time of this decision; #392 changed the
+  default to empty, meaning "follow the provider" — see the amendment below.
+  Override point for tests, mirroring `github.apiBaseUrl`.
 - `SUPERVISOR_MODEL_TIMEOUT_MS` → `supervisor.model.timeoutMs`. Default
   `60000`. Passed to `AbortSignal.timeout`, as `GitHubHttpService` already
   does.
@@ -413,6 +414,76 @@ on runs; nothing in this decision routes the supervisor's own cost through
 it, and nothing here should be read as implying it does. Whether the
 supervisor's diagnostic spend needs its own ceiling is a separate question,
 open for now.
+
+## Amendment (2026-08-27): a second adapter, epic #391
+
+This decision named one vendor because there was one vendor to name. Epic
+#391 added a second — `OpenAiSupervisorModel`
+(`apps/api/src/supervisor/invocation/openai-supervisor-model.ts`), beside
+`AnthropicSupervisorModel` — and this section records what changed and, more
+pointedly, what did not, because a reader arriving after the change could
+reasonably wonder whether the second adapter was in scope here or crept in
+sideways.
+
+**Nothing in this ADR's Decision was revisited.** The transport is still the
+platform `fetch`; there is still no SDK, on either vendor's side; the request
+is still one bounded call with no retry and no backoff, for the same reasons
+argued above under "The deciding argument, made properly" and "Why
+ADR-0008's reasoning does not transfer" — nothing about a second HTTP
+endpoint changes what those arguments were about. The OpenAI adapter's own
+file header says this plainly: "This exercises the seam; it does not change
+it... Nothing in the port changed to admit this file, which is the point."
+That is this ADR's own claim, restated by the code that tested it.
+
+This ADR anticipated the shape a second adapter would take, in "The model is
+named, not tiered" above: "If a second supervisor-model vendor is ever
+added, that is the moment to revisit this — the port (`SupervisorModel`)
+does not need to change to add a second adapter, only the factory that
+chooses between them." That is exactly what #392 built.
+`supervisor-model.factory.ts`'s `createSupervisorModel` returns a
+`ProviderRoutingSupervisorModel` that holds both adapters and resolves
+`supervisor.model.provider` **per call** — the same per-call discipline #344
+already established for the API key, and for the same reason: a factory that
+picked once, at construction, would become a second, stale copy of a setting
+an operator can now change live from the Control Center. `SUPERVISOR_MODEL`
+is still bound once, to one object; the object is a router rather than a
+single vendor's client, and the port's contract — `name` plus `ask()`, text
+in and text out, no tools — is exactly what it was.
+
+Three things did have to move to make two vendors honest rather than merely
+possible, and none of them touch the port:
+
+- **Nothing in general configuration is named "Anthropic" any more.**
+  `SUPERVISOR_MODEL_API_KEY`'s help text used to describe an Anthropic
+  credential; it now describes "a separately metered credential for the
+  configured provider." `supervisor.model.provider`
+  (`SUPERVISOR_MODEL_PROVIDER`, `anthropic | openai`) is the new setting
+  that decides which vendor the key, the model name and the base URL below
+  mean — see [`docs/operator-configuration.md`](../operator-configuration.md)
+  for the operator-facing shape of that.
+- **The per-model cost table this ADR already flagged as an accepted,
+  ongoing maintenance cost** (see "What this does not settle" above) now
+  carries both vendors' rates in one file,
+  `apps/api/src/supervisor/invocation/model-pricing.ts`. The argument that
+  file's header makes — null rather than zero for a model it has no rate
+  for — is unchanged, and is now stated once for both vendors rather than
+  reargued per vendor.
+- **The base URL's default changed, and this is the one place this
+  amendment corrects the Decision above rather than merely restating it:**
+  `supervisor.model.baseUrl` no longer defaults to Anthropic's host. It
+  defaults to empty, meaning "follow whichever provider
+  `supervisor.model.provider` selects" — because a default that named one
+  vendor's host would make switching provider a two-step operation, and
+  forgetting the second step would post one vendor's key to the other
+  vendor's endpoint. Naming a provider's own published host is now _also_
+  treated as empty, which is the migration path for the deployments this
+  ADR's own example created: the `.env.example` this decision shipped
+  alongside carried `SUPERVISOR_MODEL_BASE_URL=https://api.anthropic.com`
+  uncommented, so most existing deployments have it set explicitly rather
+  than left absent — without that second rule, every one of them would pick
+  up the new provider setting while still reaching Anthropic's API. See
+  `effectiveBaseUrl` in
+  `apps/api/src/supervisor/invocation/supervisor-model.config.ts`.
 
 ## Alternatives considered
 

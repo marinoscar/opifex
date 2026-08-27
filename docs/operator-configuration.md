@@ -21,6 +21,7 @@ is the fix for it.
 
 - [What actually moved, and what did not](#what-actually-moved-and-what-did-not)
 - [The Control Center](#the-control-center)
+- [The supervisor's model: provider, base URL and price](#the-supervisors-model-provider-base-url-and-price)
 - [Resolution order: `default → env → DB row`](#resolution-order-default--env--db-row)
 - [Reload semantics: three values, and the third is the point](#reload-semantics-three-values-and-the-third-is-the-point)
 - [Reading the API response](#reading-the-api-response)
@@ -142,6 +143,166 @@ used. Configuration reads and writes `operator_settings`, the table this
 document is about. They have different storage, different permission
 stories, and different reload rules, and `controlCenter.ts`'s own header
 explains why they are kept apart rather than merged into one settings blob.
+
+## The supervisor's model: provider, base URL and price
+
+The AI supervisor (VISION §7) has spoken to exactly one vendor since
+ADR-0015 and now speaks to two, Anthropic and OpenAI (epic #391). Four
+settings, all under the `supervisor` group in the registry, describe that
+choice — `supervisor.model.provider`, `supervisor.model.apiKey`,
+`supervisor.model.name` and `supervisor.model.baseUrl` — and they are one
+decision, not four independent knobs, which is why they are edited together
+rather than each on its own row. What follows is the operator-facing shape
+of that decision; the code-facing shape is
+`apps/api/src/supervisor/invocation/supervisor-model.config.ts`.
+
+**`supervisor.model.provider` (`SUPERVISOR_MODEL_PROVIDER`, `anthropic |
+openai`) selects two things at once: which adapter answers, and which host
+the base URL derives from.** Nothing else in the registry, or in this
+document, names a vendor's endpoint — `supervisor-model.port.ts`'s own rule
+is that nothing outside `apps/api/src/supervisor/invocation/` may name a
+model provider, and the operator-facing settings inherit that discipline:
+change the provider and the key, the model name and the base URL all now
+mean "for whichever vendor this says," without being retyped.
+
+**The base URL rule is subtle enough to state precisely, because getting it
+wrong here is exactly how a credential ends up posted to the wrong vendor.**
+`supervisor.model.baseUrl` (`SUPERVISOR_MODEL_BASE_URL`) resolves in three
+cases, checked in this order (`effectiveBaseUrl` in
+`supervisor-model.config.ts`):
+
+1. **Empty** (the default) → the selected provider's own published host —
+   `https://api.anthropic.com` or `https://api.openai.com`.
+2. **A value equal to _any_ provider's published host** — not only the
+   currently selected one — → also the selected provider's host. This
+   clause is the migration path, and it exists for a concrete reason: before
+   #392, `infra/compose/.env.example` shipped
+   `SUPERVISOR_MODEL_BASE_URL=https://api.anthropic.com` uncommented, so
+   almost every existing deployment has this variable set explicitly rather
+   than left blank. Without this clause, changing `supervisor.model.provider`
+   to `openai` on one of those deployments would keep the base URL pinned to
+   Anthropic's host and post an OpenAI key there — a credential sent to a
+   host that will simply reject it, silently from the operator's point of
+   view until the decision log is read.
+3. **Anything else** — a proxy, a gateway, a test double — → used verbatim,
+   on whichever provider is selected. This is the real override the setting
+   exists for.
+
+**The model itself is chosen from a dropdown of what the configured key can
+actually reach, not typed as free text, and it lives on the Credentials
+screen rather than on Configuration (#394).** Before epic #391 an operator
+typed a literal catalogue string into `supervisor.model.name` and found out
+about a typo once an hour in the decision log, with nobody watching.
+`GET /api/operator-settings/supervisor-models`
+(`SupervisorModelCatalogService`,
+`apps/api/src/supervisor/invocation/model-catalog.service.ts`) asks the
+configured provider what its configured key can see, and the Credentials
+screen renders the answer as a picker. Provider, key and model are now one
+screen, one decision, for the reason the Configuration section states to an
+operator who goes looking for `supervisor.model.name` there anyway: choosing
+a model means asking the provider what the key can reach, so these four keys
+are one control on Credentials rather than a free-text box on Configuration.
+Configuration still lists all four keys — as chips, read-only, under
+"Configured on the Credentials tab" — with a button that jumps to
+Credentials, precisely so the setting is never simply missing from the
+screen an operator expects it on.
+
+**The version filter's rule is worth stating exactly, including its one
+counter-intuitive case: an id the filter cannot read is _shown_, not
+hidden.** Every model the catalogue call returns is classified into one of
+three states (`classifyModelId`,
+`apps/api/src/supervisor/invocation/model-version.ts`): `admitted` (parses,
+and at or above the floor), `below_threshold` (parses, and older), or
+`version_unrecognised` (does not parse at all). Only the first two states
+are ever hidden-vs-shown questions; the third is never hidden. The floor
+itself is per provider — Anthropic at 4.6, OpenAI at 5.4 — and it is
+**inclusive**: "above 5.4" is implemented as "5.4 and newer", so `gpt-5.4`
+and `claude-opus-4-6` — the flagship ids the floor was written from — clear
+it rather than falling just short of their own rule.
+
+Failing open on an unrecognised id is deliberate, not an oversight: model
+ids follow no stable scheme, either across vendors or across time for the
+same vendor — Anthropic moved its own scheme once already, from a
+mid-string version to a trailing one, which is why `claude-3-5-sonnet-20241022`
+does not parse under today's rule even though it is a real, if superseded,
+model id. The day a vendor changes its naming scheme again, the id that
+stops parsing is exactly as likely to be the newest, most desirable model as
+an old one — and hiding it would leave an operator staring at a dropdown
+with no way to select the model they came to select, with no explanation
+for why it is missing. So an unrecognised id is offered, marked "version not
+recognised" rather than worded as a defect, and sorted directly below the
+admitted models rather than buried beneath the ones below the floor — see
+`sortForSelection` in `model-catalog.service.ts`.
+
+**Listing models spends no tokens, and doing so is deliberate rather than
+incidental — it doubles as a credential check.** `GET /v1/models` bills
+nothing on either vendor's API, so the catalogue call can be pressed as
+often as an operator likes while iterating on a key, and a successful list
+is itself evidence the key authenticates: `SupervisorModelCatalogService`
+reports `spendsTokens: false` on every answer, as a field rather than a
+sentence baked into the UI, so a client never has to hard-code which of the
+API's routes are free. This is deliberately not the same action as the
+**Test** button elsewhere on Credentials, which makes one real, billed call
+to confirm the model actually answers — the two exist side by side
+precisely because "the key authenticates" and "the model answers and costs
+what the table expects" are different findings, and collapsing them into one
+button would hide which one failed.
+
+### The pricing table: a hand-maintained snapshot that says when it doesn't know
+
+Neither vendor's API reports what a call is billed at — only how many
+tokens it used — so converting a supervisor invocation's token counts into a
+dollar figure requires a rate table this repository owns, maintains by
+hand, and states as much:
+`apps/api/src/supervisor/invocation/model-pricing.ts`'s header carries a
+**"last checked"** date against each vendor's published pricing page and
+argues, at length, for what the table does. Two vendors' rates live in it
+side by side as of epic #391.
+
+**A model this table has no rate for is priced at `null`, and the
+supervisor's spend ceiling reports that rather than pretending the call was
+free.** `assessSupervisorSpend`
+(`apps/api/src/supervisor/invocation/supervisor-spend-gate.ts`) tracks an
+`unpricedCalls` count alongside the dollar total it enforces against, and
+when that count is non-zero the ceiling's own reason string says so in
+words, not just a number an operator has to already know how to read:
+
+> spent \$X across N invocation(s), plus an unknown amount across M model
+> call(s) the price table has no rate for — so this figure is a floor, not
+> a total
+
+That sentence lands in a `skipped_budget` decision-log row's reason the
+moment the ceiling is reached with unpriced calls in the window, and it
+means the same thing every time: the spend ceiling is comparing against a
+**floor**, not a total, and the true spend on unpriced calls could be higher
+than what is shown. The gate deliberately does not refuse to run on an
+unpriced model — doing so
+would turn an ordinary, expected event (a model the table has not caught up
+with yet) into an indefinite outage of the whole supervisor, which
+`supervisor-spend-gate.ts`'s own header calls a worse failure than an
+under-bounded floor. The under-count is bounded and it is always said; it is
+never silent.
+
+Three things the pricing table deliberately does not model, because the
+supervisor's request shape does not reach them (see the file's header for
+the full argument): the **long-context surcharge** both vendors charge past
+a token threshold, which the supervisor's bounded, truncated snapshot never
+crosses; **prompt-cache read and write rates**, because nothing in either
+adapter caches a prompt; and the **discounted service tiers** — batch, flex,
+and OpenAI's fast mode — because neither adapter requests one, so standard
+pricing is what is actually billed.
+
+**`daybreak-blue-latest` and `daybreak-red-latest` are deliberately absent
+from the table, and that omission is not an oversight either.** Both are
+aliases that OpenAI documents as pointing at whichever model is current —
+and documents that the _pricing_ moves with the target. A fixed
+rate keyed on either alias would be silently wrong the day it is
+repointed, which is precisely the failure this table's whole design exists
+to avoid: a wrong rate makes the spend ceiling confidently incorrect, where
+a missing rate merely reports itself as unpriced. Anthropic's dateless
+aliases (`claude-sonnet-4-0`, `claude-3-5-haiku-latest`, and similar) are a
+different case and are priced: they resolve within one minor version, at
+one price, so the alias cannot go stale in the same way.
 
 ## Resolution order: `default → env → DB row`
 
