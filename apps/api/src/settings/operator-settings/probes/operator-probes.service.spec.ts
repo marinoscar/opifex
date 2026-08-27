@@ -466,6 +466,45 @@ describe('OperatorProbesService (#338)', () => {
       expect(result).toMatchObject({ ok: false, skipped: true });
       expect(result.rateLimit).toBeUndefined();
     });
+
+    it('tests the provider that is configured, not a fixed one (#392)', async () => {
+      // The seam the rest of this describe stubs, exercised for real once —
+      // because a Test button hard-wired to one vendor answers "your key
+      // works" about a provider the operator did not select, which is a probe
+      // that tests something else. Asserted by where the request GOES rather
+      // than by a class name: it is the host that receives the credential.
+      await build({
+        SUPERVISOR_MODEL_PROVIDER: 'openai',
+        SUPERVISOR_MODEL_API_KEY: 'sk-openai-probe',
+        SUPERVISOR_MODEL_NAME: 'gpt-5.6-luna',
+      });
+      const urls: string[] = [];
+      const fetchMock = jest.fn((url: unknown) => {
+        urls.push(String(url));
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [{ message: { content: 'ok' } }],
+              usage: { prompt_tokens: 12, completion_tokens: 1 },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      });
+      const realFetch = global.fetch;
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      try {
+        const live = new OperatorProbesService(settings, prisma.asPrisma());
+        const result = await live.run('supervisor-model');
+
+        expect(result.ok).toBe(true);
+        expect(result.detail).toContain('gpt-5.6-luna answered');
+        expect(urls).toEqual(['https://api.openai.com/v1/chat/completions']);
+      } finally {
+        global.fetch = realFetch;
+      }
+    });
   });
 
   // -------------------------------------------------------------------------

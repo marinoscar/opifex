@@ -519,15 +519,43 @@ describe('provider selection (#392)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('builds both adapters, so neither depends on how the process booted', () => {
-    // The router holds one of each; the selection is a lookup, not a
-    // construction. If it built adapters lazily from the boot-time setting,
-    // the stale copy #344 removed would be back.
-    expect(new OpenAiSupervisorModel(operatorSettings())).toBeInstanceOf(
-      OpenAiSupervisorModel,
-    );
-    expect(new AnthropicSupervisorModel(operatorSettings())).toBeInstanceOf(
-      AnthropicSupervisorModel,
-    );
+  it('reports a key that names no model as such on BOTH providers', async () => {
+    // #392's last acceptance criterion, stated where it can actually fail: the
+    // two adapters answer from the same `reportedModelName`, so a provider
+    // switch must not change what an unconfigured supervisor's decision-log
+    // row says. If either adapter grew its own opinion, this is where the two
+    // would stop agreeing.
+    const settings = operatorSettings({ 'supervisor.model.name': '' });
+    const model = createSupervisorModel(settings);
+
+    for (const provider of ['anthropic', 'openai'] as const) {
+      settings.setOverride('supervisor.model.provider', provider);
+
+      expect(model.name).toBe('unconfigured');
+      await expect(
+        model.ask({ snapshot: 'S', instruction: 'I' }),
+      ).rejects.toThrow(/SUPERVISOR_MODEL_NAME is not/);
+
+      settings.setOverride('supervisor.model.apiKey', '');
+      expect(model.name).toBe('none');
+      settings.setOverride('supervisor.model.apiKey', 'sk-either');
+    }
+
+    // Nothing was billed on either provider, which is the other half of it.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('is the object both adapter classes sit behind', () => {
+    // The router holds one of each and picks by lookup rather than by
+    // construction. Built lazily from the boot-time setting, the stale copy
+    // #344 removed would be back — and `routes to the provider that is set`
+    // above is what would catch that, so this only pins the two classes as the
+    // things being routed BETWEEN.
+    const bothAdapters = [
+      new AnthropicSupervisorModel(operatorSettings()),
+      new OpenAiSupervisorModel(operatorSettings()),
+    ];
+
+    expect(bothAdapters.map((each) => each.name)).toEqual([MODEL, MODEL]);
   });
 });
