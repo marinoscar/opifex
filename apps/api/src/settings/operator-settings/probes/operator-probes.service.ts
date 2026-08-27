@@ -1,10 +1,8 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 
 import { PrismaService } from '../../../prisma/prisma.service';
-import {
-  AnthropicSupervisorModel,
-  SupervisorModelError,
-} from '../../../supervisor/invocation/anthropic-supervisor-model';
+import { SupervisorModelError } from '../../../supervisor/invocation/supervisor-model.config';
+import { createSupervisorModel } from '../../../supervisor/invocation/supervisor-model.factory';
 import type { SupervisorModel } from '../../../supervisor/invocation/supervisor-model.port';
 import { buildChildEnvironment } from '../../../runners/process/child-environment';
 import { ChildProcessSupervisor } from '../../../runners/process/child-process-supervisor';
@@ -457,9 +455,14 @@ export class OperatorProbesService {
    * therefore the whole of the wiring: the probe and the supervisor's own
    * invocations cannot disagree about which key is in force, because there is
    * only one place either can read it from.
+   *
+   * Since #392 it goes through the same factory `SupervisorModule` binds,
+   * rather than naming an adapter. That is not tidiness: a probe hard-wired to
+   * one vendor would answer "your key works" against a provider the operator
+   * did not select, which is a Test button that tests something else.
    */
   protected createModel(): SupervisorModel {
-    return new AnthropicSupervisorModel(this.settings);
+    return createSupervisorModel(this.settings);
   }
 
   /**

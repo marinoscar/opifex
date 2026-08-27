@@ -7,7 +7,7 @@ import {
   FakeOperatorSettingsPrisma,
   makeOperatorSettings,
 } from '../../../../test/fixtures/operator-settings.fixture';
-import { SupervisorModelError } from '../../../supervisor/invocation/anthropic-supervisor-model';
+import { SupervisorModelError } from '../../../supervisor/invocation/supervisor-model.config';
 import type { SupervisorModel } from '../../../supervisor/invocation/supervisor-model.port';
 import type { OperatorSettingsService } from '../operator-settings.service';
 import {
