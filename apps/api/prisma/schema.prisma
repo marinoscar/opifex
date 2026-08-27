@@ -45,6 +45,7 @@ model User {
   approvalRequestsDecided     ApprovalRequest[]     @relation("ApprovalRequestsDecided")
   promotionStatesChanged      PromotionState[]      @relation("PromotionStateChangedBy")
   operatorSettingsUpdated     OperatorSetting[]     @relation("OperatorSettingsUpdater")
+  repositoriesRetired         Repository[]          @relation("RepositoriesRetiredBy")
 
   @@map("users")
 }
@@ -419,11 +420,56 @@ model Repository {
   /// Null until the first successful observation.
   lastObservedAt DateTime? @map("last_observed_at") @db.Timestamptz
 
+  /// When this repository was stood down, and by whom (#405).
+  ///
+  /// ## Why this is stored and not derived from the four flags
+  ///
+  /// "Retired" could be read off the ladder — all four of `observeEnabled`,
+  /// `mirrorLabelsEnabled`, `specFeedbackEnabled` and `dispatchEnabled` off —
+  /// for the price of no column and no migration. That reading was rejected,
+  /// for three reasons that are really one reason.
+  ///
+  /// 1. ALL FOUR OFF IS REACHABLE WITHOUT ANYONE DECIDING ANYTHING. It is four
+  ///    independent PATCHes, or one registration with `observeEnabled: false`.
+  ///    An operator who turns observation off for an afternoon while a
+  ///    migration runs has not retired anything, and the derived reading
+  ///    cannot tell that apart from a stand-down. Those are different facts
+  ///    about intent, and only one of them is a decision.
+  ///
+  /// 2. UN-RETIRING WOULD HAVE NOTHING TO UNDO. Un-retire returns a repository
+  ///    to the BOTTOM of the ladder — observation on, every write off. Under
+  ///    the derived reading nothing records that it was ever retired, so the
+  ///    same button would be offered for the afternoon pause above, and
+  ///    pressing it would silently end that pause.
+  ///
+  /// 3. THE AUDIT ROW WOULD BE THE ONLY TRACE. `audit_events` records the ACT;
+  ///    without these columns nothing records the resulting STATE, so
+  ///    "is this retired now?" could only be answered by replaying the audit
+  ///    log forward against every later PATCH. That is VISION §5's argument
+  ///    run backwards: a fact that exists only as a reconstruction is a fact
+  ///    nobody will reconstruct.
+  ///
+  /// The cost is honest and small: two nullable columns, no backfill. NULL is
+  /// already true of every row that exists — none of them has been retired.
+  ///
+  /// A repository with `retiredAt` set has all four ladder flags off, and
+  /// `RepositoriesService.update` refuses to turn one back on while it is set,
+  /// so the invariant does not depend on callers being careful.
+  retiredAt   DateTime? @map("retired_at") @db.Timestamptz
+  /// Who stood it down. Nullable and SetNull for the same reason as
+  /// `PromotionState.changedById`: the decision is already over, so the record
+  /// surviving a deleted account is enough, and a Restrict here would let a
+  /// retired repository block deleting a user. Cleared on un-retire — the
+  /// history of who retired it lives in `audit_events`, and a `retiredById`
+  /// beside a null `retiredAt` would be a state with no meaning.
+  retiredById String?   @map("retired_by_id") @db.Uuid
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
   project          Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  retiredBy        User?                @relation("RepositoriesRetiredBy", fields: [retiredById], references: [id], onDelete: SetNull)
   workOrders       WorkOrder[]
   specRejections   IssueSpecRejection[]
   trustGrants      TrustGrant[]
@@ -431,6 +477,9 @@ model Repository {
 
   @@unique([owner, name])
   @@index([projectId])
+  /// "What did this user retire" - the reason the actor is a column and a
+  /// foreign key rather than a name inside the audit row's JSON.
+  @@index([retiredById])
   // The reconciler's tick query: "which repositories am I observing, oldest
   // observation first". Both columns are in the index so it never touches the
   // table to order.
@@ -777,11 +826,11 @@ model Run {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relations
-  workOrder   WorkOrder    @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-  attempts    RunAttempt[]
-  runner      Runner       @relation(fields: [runnerKey], references: [key], onDelete: Restrict)
-  events      RunEvent[]
-  escalations Escalation[]
+  workOrder     WorkOrder      @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  attempts      RunAttempt[]
+  runner        Runner         @relation(fields: [runnerKey], references: [key], onDelete: Restrict)
+  events        RunEvent[]
+  escalations   Escalation[]
   /// Periods this run made no progress, for VISION §10 metric 2 (#232).
   deadIntervals DeadInterval[]
   /// At most one: a run is dispatched by exactly one decision, and that
@@ -1008,7 +1057,7 @@ model DeadInterval {
   /// is just one whose end is at or beyond the window's end. Counting it as
   /// zero would report a factory that is dead RIGHT NOW as perfectly healthy,
   /// which is the precise failure this whole table exists to prevent.
-  endedAt DateTime? @map("ended_at") @db.Timestamptz
+  endedAt DateTime?        @map("ended_at") @db.Timestamptz
   /// Why it ended. NULL exactly when `ended_at` is NULL.
   endedBy DeadIntervalEnd? @map("ended_by")
 
@@ -2574,20 +2623,20 @@ model ApprovalRequest {
 
   /// When it was decided - by a human, a timeout, or a grant. Null while
   /// `pending` or `parked`.
-  decidedAt DateTime? @map("decided_at") @db.Timestamptz
+  decidedAt    DateTime?           @map("decided_at") @db.Timestamptz
   /// Who decided it, when a human did. Null for `timeout` and `grant`
   /// resolutions, and that null is meaningful the same way
   /// `TrustGrant.revokedById`'s is: naming an actor for a resolution nobody
   /// personally made would be inventing one. `onDelete: SetNull` - the
   /// approval record outlives the account that decided it.
-  decidedById String? @map("decided_by_id") @db.Uuid
+  decidedById  String?             @map("decided_by_id") @db.Uuid
   /// HOW it was decided - see `ApprovalDecidedVia`. Null while unresolved,
   /// paired with `decidedAt`.
-  decidedVia  ApprovalDecidedVia? @map("decided_via")
+  decidedVia   ApprovalDecidedVia? @map("decided_via")
   /// Free text from the deciding human, or a system-generated note for a
   /// timeout or grant resolution. Optional: a fast verdict with no prose is
   /// still a verdict.
-  decisionNote String? @map("decision_note")
+  decisionNote String?             @map("decision_note")
 
   /// The grant that authorized this action, when one did - `decidedVia:
   /// grant`. `onDelete: SetNull`: the approval record outlives the grant row
@@ -2882,7 +2931,7 @@ model OperatorSetting {
   /// Which encryption key encrypted this row, so the key can be rotated
   /// without a flag day: old rows keep decrypting under the version they were
   /// written with until something rewrites them.
-  secretKeyVersion Int? @map("secret_key_version")
+  secretKeyVersion Int?    @map("secret_key_version")
 
   /// Bumped on every write to this key. Distinct from
   /// `OperatorSettingsRevision.revision`: this is per-key optimistic
