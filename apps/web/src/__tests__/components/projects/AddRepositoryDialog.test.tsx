@@ -35,6 +35,7 @@ import { http, HttpResponse } from 'msw';
 import { render } from '../../utils/test-utils';
 import { expectNoLeak, findLeaks } from '../../utils/domSecrets';
 import { server } from '../../mocks/server';
+import { PROJECT_ID, projectFixture } from '../../mocks/repositories';
 import {
   REGISTERED_ID,
   THREE_ADMISSIONS,
@@ -213,6 +214,82 @@ describe('AddRepositoryDialog', () => {
       expect(
         await screen.findByRole('button', { name: /^add repository$/i }),
       ).toBeDisabled();
+    });
+
+    it('registers into the project the panel is open on, in ONE request', async () => {
+      // Not a create followed by an assignment: two requests would leave a
+      // window in which the repository exists in no project, and a failure in
+      // the second would strand it there looking like an unassigned
+      // registration nobody made.
+      registered();
+      serveAvailable();
+      const bodies = serveRegistration(repository({ projectId: PROJECT_ID }));
+      const assignments: string[] = [];
+      server.use(
+        http.put(
+          `${API_BASE}/projects/:id/repositories/:repositoryId`,
+          ({ params }) => {
+            assignments.push(String(params.id));
+            return HttpResponse.json({ data: repository() });
+          },
+        ),
+      );
+      const user = userEvent.setup();
+
+      render(
+        <ProjectRepositoriesPanel
+          scope={{ kind: 'project', id: PROJECT_ID }}
+          project={projectFixture()}
+          canWrite
+          onEditProject={() => {}}
+          onDeleteProject={() => {}}
+          onRepositoryCountChanged={() => {}}
+        />,
+      );
+      await user.click(
+        await screen.findByRole('button', { name: /^add repository$/i }),
+      );
+      await screen.findByRole('dialog');
+      await user.click(
+        await screen.findByRole('button', { name: /^acme\/gadgets/ }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: /^Register acme\/gadgets$/ }),
+      );
+
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toEqual({
+        owner: 'acme',
+        name: 'gadgets',
+        projectId: PROJECT_ID,
+      });
+      // No follow-up assignment: the create carried the project.
+      expect(assignments).toEqual([]);
+    });
+
+    it('registers into no project from the unassigned bucket, and says so', async () => {
+      // `projectId: null` is a destination an operator may deliberately choose
+      // rather than a value they forgot to supply, so the key is OMITTED and
+      // the dialog explains where the row will land.
+      registered();
+      serveAvailable();
+      const bodies = serveRegistration();
+      const user = userEvent.setup();
+
+      const dialog = await openPicker(user);
+      expect(
+        within(dialog).getByText(/registers the repository into no project/i),
+      ).toBeInTheDocument();
+
+      await user.click(
+        await screen.findByRole('button', { name: /^acme\/gadgets/ }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: /^Register acme\/gadgets$/ }),
+      );
+
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).not.toHaveProperty('projectId');
     });
 
     it('asks GitHub only once the dialog is opened', async () => {

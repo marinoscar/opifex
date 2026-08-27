@@ -155,6 +155,51 @@ describe('ProjectsPage', () => {
     });
   });
 
+  describe('Switching scope', () => {
+    it('carries no panel state from one group into another', async () => {
+      // The panel is remounted on a scope change. Without that, a probe
+      // verdict, a revealed row or an open stand-down dialog would survive
+      // into a group they were never about — and a probe answer is a claim
+      // about ONE repository at ONE moment, which is exactly the kind of
+      // inference this cockpit is not allowed to make.
+      serveProjects(projectFixture({ repositoryCount: 1 }));
+      serveRepositories({
+        none: [repositoryFixture()],
+        [PROJECT_ID]: [
+          repositoryFixture({
+            id: '66666666-6666-4666-8666-666666666666',
+            projectId: PROJECT_ID,
+            name: 'ledger',
+            fullName: 'acme/ledger',
+          }),
+        ],
+      });
+      server.use(
+        // #338 has not shipped, so an unrouted path answers 404 and the card
+        // draws "not yet verifiable" — a verdict, and one that must not
+        // outlive the scope it was asked in.
+        http.post(`${API_BASE}/operator-settings/probes/github-repo`, () =>
+          HttpResponse.json({ message: 'Not Found' }, { status: 404 }),
+        ),
+      );
+      const user = userEvent.setup();
+
+      renderPage();
+      await screen.findByLabelText('Repository acme/widgets');
+      await user.click(screen.getByRole('button', { name: /test access/i }));
+      expect(await screen.findByText('Not yet verifiable')).toBeInTheDocument();
+
+      await user.click(
+        screen.getByRole('button', { name: /Billing Platform/ }),
+      );
+      await screen.findByLabelText('Repository acme/ledger');
+      await user.click(screen.getByRole('button', { name: /^Unassigned/ }));
+      await screen.findByLabelText('Repository acme/widgets');
+
+      expect(screen.queryByText('Not yet verifiable')).not.toBeInTheDocument();
+    });
+  });
+
   describe('Creating a project', () => {
     it('omits the slug when nobody typed one, letting the API derive it', async () => {
       // Sending this build's own derivation would freeze today's algorithm
