@@ -37,14 +37,23 @@ export interface ModelVersion {
   readonly minor: number;
 }
 
-/** What the filter decided about one model id. Three states, never two. */
-export type ModelAdmission =
+/**
+ * What the filter decided about one model id. Three states, never two.
+ *
+ * An array rather than a bare union because the response DTO validates against
+ * it — `z.enum(MODEL_ADMISSIONS)` — and a hand-written copy of these three
+ * strings in the settings layer would be a second declaration to keep in step.
+ */
+export const MODEL_ADMISSIONS = [
   /** Parsed, and at or above the floor for its provider. */
-  | 'admitted'
+  'admitted',
   /** Parsed, and older than the floor. Returned, not hidden. */
-  | 'below_threshold'
+  'below_threshold',
   /** Did not parse. Returned and marked — see this file's header. */
-  | 'version_unrecognised';
+  'version_unrecognised',
+] as const;
+
+export type ModelAdmission = (typeof MODEL_ADMISSIONS)[number];
 
 /**
  * The floor per provider, from epic #391's decision: "OpenAI above 5.4,

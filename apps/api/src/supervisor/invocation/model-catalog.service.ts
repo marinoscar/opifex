@@ -68,13 +68,13 @@ import {
  * the one that would otherwise be reported as `invalid_key`, sending an
  * operator off to reissue a credential that was never the problem.
  */
-export type ModelCatalogStatus =
+export const MODEL_CATALOG_STATUSES = [
   /** The provider answered with a list. `models` may still be empty. */
-  | 'ok'
+  'ok',
   /** No key is configured. Nothing to list yet — not an error. */
-  | 'no_key'
+  'no_key',
   /** The provider rejected the credential. Remedy: a different key. */
-  | 'invalid_key'
+  'invalid_key',
   /**
    * Rejected, AND the key is shaped like the OTHER provider's.
    *
@@ -82,13 +82,16 @@ export type ModelCatalogStatus =
    * `invalid_key` would describe misleadingly. Remedy: change the provider
    * setting, not the key.
    */
-  | 'wrong_provider'
+  'wrong_provider',
   /** Nothing answered: DNS, network, proxy, or the timeout. Not a key verdict. */
-  | 'unreachable'
+  'unreachable',
   /** Authenticated and then refused (403). Remedy: scope, project, or region. */
-  | 'refused'
-  /** The provider answered something else — 429, a 5xx, or a body we cannot read. */
-  | 'failed';
+  'refused',
+  /** The provider answered something else — 429, a 5xx, or an unreadable body. */
+  'failed',
+] as const;
+
+export type ModelCatalogStatus = (typeof MODEL_CATALOG_STATUSES)[number];
 
 /** One model, as offered to the operator. Never omitted for its version. */
 export interface CatalogModel {

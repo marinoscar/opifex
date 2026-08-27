@@ -9,6 +9,7 @@ import { ENCRYPTION_KEY_ENV_VAR } from '../../common/crypto/secret-box';
 import { MASK, REVEALED_SUFFIX_LENGTH } from '../../common/crypto/redact';
 import { operatorSettingsDocumentSchema } from './dto/operator-settings-response.dto';
 import { OperatorSettingsController } from './operator-settings.controller';
+import { SupervisorModelCatalogService } from '../../supervisor/invocation/model-catalog.service';
 import type { OperatorProbesService } from './probes/operator-probes.service';
 import { OPERATOR_SETTINGS } from './operator-settings.registry';
 
@@ -86,6 +87,7 @@ describe('GET /api/operator-settings never returns a secret (#338)', () => {
     controller = new OperatorSettingsController(
       settings,
       {} as unknown as OperatorProbesService,
+      {} as unknown as SupervisorModelCatalogService,
     );
   });
 
@@ -128,6 +130,7 @@ describe('GET /api/operator-settings never returns a secret (#338)', () => {
     const envController = new OperatorSettingsController(
       settings,
       {} as unknown as OperatorProbesService,
+      {} as unknown as SupervisorModelCatalogService,
     );
 
     const serialized = JSON.stringify(envController.list());
@@ -213,6 +216,7 @@ describe('GET /api/operator-settings never returns a secret (#338)', () => {
       const brokenController = new OperatorSettingsController(
         settings,
         {} as unknown as OperatorProbesService,
+        {} as unknown as SupervisorModelCatalogService,
       );
       const document = brokenController.list();
       const entry = document.settings.find(
@@ -237,6 +241,7 @@ describe('GET /api/operator-settings never returns a secret (#338)', () => {
       const empty = new OperatorSettingsController(
         settings,
         {} as unknown as OperatorProbesService,
+        {} as unknown as SupervisorModelCatalogService,
       );
 
       const entry = empty

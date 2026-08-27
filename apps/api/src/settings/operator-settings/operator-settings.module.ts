@@ -6,6 +6,7 @@ import { OperatorSettingsController } from './operator-settings.controller';
 import { OperatorSettingsRefreshTask } from './operator-settings-refresh.task';
 import { OperatorSettingsEnvDisagreementService } from './operator-settings.env-disagreement';
 import { OperatorSettingsService } from './operator-settings.service';
+import { SupervisorModelCatalogService } from '../../supervisor/invocation/model-catalog.service';
 import { OperatorProbesService } from './probes/operator-probes.service';
 
 /**
@@ -46,6 +47,14 @@ import { OperatorProbesService } from './probes/operator-probes.service';
     OperatorSettingsService,
     OperatorSettingsRefreshTask,
     OperatorProbesService,
+    // Lives under `supervisor/invocation/` because listing models is
+    // irreducibly vendor-shaped and that is the only directory allowed to know
+    // which vendors exist (#392). It is PROVIDED here, and not exported,
+    // because the only thing that should reach it is the Control Center
+    // endpoint an operator opens — the same reasoning as the probes above,
+    // one notch weaker: this one spends nothing, but it still puts a
+    // credential on the wire.
+    SupervisorModelCatalogService,
     // Not exported either, and for a stronger version of the same reason: it
     // spawns a process that mints a credential. The only thing that should be
     // able to reach it is the endpoint an operator clicks (#386).

@@ -12,6 +12,7 @@ import {
 } from '../../../test/fixtures/operator-settings.fixture';
 import type { RequestUser } from '../../auth/interfaces/authenticated-user.interface';
 import { PERMISSIONS } from '../../common/constants/roles.constants';
+import { PERMISSIONS_KEY } from '../../auth/decorators/permissions.decorator';
 import { PERMISSION_MODES } from '../../runners/claude-code-local/claude-code-invocation';
 import { ENCRYPTION_KEY_ENV_VAR } from '../../common/crypto/secret-box';
 import { ZodValidationPipe } from 'nestjs-zod';
@@ -23,6 +24,7 @@ import {
 import { OperatorSettingsController } from './operator-settings.controller';
 import { OPERATOR_SETTING_KEYS } from './operator-settings.registry';
 import type { OperatorSettingsService } from './operator-settings.service';
+import { SupervisorModelCatalogService } from '../../supervisor/invocation/model-catalog.service';
 import type { OperatorProbesService } from './probes/operator-probes.service';
 
 /**
@@ -69,6 +71,7 @@ describe('OperatorSettingsController (#338)', () => {
     controller = new OperatorSettingsController(
       settings,
       {} as unknown as OperatorProbesService,
+      {} as unknown as SupervisorModelCatalogService,
     );
   }
 
@@ -562,9 +565,13 @@ describe('OperatorSettingsController (#338)', () => {
 
     it('hands a known probe to the probes service', async () => {
       const run = jest.fn().mockResolvedValue({ ok: true });
-      const withProbes = new OperatorSettingsController(settings, {
-        run,
-      } as unknown as OperatorProbesService);
+      const withProbes = new OperatorSettingsController(
+        settings,
+        {
+          run,
+        } as unknown as OperatorProbesService,
+        {} as unknown as SupervisorModelCatalogService,
+      );
 
       await withProbes.probe('github-token');
 
@@ -573,9 +580,13 @@ describe('OperatorSettingsController (#338)', () => {
 
     it('passes a repository id through when one is given', async () => {
       const run = jest.fn().mockResolvedValue({ ok: true });
-      const withProbes = new OperatorSettingsController(settings, {
-        run,
-      } as unknown as OperatorProbesService);
+      const withProbes = new OperatorSettingsController(
+        settings,
+        {
+          run,
+        } as unknown as OperatorProbesService,
+        {} as unknown as SupervisorModelCatalogService,
+      );
 
       await withProbes.probe('github-repo', {
         repositoryId: '00000000-0000-4000-8000-0000000000ff',
@@ -584,6 +595,83 @@ describe('OperatorSettingsController (#338)', () => {
       expect(run).toHaveBeenCalledWith('github-repo', {
         repositoryId: '00000000-0000-4000-8000-0000000000ff',
       });
+    });
+  });
+  // -------------------------------------------------------------------------
+
+  describe('GET supervisor-models (#393)', () => {
+    /** A catalogue answer, as the service would build it. */
+    const CATALOGUE = {
+      provider: 'openai' as const,
+      status: 'ok' as const,
+      detail: 'OpenAI listed 1 model, 1 of them 5.4 or newer.',
+      minimumVersion: '5.4',
+      spendsTokens: false,
+      models: [
+        {
+          id: 'gpt-5.4',
+          displayName: null,
+          version: '5.4',
+          admission: 'admitted' as const,
+          createdAt: '2026-02-19T00:00:00.000Z',
+        },
+      ],
+      checkedAt: '2026-08-27T10:00:00.000Z',
+    };
+
+    function withCatalogue(list: jest.Mock): OperatorSettingsController {
+      return new OperatorSettingsController(
+        settings,
+        {} as unknown as OperatorProbesService,
+        { list } as unknown as SupervisorModelCatalogService,
+      );
+    }
+
+    it('returns the catalogue exactly as the service built it', async () => {
+      // No wrapping here: `TransformInterceptor` adds the `{ data, meta }`
+      // envelope, and a handler that built one itself would produce
+      // `{ data: { data: ... } }` on the wire.
+      const list = jest.fn().mockResolvedValue(CATALOGUE);
+
+      await expect(withCatalogue(list).listSupervisorModels()).resolves.toBe(
+        CATALOGUE,
+      );
+      expect(list).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not turn a reported failure into an HTTP error', async () => {
+      // The endpoint's whole contract. "The request failed" and "the request
+      // found a failure" behind one status would be indistinguishable to the
+      // UI, so a rejected key is a 200 carrying `status: 'invalid_key'`.
+      const failure = {
+        ...CATALOGUE,
+        status: 'invalid_key' as const,
+        models: [],
+      };
+      const list = jest.fn().mockResolvedValue(failure);
+
+      await expect(
+        withCatalogue(list).listSupervisorModels(),
+      ).resolves.toMatchObject({ status: 'invalid_key' });
+    });
+
+    it('is gated exactly as the settings read is', () => {
+      // #393: "gated as a settings read; it reveals what a key can reach, so
+      // it is not public". Read off the decorator rather than asserted as a
+      // literal, so removing `@Auth()` from the route fails here rather than
+      // silently publishing what a key can reach.
+      const required: unknown = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        OperatorSettingsController.prototype.listSupervisorModels,
+      );
+
+      expect(required).toEqual([PERMISSIONS.SYSTEM_SETTINGS_READ]);
+      expect(required).toEqual(
+        Reflect.getMetadata(
+          PERMISSIONS_KEY,
+          OperatorSettingsController.prototype.list,
+        ),
+      );
     });
   });
 });

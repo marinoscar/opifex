@@ -38,6 +38,11 @@ import {
   probeNameSchema,
   type ProbeName,
 } from './dto/operator-probe.dto';
+import {
+  SupervisorModelCatalogService,
+  type SupervisorModelCatalog,
+} from '../../supervisor/invocation/model-catalog.service';
+import { SupervisorModelCatalogDto } from './dto/supervisor-model-catalog.dto';
 import { OperatorProbesService } from './probes/operator-probes.service';
 import {
   OPERATOR_SETTINGS,
@@ -86,6 +91,7 @@ export class OperatorSettingsController {
   constructor(
     private readonly settings: OperatorSettingsService,
     private readonly probes: OperatorProbesService,
+    private readonly supervisorModels: SupervisorModelCatalogService,
   ) {}
 
   @Get()
@@ -209,6 +215,46 @@ export class OperatorSettingsController {
     }
 
     return buildOperatorSettingsDocument(this.settings);
+  }
+
+  @Get('supervisor-models')
+  // The same gate as the settings read above, deliberately. It reveals what a
+  // key can reach, so it is not public — but it reveals nothing the settings
+  // document does not already imply, so a THIRD permission would separate no
+  // duty and only make the Control Center harder to grant access to.
+  @Auth({ permissions: [PERMISSIONS.SYSTEM_SETTINGS_READ] })
+  @ApiOperation({
+    summary: 'List the models the configured supervisor key can reach',
+    description:
+      'Asks the configured provider (`supervisor.model.provider`) what the configured key ' +
+      '(`supervisor.model.apiKey`) can actually reach, so that `supervisor.model.name` can be ' +
+      'chosen from a list rather than typed from memory. Both settings are read per request, ' +
+      'so a key or a provider saved a moment ago is the one used here.\n\n' +
+      '**This spends no tokens.** A model listing bills nothing on either provider, which ' +
+      'makes it a credential check that costs nothing — unlike ' +
+      '`POST /api/operator-settings/probes/supervisor-model`, which deliberately makes a real, ' +
+      'billed call and is rate limited because of it. The response reports this in ' +
+      '`spendsTokens` so a client does not have to know which of these routes is which.\n\n' +
+      '**A failure is a 200 carrying a `status`, not an error status.** "The request failed" ' +
+      'and "the request found a failure" are the two things this endpoint exists to tell ' +
+      'apart. `no_key` means nothing is configured yet; `invalid_key` means the credential ' +
+      'was rejected; `wrong_provider` means it was rejected AND is shaped like the other ' +
+      "provider's, which is usually a provider setting nobody changed rather than a bad key; " +
+      '`unreachable` means nothing answered at all, so the key was never judged; `refused` ' +
+      'means it authenticated and was not permitted; `failed` is anything else, with the ' +
+      "provider's own status in `detail`.\n\n" +
+      '**A model whose version cannot be read is returned and MARKED, never dropped.** Model ' +
+      'ids follow no stable scheme across vendors or across time, so the day one changes, the ' +
+      'newest and most desirable model is exactly the one that fails to parse — it must not ' +
+      'vanish from the list leaving no explanation and no way to select it. Each model carries ' +
+      'an `admission` of `admitted`, `below_threshold` or `version_unrecognised`, and the ' +
+      'floor applied is published as `minimumVersion`.',
+  })
+  @ApiDataResponse(SupervisorModelCatalogDto, {
+    description: 'What the provider answered, or why it did not',
+  })
+  listSupervisorModels(): Promise<SupervisorModelCatalog> {
+    return this.supervisorModels.list();
   }
 
   @Post('probes/:probe')
