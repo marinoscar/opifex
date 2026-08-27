@@ -294,6 +294,32 @@ describe('AddRepositoryDialog', () => {
       ).toHaveAttribute('aria-current', 'true');
     });
 
+    it('will not offer an admission this build has never heard of', async () => {
+      // Assuming an unfamiliar word means `available` is the one thing the
+      // mark exists not to do: the guess ends in a refusal the operator was
+      // told would not happen.
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({
+          repositories: [
+            {
+              ...availableRepository({ name: 'gadgets' }),
+              admission: 'suspended' as never,
+            },
+          ],
+        }),
+      );
+      await openPicker(userEvent.setup());
+
+      const row = await screen.findByLabelText(
+        'Available repository acme/gadgets',
+      );
+      expect(within(row).getByText('suspended')).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /^acme\/gadgets/ }),
+      ).not.toBeInTheDocument();
+    });
+
     it('does not mark a card nobody asked for', async () => {
       registered(repository());
       serveAvailable();
@@ -457,6 +483,50 @@ describe('AddRepositoryDialog', () => {
         ),
       ).toHaveLength(2);
       expect(screen.getByText(/nothing was written/i)).toBeInTheDocument();
+    });
+
+    it('renders a 403 on the write as a fact about the account', async () => {
+      // `projects:write` is a different permission from the one that lists
+      // repositories, so an operator can browse this picker and be refused
+      // the registration — which says nothing about the repository.
+      registered();
+      serveAvailable();
+      refuseRegistration(403, 'Forbidden');
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('button', { name: /^acme\/gadgets/ }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: /^Register acme\/gadgets$/ }),
+      );
+
+      expect(
+        await screen.findByText('This account may not register a repository'),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/needs projects:write/)).toBeInTheDocument();
+    });
+
+    it('renders a status it has no arm for without inventing a reason', async () => {
+      registered();
+      serveAvailable();
+      refuseRegistration(418, 'The API is a teapot');
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('button', { name: /^acme\/gadgets/ }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: /^Register acme\/gadgets$/ }),
+      );
+
+      expect(
+        await screen.findByText('acme/gadgets could not be registered'),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/The API is a teapot/)).toBeInTheDocument();
+      expect(screen.getByText(/Nothing was registered/)).toBeInTheDocument();
     });
 
     it('will not register until something is chosen', async () => {
