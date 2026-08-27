@@ -20,6 +20,7 @@ import {
 } from '@nestjs/swagger';
 
 import { Auth } from '../auth/decorators/auth.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ApiDataResponse } from '../common/decorators/api-data-response.decorator';
 import { PERMISSIONS } from '../common/constants/roles.constants';
 import {
@@ -34,6 +35,7 @@ import {
   ListRepositoriesQueryDto,
   RegisterRepositoryDto,
   RepositoryResponseDto,
+  RetireRepositoryDto,
   UpdateRepositoryDto,
 } from './dto/repository.dto';
 import { RepositoriesService } from './repositories.service';
@@ -63,6 +65,13 @@ export class RepositoriesController {
   @ApiQuery({ name: 'pageSize', required: false, type: Number })
   @ApiQuery({ name: 'observeEnabled', required: false, type: Boolean })
   @ApiQuery({ name: 'dispatchEnabled', required: false, type: Boolean })
+  @ApiQuery({
+    name: 'retired',
+    required: false,
+    type: Boolean,
+    description:
+      'Filter on retirement. Omitted returns BOTH — a retired repository is still listed.',
+  })
   @ApiQuery({
     name: 'projectId',
     required: false,
@@ -191,6 +200,74 @@ export class RepositoriesController {
     return this.repositories.update(id, dto);
   }
 
+  // POST and not PATCH, and a verb in the path, because this is an ACT rather
+  // than an edit to a field: the caller does not get to compose the resulting
+  // state. `POST /api/promotion/states/:actionClass/demote` is the same shape
+  // for the same reason.
+  @Post(':id/retire')
+  @Auth({ permissions: [PERMISSIONS.PROJECTS_WRITE] })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Retire a repository',
+    description:
+      'Stands the repository down: `observeEnabled`, `mirrorLabelsEnabled`, `specFeedbackEnabled` ' +
+      'and `dispatchEnabled` all off, in ONE transaction, with an `audit_events` row recording who ' +
+      'did it and what rungs it was standing on.\n\n' +
+      '**This is not a delete, and nothing is destroyed.** The repository stays in the registry and ' +
+      'stays listed (`GET /api/repositories` returns it; filter with `retired`), and its work ' +
+      'orders, runs and provenance are untouched. That is the point: `DELETE` is refused on a ' +
+      'repository with work orders precisely because removing it would cascade that history away.\n\n' +
+      '**Retired is a stored fact, not "all four flags are off".** All four off is also what four ' +
+      'separate PATCHes produce, and an operator who muted observation for an afternoon has not ' +
+      'retired anything. Read `retiredAt` to tell the two apart.\n\n' +
+      '**Idempotent.** Retiring an already-retired repository returns it unchanged and writes no ' +
+      'second audit row, so a retry after a dropped connection is not a second decision.\n\n' +
+      'While retired, `PATCH /api/repositories/:id` refuses to turn any rung back on — that is what ' +
+      'un-retiring is for. Everything else (budget ceiling, timeout, path constraints) stays editable.',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiDataResponse(RepositoryResponseDto, {
+    description: 'The retired repository',
+  })
+  @ApiResponse({ status: 404, description: 'Repository not found' })
+  async retire(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RetireRepositoryDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.repositories.retire(id, dto, userId);
+  }
+
+  @Post(':id/unretire')
+  @Auth({ permissions: [PERMISSIONS.PROJECTS_WRITE] })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Return a retired repository to the ladder',
+    description:
+      'Puts the repository back at the **bottom** of the enablement ladder: `observeEnabled` on, ' +
+      'every outward write (`mirrorLabelsEnabled`, `specFeedbackEnabled`, `dispatchEnabled`) off — ' +
+      'the same position a newly registered repository lands in.\n\n' +
+      '**It does NOT restore the rungs the repository previously held.** Retiring is often the ' +
+      'answer to a repository doing something unwanted, and silently switching dispatch back on ' +
+      'would re-enable the factory\u2019s most consequential permission as a side effect of an undo. ' +
+      'Ask for dispatch again with `PATCH`, which re-verifies reachability.\n\n' +
+      '**Idempotent.** Un-retiring a repository that is not retired returns it unchanged and does ' +
+      'not reset its ladder.\n\n' +
+      'Recorded in `audit_events` in the same transaction as the change.',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiDataResponse(RepositoryResponseDto, {
+    description: 'The repository, back at the bottom of the ladder',
+  })
+  @ApiResponse({ status: 404, description: 'Repository not found' })
+  async unretire(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RetireRepositoryDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.repositories.unretire(id, dto, userId);
+  }
+
   @Delete(':id')
   @Auth({ permissions: [PERMISSIONS.PROJECTS_WRITE] })
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -198,7 +275,8 @@ export class RepositoriesController {
     summary: 'De-register a repository',
     description:
       'Refused while the repository has work orders — deleting would cascade away runs and their ' +
-      'provenance. Disable observation and dispatch instead.',
+      'provenance. Retire it instead (`POST /api/repositories/:id/retire`), which stands the whole ' +
+      'ladder down in one act and leaves that history in place.',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: 204, description: 'Repository de-registered' })
