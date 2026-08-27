@@ -23,6 +23,34 @@ export interface RepositoryRef {
   name: string;
 }
 
+/**
+ * One repository the configured credential can reach, as offered for
+ * registration (#401).
+ *
+ * Deliberately NOT `NormalizedIssue`-shaped: this is a picker row, so it
+ * carries what an operator needs to recognise a repository (the description,
+ * when it was last pushed) and what registration will refuse it for
+ * (`archived`), and nothing else.
+ */
+export interface AccessibleRepository {
+  owner: string;
+  name: string;
+  /** `owner/name`, as GitHub itself spells it. */
+  fullName: string;
+  description: string | null;
+  defaultBranch: string;
+  private: boolean;
+  /** `POST /api/repositories` refuses these. Never a reason to omit one. */
+  archived: boolean;
+  /** Last push, ISO-8601, or null when GitHub did not say. */
+  pushedAt: string | null;
+}
+
+export interface ListAccessibleRepositoriesOptions {
+  /** Page cap, passed straight to `GitHubHttpService.paginate`. */
+  maxPages?: number;
+}
+
 export interface ListIssuesOptions {
   state?: 'open' | 'closed' | 'all';
   /** Only issues updated since this instant — the reconciler's cheap sweep. */
@@ -81,6 +109,71 @@ export class GitHubReadService {
       private: data.private,
       archived: data.archived,
     };
+  }
+
+  /**
+   * Every repository the configured credential can reach (#401).
+   *
+   * ## This is the token's scope, not the operator's account
+   *
+   * ADR-0001 chose a FINE-GRAINED personal access token precisely so that the
+   * reachable set is a list somebody chose, rather than every repository the
+   * human can see. `GET /user/repos` under such a token returns exactly the
+   * repositories it was granted, which makes this both the useful list to pick
+   * from and an honest picture of what Opifex could touch. A short list is the
+   * scope showing, and an EMPTY one is a successful answer — the caller is
+   * expected to say so rather than report a failure.
+   *
+   * `/installation/repositories` is deliberately not consulted: that is the
+   * GitHub App endpoint, and ADR-0001 records that Opifex does not use an App.
+   * Asking it under a PAT would answer 403 and turn a working configuration
+   * into a reported fault.
+   *
+   * ## Sorted by name at the source, on purpose
+   *
+   * `sort=full_name` gives a total order that does not move while the pages
+   * are being fetched. `sort=pushed` — the order a picker actually wants — is
+   * mutable by definition: a push between page 1 and page 2 shifts a
+   * repository across the boundary, so one is fetched twice and another not at
+   * all. Presentation order is applied afterwards, over the whole set.
+   */
+  async listAccessibleRepositories(
+    options: ListAccessibleRepositoriesOptions = {},
+  ): Promise<{
+    repositories: AccessibleRepository[];
+    truncated: boolean;
+    allFromCache: boolean;
+  }> {
+    const { items, truncated, allFromCache } =
+      await this.http.paginate<RawRepository>('/user/repos', {
+        query: {
+          // GitHub's own default, stated rather than inherited: this is the
+          // set the token was scoped to, and a later change to the default
+          // must not silently change what Opifex offers.
+          affiliation: 'owner,collaborator,organization_member',
+          visibility: 'all',
+          sort: 'full_name',
+          direction: 'asc',
+        },
+        maxPages: options.maxPages,
+      });
+
+    if (truncated) {
+      this.logger.warn(
+        `Listing reachable repositories hit its page cap; the list is incomplete`,
+      );
+    }
+
+    return {
+      repositories: items.map(toAccessibleRepository),
+      truncated,
+      allFromCache,
+    };
+  }
+
+  /** Whether a GitHub credential is configured at all, as of right now. */
+  get credentialConfigured(): boolean {
+    return this.http.configured;
   }
 
   /**
@@ -340,6 +433,32 @@ function toNormalizedLabel(raw: RawLabel): NormalizedLabel {
   };
 }
 
+/**
+ * One `/user/repos` row, as the picker sees it.
+ *
+ * `owner` is read from the nested object rather than split out of
+ * `full_name`, because an owner login may itself contain a hyphen but never a
+ * slash — splitting is safe, and reading the field GitHub actually sent is
+ * safer. `full_name` is only a fallback for the owner, and the composed value
+ * is preferred so `fullName` and `owner`/`name` can never disagree.
+ */
+export function toAccessibleRepository(
+  raw: RawRepository,
+): AccessibleRepository {
+  const owner = raw.owner?.login ?? (raw.full_name ?? '').split('/')[0] ?? '';
+
+  return {
+    owner,
+    name: raw.name,
+    fullName: `${owner}/${raw.name}`,
+    description: raw.description ?? null,
+    defaultBranch: raw.default_branch,
+    private: raw.private,
+    archived: raw.archived,
+    pushedAt: raw.pushed_at ?? null,
+  };
+}
+
 export function toNormalizedIssue(raw: RawIssue): NormalizedIssue {
   const all = raw.labels ?? [];
 
@@ -487,10 +606,13 @@ interface RawUser {
 
 interface RawRepository {
   name: string;
+  full_name?: string;
   owner?: RawUser;
+  description?: string | null;
   default_branch: string;
   private: boolean;
   archived: boolean;
+  pushed_at?: string | null;
 }
 
 interface RawIssue {

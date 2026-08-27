@@ -7,6 +7,7 @@ import {
   GitHubHttpService,
   backoffMs,
   parseNextLink,
+  withoutToken,
 } from './github-http.service';
 import {
   GitHubAuthError,
@@ -560,6 +561,72 @@ describe('GitHubHttpService', () => {
     });
   });
 
+  /**
+   * #401. The one thing that can be guaranteed about an error message: the
+   * exact secret we sent never comes back out of it.
+   *
+   * `github.apiBaseUrl` is an operator-settable override, so the host that
+   * produces these messages is not necessarily GitHub — it may be a proxy
+   * echoing whatever it likes — and the messages are logged on the way to
+   * being rendered in the Control Center.
+   */
+  describe('credential redaction (#401)', () => {
+    const LEAKY_TOKEN = 'github_pat_11ABCDEF_supersecretvalue';
+
+    /** The error a request rejected with. Fails loudly if it resolved. */
+    async function rejection(promise: Promise<unknown>): Promise<Error> {
+      try {
+        await promise;
+      } catch (error) {
+        return error as Error;
+      }
+      throw new Error('expected the request to reject, and it resolved');
+    }
+
+    it('takes the token out of an error message that echoes it', async () => {
+      fetchMock.mockImplementation(async () =>
+        githubResponse(403, {
+          message: `Bad proxy auth for Bearer ${LEAKY_TOKEN}`,
+        }),
+      );
+
+      const error = await rejection(
+        build({ 'github.token': LEAKY_TOKEN }).request('/x'),
+      );
+
+      expect(error.message).not.toContain(LEAKY_TOKEN);
+      expect(error.message).toContain('[redacted]');
+    });
+
+    it('takes it out of a transport failure message too', async () => {
+      // A proxy URL carrying the token in the query string is the shape that
+      // reaches this arm: the message is the fetch error, not GitHub's.
+      fetchMock.mockImplementation(async () => {
+        throw new Error(`connect ECONNREFUSED ?access_token=${LEAKY_TOKEN}`);
+      });
+
+      const error = await rejection(
+        build({ 'github.token': LEAKY_TOKEN }).request('/x'),
+      );
+
+      expect(error).toBeInstanceOf(GitHubTransientError);
+      expect(error.message).not.toContain(LEAKY_TOKEN);
+    });
+
+    it('leaves a message that does not contain the token alone', async () => {
+      fetchMock.mockImplementation(async () =>
+        githubResponse(404, { message: 'Not Found' }),
+      );
+
+      const error = await rejection(
+        build({ 'github.token': LEAKY_TOKEN }).request('/x'),
+      );
+
+      expect(error.message).toContain('Not Found');
+      expect(error.message).not.toContain('[redacted]');
+    });
+  });
+
   describe('retry policy', () => {
     it('retries a 5xx and returns the eventual success', async () => {
       fetchMock
@@ -719,6 +786,26 @@ describe('parseNextLink', () => {
     expect(
       parseNextLink('<https://api.github.com/x?after=Y3Vyc29y>; rel="next"'),
     ).toBe('https://api.github.com/x?after=Y3Vyc29y');
+  });
+});
+
+describe('withoutToken', () => {
+  it('replaces every occurrence, not just the first', () => {
+    expect(
+      withoutToken('a ghp_secretvalue b ghp_secretvalue', 'ghp_secretvalue'),
+    ).toBe('a [redacted] b [redacted]');
+  });
+
+  it('does nothing when no credential is configured', () => {
+    expect(withoutToken('Not Found', undefined)).toBe('Not Found');
+  });
+
+  it('refuses to redact a token too short to be one', () => {
+    // Splitting on 'x' would shred every message that contains an x. A
+    // placeholder value in a half-configured deployment must not do that.
+    expect(withoutToken('an example message', 'exam')).toBe(
+      'an example message',
+    );
   });
 });
 

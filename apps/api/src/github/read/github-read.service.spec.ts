@@ -658,6 +658,100 @@ describe('GitHubReadService', () => {
     });
   });
 
+  describe('listAccessibleRepositories (#401)', () => {
+    function rawRepo(overrides: Record<string, unknown> = {}) {
+      return {
+        name: 'app',
+        full_name: 'acme/app',
+        owner: { login: 'acme' },
+        description: 'The app',
+        default_branch: 'main',
+        private: true,
+        archived: false,
+        pushed_at: '2026-08-20T10:00:00Z',
+        ...overrides,
+      };
+    }
+
+    it('asks /user/repos in an order that does not move between pages', async () => {
+      // `sort=pushed` is what a picker wants and is exactly wrong here: a push
+      // between page 1 and page 2 shifts a repository across the boundary, so
+      // one is fetched twice and another is never fetched at all.
+      http.paginate.mockResolvedValue(page([rawRepo()]));
+
+      await service.listAccessibleRepositories();
+
+      expect(http.paginate).toHaveBeenCalledWith(
+        '/user/repos',
+        expect.objectContaining({
+          query: expect.objectContaining({
+            sort: 'full_name',
+            direction: 'asc',
+            visibility: 'all',
+            affiliation: 'owner,collaborator,organization_member',
+          }),
+        }),
+      );
+    });
+
+    it('normalises the fields a picker needs, archived among them', async () => {
+      http.paginate.mockResolvedValue(
+        page([rawRepo({ name: 'legacy', archived: true, description: null })]),
+      );
+
+      const { repositories } = await service.listAccessibleRepositories();
+
+      expect(repositories).toEqual([
+        {
+          owner: 'acme',
+          name: 'legacy',
+          fullName: 'acme/legacy',
+          description: null,
+          defaultBranch: 'main',
+          private: true,
+          archived: true,
+          pushedAt: '2026-08-20T10:00:00Z',
+        },
+      ]);
+    });
+
+    it('reports a hit page cap rather than presenting a partial list as whole', async () => {
+      http.paginate.mockResolvedValue({
+        items: [rawRepo()],
+        pages: 3,
+        truncated: true,
+        allFromCache: false,
+      });
+
+      const result = await service.listAccessibleRepositories({ maxPages: 3 });
+
+      expect(result.truncated).toBe(true);
+      expect(http.paginate).toHaveBeenCalledWith(
+        '/user/repos',
+        expect.objectContaining({ maxPages: 3 }),
+      );
+    });
+
+    it('falls back to full_name for the owner when the row omits it', async () => {
+      http.paginate.mockResolvedValue(
+        page([rawRepo({ owner: undefined, full_name: 'other-org/app' })]),
+      );
+
+      const { repositories } = await service.listAccessibleRepositories();
+
+      expect(repositories[0].owner).toBe('other-org');
+      expect(repositories[0].fullName).toBe('other-org/app');
+    });
+
+    it('carries a null pushed_at through rather than inventing a date', async () => {
+      http.paginate.mockResolvedValue(page([rawRepo({ pushed_at: null })]));
+
+      const { repositories } = await service.listAccessibleRepositories();
+
+      expect(repositories[0].pushedAt).toBeNull();
+    });
+  });
+
   describe('listCommits', () => {
     it('normalises the commit author date, which liveness measures from', async () => {
       http.paginate.mockResolvedValue(
