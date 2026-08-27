@@ -233,6 +233,7 @@ import type {
   OperatorProbeName,
   OperatorProbeResult,
 } from '../types/operatorProbes';
+import type { SupervisorModelCatalog } from '../types/supervisorModels';
 import type {
   MetricsSummary,
   QueueEntry,
@@ -1267,6 +1268,39 @@ export async function patchOperatorSettings(
     headers:
       revision === null ? undefined : { 'If-Match': revision.toString() },
   });
+}
+
+// ---------------------------------------------------------------------------
+// What the supervisor key can reach (#394, epic #391)
+// ---------------------------------------------------------------------------
+
+/**
+ * `GET /operator-settings/supervisor-models` — the models the configured key
+ * can actually reach, on the configured provider.
+ *
+ * **This spends nothing.** A catalogue read bills no tokens on either vendor,
+ * which is why it can be offered as a plain refresh next to a Test button that
+ * deliberately makes one billed call. The response says so in `spendsTokens`
+ * rather than leaving this layer to know it.
+ *
+ * **A failure resolves rather than rejecting.** `no_key`, `invalid_key`,
+ * `wrong_provider`, `unreachable`, `refused` and `failed` all arrive as 200s
+ * carrying `models: []`, because "the request failed" and "the request found a
+ * failure" are the two things the endpoint exists to tell apart. Only a
+ * genuinely broken request — a 403 from the permission gate, a 5xx — throws
+ * `ApiError`, and the caller reports that as a request failure and not as a
+ * verdict on anybody's credential.
+ *
+ * Both settings are read per request on the API side, so a provider or a key
+ * saved a moment ago is the one this asks with.
+ */
+export async function getSupervisorModelCatalog(
+  signal?: AbortSignal,
+): Promise<SupervisorModelCatalog> {
+  return api.get<SupervisorModelCatalog>(
+    '/operator-settings/supervisor-models',
+    { signal },
+  );
 }
 
 // ---------------------------------------------------------------------------
