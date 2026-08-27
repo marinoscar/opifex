@@ -27,6 +27,7 @@ import { StorageModule } from './storage/storage.module';
 import { PatModule } from './pat/pat.module';
 import { GitHubModule } from './github/github.module';
 import { RepositoriesModule } from './repositories/repositories.module';
+import { ProjectsModule } from './projects/projects.module';
 import { ReconcilerModule } from './reconciler/reconciler.module';
 import { RunEventsModule } from './run-events/run-events.module';
 import { EscalationsModule } from './escalations/escalations.module';
@@ -106,6 +107,10 @@ import { validateEnv } from './config/env.validation';
     // GitHub edge (epic #15)
     GitHubModule,
     RepositoriesModule,
+    // Registered AFTER RepositoriesModule, which it imports: assignment runs
+    // through the repositories service so a move from a project screen and a
+    // `PATCH /api/repositories/:id` are the same code path (#404).
+    ProjectsModule,
     ReconcilerModule,
     // Global, and first among the factory modules: everything that measures
     // success metric 1 injects FactoryMetrics, and a module that cannot reach
