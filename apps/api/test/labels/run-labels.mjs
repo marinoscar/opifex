@@ -10,8 +10,11 @@
  * functions against JSON task descriptions on stdin.
  */
 import {
+  LABEL_PREFIXES,
   declaredLabels,
   diffLabels,
+  formatDriftReport,
+  labelKind,
   validateLabels,
 } from '../../../../scripts/sync-labels.mjs';
 
@@ -38,6 +41,15 @@ async function main() {
     }
     if (task.fn === 'validateLabels') {
       return { problems: validateLabels(task.labels) };
+    }
+    if (task.fn === 'labelPrefixes') {
+      return { prefixes: LABEL_PREFIXES };
+    }
+    if (task.fn === 'labelKind') {
+      return { kinds: task.names.map((name) => labelKind(name)) };
+    }
+    if (task.fn === 'formatDriftReport') {
+      return { lines: formatDriftReport(task.diff) };
     }
     throw new Error(`run-labels.mjs: unknown task fn "${task.fn}"`);
   });

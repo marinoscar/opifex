@@ -81,6 +81,125 @@ export function declaredLabels(source = readFileSync(LABELS_FILE, 'utf8')) {
 }
 
 /**
+ * The label PREFIXES, restated here and nowhere else in this file.
+ *
+ * The origin is `apps/api/src/github/labels/factory-labels.ts`
+ * (`INPUT_LABEL_PREFIX`, `MIRROR_LABEL_PREFIX`) and
+ * `apps/api/src/github/labels/ignored-labels.ts` (`NEEDS_LABEL_PREFIX`,
+ * `TIER_LABEL_PREFIX`). This script is plain `.mjs` and cannot import the
+ * TypeScript, so the values are restated — ONCE, as named constants, with
+ * `sync-labels.spec.ts` asserting they still equal the code's. A copy nothing
+ * checks is a copy that drifts, and a drifted separator here would silently
+ * reclassify every label in the report.
+ */
+export const LABEL_PREFIXES = {
+  input: 'factory:',
+  mirror: 'factory/',
+  needs: 'needs:',
+  tier: 'tier:',
+};
+
+/**
+ * The kinds, in the order the report prints them: most urgent first.
+ *
+ * The same three-way split `.github/labels.yml`'s header states, plus the
+ * bucket for everything that is neither (#303). Two of the three kinds use a
+ * colon, so the classification cannot be "does it contain a colon" — it is the
+ * prefix, and for `factory` the separator, exactly as `isMirrorLabel` does it.
+ */
+export const LABEL_KINDS = ['input', 'mirror', 'routing', 'other'];
+
+/**
+ * Why a missing label of this kind matters, said once per section.
+ *
+ * A missing input label and a missing routing label are not the same news: the
+ * first means the repository cannot be steered at all, the second means work
+ * still runs, just never anywhere but the defaults. Printing them in one flat
+ * list made an operator work that out for themselves, from the names (#303).
+ */
+const KIND_HEADINGS = {
+  input: `Input labels (${LABEL_PREFIXES.input}) — your control surface. Missing: this repository cannot be steered.`,
+  mirror: `Mirror labels (${LABEL_PREFIXES.mirror}) — Opifex's own writes. Missing: the factory cannot report what it is doing.`,
+  routing: `Routing labels (${LABEL_PREFIXES.needs}/${LABEL_PREFIXES.tier}) — what the work needs. Missing: work runs, but only on the defaults.`,
+  other:
+    'Other labels (type, phase, component) — organisational; nothing in the control loop reads them.',
+};
+
+/**
+ * Which kind a label name belongs to. Derived, never a list of names.
+ *
+ * `factory` is matched case-sensitively and by its separator, because that is
+ * how the read boundary matches it. `needs:`/`tier:` are matched case-
+ * INsensitively, because that is how `NEEDS_BY_LABEL` and `MODEL_TIER_BY_LABEL`
+ * are looked up — an operator who typed `Tier:Large` gets the tier, so the
+ * report must call it a routing label too rather than filing it under "other".
+ *
+ * Anything matching no prefix is `other`, never dropped: this script's whole
+ * posture is that an unrecognised label is far more likely to be a human's
+ * than a mistake.
+ */
+export function labelKind(name) {
+  if (name.startsWith(LABEL_PREFIXES.mirror)) return 'mirror';
+  if (name.startsWith(LABEL_PREFIXES.input)) return 'input';
+
+  const lower = name.toLowerCase();
+  if (
+    lower.startsWith(LABEL_PREFIXES.needs) ||
+    lower.startsWith(LABEL_PREFIXES.tier)
+  ) {
+    return 'routing';
+  }
+  return 'other';
+}
+
+/**
+ * The drift report, as lines, grouped by kind.
+ *
+ * Pure and returning lines rather than printing, for the same reason
+ * `diffLabels` is pure: the shape of this output is the part an operator
+ * reads, so it needs to be assertable without a `gh` login. `main` prints
+ * exactly what comes back and decides nothing about wording.
+ *
+ * It reports the diff and only the diff — what gets created or updated is
+ * `main`'s business and is unchanged by any of this.
+ */
+export function formatDriftReport({ missing, changed, extra }) {
+  const lines = [];
+
+  // Undeclared labels first, as before, and each tagged with its kind: an
+  // undeclared `tier:huge` on the repository is a different finding from
+  // somebody's `wontfix`, and the tag is the cheapest way to say so without a
+  // second set of headings for a list that is not part of the taxonomy.
+  for (const name of extra) {
+    lines.push(
+      `~ ${name} [${labelKind(name)}] exists but is not declared — left alone, never deleted`,
+    );
+  }
+
+  const entries = [
+    ...missing.map((label) => ({
+      name: label.name,
+      line: `+ ${label.name} (missing)`,
+    })),
+    ...changed.map((label) => ({
+      name: label.name,
+      line: `± ${label.name} (${label.differences.join(', ')})`,
+    })),
+  ];
+
+  for (const kind of LABEL_KINDS) {
+    const ofKind = entries.filter((entry) => labelKind(entry.name) === kind);
+    if (ofKind.length === 0) continue;
+
+    if (lines.length > 0) lines.push('');
+    lines.push(KIND_HEADINGS[kind]);
+    for (const entry of ofKind) lines.push(`  ${entry.line}`);
+  }
+
+  return lines;
+}
+
+/**
  * GitHub's own constraints, checked before anything is written.
  *
  * The first real run of `--apply` created four labels and then died on the
@@ -204,10 +323,8 @@ function main() {
   const actual = actualLabels(repo);
   const { missing, changed, extra } = diffLabels(declared, actual);
 
-  for (const name of extra) {
-    console.log(
-      `~ ${name} exists but is not declared — left alone, never deleted`,
-    );
+  for (const line of formatDriftReport({ missing, changed, extra })) {
+    console.log(line);
   }
 
   if (missing.length === 0 && changed.length === 0) {
@@ -215,11 +332,6 @@ function main() {
       `✓ All ${declared.length} declared labels are present and match.`,
     );
     return;
-  }
-
-  for (const label of missing) console.log(`+ ${label.name} (missing)`);
-  for (const label of changed) {
-    console.log(`± ${label.name} (${label.differences.join(', ')})`);
   }
 
   if (!apply) {

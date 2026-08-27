@@ -173,15 +173,26 @@ This is operator setup, not factory behaviour, so it is deliberately outside
 `GITHUB_WRITES_ENABLED`. Gating it on that switch would mean the observation
 week could not be set up without turning on the writes it exists to withhold.
 
-### `needs:*` and `tier:*`: routing labels, not part of this taxonomy
+### `needs:*` and `tier:*`: routing labels, a third kind next to `factory:`
 
 Two more label families change what happens once a work order exists:
-`needs:*` (#64) and `tier:*` (#273). Unlike `factory:*` / `factory/*` above,
-**neither is declared in `.github/labels.yml`**, so `sync-labels.mjs` will not
-create them — an operator has to add them to the repository by hand before
-applying one to an issue. They are also read independently of the
-`factory:` input-label machinery: a `needs:` or `tier:` label never appears in
-an issue's `inputLabels`, and a misspelled one never appears in
+`needs:*` (#64) and `tier:*` (#273). `factory:` is a **closed vocabulary of
+three human intents** deciding **whether** a work order is created or held
+at all; `needs:*` and `tier:*` are a third kind that describes **what** the
+work requires and changes only **where** it routes — which runner, which
+model class — never whether the work happens. That is why #273 declined the
+spelling `factory:tier-…`: folding a routing judgement into the same closed
+vocabulary as "stop" would blur exactly that line.
+
+Since #303, both families are declared in `.github/labels.yml`'s own
+**Routing labels** section, so the same `sync-labels.mjs --apply` used in §3
+creates all seven, and the drift report lists a missing or drifted one under
+its own **Routing labels** heading — separate from **Input labels** and
+**Mirror labels**, because the news is different: a missing routing label
+still leaves the repository steerable and work still runs, just only ever on
+the defaults. They are still read independently of the `factory:`
+input-label machinery: a `needs:` or `tier:` label never appears in an
+issue's `inputLabels`, and a misspelled one never appears in
 `unknownInputLabels` either, because that list only tracks the `factory:`
 prefix. The reasoning below is transcribed from the `readNeeds` and
 `readModelTier` doc comments in
