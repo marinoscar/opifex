@@ -23,7 +23,6 @@
  */
 
 import {
-  Badge,
   Box,
   Button,
   Chip,
@@ -164,12 +163,13 @@ export function ProjectList({
                     <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
                       {project.name}
                     </Typography>
-                    <Badge
-                      color="default"
-                      badgeContent={project.repositoryCount}
-                      showZero
+                    {/* A Chip rather than a Badge: a Badge with no children
+                        positions itself against an empty root, and the count
+                        has to be legible in its own right here. */}
+                    <Chip
+                      size="small"
+                      label={project.repositoryCount}
                       aria-label={`${project.repositoryCount} repositories`}
-                      sx={{ mr: 1.5 }}
                     />
                   </Stack>
                 }
