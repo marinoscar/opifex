@@ -1,4 +1,44 @@
-import { useCallback, useMemo, useState } from 'react';
+/**
+ * `/projects` — the destination that MANAGES repositories (#406, epic #403).
+ *
+ * The operator's objection, in their words: *"repository selection should not
+ * be a configuration, should be a main feature like projects, make sure is
+ * part of the main menu."* Until this page, the Projects menu item opened a
+ * read-only table whose own subtitle said the Control Center was where the
+ * permissions it displayed were changed — the one main-menu entry named after
+ * repositories deferring to a settings screen. This is that screen.
+ *
+ * ## Two panes, and unassigned is one of the choices
+ *
+ * The list on the left is the projects plus the unassigned bucket; the panel
+ * on the right manages whatever is selected. Unassigned is the FIRST row and
+ * the default selection, because every repository registered before #404 has
+ * `projectId: null` — on any existing deployment it is where all of them are,
+ * and a screen that hid them until they were filed somewhere would strand
+ * every registration this application has ever made.
+ *
+ * On a phone the two panes stack, list above panel, which is the reading order
+ * anyway: choose a group, then work in it.
+ *
+ * ## Permissions
+ *
+ * `projects:read` reaches the page — the string `RepositoriesController` and
+ * `ProjectsController` both enforce, declared once in `config/destinations.ts`
+ * and asserted on the route in `App.tsx`. `projects:write` unlocks every
+ * action: creating and editing projects, adding, retiring, de-registering,
+ * moving, and the ladder switches. Without it the page is a working read-only
+ * view rather than a disabled one, and the API refuses the writes regardless
+ * of what is on screen.
+ *
+ * ## The project row and the repository panel share one truth about counts
+ *
+ * A repository moving in or out changes a project's `repositoryCount`, and the
+ * panel tells the list so rather than the list re-reading everything. The
+ * alternative — a full project re-read per assignment — would spend a request
+ * to learn a number the write already implied.
+ */
+
+import { useState } from 'react';
 import {
   Alert,
   Box,
@@ -10,82 +50,97 @@ import {
 import { Link as RouterLink } from 'react-router-dom';
 import TuneIcon from '@mui/icons-material/Tune';
 
-import { DataTable } from '../components/datatable';
-import type { DataTableFilterModel } from '../components/datatable';
-import {
-  repositoryColumns,
-  TABLE_ID,
-} from '../components/projects/repositoryColumns';
-import { COCKPIT_POLL_INTERVAL_MS } from '../config/cockpitApi';
+import { DeleteProjectDialog } from '../components/projects/DeleteProjectDialog';
+import { ProjectFormDialog } from '../components/projects/ProjectFormDialog';
+import { ProjectList } from '../components/projects/ProjectList';
+import { ProjectRepositoriesPanel } from '../components/projects/ProjectRepositoriesPanel';
 import { usePermissions } from '../hooks/usePermissions';
-import { usePolledResource } from '../hooks/usePolledResource';
-import { getRepositories, type RepositoriesPage } from '../services/api';
+import { useProjects } from '../hooks/useProjects';
+import type { Project, ProjectScope } from '../types/projects';
 
-/** The permission `RepositoriesController` really enforces on registration. */
+/** The permission `ProjectsController` and `RepositoriesController` enforce. */
 const WRITE_PERMISSION = 'projects:write';
 
-/** What it takes to open the Control Center, where enablement now lives. */
+/** What it takes to open the Control Center. */
 const CONTROL_CENTER_PERMISSION = 'system_settings:read';
-const CONTROL_CENTER_PATH = '/admin/settings?section=repositories';
+/**
+ * The Control Center's LANDING section, not its Repositories one.
+ *
+ * That section is now a signpost back to this page (#406), so deep-linking to
+ * it would send an operator on a round trip to be told to come back. What is
+ * actually next door is the GitHub credential and the readiness chain — which
+ * is where somebody whose repository will not register needs to go.
+ */
+const CONTROL_CENTER_PATH = '/admin/settings';
 
 /**
- * `/projects` — every repository Opifex watches (#81, epic #20).
+ * Which group is open.
  *
- * VISION §2 describes the cockpit as *"a single view of every project, run,
- * cost, and queue, across repositories, that GitHub alone cannot provide"* —
- * and the cross-repository view is precisely the part GitHub does not offer.
- *
- * ## Dispatch enablement is the loudest thing on the row
- *
- * #81 calls it operationally important, and it is: per-repository dispatch is
- * how the observation week (#16) ends **one repository at a time** rather than
- * globally. So it renders as a filled chip with the off state stated in words —
- * "Observe only" — because an operator scanning this table is usually asking
- * exactly one question, and the answer should not require reading a header
- * first.
- *
- * ## Registration is not a form here
- *
- * The empty state tells the operator how to register a repository rather than
- * offering a dialog. `POST /api/repositories` verifies reachability with the
- * configured token before accepting an entry, and the runbook already documents
- * the call — a second, partial way to do it would be a form that can fail for
- * reasons the form cannot explain.
+ * A project is held as the OBJECT rather than as an id, so the header keeps
+ * its name and slug when a search filters the row out of the list beside it.
+ * Re-seeded during render from a freshly loaded row — the same render-time
+ * reseed `RepositoryLadderCard` uses — so a rename shows up in the header
+ * without an effect that would paint the stale name for a frame first.
  */
+type Selection = { kind: 'unassigned' } | { kind: 'project'; project: Project };
+
 export default function ProjectsPage() {
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const [filters, setFilters] = useState<DataTableFilterModel>([]);
   const { hasPermission } = usePermissions();
+  const canWrite = hasPermission(WRITE_PERMISSION);
+  const projectsResult = useProjects();
+  const {
+    projects,
+    isLoading,
+    error,
+    page,
+    totalPages,
+    search,
+    goToPage,
+    applySearch,
+    create,
+    update,
+    remove,
+    adjustRepositoryCount,
+  } = projectsResult;
 
-  const observeEnabled = booleanFilter(filters, 'observeEnabled');
-  const dispatchEnabled = booleanFilter(filters, 'dispatchEnabled');
+  const [selection, setSelection] = useState<Selection>({ kind: 'unassigned' });
+  const [searchDraft, setSearchDraft] = useState(search);
+  /** Open with a project to edit it, with null to create one, closed when undefined. */
+  const [form, setForm] = useState<{ project: Project | null } | null>(null);
+  const [deleting, setDeleting] = useState<Project | null>(null);
 
-  const fetcher = useCallback(
-    (signal: AbortSignal) =>
-      getRepositories(
-        { page, pageSize, observeEnabled, dispatchEnabled },
-        signal,
-      ),
-    [page, pageSize, observeEnabled, dispatchEnabled],
-  );
-  const { data, state, error, isRefreshing } =
-    usePolledResource<RepositoriesPage>({
-      fetcher,
-      fetcherKey: [page, pageSize, observeEnabled, dispatchEnabled],
-      intervalMs: COCKPIT_POLL_INTERVAL_MS,
-      enabled: true,
-    });
+  // Re-seed the held project from the freshly loaded list. Identity, not deep
+  // equality: `useProjects` replaces the row object on every read and on every
+  // update, so a changed object IS a changed row, and an unchanged one costs
+  // nothing.
+  if (selection.kind === 'project') {
+    const fresh = projects.find(
+      (candidate) => candidate.id === selection.project.id,
+    );
+    if (fresh !== undefined && fresh !== selection.project) {
+      setSelection({ kind: 'project', project: fresh });
+    }
+  }
 
-  const columns = useMemo(() => repositoryColumns(), []);
-  const rows = data?.items ?? [];
+  const scope: ProjectScope =
+    selection.kind === 'unassigned'
+      ? { kind: 'unassigned' }
+      : { kind: 'project', id: selection.project.id };
+  const selectedProject =
+    selection.kind === 'project' ? selection.project : null;
+
+  const select = (next: ProjectScope) => {
+    if (next.kind === 'unassigned') {
+      setSelection({ kind: 'unassigned' });
+      return;
+    }
+    const project = projects.find((candidate) => candidate.id === next.id);
+    if (project !== undefined) setSelection({ kind: 'project', project });
+  };
 
   return (
     <Container maxWidth="xl">
       <Box sx={{ py: 2 }}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          Projects
-        </Typography>
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
           spacing={1}
@@ -95,11 +150,15 @@ export default function ProjectsPage() {
             justifyContent: 'space-between',
           }}
         >
-          <Typography color="text.secondary">
-            Every repository Opifex watches, and what it is allowed to do in
-            each. This table READS those permissions; the Control Center is
-            where they are changed.
-          </Typography>
+          <Box>
+            <Typography variant="h4" component="h1" gutterBottom>
+              Projects
+            </Typography>
+            <Typography color="text.secondary">
+              Repositories are added, enabled and retired here. A project is a
+              grouping; a repository does not need one to be used.
+            </Typography>
+          </Box>
           {hasPermission(CONTROL_CENTER_PERMISSION) && (
             <Button
               size="small"
@@ -107,125 +166,86 @@ export default function ProjectsPage() {
               component={RouterLink}
               to={CONTROL_CENTER_PATH}
             >
-              Enablement ladder
+              Control Center
             </Button>
           )}
         </Stack>
 
-        {error && !data && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
+        {!canWrite && (
+          <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+            This account holds <code>projects:read</code> and not{' '}
+            <code>{WRITE_PERMISSION}</code>, so everything here is readable and
+            nothing can be changed. The API enforces that regardless of what
+            this screen shows.
           </Alert>
         )}
 
-        <DataTable<(typeof rows)[number]>
-          tableId={TABLE_ID}
-          columns={columns}
-          rows={rows}
-          rowId={(repo) => repo.id}
-          loading={isRefreshing && state !== 'ready'}
-          error={error}
-          emptyState={
-            <EmptyState
-              canRegister={hasPermission(WRITE_PERMISSION)}
-              canOpenControlCenter={hasPermission(CONTROL_CENTER_PERMISSION)}
-            />
-          }
-          pagination={{
-            page,
-            pageSize,
-            total: data?.total ?? 0,
-            onPaginationChange: (next) => {
-              setPage(next.page);
-              setPageSize(next.pageSize);
-            },
-          }}
-          filters={filters}
-          onFiltersChange={(next) => {
-            setFilters(next);
-            setPage(1);
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
+          <ProjectList
+            projects={projects}
+            isLoading={isLoading}
+            error={error}
+            page={page}
+            totalPages={totalPages}
+            searchDraft={searchDraft}
+            onSearchDraftChange={setSearchDraft}
+            onApplySearch={() => applySearch(searchDraft)}
+            onGoToPage={goToPage}
+            selected={scope}
+            onSelect={select}
+            canWrite={canWrite}
+            onCreate={() => setForm({ project: null })}
+          />
+
+          <ProjectRepositoriesPanel
+            // Remounts on a scope change, so no draft switch position or probe
+            // result from one group can survive into another.
+            key={scope.kind === 'unassigned' ? 'unassigned' : scope.id}
+            scope={scope}
+            project={selectedProject}
+            canWrite={canWrite}
+            onEditProject={() =>
+              selectedProject !== null && setForm({ project: selectedProject })
+            }
+            onDeleteProject={() =>
+              selectedProject !== null && setDeleting(selectedProject)
+            }
+            onRepositoryCountChanged={adjustRepositoryCount}
+          />
+        </Stack>
+      </Box>
+
+      {form !== null && (
+        <ProjectFormDialog
+          project={form.project}
+          onClose={() => setForm(null)}
+          onSubmit={async (input) => {
+            if (form.project === null) {
+              const created = await create(input);
+              // Open what was just made. Creating a project and being left on
+              // the previous selection would make the operator hunt for it.
+              setSelection({ kind: 'project', project: created });
+            } else {
+              const updated = await update(form.project.id, input);
+              setSelection({ kind: 'project', project: updated });
+            }
           }}
         />
-      </Box>
+      )}
+
+      {deleting !== null && (
+        <DeleteProjectDialog
+          project={deleting}
+          onClose={() => setDeleting(null)}
+          onConfirm={async () => {
+            await remove(deleting.id);
+            // Its repositories are now unassigned, which is exactly where the
+            // operator should be looking — and the project they were in no
+            // longer exists to be selected.
+            setSelection({ kind: 'unassigned' });
+          }}
+        />
+      )}
     </Container>
   );
-}
-
-/**
- * What to do when nothing is registered.
- *
- * #81 asks that the empty state guide the operator to register one, and until
- * #350 that guidance was a `curl` command with `observeEnabled` in its body —
- * which made this page the documentation for enabling a repository as well as
- * for registering one. Enablement now has a screen, so the two are separated:
- * this says how to REGISTER, and points at the Control Center for everything
- * that happens to a repository afterwards.
- *
- * Registration itself is still not a form here. `POST /api/repositories`
- * verifies the repository is reachable with the configured token before
- * accepting it — an entry Opifex cannot read would turn every subsequent tick
- * into a 404 — and a form that can fail for token reasons it cannot explain is
- * worse than the runbook that reports them.
- */
-function EmptyState({
-  canRegister,
-  canOpenControlCenter,
-}: {
-  canRegister: boolean;
-  canOpenControlCenter: boolean;
-}) {
-  return (
-    <Box sx={{ p: 3, textAlign: 'center' }}>
-      <Typography variant="body1" gutterBottom>
-        No repositories are registered.
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        Opifex only observes repositories it has been told about. Registration
-        verifies the repository is reachable with the configured token before
-        accepting it.
-      </Typography>
-      {canRegister ? (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-          Register one with <code>POST /api/repositories</code> — see
-          docs/RUNBOOK-observation-week.md. Once it is registered, observation,
-          label mirroring, spec feedback and dispatch are enabled one rung at a
-          time in the Control Center.
-        </Typography>
-      ) : (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-          Registering one needs <code>{WRITE_PERMISSION}</code>, which this
-          account does not hold.
-        </Typography>
-      )}
-      {canOpenControlCenter && (
-        <Button
-          size="small"
-          sx={{ mt: 1 }}
-          component={RouterLink}
-          to={CONTROL_CENTER_PATH}
-        >
-          Open the enablement ladder
-        </Button>
-      )}
-    </Box>
-  );
-}
-
-/**
- * One of the two boolean filters the endpoint honours.
- *
- * Anything else in the model is ignored rather than approximated —
- * `repositoryColumns.tsx` only declares these two as filterable for exactly
- * that reason.
- */
-function booleanFilter(
-  filters: DataTableFilterModel,
-  columnId: string,
-): boolean | undefined {
-  const entry = filters.find(
-    (filter) => filter.columnId === columnId && filter.operator === 'is',
-  );
-  if (entry?.value === 'true') return true;
-  if (entry?.value === 'false') return false;
-  return undefined;
 }

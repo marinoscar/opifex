@@ -435,8 +435,8 @@ function repositoryStep(inputs: ReadinessInputs): ReadinessStep {
       label: 'Enable a repository',
       section: 'repositories' as const,
       today:
-        'PATCH /api/repositories/:id with dispatchEnabled: true. #350 brings ' +
-        'the ladder here.',
+        'The enablement ladder lives on the Projects destination (#406). ' +
+        'The Repositories section here points at it.',
     },
   };
 

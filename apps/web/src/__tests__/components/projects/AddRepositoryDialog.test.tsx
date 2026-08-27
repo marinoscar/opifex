@@ -1,9 +1,11 @@
 /**
  * The repository picker (#401).
  *
- * `RepositoriesSection` is exercised rather than the dialog in isolation, so
- * `useAvailableRepositories`, `useRepositoryLadder`, `services/api` and MSW
- * are all in the path. Every claim this control makes is about a request —
+ * `ProjectRepositoriesPanel` is exercised rather than the dialog in isolation,
+ * so `useAvailableRepositories`, `useRepositoryLadder`, `services/api` and MSW
+ * are all in the path. The picker moved there with the ladder in #406; the
+ * claims it makes are unchanged, because they are about requests rather than
+ * about which screen mounts it. Every claim this control makes is about a request —
  * what GitHub answered, what the registration sent, whether the list behind
  * the dialog moved — and a mocked hook would let all of them be true of
  * nothing.
@@ -33,6 +35,7 @@ import { http, HttpResponse } from 'msw';
 import { render } from '../../utils/test-utils';
 import { expectNoLeak, findLeaks } from '../../utils/domSecrets';
 import { server } from '../../mocks/server';
+import { PROJECT_ID, projectFixture } from '../../mocks/repositories';
 import {
   REGISTERED_ID,
   THREE_ADMISSIONS,
@@ -41,7 +44,7 @@ import {
   availableRepository,
   emptyScopeFixture,
 } from '../../mocks/availableRepositories';
-import { RepositoriesSection } from '../../../components/controlcenter/RepositoriesSection';
+import { ProjectRepositoriesPanel } from '../../../components/projects/ProjectRepositoriesPanel';
 import type { RepositorySummary } from '../../../types/cockpit';
 import type { AvailableRepositories } from '../../../types/repositories';
 
@@ -69,6 +72,10 @@ function repository(
     wallClockTimeoutMinutes: null,
     pathConstraints: [],
     lastObservedAt: null,
+    // Present and null, never absent: `retiredAt !== null` is how a card
+    // decides it is retired, and `undefined` would satisfy it.
+    retiredAt: null,
+    retiredById: null,
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: '2026-08-01T00:00:00.000Z',
     ...overrides,
@@ -140,11 +147,25 @@ function refuseRegistration(status: number, message: string) {
   );
 }
 
+/** The panel that mounts the picker, in the unassigned scope. */
+function renderPanel(canWrite = true) {
+  render(
+    <ProjectRepositoriesPanel
+      scope={{ kind: 'unassigned' }}
+      project={null}
+      canWrite={canWrite}
+      onEditProject={() => {}}
+      onDeleteProject={() => {}}
+      onRepositoryCountChanged={() => {}}
+    />,
+  );
+}
+
 async function openPicker(
   user: ReturnType<typeof userEvent.setup>,
   options: { canWrite?: boolean } = {},
 ) {
-  render(<RepositoriesSection canWrite={options.canWrite ?? true} />);
+  renderPanel(options.canWrite ?? true);
   await user.click(
     await screen.findByRole('button', { name: /^add repository$/i }),
   );
@@ -168,7 +189,7 @@ describe('AddRepositoryDialog', () => {
       // off, which is exactly when one is needed.
       registered();
       serveAvailable();
-      render(<RepositoriesSection canWrite />);
+      renderPanel();
 
       expect(
         await screen.findByRole('button', { name: /^add repository$/i }),
@@ -178,7 +199,7 @@ describe('AddRepositoryDialog', () => {
     it('offers it beside the ladder once something is registered', async () => {
       registered(repository());
       serveAvailable();
-      render(<RepositoriesSection canWrite />);
+      renderPanel();
 
       await screen.findByLabelText('Repository acme/sprockets');
       expect(
@@ -188,11 +209,87 @@ describe('AddRepositoryDialog', () => {
 
     it('disables it without projects:write', async () => {
       registered(repository());
-      render(<RepositoriesSection canWrite={false} />);
+      renderPanel(false);
 
       expect(
         await screen.findByRole('button', { name: /^add repository$/i }),
       ).toBeDisabled();
+    });
+
+    it('registers into the project the panel is open on, in ONE request', async () => {
+      // Not a create followed by an assignment: two requests would leave a
+      // window in which the repository exists in no project, and a failure in
+      // the second would strand it there looking like an unassigned
+      // registration nobody made.
+      registered();
+      serveAvailable();
+      const bodies = serveRegistration(repository({ projectId: PROJECT_ID }));
+      const assignments: string[] = [];
+      server.use(
+        http.put(
+          `${API_BASE}/projects/:id/repositories/:repositoryId`,
+          ({ params }) => {
+            assignments.push(String(params.id));
+            return HttpResponse.json({ data: repository() });
+          },
+        ),
+      );
+      const user = userEvent.setup();
+
+      render(
+        <ProjectRepositoriesPanel
+          scope={{ kind: 'project', id: PROJECT_ID }}
+          project={projectFixture()}
+          canWrite
+          onEditProject={() => {}}
+          onDeleteProject={() => {}}
+          onRepositoryCountChanged={() => {}}
+        />,
+      );
+      await user.click(
+        await screen.findByRole('button', { name: /^add repository$/i }),
+      );
+      await screen.findByRole('dialog');
+      await user.click(
+        await screen.findByRole('button', { name: /^acme\/gadgets/ }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: /^Register acme\/gadgets$/ }),
+      );
+
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toEqual({
+        owner: 'acme',
+        name: 'gadgets',
+        projectId: PROJECT_ID,
+      });
+      // No follow-up assignment: the create carried the project.
+      expect(assignments).toEqual([]);
+    });
+
+    it('registers into no project from the unassigned bucket, and says so', async () => {
+      // `projectId: null` is a destination an operator may deliberately choose
+      // rather than a value they forgot to supply, so the key is OMITTED and
+      // the dialog explains where the row will land.
+      registered();
+      serveAvailable();
+      const bodies = serveRegistration();
+      const user = userEvent.setup();
+
+      const dialog = await openPicker(user);
+      expect(
+        within(dialog).getByText(/registers the repository into no project/i),
+      ).toBeInTheDocument();
+
+      await user.click(
+        await screen.findByRole('button', { name: /^acme\/gadgets/ }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: /^Register acme\/gadgets$/ }),
+      );
+
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).not.toHaveProperty('projectId');
     });
 
     it('asks GitHub only once the dialog is opened', async () => {
@@ -200,7 +297,7 @@ describe('AddRepositoryDialog', () => {
       const asked = serveAvailable();
       const user = userEvent.setup();
 
-      render(<RepositoriesSection canWrite />);
+      renderPanel();
       await screen.findByLabelText('Repository acme/sprockets');
       expect(asked).toHaveLength(0);
 
@@ -323,7 +420,7 @@ describe('AddRepositoryDialog', () => {
     it('does not mark a card nobody asked for', async () => {
       registered(repository());
       serveAvailable();
-      render(<RepositoriesSection canWrite />);
+      renderPanel();
 
       const card = await screen.findByLabelText('Repository acme/sprockets');
       expect(card).not.toHaveAttribute('aria-current');

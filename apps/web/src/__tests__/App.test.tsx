@@ -189,14 +189,61 @@ describe('App', () => {
       );
     });
 
-    it('mounts the planned cockpit routes for any authenticated user', async () => {
-      // The four planned destinations carry no permission — no controller
-      // enforces one — so no `RequirePermission` guards their routes either.
-      // A Viewer must reach all four; see `config/destinations.ts`.
+    it('sends a user without projects:read away from /projects', async () => {
+      // #406 made this page WRITE — repositories are registered, enabled,
+      // retired and moved on it — so reaching it without the read permission
+      // would be a screen of 403s rather than a table that happened to be
+      // empty. The permission is the one `config/destinations.ts` declares and
+      // the one `ProjectsController` and `RepositoriesController` enforce.
+      signInAs(['user_settings:read']);
+
+      render(
+        <MemoryRouter initialEntries={['/projects']}>
+          <App />
+        </MemoryRouter>,
+      );
+
+      await waitFor(
+        () =>
+          expect(
+            screen.getByRole('heading', { level: 1, name: /^cockpit$/i }),
+          ).toBeInTheDocument(),
+        { timeout: 5000 },
+      );
+      expect(
+        screen.queryByRole('heading', { level: 1, name: /^projects$/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('admits a viewer holding projects:read to /projects', async () => {
+      // `projects:read` is in the seeded viewer role, so the destination is
+      // reachable read-only rather than admin-only — the acting permission
+      // gates the controls inside the page.
+      signInAs(['user_settings:read', 'projects:read']);
+
+      render(
+        <MemoryRouter initialEntries={['/projects']}>
+          <App />
+        </MemoryRouter>,
+      );
+
+      await waitFor(
+        () =>
+          expect(
+            screen.getByRole('heading', { level: 1, name: /^projects$/i }),
+          ).toBeInTheDocument(),
+        { timeout: 5000 },
+      );
+    });
+
+    it('mounts the unguarded cockpit routes for any authenticated user', async () => {
+      // These three carry a permission in `config/destinations.ts` but no
+      // route guard, because they only READ. `/projects` is deliberately not
+      // in this list any more: since #406 it writes, and it has its own case
+      // above.
       for (const [path, heading] of [
         ['/runs', /^runs$/i],
         ['/queue', /^queue$/i],
-        ['/projects', /^projects$/i],
         ['/cost', /^cost$/i],
       ] as const) {
         signInAs(['user_settings:read']);

@@ -464,6 +464,43 @@ export const handlers = [
   }),
 
   /**
+   * `GET /projects` — the project list (#404, epic #403).
+   *
+   * Empty by default, and that is the state every deployment is in until
+   * somebody creates one: `Project` was modelled and never built, so no
+   * project exists anywhere and every repository has `projectId: null`. A
+   * fixture that invented two projects would let the unassigned bucket — the
+   * one #406 has to keep first-class — go untested by default.
+   *
+   * Flat pagination with `totalPages`, which is what `ProjectsService`
+   * returns through `TransformInterceptor`.
+   */
+  http.get(`${API_BASE}/projects`, ({ request }) => {
+    const url = new URL(request.url);
+    const pageSize = Number(url.searchParams.get('pageSize') ?? '25');
+
+    return HttpResponse.json({
+      data: { items: [], total: 0, page: 1, pageSize, totalPages: 0 },
+    });
+  }),
+
+  /**
+   * `GET /work-orders` — asked by the stand-down dialog for one number.
+   *
+   * Zero by default: nothing has run in a deployment whose repository list is
+   * also empty, and answering anything else would make de-registering
+   * un-offerable in every test that did not override this.
+   */
+  http.get(`${API_BASE}/work-orders`, ({ request }) => {
+    const url = new URL(request.url);
+    const pageSize = Number(url.searchParams.get('pageSize') ?? '25');
+
+    return HttpResponse.json({
+      data: { items: [], total: 0, page: 1, pageSize, totalPages: 0 },
+    });
+  }),
+
+  /**
    * The audit log (#338). Filters and pages on the SERVER, like the endpoint,
    * so a test that changes the filter is testing the same contract the real
    * API offers rather than a client-side approximation.

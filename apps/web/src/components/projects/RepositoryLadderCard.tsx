@@ -30,6 +30,7 @@
 import { useState } from 'react';
 import {
   Alert,
+  AlertTitle,
   Box,
   Button,
   Chip,
@@ -65,6 +66,7 @@ import type {
   UpdateRepositoryInput,
 } from '../../services/api';
 import type { RepositorySummary } from '../../types/cockpit';
+import { useIsMounted } from '../../hooks/useIsMounted';
 
 export interface RepositoryLadderCardProps {
   repository: RepositorySummary;
@@ -87,6 +89,25 @@ export interface RepositoryLadderCardProps {
   probe: RepositoryAccessProbeResult | undefined;
   isProbing: boolean;
   onTestAccess: () => void;
+  /**
+   * Open the stand-down dialog for this repository (#405).
+   *
+   * Handed up rather than owned here: that dialog asks how many work orders
+   * exist before deciding whether de-registering is offered at all, and one
+   * dialog mounted by the panel is one such request rather than one per card.
+   */
+  onRemove?: () => void;
+  /**
+   * Put a retired repository back at the bottom of the ladder. Rejects to this
+   * component, which shows the API's own refusal.
+   *
+   * Direct rather than behind a confirmation: un-retiring enables nothing —
+   * every rung stays off and has to be climbed again — so there is nothing to
+   * warn about.
+   */
+  onUnretire?: () => Promise<void>;
+  /** Open the move dialog. Absent when this build offers no move here. */
+  onMove?: () => void;
 }
 
 function stateOf(repository: RepositorySummary): LadderState {
@@ -107,15 +128,24 @@ export function RepositoryLadderCard({
   probe,
   isProbing,
   onTestAccess,
+  onRemove,
+  onUnretire,
+  onMove,
 }: RepositoryLadderCardProps) {
   const stored = stateOf(repository);
   const storedCeiling = repository.budgetCeilingUsd;
+  // Read off the stored field, never off the four flags. See the header.
+  const isRetired = repository.retiredAt !== null;
 
   const [draft, setDraft] = useState<LadderState>(stored);
   const [ceilingText, setCeilingText] = useState(storedCeiling ?? '');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [pending, setPending] = useState<LadderWarning[] | null>(null);
+  const [isUnretiring, setIsUnretiring] = useState(false);
+  // Every `setState` past an `await` is guarded: a card evicted from the list
+  // while its request is in flight must not schedule an update.
+  const isMounted = useIsMounted();
 
   // Re-seed from a freshly returned repository during render rather than in an
   // effect, so the switches never paint the stale position for a frame and
@@ -195,6 +225,28 @@ export function RepositoryLadderCard({
   };
 
   const disabled = !canWrite || isSaving;
+  // The API refuses to turn any rung on while `retiredAt` is set and names the
+  // rungs when it does. Disabling them here is that refusal rendered before it
+  // happens, rather than a control left live to earn a 400.
+  const rungsDisabled = disabled || isRetired;
+
+  const handleUnretire = async () => {
+    if (onUnretire === undefined) return;
+    setSaveError(null);
+    setSavedAt(null);
+    setIsUnretiring(true);
+    try {
+      await onUnretire();
+    } catch (err) {
+      if (isMounted()) {
+        setSaveError(
+          err instanceof Error ? err.message : 'The API refused the change.',
+        );
+      }
+    } finally {
+      if (isMounted()) setIsUnretiring(false);
+    }
+  };
 
   return (
     <Paper
@@ -236,17 +288,56 @@ export function RepositoryLadderCard({
         </Box>
         <Chip
           size="small"
-          color={repository.dispatchEnabled ? 'primary' : 'default'}
-          variant={repository.dispatchEnabled ? 'filled' : 'outlined'}
+          color={
+            isRetired
+              ? 'warning'
+              : repository.dispatchEnabled
+                ? 'primary'
+                : 'default'
+          }
+          variant={
+            isRetired || repository.dispatchEnabled ? 'filled' : 'outlined'
+          }
           label={
-            repository.dispatchEnabled
-              ? 'Dispatch enabled'
-              : repository.observeEnabled
-                ? 'Observe only'
-                : 'Nothing enabled'
+            isRetired
+              ? 'Retired'
+              : repository.dispatchEnabled
+                ? 'Dispatch enabled'
+                : repository.observeEnabled
+                  ? 'Observe only'
+                  : 'Nothing enabled'
           }
         />
       </Stack>
+
+      {isRetired && (
+        <Alert
+          severity="warning"
+          variant="outlined"
+          sx={{ mt: 1 }}
+          action={
+            onUnretire !== undefined && (
+              <Button
+                size="small"
+                onClick={() => void handleUnretire()}
+                disabled={!canWrite || isSaving || isUnretiring}
+              >
+                {isUnretiring ? 'Un-retiring…' : 'Un-retire'}
+              </Button>
+            )
+          }
+        >
+          <AlertTitle>
+            Retired{' '}
+            {repository.retiredAt !== null &&
+              new Date(repository.retiredAt).toLocaleString()}
+          </AlertTitle>
+          Every rung is off and none can be turned back on while it is retired.
+          Its work orders, runs and their provenance are untouched — that is
+          what retiring is for. Un-retiring returns it to the BOTTOM of the
+          ladder; it does not restore the rungs that were on before.
+        </Alert>
+      )}
 
       <AccessTest
         probe={probe}
@@ -284,7 +375,7 @@ export function RepositoryLadderCard({
                       [rung.key]: event.target.checked,
                     }))
                   }
-                  disabled={disabled}
+                  disabled={rungsDisabled}
                   slotProps={{
                     input: {
                       'aria-label': `${rung.title} — ${repository.fullName}`,
@@ -372,7 +463,11 @@ export function RepositoryLadderCard({
         </Alert>
       )}
 
-      <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ mt: 2, flexWrap: 'wrap', rowGap: 1 }}
+      >
         <Button
           variant="contained"
           onClick={handleSave}
@@ -383,6 +478,27 @@ export function RepositoryLadderCard({
         <Button onClick={handleReset} disabled={disabled || !hasChanges}>
           Reset
         </Button>
+        <Box sx={{ flexGrow: 1 }} />
+        {onMove !== undefined && (
+          <Button size="small" onClick={onMove} disabled={disabled}>
+            Move…
+          </Button>
+        )}
+        {/* Retire and de-register are ONE affordance leading to one dialog,
+            because choosing between them is the decision — a row of two
+            buttons would invite the wrong one and answer with a 400. A
+            repository that is already retired is not offered it again; its
+            remaining move is un-retiring, which is on the banner above. */}
+        {onRemove !== undefined && !isRetired && (
+          <Button
+            size="small"
+            color="warning"
+            onClick={onRemove}
+            disabled={disabled}
+          >
+            Retire or remove…
+          </Button>
+        )}
       </Stack>
 
       <Dialog
