@@ -176,8 +176,9 @@ export class RepositoriesController {
       'it is tried. So the repository is registered either way and `labelProvisioning` reports what ' +
       'happened: `ok` when every declared label is present, `refused` when the token authenticated and ' +
       'was not permitted (grant Issues: Read and write, then repair), and the other statuses for a ' +
-      'missing credential, a 404, an exhausted budget or an unreachable GitHub. Repair with ' +
-      '`POST /api/repositories/{id}/labels`.',
+      'missing credential, a 404, an exhausted budget or an unreachable GitHub. When the labels could ' +
+      'not be read at all, every count on the report is null \u2014 null meaning NOT READ, never ' +
+      'zero. Repair with `POST /api/repositories/{id}/labels`.',
   })
   @ApiDataResponse(RegisteredRepositoryDto, {
     status: 201,
@@ -207,9 +208,17 @@ export class RepositoriesController {
     description:
       'Asks GitHub which of the declared factory labels exist on this repository, and answers an ' +
       'OBSERVATION with a `checkedAt` \u2014 not a stored fact. Writes nothing.\n\n' +
-      '**Per-label, not just a count.** `labels[]` names every declared label with what was found ' +
-      '(`present`, `missing`, or `drifted` with the differences), so a client can say WHICH label is ' +
-      'missing. `present` / `declared` is the "N of M labels present" summary.\n\n' +
+      '**Per-label, not just a count.** `labels[]` names every declared label with `stateBefore` — ' +
+      'what was found (`present`, `missing`, or `drifted` with the differences) — so a client can ' +
+      'say WHICH label is missing. `present` / `declared` is the "N of M labels present" summary.\n\n' +
+      '**Every count is null when the labels could not be read, and null means NOT READ rather than ' +
+      'zero.** `declared`, `present`, `missing`, `created`, `updated`, `unchanged` and `failed` are ' +
+      'null together whenever GitHub\u2019s label list was never obtained \u2014 a refused, expired ' +
+      'or absent credential, a 404, an exhausted budget, an unreachable GitHub. A token that cannot ' +
+      'read a repository\u2019s labels establishes nothing about what is on it, so rendering ' +
+      '"0 of 15 present" from such a report would state a fact nobody found out. Check the null, not ' +
+      'the `status`: a repair whose WRITE was refused still carries real counts, because its read ' +
+      'succeeded.\n\n' +
       '**Three kinds are declared**: `input` (`factory:*`, the control surface \u2014 missing, the ' +
       'repository cannot be steered), `mirror` (`factory/*`, Opifex\u2019s own writes) and `routing` ' +
       '(`needs:*`, `tier:*` \u2014 missing, work still runs but only on the defaults). This ' +
@@ -217,7 +226,8 @@ export class RepositoriesController {
       'part of the taxonomy Opifex provisions.\n\n' +
       '**A failure is a 200 carrying a `status`**, not an error status: `refused` means the token ' +
       'authenticated and is not permitted, `not_found` means GitHub answered 404, `rate_limited` means ' +
-      'the budget is spent, `unreachable` means nothing answered. `labels` is empty in those cases.',
+      'the budget is spent, `unreachable` means nothing answered. `labels` is empty and every count is ' +
+      'null in those cases.',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiDataResponse(LabelProvisioningReportDto, {
@@ -247,8 +257,12 @@ export class RepositoriesController {
       'during a tick; creating the taxonomy is operator setup, and gating it there would mean the ' +
       'observation week could not be set up without turning on the writes the switch exists to ' +
       'withhold.\n\n' +
-      'Returns the same report as `GET`, with `applied: true` and the `created` / `updated` / `failed` ' +
-      'counts filled in. A refusal is a 200 with `status: "refused"`.',
+      'Returns the same report as `GET`, with `attempted: true` and the `created` / `updated` / ' +
+      '`failed` counts filled in. `attempted` means this call TRIED to write \u2014 not that the ' +
+      'writes landed: a refused repair is `attempted: true` having written nothing, and the outcome ' +
+      'is `status`, `created` and `failed`. A refusal is a 200 with `status: "refused"`. Note that a ' +
+      'repair refused at the WRITE still carries real counts, since its read succeeded; only a report ' +
+      'whose read failed has null counts.',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiDataResponse(LabelProvisioningReportDto, {
