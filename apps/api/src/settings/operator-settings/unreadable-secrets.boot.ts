@@ -1,4 +1,8 @@
-import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  type OnApplicationBootstrap,
+} from '@nestjs/common';
 
 import {
   OPERATOR_SETTINGS,
@@ -98,20 +102,33 @@ export function unreadableSecrets(
 /**
  * Says the above once, at boot.
  *
- * `onModuleInit` rather than the constructor — unlike
- * `RetiredSupervisorConfigService`, which reads `process.env` and can answer
- * from a constructor, this has to read the database OVERLAY, and the overlay
- * is loaded by `OperatorSettingsService.onModuleInit`. Nest resolves that
- * dependency first and runs its hook first, so by the time this runs the rows
- * have been read once.
+ * ## Not the constructor, and not `onModuleInit` either
+ *
+ * Unlike `RetiredSupervisorConfigService`, which reads `process.env` and can
+ * answer from a constructor, this has to read the database OVERLAY — and the
+ * overlay is loaded by `OperatorSettingsService.onModuleInit`.
+ *
+ * This used to hang off `onModuleInit` on the belief that Nest resolves that
+ * dependency first and therefore runs its hook first. It does not:
+ * `callModuleInitHook` STARTS every provider's `onModuleInit` in one pass and
+ * awaits them together with `Promise.all`, so this ran while the service's own
+ * overlay read was still in flight, took its not-loaded arm below, and said
+ * nothing. #422's whole acceptance criterion — an unreadable credential is
+ * named at BOOT rather than at the first model call — was therefore never met
+ * on a running deployment, only in the specs that called this method directly.
+ * `LegacyModelSettingsMigration` was silenced by the identical mistake, which
+ * is what #436 diagnosed.
+ *
+ * `onApplicationBootstrap` runs after every module's `onModuleInit` has
+ * settled, so the rows have been read exactly once by the time this looks.
  */
 @Injectable()
-export class UnreadableSecretsBootCheck implements OnModuleInit {
+export class UnreadableSecretsBootCheck implements OnApplicationBootstrap {
   private readonly logger = new Logger(UnreadableSecretsBootCheck.name);
 
   constructor(private readonly settings: OperatorSettingsService) {}
 
-  onModuleInit(): void {
+  onApplicationBootstrap(): void {
     // An overlay that never loaded has no rows to judge, and would report
     // every credential as absent rather than as broken. The overlay's own
     // warning already covers that case, in its own words.
