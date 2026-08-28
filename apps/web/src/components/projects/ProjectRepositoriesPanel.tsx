@@ -21,6 +21,14 @@
  * dispatch, and the out-of-order confirmation, are the design; where they are
  * mounted is not.
  *
+ * ## The observed label row sits with the ladder, not inside it (#415)
+ *
+ * `RepositoryLadderCard` draws it; the state lives in `useRepositoryLadder`
+ * beside the access probes, keyed by repository id. That is deliberate: the
+ * registration dialog's answer carries a label report for the repository it
+ * just created, and a per-card hook would have nowhere to put it — the new row
+ * would ask GitHub again for something asked a second earlier.
+ *
  * ## One dialog of each kind, mounted by this panel
  *
  * The stand-down dialog asks how many work orders a repository has before it
@@ -43,6 +51,7 @@ import {
   assignRepositoryToProject,
   unassignRepositoryFromProject,
 } from '../../services/api';
+import type { RegisteredRepository } from '../../services/api';
 import type { RepositorySummary } from '../../types/cockpit';
 import type { Project, ProjectScope } from '../../types/projects';
 
@@ -78,6 +87,12 @@ export function ProjectRepositoriesPanel({
     savingId,
     probingId,
     probes,
+    labelReports,
+    labelErrors,
+    checkingLabelsId,
+    repairingLabelsId,
+    checkLabels,
+    repairLabels,
     save,
     testAccess,
     retire,
@@ -109,7 +124,10 @@ export function ProjectRepositoriesPanel({
       ?.scrollIntoView?.({ block: 'center' });
   };
 
-  const handleRegistered = (repository: RepositorySummary) => {
+  const handleRegistered = (repository: RegisteredRepository) => {
+    // `adopt` also takes in the label report the registration returned, so a
+    // new row arrives with an observation already taken (#415) rather than
+    // asking for a check of something checked a second ago.
     adopt(repository);
     if (projectId !== null) onRepositoryCountChanged(projectId, 1);
   };
@@ -209,6 +227,12 @@ export function ProjectRepositoriesPanel({
             probe={probes[repository.id]}
             isProbing={probingId === repository.id}
             onTestAccess={() => void testAccess(repository.id)}
+            labels={labelReports[repository.id]}
+            labelsError={labelErrors[repository.id] ?? null}
+            isCheckingLabels={checkingLabelsId === repository.id}
+            isRepairingLabels={repairingLabelsId === repository.id}
+            onCheckLabels={() => void checkLabels(repository.id)}
+            onRepairLabels={() => void repairLabels(repository.id)}
             isRevealed={revealedId === repository.id}
             onRemove={() => setRetiring(repository)}
             onUnretire={() => unretire(repository.id)}

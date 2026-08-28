@@ -25,6 +25,29 @@
  * unbuilt endpoint renders as "not yet verifiable" — the same treatment
  * `config/readiness.ts` gives a step with no probe — rather than as a failure,
  * and the rest of the card works regardless.
+ *
+ * ## The label row is an OBSERVATION beside the configured state (#415)
+ *
+ * The four switches are what somebody set. "12 of 15 labels present" is what
+ * GitHub had when somebody last looked, and epic #332's first rule is that the
+ * two are never merged — so it sits with the access test, carries a
+ * `checkedAt` that visibly ages, and is asked for rather than assumed.
+ *
+ * Two properties of the API's answer decide how this renders, and getting
+ * either wrong produces a screen that looks fine and is false:
+ *
+ *  - **A GitHub-level failure carries an EMPTY `labels` array** and a
+ *    `present` of zero. "None are present" and "nobody could ask" are
+ *    different facts with different remedies, so `wasRead` gates every number
+ *    and a refused report shows the remedy instead of a count.
+ *  - **`state` is not rewritten by a successful write.** A label created by a
+ *    repair still reads `state: 'missing'`, with `action: 'created'`. The
+ *    outcome is rendered from `action`, so a repair never reports the label it
+ *    just made as still absent.
+ *
+ * The repair action is withheld where pressing it cannot help — a `refused` or
+ * `no_credential` report is not fixed by asking again — because offering a
+ * button implies it might work.
  */
 
 import { useState } from 'react';
@@ -49,6 +72,7 @@ import {
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import HelpIcon from '@mui/icons-material/HelpOutlineOutlined';
+import LabelIcon from '@mui/icons-material/LabelOutlined';
 import ScienceIcon from '@mui/icons-material/Science';
 
 import {
@@ -61,12 +85,28 @@ import {
   type LadderState,
   type LadderWarning,
 } from '../../config/repositoryLadder';
+import {
+  canRepair,
+  countSentence,
+  failedLabels,
+  groupByKind,
+  observationPresentation,
+  outstandingLabels,
+  repairOutcome,
+  repairedLabels,
+  wasRead,
+} from '../../config/repositoryLabels';
 import type {
   RepositoryAccessProbeResult,
   UpdateRepositoryInput,
 } from '../../services/api';
 import type { RepositorySummary } from '../../types/cockpit';
+import type {
+  LabelProvisioningReport,
+  LabelState,
+} from '../../types/repositoryLabels';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { formatRelativeTime } from '../../utils/time';
 
 export interface RepositoryLadderCardProps {
   repository: RepositorySummary;
@@ -89,6 +129,23 @@ export interface RepositoryLadderCardProps {
   probe: RepositoryAccessProbeResult | undefined;
   isProbing: boolean;
   onTestAccess: () => void;
+  /**
+   * What GitHub had when somebody last looked (#415).
+   *
+   * Undefined means NOBODY HAS LOOKED, which is a third state and renders as
+   * one — not as "no labels" and not as a pass.
+   */
+  labels?: LabelProvisioningReport;
+  /**
+   * Why the label REQUEST failed. Never a verdict on GitHub or on the token:
+   * those arrive as a 200 carrying a `status` and land in `labels`.
+   */
+  labelsError?: string | null;
+  isCheckingLabels?: boolean;
+  isRepairingLabels?: boolean;
+  onCheckLabels?: () => void;
+  /** Create the missing labels. Absent when this build offers no repair. */
+  onRepairLabels?: () => void;
   /**
    * Open the stand-down dialog for this repository (#405).
    *
@@ -128,6 +185,12 @@ export function RepositoryLadderCard({
   probe,
   isProbing,
   onTestAccess,
+  labels,
+  labelsError = null,
+  isCheckingLabels = false,
+  isRepairingLabels = false,
+  onCheckLabels,
+  onRepairLabels,
   onRemove,
   onUnretire,
   onMove,
@@ -344,6 +407,19 @@ export function RepositoryLadderCard({
         isProbing={isProbing}
         onTestAccess={onTestAccess}
       />
+
+      {onCheckLabels !== undefined && (
+        <LabelStatus
+          repository={repository}
+          report={labels}
+          requestError={labelsError}
+          canWrite={canWrite}
+          isChecking={isCheckingLabels}
+          isRepairing={isRepairingLabels}
+          onCheck={onCheckLabels}
+          onRepair={onRepairLabels}
+        />
+      )}
 
       <Divider sx={{ my: 2 }} />
 
@@ -631,6 +707,313 @@ function headlineOf(probe: RepositoryAccessProbeResult): string {
     default:
       return 'The test did not complete';
   }
+}
+
+/**
+ * The factory label taxonomy on this repository, as OBSERVED (#415).
+ *
+ * ## Nothing is rendered until somebody asks
+ *
+ * Each check costs a GitHub request against a budget shared with the operator's
+ * own use (VISION §11), so this reads on demand exactly as the access Test
+ * above it does. No entry means nobody has looked — never "no labels".
+ *
+ * ## "0 present" and "could not ask" are never allowed to look the same
+ *
+ * `wasRead` is the gate. On `refused`, `no_credential`, `not_found`,
+ * `rate_limited`, `unreachable` and `failed` the API sends `present: 0` with an
+ * empty `labels` array, and printing "0 of 15 labels present" from that would
+ * be a claim about a repository nobody managed to read — one that would send an
+ * operator to create fifteen labels that may all already exist. So the count
+ * only appears when the labels were actually read, and otherwise the status's
+ * remedy stands in its place.
+ *
+ * ## After a repair, the outcome comes from `action`
+ *
+ * `state` is what GitHub had BEFORE the call and the API deliberately does not
+ * rewrite it, so a created label still reads `state: 'missing'`. Everything
+ * below reads `action` for what happened and `outstandingLabels` for what is
+ * still wrong, which is why a successful repair does not go on listing the
+ * labels it just created as missing.
+ */
+function LabelStatus({
+  repository,
+  report,
+  requestError,
+  canWrite,
+  isChecking,
+  isRepairing,
+  onCheck,
+  onRepair,
+}: {
+  repository: RepositorySummary;
+  report: LabelProvisioningReport | undefined;
+  requestError: string | null;
+  canWrite: boolean;
+  isChecking: boolean;
+  isRepairing: boolean;
+  onCheck: () => void;
+  onRepair?: () => void;
+}) {
+  const busy = isChecking || isRepairing;
+
+  return (
+    <Box sx={{ mt: 1 }} aria-label={`Factory labels — ${repository.fullName}`}>
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        spacing={1}
+        sx={{ alignItems: { sm: 'center' } }}
+      >
+        <Button
+          size="small"
+          startIcon={<LabelIcon />}
+          onClick={onCheck}
+          disabled={busy}
+        >
+          {isChecking
+            ? 'Checking labels…'
+            : report === undefined
+              ? 'Check labels'
+              : 'Check labels again'}
+        </Button>
+        <Typography variant="caption" color="text.secondary">
+          Asks GitHub which of the declared factory labels exist here. Nothing
+          is written by checking. GitHub&apos;s label picker only offers labels
+          that exist, so while <code>factory:ready</code> is missing no issue
+          here can be marked ready — and that label is the whole eligibility
+          signal.
+        </Typography>
+      </Stack>
+
+      {requestError !== null && (
+        <Alert severity="error" variant="outlined" sx={{ mt: 1 }}>
+          <AlertTitle>The labels could not be asked about</AlertTitle>
+          {requestError} This is a failure of the request, not a verdict on the
+          GitHub credential or on this repository&apos;s labels.
+        </Alert>
+      )}
+
+      {report !== undefined && (
+        <LabelReport
+          report={report}
+          canWrite={canWrite}
+          isRepairing={isRepairing}
+          isBusy={busy}
+          onRepair={onRepair}
+        />
+      )}
+    </Box>
+  );
+}
+
+/** One report — an inspection or the answer to a repair. */
+function LabelReport({
+  report,
+  canWrite,
+  isRepairing,
+  isBusy,
+  onRepair,
+}: {
+  report: LabelProvisioningReport;
+  canWrite: boolean;
+  isRepairing: boolean;
+  isBusy: boolean;
+  onRepair?: () => void;
+}) {
+  const observed = wasRead(report);
+  const count = countSentence(report);
+  // An applied report leads with what the WRITES did; an inspection leads with
+  // what is there. Both then carry the API's own sentence verbatim.
+  const headline = report.applied
+    ? repairOutcome(report)
+    : (() => {
+        const presentation = observationPresentation(report);
+        return {
+          severity: presentation.severity,
+          title: presentation.title,
+          body: presentation.remedy,
+        };
+      })();
+
+  const outstanding = outstandingLabels(report);
+  const repaired = repairedLabels(report);
+  const failed = failedLabels(report);
+  const offerRepair = onRepair !== undefined && canRepair(report);
+
+  return (
+    <Alert severity={headline.severity} variant="outlined" sx={{ mt: 1 }}>
+      <AlertTitle>{headline.title}</AlertTitle>
+      <Typography variant="body2">{headline.body}</Typography>
+
+      {/* The count, when the labels were actually read AND it is not already
+          the headline. Never rendered from a report that observed nothing. */}
+      {count !== null && report.applied && (
+        <Typography variant="body2" sx={{ mt: 1 }}>
+          {count} on {report.repository}.
+        </Typography>
+      )}
+
+      {/* The API's own sentence, verbatim: it knows which HTTP status GitHub
+          returned and when a rate limit resets, and this build does not. */}
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+        {report.detail}
+      </Typography>
+
+      {repaired.length > 0 && (
+        <LabelNames
+          heading={
+            report.updated === 0
+              ? 'Created just now'
+              : 'Created or updated just now'
+          }
+          labels={repaired}
+        />
+      )}
+
+      {failed.length > 0 && (
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="subtitle2">Could not be written</Typography>
+          <Stack component="ul" spacing={0.5} sx={{ pl: 2.5, my: 0.5 }}>
+            {failed.map((label) => (
+              <Typography
+                key={label.name}
+                component="li"
+                variant="body2"
+                color="text.secondary"
+              >
+                <code>{label.name}</code>
+                {label.detail !== null && ` — ${label.detail}`}
+              </Typography>
+            ))}
+          </Stack>
+        </Box>
+      )}
+
+      {/* What is missing, NAMED and grouped by kind — a bare count cannot say
+          whether the one absent label is `factory:ready` or `tier:small`, and
+          those have very different consequences. Only ever rendered from a
+          report that read GitHub. */}
+      {observed && outstanding.length > 0 && (
+        <Box sx={{ mt: 1 }}>
+          {groupByKind(outstanding).map((group) => (
+            <Box key={group.kind} sx={{ mt: 1 }}>
+              <Typography variant="subtitle2">
+                {group.presentation.title}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {group.presentation.consequence}
+              </Typography>
+              <Stack component="ul" spacing={0.5} sx={{ pl: 2.5, my: 0.5 }}>
+                {group.labels.map((label) => (
+                  <Typography
+                    key={label.name}
+                    component="li"
+                    variant="body2"
+                    color="text.secondary"
+                  >
+                    <code>{label.name}</code>
+                    {label.state === 'drifted' &&
+                      ` — on GitHub and out of date${
+                        label.differences.length > 0
+                          ? `: ${label.differences.join(', ')}`
+                          : ''
+                      }`}
+                    {label.state === 'missing' && ' — not on GitHub'}
+                  </Typography>
+                ))}
+              </Stack>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      <ObservedAt checkedAt={report.checkedAt} />
+
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ mt: 1, flexWrap: 'wrap', rowGap: 1 }}
+      >
+        {offerRepair && (
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={onRepair}
+            disabled={!canWrite || isBusy}
+          >
+            {isRepairing ? 'Creating labels…' : 'Create missing labels'}
+          </Button>
+        )}
+      </Stack>
+
+      {/* Why the button is not there. Said once, where it would have been:
+          a missing control with no explanation reads as a bug, and an operator
+          who does not know that pressing again cannot help will press again. */}
+      {!offerRepair && !report.ok && (
+        <Typography variant="caption" color="text.secondary" component="p">
+          Creating the labels is not offered here, because it would fail the
+          same way. Deal with the reason above and check again.
+        </Typography>
+      )}
+    </Alert>
+  );
+}
+
+/** A named list of labels under a heading. */
+function LabelNames({
+  heading,
+  labels,
+}: {
+  heading: string;
+  labels: readonly LabelState[];
+}) {
+  return (
+    <Box sx={{ mt: 1 }}>
+      <Typography variant="subtitle2">{heading}</Typography>
+      <Stack component="ul" spacing={0.5} sx={{ pl: 2.5, my: 0.5 }}>
+        {labels.map((label) => (
+          <Typography
+            key={label.name}
+            component="li"
+            variant="body2"
+            color="text.secondary"
+          >
+            <code>{label.name}</code>
+          </Typography>
+        ))}
+      </Stack>
+    </Box>
+  );
+}
+
+/**
+ * When this was observed — and that it can already be wrong.
+ *
+ * Both an age and a wall-clock time, because they answer different questions:
+ * the age is what makes an answer visibly go stale, and the absolute time is
+ * what an operator matches against something they did on GitHub. The sentence
+ * beside them is the point of the whole row: this is a fact about a moment,
+ * not a stored setting, and nothing re-checks it in the background.
+ */
+function ObservedAt({ checkedAt }: { checkedAt: string }) {
+  const age = formatRelativeTime(checkedAt);
+  const when = new Date(checkedAt);
+  const absolute = Number.isNaN(when.getTime())
+    ? checkedAt
+    : when.toLocaleString();
+
+  return (
+    <Typography
+      variant="caption"
+      color="text.secondary"
+      component="p"
+      sx={{ mt: 1 }}
+    >
+      Observed {age === null ? 'at an unknown time' : age} ({absolute}). Nothing
+      here is stored or re-checked in the background — a label added or deleted
+      on GitHub since then is not reflected until you check again.
+    </Typography>
+  );
 }
 
 export default RepositoryLadderCard;
