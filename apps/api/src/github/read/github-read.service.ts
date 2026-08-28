@@ -235,6 +235,41 @@ export class GitHubReadService {
   }
 
   /**
+   * The children GitHub itself records for an issue — the NATIVE relationship.
+   *
+   * ## Verified available to this deployment's credential (#424)
+   *
+   * `GET /repos/{owner}/{repo}/issues/{n}/sub_issues` is a newer surface, so
+   * it was probed with the configured fine-grained PAT rather than assumed:
+   * it answers 200 for a real issue, 404 for a nonexistent one, and returns
+   * an `etag` and the usual `x-ratelimit-*` headers, so the conditional-request
+   * and budget machinery above applies to it unchanged.
+   *
+   * ## An empty answer here is NOT "no children"
+   *
+   * The same probe found `sub_issues_summary.total: 0` on every epic in this
+   * repository — the relationship is available and entirely unused, because
+   * epics are written as markdown task lists. `EpicChildrenService` therefore
+   * treats an empty result as "the native source has nothing to say" and
+   * consults the body, rather than as an authoritative empty set. That
+   * distinction is the difference between a working resolver and one that
+   * answers nothing for every epic that exists.
+   *
+   * Pull requests are NOT filtered out, unlike `listIssues`: a PR linked as a
+   * sub-issue is a deliberate act by a human, and the caller is told what it
+   * is (`isPullRequest`) rather than having it silently removed.
+   */
+  async listSubIssues(
+    repo: RepositoryRef,
+    issueNumber: number,
+  ): Promise<NormalizedIssue[]> {
+    const { items } = await this.http.paginate<RawIssue>(
+      `/repos/${repo.owner}/${repo.name}/issues/${issueNumber}/sub_issues`,
+    );
+    return items.map(toNormalizedIssue);
+  }
+
+  /**
    * Every comment on an issue.
    *
    * Added for #63's idempotency: the authorization record must not be posted
