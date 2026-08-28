@@ -81,8 +81,10 @@ import { TickLeaseService } from './tick-lease.service';
     // not be able to start a run. Gated twice: `Repository.dispatchEnabled`
     // per repository, which defaults off, and `DISPATCH_ENABLED` globally,
     // which since ADR-0019 (#439) defaults ON — with the hard spend ceiling,
-    // unset and refusing, as the thing that keeps a fresh install from
-    // spending.
+    // unset and refusing, as the one thing that keeps a fresh install from
+    // spending. `RECONCILER_ENABLED` defaults on in the same change, so this
+    // drain really does run on a fresh install and really does reach that
+    // refusal, rather than never being called at all.
     DispatchModule,
   ],
   controllers: [ReconcilerController],

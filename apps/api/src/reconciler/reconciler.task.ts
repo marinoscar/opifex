@@ -188,12 +188,31 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
 
     // The one place the enablement state of this loop is reported, which is
     // what lets the per-tick skip stay at `debug`.
-    this.logger.log(
-      `Reconciler tick registered every ${this.registeredIntervalMs}ms; ` +
-        (this.settings.get('reconciler.enabled')
-          ? 'the reconciler is ENABLED'
-          : 'the reconciler is DISABLED, so every tick will skip until it is enabled'),
-    );
+    //
+    // Two levels since ADR-0019 (#439), not one line with a ternary in it.
+    // The reconciler ships ENABLED, so a disabled one is now a deliberate act
+    // whose consequence is total: this loop gates observation, projection,
+    // liveness, the watchdog, escalations, notification dispatch, spec
+    // feedback and the dispatch drain, so a deployment with it off does
+    // nothing at all however much else is switched on. "Why is nothing
+    // happening" has one answer and this is it, which makes it worth a WARN
+    // rather than a line in the same colour as everything else at boot.
+    if (this.settings.get('reconciler.enabled')) {
+      this.logger.log(
+        `Reconciler tick registered every ${this.registeredIntervalMs}ms; ` +
+          'the reconciler is ENABLED and will observe GitHub. No repository ' +
+          'is written to until it opts in, and no run starts until a hard ' +
+          'spend ceiling is set.',
+      );
+    } else {
+      this.logger.warn(
+        `Reconciler tick registered every ${this.registeredIntervalMs}ms, but ` +
+          'the reconciler is DISABLED — it ships enabled, so something turned ' +
+          'it off. NOTHING will happen while it is off: no observation, no ' +
+          'work orders, no escalations and no dispatch, whatever else is ' +
+          'enabled.',
+      );
+    }
   }
 
   onModuleDestroy(): void {

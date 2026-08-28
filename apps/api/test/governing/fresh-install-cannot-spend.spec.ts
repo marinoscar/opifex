@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { SchedulerRegistry } from '@nestjs/schedule';
 
 import { HardSpendCeilingService } from '../../src/budget/hard-spend-ceiling';
 import { SpendLedgerService } from '../../src/budget/spend-ledger.service';
@@ -11,6 +12,19 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 import { ClaudeCodeLocalRunner } from '../../src/runners/claude-code-local/claude-code-local.runner';
 import { RunPollerService } from '../../src/runners/run-poller.service';
 import type { RunnerCapabilities } from '../../src/runners/runner.types';
+import { DeadTimeService } from '../../src/dead-time/dead-time.service';
+import { DispatchQueueService } from '../../src/dispatch/dispatch-queue.service';
+import { EscalationsService } from '../../src/escalations/escalations.service';
+import { GitHubWriteService } from '../../src/github/write/github-write.service';
+import { GitLivenessService } from '../../src/liveness/git-liveness.service';
+import { EscalationDispatcher } from '../../src/notifications/escalation-dispatcher.service';
+import { MirrorLabelExecutor } from '../../src/reconciler/execute/mirror-label.executor';
+import { SpecFeedbackExecutor } from '../../src/reconciler/execute/spec-feedback.executor';
+import { ReconcileLogService } from '../../src/reconciler/log/reconcile-log.service';
+import { ReconcilerService } from '../../src/reconciler/reconciler.service';
+import { ReconcilerTask } from '../../src/reconciler/reconciler.task';
+import { RepositoriesService } from '../../src/repositories/repositories.service';
+import { WatchdogService } from '../../src/watchdog/watchdog.service';
 import { OPERATOR_SETTINGS } from '../../src/settings/operator-settings/operator-settings.registry';
 import { makeOperatorSettings } from '../../src/settings/operator-settings/operator-settings.test-double';
 import type { GeneratedWorkOrder } from '../../src/work-orders/work-order-generator';
@@ -102,9 +116,9 @@ function workOrder(): GeneratedWorkOrder {
 
 describe('a fresh install is ready, and cannot spend (ADR-0019, #439)', () => {
   describe('the shipped defaults', () => {
-    it('has the four switches ON, so the factory is ready out of the box', () => {
-      // Written as four literals rather than a loop over the registry: the
-      // claim IS these four values, and a test that derived its expectation
+    it('has the five switches ON, so the factory is ready out of the box', () => {
+      // Written as five literals rather than a loop over the registry: the
+      // claim IS these five values, and a test that derived its expectation
       // from the table it is checking would agree with any value at all.
       expect(OPERATOR_SETTINGS['runners.claudeCodeLocal.enabled'].default).toBe(
         true,
@@ -114,6 +128,12 @@ describe('a fresh install is ready, and cannot spend (ADR-0019, #439)', () => {
         true,
       );
       expect(OPERATOR_SETTINGS['github.writesEnabled'].default).toBe(true);
+      // #439 named four; this is the fifth, and without it the other four
+      // change nothing an operator can see. `ReconcilerTask.runOnce` gates
+      // observation, projection, liveness, the watchdog, escalations,
+      // notification dispatch, spec feedback AND the dispatch drain on it, so
+      // an install with this off does nothing at all.
+      expect(OPERATOR_SETTINGS['reconciler.enabled'].default).toBe(true);
     });
 
     it('has NO hard spend ceiling, which is the half of #439 that did not move', () => {
@@ -150,6 +170,173 @@ describe('a fresh install is ready, and cannot spend (ADR-0019, #439)', () => {
         expect(lines[0]).toContain('refuse');
         expect(lines[0]).toContain('ceiling');
       } finally {
+        warn.mockRestore();
+      }
+    });
+  });
+
+  describe('the reconcile loop, with nothing configured anywhere', () => {
+    /**
+     * The task, built with the shipped defaults and doubles for everything it
+     * calls out to. Thirteen collaborators is a lot of ceremony for two
+     * assertions, and it is the only construction that can make them: the
+     * claim is that a tick on a DEFAULT install reaches the acting steps, and
+     * a double for the task itself would be asserting about the double.
+     */
+    function buildTask() {
+      const tick = jest.fn().mockResolvedValue({
+        id: 'tick-uuid',
+        startedAt: new Date(0),
+        finishedAt: new Date(0),
+        durationMs: 0,
+        outcome: 'completed',
+        repositoriesObserved: 0,
+        failures: [],
+        allFromCache: false,
+        rateLimitRemaining: 5000,
+        settings: {
+          retryCeiling: 3,
+          rateLimitReserve: 100,
+          writesEnabled: true,
+        },
+        projections: [],
+        workOrdersCreated: 0,
+        rejections: [],
+        actions: [],
+      });
+      const drain = jest.fn().mockResolvedValue({
+        dispatched: 0,
+        stillQueued: 0,
+        observed: 0,
+        failed: 0,
+        unrebuildable: 0,
+        repositoriesDisabled: 0,
+      });
+      const registered = new Map<string, NodeJS.Timeout>();
+      const scheduler = {
+        addInterval: (name: string, handle: NodeJS.Timeout) => {
+          registered.set(name, handle);
+        },
+        deleteInterval: (name: string) => {
+          const handle = registered.get(name);
+          if (handle) clearInterval(handle);
+          registered.delete(name);
+        },
+        doesExist: (_type: string, name: string) => registered.has(name),
+      } as unknown as SchedulerRegistry;
+
+      const task = new ReconcilerTask(
+        makeOperatorSettings(),
+        scheduler,
+        { tick } as unknown as ReconcilerService,
+        {
+          execute: jest.fn().mockResolvedValue({
+            executed: 0,
+            noops: 0,
+            suppressed: 0,
+            failures: [],
+          }),
+        } as unknown as MirrorLabelExecutor,
+        {
+          report: jest.fn().mockResolvedValue({
+            posted: 0,
+            alreadyTold: 0,
+            suppressed: 0,
+            failures: [],
+          }),
+        } as unknown as SpecFeedbackExecutor,
+        { drain } as unknown as DispatchQueueService,
+        {
+          listObserved: jest.fn().mockResolvedValue([]),
+        } as unknown as RepositoriesService,
+        {
+          sweep: jest.fn().mockResolvedValue({
+            runsWatched: 0,
+            eventsRecorded: 0,
+            disagreements: [],
+          }),
+        } as unknown as GitLivenessService,
+        {
+          sweep: jest.fn().mockResolvedValue({
+            runsJudged: 0,
+            judgedRunIds: [],
+            actions: [],
+            silentRuns: 0,
+            loopingRuns: 0,
+            loopCheckUnavailable: 0,
+            parkedRuns: 0,
+            resumableRuns: 0,
+            deadObservations: [],
+          }),
+        } as unknown as WatchdogService,
+        {
+          record: jest.fn().mockResolvedValue({
+            opened: 0,
+            resumed: 0,
+            concluded: 0,
+            quarantined: 0,
+            open: 0,
+          }),
+        } as unknown as DeadTimeService,
+        {
+          raiseFrom: jest
+            .fn()
+            .mockResolvedValue({ raised: 0, deduplicated: 0 }),
+          resolveStale: jest.fn().mockResolvedValue(0),
+        } as unknown as EscalationsService,
+        {
+          dispatchPending: jest.fn().mockResolvedValue({
+            dispatched: 0,
+            rerouted: 0,
+            retried: 0,
+            failed: 0,
+            timedOut: 0,
+            abandoned: 0,
+          }),
+        } as unknown as EscalationDispatcher,
+        { writesIssued: 0 } as unknown as GitHubWriteService,
+        {
+          recordExecution: jest.fn().mockResolvedValue(undefined),
+        } as unknown as ReconcileLogService,
+      );
+
+      return { task, tick, drain, registered };
+    }
+
+    /** `runOnce` is private, and is what the interval calls. */
+    const runOnce = (task: ReconcilerTask) =>
+      (task as unknown as { runOnce(): Promise<void> }).runOnce();
+
+    it('TICKS with nothing overridden, instead of skipping as disabled', async () => {
+      // The claim #439 makes in prose — "the reconciler observes, the runner
+      // registers, the queue drains" — and the one it did not originally
+      // deliver, because `reconciler.enabled` was not among the four flags it
+      // listed and gates the whole loop.
+      const { task, tick, drain } = buildTask();
+
+      await runOnce(task);
+
+      expect(tick).toHaveBeenCalledTimes(1);
+      // The dispatch drain is downstream of the same gate, which is what makes
+      // the ceiling the only remaining stop rather than one of two.
+      expect(drain).toHaveBeenCalledTimes(1);
+    });
+
+    it('says ENABLED at boot without warning, so the WARN means something', async () => {
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const { task } = buildTask();
+
+      try {
+        task.onModuleInit();
+
+        expect(warn).not.toHaveBeenCalled();
+        expect(
+          log.mock.calls.map((call) => String(call[0])).join(' '),
+        ).toContain('ENABLED');
+      } finally {
+        task.onModuleDestroy();
+        log.mockRestore();
         warn.mockRestore();
       }
     });

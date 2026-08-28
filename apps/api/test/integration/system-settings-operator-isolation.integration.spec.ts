@@ -100,8 +100,14 @@ describe('PUT /api/system-settings cannot touch operator settings (#352)', () =>
     // direction it goes. Sending a value that agreed with the default would
     // leave these tests passing against a resolver that had happily accepted
     // the write.
+    //
+    // The off-by-default key is `promotion.enabled` because it is one of the
+    // three left. `reconciler.enabled` stood here for one commit, until the
+    // same change flipped it too — and THIS assertion is what caught that:
+    // the control failed loudly instead of the other three quietly becoming
+    // untestable. That is the whole reason a control test exists in this file.
     expect(operatorSettings.get('dispatch.enabled')).toBe(true);
-    expect(operatorSettings.get('reconciler.enabled')).toBe(false);
+    expect(operatorSettings.get('promotion.enabled')).toBe(false);
   });
 
   it('silently strips an unknown top-level key shaped like an operator setting group', async () => {
@@ -152,7 +158,7 @@ describe('PUT /api/system-settings cannot touch operator settings (#352)', () =>
       // assertion below can pass by agreeing with what was already true.
       features: {
         'dispatch.enabled': false,
-        'reconciler.enabled': true,
+        'promotion.enabled': true,
       },
     };
 
@@ -168,7 +174,7 @@ describe('PUT /api/system-settings cannot touch operator settings (#352)', () =>
     // above.
     expect(upsertedValue().features).toEqual({
       'dispatch.enabled': false,
-      'reconciler.enabled': true,
+      'promotion.enabled': true,
     });
 
     // What it must NEVER do: reach the resolver `RunExecutorService`,
@@ -178,7 +184,7 @@ describe('PUT /api/system-settings cannot touch operator settings (#352)', () =>
     // second, unaudited write path to a managed key -- the exact hazard a
     // dedicated `operator_settings` table (#336) exists to rule out.
     expect(operatorSettings.get('dispatch.enabled')).toBe(true);
-    expect(operatorSettings.get('reconciler.enabled')).toBe(false);
+    expect(operatorSettings.get('promotion.enabled')).toBe(false);
   });
 
   it('cannot destroy an operator setting by replacing the whole system-settings document', async () => {
@@ -200,6 +206,6 @@ describe('PUT /api/system-settings cannot touch operator settings (#352)', () =>
     // `operator_settings` table. Re-asserted directly rather than inferred
     // from the previous test, so this test stands on its own.
     expect(operatorSettings.get('dispatch.enabled')).toBe(true);
-    expect(operatorSettings.get('reconciler.enabled')).toBe(false);
+    expect(operatorSettings.get('promotion.enabled')).toBe(false);
   });
 });

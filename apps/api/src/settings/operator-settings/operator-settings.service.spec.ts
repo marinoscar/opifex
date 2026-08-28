@@ -187,19 +187,18 @@ describe('OperatorSettingsService', () => {
       // authorization decision. Nothing here is in that class.
       const settings = withEnv({
         CLAUDE_CODE_MAX_CONCURRENCY: 'lots',
-        GITHUB_WRITES_ENABLED: 'yes',
-        RECONCILER_ENABLED: 'yes',
+        // 'yes' is now a VALID spelling of true (#439), so the unreadable
+        // boolean here has to be a genuinely ambiguous one — and it is asserted
+        // on a key that still defaults OFF, so that only a real rejection can
+        // produce the expected value. On a default-on key, a parser that
+        // wrongly accepted 'enabled' would return the same `true` the fallback
+        // does, and this test would pass while proving nothing.
+        PROMOTION_LADDER_ENABLED: 'enabled',
         CLAUDE_CODE_PERMISSION_MODE: 'yolo',
       });
 
       expect(settings.get('runners.claudeCodeLocal.maxConcurrency')).toBe(2);
-      expect(settings.get('github.writesEnabled')).toBe(true);
-      // The falsifiable half of the boolean claim, and the reason a second
-      // switch is named here at all: since ADR-0019 (#439) `github.writesEnabled`
-      // defaults ON, so a parser that wrongly READ 'yes' as true would produce
-      // the same `true` as the fallback does. `reconciler.enabled` still
-      // defaults off, so only a genuine rejection of 'yes' yields false.
-      expect(settings.get('reconciler.enabled')).toBe(false);
+      expect(settings.get('promotion.enabled')).toBe(false);
       expect(settings.get('runners.claudeCodeLocal.permissionMode')).toBe(
         'acceptEdits',
       );
@@ -264,12 +263,14 @@ describe('OperatorSettingsService', () => {
         [...OPERATOR_SETTING_KEYS].sort(),
       );
       expect(snapshot['supervisor.enabled']).toBe(true);
-      // A key the environment did NOT set, carrying its registry default. It
-      // is deliberately one that still defaults OFF: `dispatch.enabled` stood
-      // here until ADR-0019 (#439) flipped it, at which point every value in
-      // this assertion was `true` and the contrast that made it worth writing
-      // was gone.
-      expect(snapshot['reconciler.enabled']).toBe(false);
+      // A key the environment did NOT set, carrying its registry default, and
+      // deliberately one that still defaults OFF so the assertion has a
+      // contrast to make. It has now been re-picked twice for that reason:
+      // `dispatch.enabled` stood here until ADR-0019 (#439) flipped it, then
+      // `reconciler.enabled` until the same change took the fifth flag too.
+      // If `promotion.enabled` ever ships on, this needs re-picking again —
+      // and it will fail rather than go quiet, which is the point.
+      expect(snapshot['promotion.enabled']).toBe(false);
     });
   });
 

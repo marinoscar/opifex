@@ -1019,7 +1019,16 @@ export const OPERATOR_SETTINGS = {
 
   'reconciler.enabled': booleanSetting({
     envVar: 'RECONCILER_ENABLED',
-    default: false,
+    // ON since ADR-0019 (#439), and it is the flag that makes the other four
+    // mean anything: `ReconcilerTask.runOnce` gates the WHOLE loop on it —
+    // observation, projection, the liveness sweep, the watchdog, escalations,
+    // notification dispatch, spec feedback AND the dispatch drain. Flipping
+    // dispatch and the runner while this stayed off would have produced a
+    // deployment that still did nothing, with the reason moved rather than
+    // removed. Observation costs GitHub rate-limit budget and nothing else;
+    // what it can lead to is bounded by the hard spend ceiling, which is unset
+    // and refusing, and by each repository's own opt-in flags.
+    default: true,
     secret: false,
     // Read per tick, in two places: `ReconcilerTask.runOnce` gates the whole
     // loop on it, and `reconciler.service.ts` records `skipped-disabled`
@@ -1028,7 +1037,7 @@ export const OPERATOR_SETTINGS = {
     reload: 'live',
     group: 'reconciler',
     label: 'Reconciler enabled',
-    help: 'Whether the reconcile tick observes GitHub and projects desired state. Off, nothing is polled and no rate-limit budget is spent. The next tick honours a change.',
+    help: 'Whether the reconcile tick observes GitHub and projects desired state, on by default (ADR-0019). It gates the entire loop, not just the projection: with it off nothing is polled, no work order is created and the dispatch queue is never drained, so a deployment with this off does nothing at all no matter what else is enabled. On, it costs GitHub rate-limit budget and nothing else — no repository is written to until that repository opts in, and no run starts until a hard spend ceiling is set. The next tick honours a change.',
   }),
 
   'reconciler.intervalMs': integerSetting({
