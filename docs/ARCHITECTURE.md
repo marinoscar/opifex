@@ -569,6 +569,63 @@ recover from — each registration is independently correct or independently
 refused, and composing several into one all-or-nothing act would make a
 single unrelated refusal undo work that had already succeeded.
 
+**Registration also provisions the factory label taxonomy, and provisioning
+failing does not fail the registration (#415).** `LabelProvisioningService`
+(`apps/api/src/github/labels/label-provisioning.service.ts`) creates 15 of
+the taxonomy's 40 declared labels on the repository being registered: the
+three `factory:*` input labels, the five `factory/*` mirror labels, and the
+seven `needs:*` / `tier:*` routing labels — the vocabulary the control loop
+itself reads or obeys. The other 25 (`bug`, `phase:*`, component labels) are
+organisational conventions of the Opifex repository, nothing in the control
+loop reads them, and writing them onto somebody else's tracker on the
+strength of "they let Opifex watch this repository" is presumptuous; that
+boundary is asserted by `label-taxonomy.spec.ts` rather than left to review.
+`label-taxonomy.ts`'s own header explains why the set is declared in
+TypeScript rather than read from `.github/labels.yml` at request time:
+`apps/api/scripts` went missing from the production image once already
+(#382), silently, and a taxonomy that empties itself in a container is worse
+than one that fails to compile.
+
+This service is deliberately **not** gated by `github.writesEnabled`. That
+flag governs whether the factory acts on issues during a reconciler tick;
+creating the label taxonomy is operator setup, the same category as
+registering the repository at all, and gating it on the kill switch would
+mean VISION §12's observation week could not be set up without first turning
+on the writes the switch exists to withhold. It also never routes through
+`guardedWrite` — fifteen setup writes in the diff log the observation week is
+reviewed from would drown the one thing that log is for. What it does carry
+instead: it creates and updates, **never deletes** — a label absent from the
+taxonomy is left alone rather than reported as a problem, since an
+unrecognised label is far more likely to be a human's than a mistake — and it
+refuses any name outside `PROVISIONED_LABELS` before a request is made.
+
+Because ADR-0001 authenticates with a fine-grained personal access token
+scoped one repository and one permission at a time, and such a token emits no
+`x-oauth-scopes` header, whether it can write labels to a given repository is
+unknowable until it is tried — "can read this repo" does not imply `issues:
+write` on it. So provisioning reports rather than throws:
+`POST /api/repositories`'s response carries a `labelProvisioning` field with
+the same report `GET /api/repositories/{id}/labels` answers, and the
+repository stays registered either way. `POST /api/repositories/{id}/labels`
+is the repair action once the token's permissions are widened.
+
+**The report's seven counts are `number | null`, and `null` means the labels
+were never read — never that there are none.** They go `null` together,
+exactly when `labels` is empty, and that condition is keyed on whether the
+_read_ succeeded, not on `status`: a `refused` report can be a read-phase
+refusal (could not list the labels at all — every count `null`) or a
+write-phase refusal (listed them fine, then the write was cut off — real
+counts, `created: 0`, and still `status: 'refused'`). `apps/web/src/config/
+repositoryLabels.ts`'s `wasRead` is a `null` check for exactly that reason;
+gating on `status` instead would blank a genuine observation the moment a
+write-phase refusal is the one thing worth reporting. The Projects UI
+(`RepositoryLadderCard.tsx`) renders the count beside each repository's
+ladder as "N of M labels present" with a `checkedAt` stamp, names what is
+missing grouped by kind, and offers **Create missing labels** only when
+`status` is one a repeated attempt could actually fix (`incomplete`) —
+`refused` and `no_credential` are not repaired by pressing the button again,
+and offering it there would imply they might be.
+
 ---
 
 ## 4. Architecture Principles

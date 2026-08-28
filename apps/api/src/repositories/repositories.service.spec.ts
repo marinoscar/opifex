@@ -7,6 +7,10 @@ import {
 
 import { EtagCacheService } from '../github/etag-cache.service';
 import { GitHubAuthError, GitHubNotFoundError } from '../github/github.errors';
+import {
+  LabelProvisioningService,
+  type LabelProvisioningReport,
+} from '../github/labels/label-provisioning.service';
 import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoriesService } from './repositories.service';
@@ -18,6 +22,36 @@ const REACHABLE = {
   private: false,
   archived: false,
 };
+
+/**
+ * A clean label-provisioning report.
+ *
+ * Registration now provisions the factory taxonomy (#415), and these suites
+ * are about the REGISTRY. `label-provisioning.service.spec.ts` owns what
+ * provisioning does; what matters here is only that registration reports it
+ * and that a failure cannot cost a registration.
+ */
+function labelReport(
+  overrides: Partial<LabelProvisioningReport> = {},
+): LabelProvisioningReport {
+  return {
+    repository: 'acme/app',
+    ok: true,
+    status: 'ok',
+    attempted: true,
+    detail: 'All 15 factory labels are present on acme/app.',
+    checkedAt: '2026-08-01T10:00:00.000Z',
+    declared: 15,
+    present: 15,
+    missing: 0,
+    created: 15,
+    updated: 0,
+    unchanged: 0,
+    failed: 0,
+    labels: [],
+    ...overrides,
+  };
+}
 
 function repositoryRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -98,6 +132,7 @@ describe('RepositoriesService', () => {
   let touched: Set<string>;
   let github: { getRepository: jest.Mock };
   let etags: { invalidateRepository: jest.Mock };
+  let labels: { provision: jest.Mock; inspect: jest.Mock };
   let service: RepositoriesService;
 
   beforeEach(() => {
@@ -122,11 +157,16 @@ describe('RepositoriesService', () => {
 
     github = { getRepository: jest.fn().mockResolvedValue(REACHABLE) };
     etags = { invalidateRepository: jest.fn() };
+    labels = {
+      provision: jest.fn().mockResolvedValue(labelReport()),
+      inspect: jest.fn().mockResolvedValue(labelReport()),
+    };
 
     service = new RepositoriesService(
       prisma as unknown as PrismaService,
       github as unknown as GitHubReadService,
       etags as unknown as EtagCacheService,
+      labels as unknown as LabelProvisioningService,
     );
   });
 
@@ -279,6 +319,141 @@ describe('RepositoriesService', () => {
           projectId: '22222222-2222-2222-2222-222222222222',
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    describe('the factory labels (#415)', () => {
+      it('creates them, so the repository can actually be steered', async () => {
+        // `factory:ready` is the whole eligibility signal, and GitHub's label
+        // picker only offers labels that EXIST. Registering without them is
+        // what left `Knecta` fully laddered and unusable.
+        const result = await service.register({ owner: 'acme', name: 'app' });
+
+        expect(labels.provision).toHaveBeenCalledWith({
+          owner: 'acme',
+          name: 'app',
+        });
+        expect(result.labelProvisioning?.status).toBe('ok');
+      });
+
+      it('provisions AFTER the row exists, never before', async () => {
+        // Order matters and is not cosmetic: provisioning must not be able to
+        // stop a registration, and a write that happened before the row would
+        // leave labels on a repository nothing has a record of.
+        const order: string[] = [];
+        prisma.repository.create.mockImplementation(
+          async ({ data }: { data: Record<string, unknown> }) => {
+            order.push('create');
+            return repositoryRow(data);
+          },
+        );
+        labels.provision.mockImplementation(async () => {
+          order.push('provision');
+          return labelReport();
+        });
+
+        await service.register({ owner: 'acme', name: 'app' });
+
+        expect(order).toEqual(['create', 'provision']);
+      });
+
+      it('STILL REGISTERS when the token cannot create labels', async () => {
+        // ADR-0001's fine-grained PAT grants access one repository and one
+        // permission at a time, and emits no `x-oauth-scopes` header — so
+        // whether it can write labels is unknowable until it is tried.
+        // Refusing the registration would leave the operator with nothing
+        // registered and a reachability check that passed.
+        labels.provision.mockResolvedValue(
+          labelReport({
+            ok: false,
+            status: 'refused',
+            // Null, not zero: a token that could not read the labels
+            // established nothing about what is on the repository. This is the
+            // shape the service really returns for a read-phase refusal, and a
+            // double that returned zeros would let a consumer bug through.
+            declared: null,
+            present: null,
+            missing: null,
+            created: null,
+            updated: null,
+            unchanged: null,
+            failed: null,
+            detail:
+              'GitHub accepted the credential and refused the request (403).',
+          }),
+        );
+
+        const result = await service.register({ owner: 'acme', name: 'app' });
+
+        expect(prisma.repository.create).toHaveBeenCalled();
+        expect(result.id).toBeDefined();
+        expect(result.labelProvisioning?.status).toBe('refused');
+        expect(result.labelProvisioning?.ok).toBe(false);
+      });
+
+      it('reports the refusal distinctly rather than claiming success', async () => {
+        // The acceptance criterion, and the whole point of epic #332's
+        // "configured is not effective": a repository that looks registered
+        // and cannot be labelled must SAY so.
+        labels.provision.mockResolvedValue(
+          labelReport({ ok: false, status: 'refused', created: null }),
+        );
+
+        const result = await service.register({ owner: 'acme', name: 'app' });
+
+        expect(result.labelProvisioning).not.toBeNull();
+        expect(result.labelProvisioning?.ok).not.toBe(true);
+      });
+
+      it('survives provisioning throwing outright', async () => {
+        // Belt and braces on a service that already reports rather than
+        // throws. A bug in provisioning must not cost a registration either.
+        labels.provision.mockRejectedValue(new Error('unmodelled'));
+
+        const result = await service.register({ owner: 'acme', name: 'app' });
+
+        expect(result.id).toBeDefined();
+        expect(result.labelProvisioning).toBeNull();
+      });
+    });
+  });
+
+  describe('inspectLabels and repairLabels', () => {
+    it('inspects the registered repository owner/name, not the id', async () => {
+      prisma.repository.findUnique.mockResolvedValue(repositoryRow());
+
+      const report = await service.inspectLabels(
+        '11111111-1111-1111-1111-111111111111',
+      );
+
+      expect(labels.inspect).toHaveBeenCalledWith({
+        owner: 'acme',
+        name: 'app',
+      });
+      expect(report.status).toBe('ok');
+    });
+
+    it('repairs by provisioning, which is the same idempotent call', async () => {
+      prisma.repository.findUnique.mockResolvedValue(repositoryRow());
+
+      await service.repairLabels('11111111-1111-1111-1111-111111111111');
+
+      expect(labels.provision).toHaveBeenCalledWith({
+        owner: 'acme',
+        name: 'app',
+      });
+    });
+
+    it('404s for a repository that is not registered, before asking GitHub', async () => {
+      prisma.repository.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.inspectLabels('11111111-1111-1111-1111-111111111111'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.repairLabels('11111111-1111-1111-1111-111111111111'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(labels.inspect).not.toHaveBeenCalled();
+      expect(labels.provision).not.toHaveBeenCalled();
     });
   });
 

@@ -1,0 +1,24 @@
+{
+  /*
+   * The API-shaped test fixtures, type-checked (#415).
+   *
+   * `tsconfig.json` excludes the whole test tree, so `npm run typecheck` never
+   * looked at the mock builders — and `vitest` transpiles with esbuild, which
+   * strips types without checking them. A fixture could therefore be built on
+   * a response shape the API had renamed, and the suite would stay green while
+   * asserting against a shape nothing serves. That is what happened when
+   * `applied`/`state` became `attempted`/`stateBefore` and the counts became
+   * nullable: nothing in CI compared the two sides.
+   *
+   * `files` rather than `include`, because `exclude` filters `include` globs
+   * and would take these straight back out again.
+   *
+   * Deliberately NOT the whole test tree: it has 60-odd pre-existing type
+   * errors unrelated to any of this, and fixing them is a separate piece of
+   * work. What this covers is the modules that CONSTRUCT an API response — the
+   * one place a wire-shape drift can hide — plus everything under `src` that
+   * they pull in.
+   */
+  "extends": "./tsconfig.json",
+  "files": ["src/__tests__/mocks/repositories.ts"]
+}

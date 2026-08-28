@@ -1,5 +1,7 @@
 import { HTTP_CODE_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 
+import { PERMISSIONS_KEY } from '../auth/decorators/permissions.decorator';
+import { PERMISSIONS } from '../common/constants/roles.constants';
 import type { AvailableRepositoriesService } from './available-repositories.service';
 import { RepositoriesController } from './repositories.controller';
 import type { RepositoriesService } from './repositories.service';
@@ -126,6 +128,77 @@ describe('RepositoriesController (#401)', () => {
       expect(
         declaredRoutes().find((route) => route.handler === 'remove')?.path,
       ).toBe(':id');
+    });
+  });
+
+  /**
+   * The label endpoints (#415). A GET that observes and a POST that repairs,
+   * gated differently — reading which labels exist is not the same act as
+   * writing fifteen of them into somebody's repository.
+   */
+  describe('labels (#415)', () => {
+    function permissionsOf(handler: string): string[] {
+      return (
+        (Reflect.getMetadata(
+          PERMISSIONS_KEY,
+          (
+            RepositoriesController.prototype as unknown as Record<
+              string,
+              object
+            >
+          )[handler],
+        ) as string[]) ?? []
+      );
+    }
+
+    it('gates the observation on projects:read and the repair on projects:write', () => {
+      expect(permissionsOf('inspectLabels')).toEqual([
+        PERMISSIONS.PROJECTS_READ,
+      ]);
+      expect(permissionsOf('repairLabels')).toEqual([
+        PERMISSIONS.PROJECTS_WRITE,
+      ]);
+    });
+
+    it('mounts both on :id/labels', () => {
+      const routes = declaredRoutes();
+      expect(
+        routes.find((route) => route.handler === 'inspectLabels')?.path,
+      ).toBe(':id/labels');
+      expect(
+        routes.find((route) => route.handler === 'repairLabels')?.path,
+      ).toBe(':id/labels');
+    });
+
+    it('answers the repair 200, because the report is the answer', () => {
+      // Not 201: a repair that created nothing created no resource, and a
+      // client needs the report either way to redraw the row.
+      expect(
+        Reflect.getMetadata(
+          HTTP_CODE_METADATA,
+          (
+            RepositoriesController.prototype as unknown as Record<
+              string,
+              object
+            >
+          ).repairLabels,
+        ),
+      ).toBe(200);
+    });
+
+    it('delegates without deciding anything', async () => {
+      const inspectLabels = jest.fn().mockResolvedValue({ ok: true });
+      const repairLabels = jest.fn().mockResolvedValue({ ok: true });
+      const controller = new RepositoriesController(
+        { inspectLabels, repairLabels } as unknown as RepositoriesService,
+        {} as unknown as AvailableRepositoriesService,
+      );
+
+      await controller.inspectLabels('r1');
+      await controller.repairLabels('r1');
+
+      expect(inspectLabels).toHaveBeenCalledWith('r1');
+      expect(repairLabels).toHaveBeenCalledWith('r1');
     });
   });
 

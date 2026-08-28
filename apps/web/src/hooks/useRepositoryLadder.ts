@@ -38,21 +38,45 @@
  * `probes` is keyed by repository id and holds only what a probe actually
  * answered. A repository with no entry has not been tested, which is a third
  * state and renders as one — not as a pass and not as a failure.
+ *
+ * ## Label reports are observations, asked for rather than polled (#415)
+ *
+ * `labelReports` follows `probes` exactly, and for the same reasons. Each
+ * entry costs a GitHub request, so reading them for every row on every load of
+ * this panel would spend the shared rate-limit budget (VISION §11) on a
+ * question nobody asked — the access Test beside it made the same choice. A
+ * repository with no entry has not been LOOKED AT, which is a third state and
+ * renders as one.
+ *
+ * The exception is a registration: `POST /repositories` provisions the labels
+ * and returns the report, so `adopt` seeds it. That report is an observation
+ * taken a moment ago rather than an inference, which is exactly what the row
+ * renders — with its own `checkedAt`, going stale like any other.
+ *
+ * `labelErrors` is kept apart from `labelReports` because a GitHub failure is
+ * a 200 carrying a `status` while an `ApiError` means the REQUEST failed. The
+ * rule `useAvailableRepositories` states: collapsing the two would let "we
+ * could not ask" render as "your token is bad".
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+  ApiError,
   deleteRepository,
   getRepositories,
+  getRepositoryLabels,
   probeRepositoryAccess,
+  repairRepositoryLabels,
   retireRepository,
   unretireRepository,
   updateRepository,
+  type RegisteredRepository,
   type RepositoryAccessProbeResult,
   type UpdateRepositoryInput,
 } from '../services/api';
 import type { RepositorySummary } from '../types/cockpit';
+import type { LabelProvisioningReport } from '../types/repositoryLabels';
 import { scopeQueryValue, type ProjectScope } from '../types/projects';
 import { useIsMounted } from './useIsMounted';
 
@@ -77,6 +101,25 @@ export interface UseRepositoryLadderResult {
   probingId: string | null;
   /** What a probe answered, per repository. Absent means never tested. */
   probes: Record<string, RepositoryAccessProbeResult>;
+  /**
+   * What GitHub had, per repository, when somebody last looked (#415).
+   *
+   * Absent means nobody has looked — never "no labels". A report whose
+   * `status` is a GitHub-level failure carries an EMPTY `labels` array and a
+   * `present` of zero, which also does not mean "no labels";
+   * `config/repositoryLabels.ts` is what keeps those apart.
+   */
+  labelReports: Record<string, LabelProvisioningReport>;
+  /** Why the label REQUEST failed, per repository. Never a GitHub verdict. */
+  labelErrors: Record<string, string>;
+  /** The repository whose labels are being read, if any. */
+  checkingLabelsId: string | null;
+  /** The repository whose labels are being written, if any. */
+  repairingLabelsId: string | null;
+  /** Observe the labels. Writes nothing. Never rejects — see `testAccess`. */
+  checkLabels: (id: string) => Promise<void>;
+  /** Create the missing labels. Never rejects; the report is the answer. */
+  repairLabels: (id: string) => Promise<void>;
   refresh: () => Promise<void>;
   /** Throws on failure, so the caller can show the API's own refusal. */
   save: (id: string, input: UpdateRepositoryInput) => Promise<void>;
@@ -119,7 +162,7 @@ export interface UseRepositoryLadderResult {
    * name) so the list looks the same as it will after the next real read, and
    * idempotent by id so a double delivery cannot duplicate a row.
    */
-  adopt: (repository: RepositorySummary) => void;
+  adopt: (repository: RegisteredRepository) => void;
 }
 
 export function useRepositoryLadder(
@@ -134,6 +177,14 @@ export function useRepositoryLadder(
   const [probes, setProbes] = useState<
     Record<string, RepositoryAccessProbeResult>
   >({});
+  const [labelReports, setLabelReports] = useState<
+    Record<string, LabelProvisioningReport>
+  >({});
+  const [labelErrors, setLabelErrors] = useState<Record<string, string>>({});
+  const [checkingLabelsId, setCheckingLabelsId] = useState<string | null>(null);
+  const [repairingLabelsId, setRepairingLabelsId] = useState<string | null>(
+    null,
+  );
   // Every `setState` past an `await` is guarded — a request settling after the
   // page is closed must not schedule an update on a gone component.
   const isMounted = useIsMounted();
@@ -285,8 +336,76 @@ export function useRepositoryLadder(
     [isMounted],
   );
 
+  /**
+   * Take in one label report, and drop any request error beside it.
+   *
+   * The two are mutually exclusive by construction: a report means the request
+   * completed, and an error means it did not. Leaving a stale error under a
+   * fresh report would report a failure that has since been answered.
+   */
+  const absorbLabels = useCallback(
+    (id: string, report: LabelProvisioningReport) => {
+      if (!isMounted()) return;
+      setLabelReports((current) => ({ ...current, [id]: report }));
+      setLabelErrors((current) => {
+        if (!(id in current)) return current;
+        const { [id]: _dropped, ...rest } = current;
+        return rest;
+      });
+    },
+    [isMounted],
+  );
+
+  /**
+   * Why the label REQUEST failed. Never a verdict on GitHub or on the token —
+   * those arrive as 200s carrying a `status`.
+   */
+  const absorbLabelError = useCallback(
+    (id: string, error: unknown) => {
+      if (!isMounted()) return;
+      setLabelErrors((current) => ({
+        ...current,
+        [id]: describeLabelFailure(error),
+      }));
+    },
+    [isMounted],
+  );
+
+  const checkLabels = useCallback(
+    async (id: string) => {
+      setCheckingLabelsId(id);
+      try {
+        absorbLabels(id, await getRepositoryLabels(id));
+      } catch (error) {
+        // Not rethrown: the card has a place to render this, and a rejection
+        // here would be an unhandled one at every call site.
+        absorbLabelError(id, error);
+      } finally {
+        if (isMounted()) setCheckingLabelsId(null);
+      }
+    },
+    [absorbLabelError, absorbLabels, isMounted],
+  );
+
+  const repairLabels = useCallback(
+    async (id: string) => {
+      setRepairingLabelsId(id);
+      try {
+        // The answer REPLACES the observation, because it is a newer one: it
+        // was taken after the writes, so it is the only account of what is on
+        // GitHub now. A refusal is a 200 and lands here too.
+        absorbLabels(id, await repairRepositoryLabels(id));
+      } catch (error) {
+        absorbLabelError(id, error);
+      } finally {
+        if (isMounted()) setRepairingLabelsId(null);
+      }
+    },
+    [absorbLabelError, absorbLabels, isMounted],
+  );
+
   const adopt = useCallback(
-    (repository: RepositorySummary) => {
+    (repository: RegisteredRepository) => {
       // The guard is outside the updater on purpose: `total` has to move with
       // the array or the panel reports "showing 3 of 4" for a list of three.
       // Two separate updaters cannot agree on whether a row was new.
@@ -296,6 +415,17 @@ export function useRepositoryLadder(
         [...current, repository].sort(byOwnerThenName),
       );
       setTotal((current) => current + 1);
+
+      // Registration provisions the labels and reports what happened, so the
+      // new row arrives with an observation already taken (#415) rather than
+      // asking the operator to press Check on something checked a second ago.
+      // Null means provisioning gave no account of itself and undefined means
+      // an API from before #415 published no such field; neither is an
+      // observation, and neither may be stored as one.
+      const report = repository.labelProvisioning;
+      if (report !== null && report !== undefined) {
+        setLabelReports((current) => ({ ...current, [repository.id]: report }));
+      }
     },
     [repositories],
   );
@@ -308,6 +438,12 @@ export function useRepositoryLadder(
     savingId,
     probingId,
     probes,
+    labelReports,
+    labelErrors,
+    checkingLabelsId,
+    repairingLabelsId,
+    checkLabels,
+    repairLabels,
     refresh,
     save,
     testAccess,
@@ -317,6 +453,33 @@ export function useRepositoryLadder(
     evict,
     adopt,
   };
+}
+
+/**
+ * Why the label REQUEST failed, in the operator's terms.
+ *
+ * Every one of these is a fact about this API call — never about GitHub and
+ * never about the token, since a GitHub failure arrives as a 200 with a
+ * `status` and is rendered from the report instead.
+ */
+function describeLabelFailure(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 403) {
+      return (
+        'This account may not do that to a repository’s labels — reading ' +
+        'them needs projects:read and creating them needs projects:write. ' +
+        'That is a fact about the account, not about GitHub or the labels.'
+      );
+    }
+    if (error.status === 404) {
+      return (
+        'The API does not know this repository id. It may have been ' +
+        'de-registered in another tab — reload the list.'
+      );
+    }
+    return `The API answered ${error.status}: ${error.message}`;
+  }
+  return 'The label check could not be made. Nothing was written.';
 }
 
 /** The API's `orderBy: [{ owner: 'asc' }, { name: 'asc' }]`, restated. */

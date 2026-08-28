@@ -44,7 +44,8 @@
  * reason it was requested.
  */
 
-import type { RepositorySummary } from '../types/cockpit';
+import { registrationLabelLine } from './repositoryLabels';
+import type { RegisteredRepository } from '../services/api';
 import type {
   AvailableRepositories,
   AvailableRepository,
@@ -395,7 +396,7 @@ export function registrationRefusal(
  * did.
  */
 export type RegistrationResult =
-  | { fullName: string; refusal: null; repository: RepositorySummary }
+  | { fullName: string; refusal: null; repository: RegisteredRepository }
   | { fullName: string; refusal: RegistrationFailure; repository: null };
 
 /** Why one repository was refused. `status` is how the refusals are told apart. */
@@ -505,7 +506,15 @@ export function batchPresentation(
  * status, so a reason this build has no arm for still arrives intact.
  */
 export function resultLine(result: RegistrationResult): string {
-  if (result.refusal === null) return 'Registered.';
+  if (result.refusal === null) {
+    // Registration and label provisioning are two outcomes of one request, and
+    // a row that said only "Registered." would hide the second one — which for
+    // a fine-grained token is the half most likely to have been refused. Null
+    // when the API published no such field at all, in which case there is
+    // nothing to append rather than an empty sentence to invent.
+    const labels = registrationLabelLine(result.repository.labelProvisioning);
+    return labels === null ? 'Registered.' : `Registered. ${labels}`;
+  }
   const refusal = registrationRefusal(result.refusal.status, result.fullName);
   return `${refusal.title}. ${result.refusal.detail}`;
 }

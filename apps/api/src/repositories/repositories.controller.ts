@@ -32,6 +32,10 @@ import {
   ListAvailableRepositoriesQueryDto,
 } from './dto/available-repository.dto';
 import {
+  LabelProvisioningReportDto,
+  RegisteredRepositoryDto,
+} from './dto/repository-labels.dto';
+import {
   ListRepositoriesQueryDto,
   RegisterRepositoryDto,
   RepositoryResponseDto,
@@ -162,11 +166,23 @@ export class RepositoriesController {
     summary: 'Register a repository for Opifex to watch',
     description:
       'Verifies the repository is reachable with the configured GitHub credential before accepting it. ' +
-      'Dispatch is off unless explicitly enabled.',
+      'Dispatch is off unless explicitly enabled.\n\n' +
+      '**It also creates the factory label taxonomy on the repository** (#415). `factory:ready` is the ' +
+      'whole eligibility signal, and GitHub\u2019s label picker only offers labels that exist \u2014 so a ' +
+      'repository registered without them cannot be steered at all.\n\n' +
+      '**Provisioning failing does NOT fail the registration.** ADR-0001 authenticates with a ' +
+      'fine-grained personal access token, granted one repository and one permission at a time, and such ' +
+      'a token emits no `x-oauth-scopes` header \u2014 whether it can create a label is unknowable until ' +
+      'it is tried. So the repository is registered either way and `labelProvisioning` reports what ' +
+      'happened: `ok` when every declared label is present, `refused` when the token authenticated and ' +
+      'was not permitted (grant Issues: Read and write, then repair), and the other statuses for a ' +
+      'missing credential, a 404, an exhausted budget or an unreachable GitHub. When the labels could ' +
+      'not be read at all, every count on the report is null \u2014 null meaning NOT READ, never ' +
+      'zero. Repair with `POST /api/repositories/{id}/labels`.',
   })
-  @ApiDataResponse(RepositoryResponseDto, {
+  @ApiDataResponse(RegisteredRepositoryDto, {
     status: 201,
-    description: 'Repository registered',
+    description: 'Repository registered, with what happened to its labels',
   })
   @ApiResponse({
     status: 400,
@@ -179,6 +195,82 @@ export class RepositoriesController {
   })
   async register(@Body() dto: RegisterRepositoryDto) {
     return this.repositories.register(dto);
+  }
+
+  // The observed half of the ladder. `GET` reads, `POST` repairs — the pair
+  // `POST /api/settings/probes/:probe` already established for "go and find
+  // out what is actually true out there", answered with the same
+  // `{ ok, detail, checkedAt }` triple rather than a parallel shape.
+  @Get(':id/labels')
+  @Auth({ permissions: [PERMISSIONS.PROJECTS_READ] })
+  @ApiOperation({
+    summary: 'Check which factory labels exist on a repository',
+    description:
+      'Asks GitHub which of the declared factory labels exist on this repository, and answers an ' +
+      'OBSERVATION with a `checkedAt` \u2014 not a stored fact. Writes nothing.\n\n' +
+      '**Per-label, not just a count.** `labels[]` names every declared label with `stateBefore` — ' +
+      'what was found (`present`, `missing`, or `drifted` with the differences) — so a client can ' +
+      'say WHICH label is missing. `present` / `declared` is the "N of M labels present" summary.\n\n' +
+      '**Every count is null when the labels could not be read, and null means NOT READ rather than ' +
+      'zero.** `declared`, `present`, `missing`, `created`, `updated`, `unchanged` and `failed` are ' +
+      'null together whenever GitHub\u2019s label list was never obtained \u2014 a refused, expired ' +
+      'or absent credential, a 404, an exhausted budget, an unreachable GitHub. A token that cannot ' +
+      'read a repository\u2019s labels establishes nothing about what is on it, so rendering ' +
+      '"0 of 15 present" from such a report would state a fact nobody found out. Check the null, not ' +
+      'the `status`: a repair whose WRITE was refused still carries real counts, because its read ' +
+      'succeeded.\n\n' +
+      '**Three kinds are declared**: `input` (`factory:*`, the control surface \u2014 missing, the ' +
+      'repository cannot be steered), `mirror` (`factory/*`, Opifex\u2019s own writes) and `routing` ' +
+      '(`needs:*`, `tier:*` \u2014 missing, work still runs but only on the defaults). This ' +
+      'repository\u2019s organisational labels (`bug`, `phase:*`, components) are deliberately not ' +
+      'part of the taxonomy Opifex provisions.\n\n' +
+      '**A failure is a 200 carrying a `status`**, not an error status: `refused` means the token ' +
+      'authenticated and is not permitted, `not_found` means GitHub answered 404, `rate_limited` means ' +
+      'the budget is spent, `unreachable` means nothing answered. `labels` is empty and every count is ' +
+      'null in those cases.',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiDataResponse(LabelProvisioningReportDto, {
+    description: 'What GitHub has, as of checkedAt',
+  })
+  @ApiResponse({ status: 404, description: 'Repository not found' })
+  async inspectLabels(@Param('id', ParseUUIDPipe) id: string) {
+    return this.repositories.inspectLabels(id);
+  }
+
+  @Post(':id/labels')
+  @Auth({ permissions: [PERMISSIONS.PROJECTS_WRITE] })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Create the missing factory labels on a repository',
+    description:
+      'The repair action for a repository registered while the GitHub token could not write labels. ' +
+      'Creates every declared label that is missing and updates every one whose colour or description ' +
+      'has drifted.\n\n' +
+      '**It never deletes.** A label present on the repository and absent from the taxonomy is left ' +
+      'alone: deleting a label strips it from every issue carrying it, and that is not recoverable from ' +
+      'a declaration that knows names and colours but not which issues had them.\n\n' +
+      '**Idempotent.** It reads first and writes only the difference, so running it twice creates ' +
+      'nothing the second time and reports no error \u2014 `unchanged` counts the labels that needed ' +
+      'nothing.\n\n' +
+      '**Not gated by `github.writesEnabled`.** That switch governs whether the factory acts on issues ' +
+      'during a tick; creating the taxonomy is operator setup, and gating it there would mean the ' +
+      'observation week could not be set up without turning on the writes the switch exists to ' +
+      'withhold.\n\n' +
+      'Returns the same report as `GET`, with `attempted: true` and the `created` / `updated` / ' +
+      '`failed` counts filled in. `attempted` means this call TRIED to write \u2014 not that the ' +
+      'writes landed: a refused repair is `attempted: true` having written nothing, and the outcome ' +
+      'is `status`, `created` and `failed`. A refusal is a 200 with `status: "refused"`. Note that a ' +
+      'repair refused at the WRITE still carries real counts, since its read succeeded; only a report ' +
+      'whose read failed has null counts.',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiDataResponse(LabelProvisioningReportDto, {
+    description: 'What was created or updated, and what remains',
+  })
+  @ApiResponse({ status: 404, description: 'Repository not found' })
+  async repairLabels(@Param('id', ParseUUIDPipe) id: string) {
+    return this.repositories.repairLabels(id);
   }
 
   @Patch(':id')

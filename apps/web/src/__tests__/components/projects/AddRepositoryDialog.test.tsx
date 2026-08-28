@@ -35,7 +35,14 @@ import { delay, http, HttpResponse } from 'msw';
 import { render } from '../../utils/test-utils';
 import { expectNoLeak, findLeaks } from '../../utils/domSecrets';
 import { server } from '../../mocks/server';
-import { PROJECT_ID, projectFixture } from '../../mocks/repositories';
+import {
+  DECLARED_LABELS,
+  PROJECT_ID,
+  labelFailureFixture,
+  labelReportFixture,
+  labelWriteRefusalFixture,
+  projectFixture,
+} from '../../mocks/repositories';
 import {
   REGISTERED_ID,
   THREE_ADMISSIONS,
@@ -46,6 +53,7 @@ import {
 } from '../../mocks/availableRepositories';
 import { ProjectRepositoriesPanel } from '../../../components/projects/ProjectRepositoriesPanel';
 import type { RepositorySummary } from '../../../types/cockpit';
+import type { LabelProvisioningReport } from '../../../types/repositoryLabels';
 import type {
   AvailableRepositories,
   AvailableRepository,
@@ -139,6 +147,28 @@ function serveRegistration(created: RepositorySummary = repository()) {
   );
 
   return bodies;
+}
+
+/**
+ * `POST /repositories` answering with the row AND what provisioning did (#415).
+ *
+ * A separate helper from `serveRegistration` on purpose: the plain one answers
+ * without a `labelProvisioning` field at all, which is what an API from before
+ * #415 sends and which every other case in this file is written against. Only
+ * the cases below care about the field, and they say so by using this.
+ */
+function serveRegistrationWithLabels(
+  labelProvisioning: LabelProvisioningReport | null,
+  created: RepositorySummary = repository(),
+) {
+  server.use(
+    http.post(`${API_BASE}/repositories`, () =>
+      HttpResponse.json(
+        { data: { ...created, labelProvisioning } },
+        { status: 201 },
+      ),
+    ),
+  );
 }
 
 /** `POST /repositories` refusing, the way the controller documents it. */
@@ -1727,6 +1757,268 @@ describe('Adding several at once', () => {
       expect(
         await screen.findByText('3 repositories are registered'),
       ).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * What registering did to the repository's labels (#415).
+   *
+   * Registration provisions the factory taxonomy and answers
+   * `labelProvisioning` beside the created row. ADR-0001's fine-grained PAT
+   * grants one repository and one permission at a time, so a token that can
+   * READ a repository need not be able to create labels in it — a refusal here
+   * is an expected outcome of a correct configuration, not an exception.
+   *
+   * The cases below are the ones that decide whether both facts survive: the
+   * repository IS registered, and separately its labels are not there.
+   */
+  describe('What registering did to the labels', () => {
+    const M = DECLARED_LABELS.length;
+
+    async function registerGadgets() {
+      const user = userEvent.setup();
+      await openPicker(user);
+      await user.click(
+        await screen.findByRole('button', { name: /^acme\/gadgets/ }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Register acme/gadgets' }),
+      );
+      return user;
+    }
+
+    it('says nothing extra when the labels were provisioned cleanly', async () => {
+      registered();
+      serveAvailable();
+      serveRegistrationWithLabels(
+        labelReportFixture({
+          attempted: true,
+          missing: ['factory:ready'],
+          created: ['factory:ready'],
+        }),
+      );
+      await registerGadgets();
+
+      expect(
+        await screen.findByText('acme/gadgets is registered'),
+      ).toBeInTheDocument();
+      // The expected case is not news, and an alert per repository saying so
+      // would bury the one that matters.
+      expect(screen.queryByLabelText(/^Label provisioning for/)).toBeNull();
+    });
+
+    it('reports a refused provisioning WITHOUT reporting a failed registration', async () => {
+      registered();
+      serveAvailable();
+      serveRegistrationWithLabels(
+        labelFailureFixture(
+          'refused',
+          'GitHub answered 403 when creating labels.',
+          { repository: 'acme/gadgets' },
+        ),
+      );
+      await registerGadgets();
+
+      // Both facts, and the registration first. The row IS registered — the
+      // panel behind this dialog has it — and only the labels are missing.
+      expect(
+        await screen.findByText('acme/gadgets is registered'),
+      ).toBeInTheDocument();
+
+      const note = screen.getByLabelText('Label provisioning for acme/gadgets');
+      expect(note).toHaveTextContent(
+        'acme/gadgets is registered; its labels could not be created',
+      );
+      expect(note).toHaveTextContent(/The registration itself stands/);
+      // The API's own sentence survives.
+      expect(note).toHaveTextContent(
+        'GitHub answered 403 when creating labels.',
+      );
+      // And no count is invented from a report that observed nothing.
+      expect(note).not.toHaveTextContent(/\d+ of \d+ labels present/);
+      // The remedy is the token's permissions, not a new token.
+      expect(note).toHaveTextContent(/Issues: read and write/);
+    });
+
+    it('says which labels are absent when only some could be made', async () => {
+      registered();
+      serveAvailable();
+      serveRegistrationWithLabels(
+        labelReportFixture({
+          repository: 'acme/gadgets',
+          attempted: true,
+          missing: ['factory:ready', 'tier:small'],
+          created: ['tier:small'],
+          failed: { 'factory:ready': 'GitHub answered 403 for this label.' },
+        }),
+      );
+      await registerGadgets();
+
+      const note = await screen.findByLabelText(
+        'Label provisioning for acme/gadgets',
+      );
+      expect(note).toHaveTextContent(`2 of ${M} labels are not on it`);
+      expect(note).toHaveTextContent(/registered and observed either way/);
+    });
+
+    it('names the count when provisioning read the labels and was then refused', async () => {
+      // The write-phase case: registration listed the labels, created none,
+      // and was refused. It knows exactly how many are absent, so saying "its
+      // labels could not be created" would be vaguer than the truth.
+      registered();
+      serveAvailable();
+      serveRegistrationWithLabels(
+        labelWriteRefusalFixture({
+          repository: 'acme/gadgets',
+          missing: ['factory:ready', 'tier:small'],
+          detail: 'GitHub answered 403 while creating factory:ready.',
+        }),
+      );
+      await registerGadgets();
+
+      const note = await screen.findByLabelText(
+        'Label provisioning for acme/gadgets',
+      );
+      expect(note).toHaveTextContent(
+        `acme/gadgets is registered; 2 of ${M} labels are not on it`,
+      );
+      expect(note).toHaveTextContent(/Issues: read and write/);
+      expect(note).toHaveTextContent(
+        'GitHub answered 403 while creating factory:ready.',
+      );
+      // Repair is withheld for this status, so the note must not send the
+      // operator to a button that is not there.
+      expect(note).not.toHaveTextContent('use Create missing labels');
+    });
+
+    it('flags a null report as the anomaly it is, without failing the add', async () => {
+      registered();
+      serveAvailable();
+      serveRegistrationWithLabels(null);
+      await registerGadgets();
+
+      expect(
+        await screen.findByText('acme/gadgets is registered'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByLabelText('Label provisioning for acme/gadgets'),
+      ).toHaveTextContent(/should not happen/);
+    });
+
+    it('says nothing at all when the API publishes no such field', async () => {
+      // An API from before #415: there is no outcome to describe and no action
+      // to offer, and a warning on every registration nobody can act on is one
+      // nobody reads.
+      registered();
+      serveAvailable();
+      serveRegistration();
+      await registerGadgets();
+
+      expect(
+        await screen.findByText('acme/gadgets is registered'),
+      ).toBeInTheDocument();
+      expect(screen.queryByLabelText(/^Label provisioning for/)).toBeNull();
+    });
+
+    it('reports per repository in a batch, not per batch', async () => {
+      // The credential is fine-grained: it can be permitted to label one
+      // repository of a batch and refused on the others. One summarised
+      // sentence could not say which.
+      registered();
+      serveAvailable(() =>
+        availableRepositoriesFixture({ repositories: THREE_ADDABLE }),
+      );
+      server.use(
+        http.post(`${API_BASE}/repositories`, async ({ request }) => {
+          const body = (await request.json()) as {
+            owner: string;
+            name: string;
+          };
+          const fullName = `${body.owner}/${body.name}`;
+          return HttpResponse.json(
+            {
+              data: {
+                ...repository({ name: body.name }),
+                labelProvisioning:
+                  fullName === 'acme/beta'
+                    ? labelFailureFixture('refused', 'GitHub answered 403.', {
+                        repository: fullName,
+                      })
+                    : labelReportFixture({
+                        repository: fullName,
+                        attempted: true,
+                      }),
+              },
+            },
+            { status: 201 },
+          );
+        }),
+      );
+      const user = userEvent.setup();
+      await openPicker(user);
+
+      await user.click(
+        await screen.findByRole('checkbox', {
+          name: /select the 3 that can be added/i,
+        }),
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Register 3 repositories' }),
+      );
+
+      expect(
+        await screen.findByText('3 repositories are registered'),
+      ).toBeInTheDocument();
+      // Exactly one note, for exactly the repository that was refused.
+      const notes = screen.getAllByLabelText(/^Label provisioning for/);
+      expect(notes.map((note) => note.getAttribute('aria-label'))).toEqual([
+        'Label provisioning for acme/beta',
+      ]);
+      // And the per-row lines say what each one's labels did.
+      expect(
+        within(
+          screen.getByLabelText('Registration result for acme/alpha'),
+        ).getByText(`Registered. All ${M} labels were already present.`),
+      ).toBeInTheDocument();
+      expect(
+        within(
+          screen.getByLabelText('Registration result for acme/beta'),
+        ).getByText(/Labels not created/),
+      ).toBeInTheDocument();
+    });
+
+    it('hands the report to the card behind, so nothing is asked twice', async () => {
+      // The registration already looked. Making the operator press Check on a
+      // repository checked a second ago would spend another GitHub request to
+      // learn what is already known.
+      registered();
+      serveAvailable();
+      const labelCalls: string[] = [];
+      server.use(
+        http.get(`${API_BASE}/repositories/:id/labels`, () => {
+          labelCalls.push('GET');
+          return HttpResponse.json({ data: labelReportFixture() });
+        }),
+      );
+      serveRegistrationWithLabels(
+        labelFailureFixture('refused', 'GitHub answered 403 for labels.', {
+          repository: 'acme/gadgets',
+        }),
+        repository({ name: 'gadgets' }),
+      );
+      const user = await registerGadgets();
+
+      await screen.findByText('acme/gadgets is registered');
+      await user.click(screen.getByRole('button', { name: /^close$/i }));
+
+      const card = await screen.findByLabelText('Repository acme/gadgets');
+      const row = within(card).getByLabelText(/^Factory labels/);
+      expect(row).toHaveTextContent(/authenticated and was not permitted/);
+      expect(row).toHaveTextContent('GitHub answered 403 for labels.');
+      // Seeded, not re-read.
+      expect(labelCalls).toEqual([]);
+      // And still no count invented from an answer that observed nothing.
+      expect(row).not.toHaveTextContent(/\d+ of \d+ labels present/);
     });
   });
 });
