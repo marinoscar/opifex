@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { EpicChildrenService } from './epic-children.service';
 import { GitHubReadService } from './github-read.service';
 
 /**
@@ -13,9 +14,13 @@ import { GitHubReadService } from './github-read.service';
  * VISION §12's observation week depends on that being structural: "we promise
  * not to call the write method" is a convention that survives exactly until
  * someone adds a convenience re-export.
+ *
+ * `EpicChildrenService` (#424) belongs here for the same reason: it resolves an
+ * epic to its children by READING GitHub — two endpoints and a markdown parse —
+ * and has no write path and no database of its own.
  */
 @Module({
-  providers: [GitHubReadService],
-  exports: [GitHubReadService],
+  providers: [GitHubReadService, EpicChildrenService],
+  exports: [GitHubReadService, EpicChildrenService],
 })
 export class GitHubReadModule {}
