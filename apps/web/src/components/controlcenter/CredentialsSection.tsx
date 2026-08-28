@@ -36,6 +36,20 @@
  * put two halves of one decision on one screen in two places, which is the
  * shape of the problem this panel was built to remove.
  *
+ * ## One panel per consumer, and exactly one of them holds the keys (#423)
+ *
+ * There is a panel for every consumer the API publishes — the supervisor's and
+ * the chat's today, discovered from the `<consumer>.model.provider` keys
+ * rather than listed here. They are rendered together because the question an
+ * operator answers on this screen is which model each consumer asks, and the
+ * two are read against each other.
+ *
+ * The credential cards go to `credentialOwner` alone. A key belongs to a
+ * PROVIDER and every consumer that selects that provider sends the same one,
+ * so a second card on the chat's panel would be two editors over one secret —
+ * with two Replace buttons, two Clear buttons and no way to tell which one
+ * last wrote it.
+ *
  * ## Nothing here shows a secret, because nothing here has one
  *
  * The response has no `value` on the secret arm at all, so there is no value
@@ -57,9 +71,11 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { ClaudeAuthPanel } from './ClaudeAuthPanel';
 import { SecretCredentialCard } from './SecretCredentialCard';
 import { SpendCeilingsPanel } from './SpendCeilingsPanel';
-import { SupervisorModelPanel } from './SupervisorModelPanel';
+import { ModelConsumerPanel } from './ModelConsumerPanel';
 import { supportsGuidedSignIn } from '../../config/claudeAuth';
 import {
+  credentialOwner,
+  modelConsumers,
   modelSlotProvider,
   selectedSlot,
   unselectedSlots,
@@ -76,7 +92,8 @@ import type {
   OperatorSettingsPatch,
   SecretOperatorSetting,
 } from '../../types/operatorSettings';
-import type { SupervisorModelCatalog } from '../../types/supervisorModels';
+import type { ModelCatalogState } from '../../hooks/useModelCatalogs';
+import { catalogStateFor } from '../../hooks/useModelCatalogs';
 
 export interface CredentialsSectionProps {
   document: OperatorSettingsDocument | null;
@@ -95,12 +112,17 @@ export interface CredentialsSectionProps {
   spendIsLoading: boolean;
   spendProblem: CeilingSpendProblem | null;
   onSave: (patch: OperatorSettingsPatch) => Promise<void>;
-  /** The provider's answer to "what can this key reach?" (#394). */
-  catalog: SupervisorModelCatalog | null;
-  catalogIsLoading: boolean;
-  /** Why the catalogue REQUEST failed. Never a verdict on the credential. */
-  catalogError: string | null;
-  onRefreshCatalog: () => void;
+  /**
+   * The provider's answer to "what can this key reach?", per consumer (#394,
+   * #423).
+   *
+   * A map rather than one catalogue, keyed by the consumer the API named in
+   * its answer: two lists are in flight at once and each belongs to a
+   * different question. A consumer with no entry has not been asked yet.
+   */
+  catalogs: Record<string, ModelCatalogState>;
+  /** Ask one consumer's provider again. */
+  onRefreshCatalog: (consumer: string) => void;
   /**
    * Re-read the document after a guided sign-in wrote a credential (#386).
    *
@@ -124,9 +146,7 @@ export function CredentialsSection({
   spend,
   spendIsLoading,
   spendProblem,
-  catalog,
-  catalogIsLoading,
-  catalogError,
+  catalogs,
   onRefreshCatalog,
   onSave,
   onConnected,
@@ -156,9 +176,14 @@ export function CredentialsSection({
   const listedSecrets = secrets.filter(
     (entry) => modelSlotProvider(entry.key) === null,
   );
-  const supervisorKey = selectedSlot(document.settings)?.apiKey ?? null;
-  const otherKeys = unselectedSlots(document.settings).flatMap((slot) =>
-    slot.apiKey === null ? [] : [slot.apiKey],
+  // The consumers, in the order the registry lists them, and the one that
+  // carries the shared credential cards. Both discovered from the response —
+  // `apps/web` names no consumer, the same way it names no provider.
+  const consumers = modelConsumers(document.settings);
+  const owner = credentialOwner(consumers);
+  const ownerKey = selectedSlot(document.settings, owner ?? '')?.apiKey ?? null;
+  const otherKeys = unselectedSlots(document.settings, owner ?? '').flatMap(
+    (slot) => (slot.apiKey === null ? [] : [slot.apiKey]),
   );
 
   const secretCard = (entry: SecretOperatorSetting) => (
@@ -240,34 +265,55 @@ export function CredentialsSection({
 
       <Divider sx={{ mb: 3 }} />
 
-      <SupervisorModelPanel
-        document={document}
-        canWrite={canWrite}
-        isSaving={isSaving}
-        catalog={catalog}
-        catalogIsLoading={catalogIsLoading}
-        catalogError={catalogError}
-        onRefreshCatalog={onRefreshCatalog}
-        onSave={onSave}
-        // The card, not a second key input. See this file's header and
-        // `SupervisorModelPanel`'s `keyCard` prop.
-        keyCard={
-          supervisorKey ? (
-            <Stack component="ul" sx={{ p: 0, m: 0 }}>
-              {secretCard(supervisorKey)}
-            </Stack>
-          ) : null
-        }
-        // The credentials nothing is currently using — shown so that holding
-        // a key for each vendor is visibly a thing this deployment does.
-        otherKeyCards={
-          otherKeys.length > 0 ? (
-            <Stack component="ul" spacing={2} sx={{ p: 0, m: 0 }}>
-              {otherKeys.map((entry) => secretCard(entry))}
-            </Stack>
-          ) : null
-        }
-      />
+      {consumers.map((consumer) => {
+        const state = catalogStateFor(catalogs, consumer);
+
+        return (
+          <ModelConsumerPanel
+            key={consumer}
+            consumer={consumer}
+            document={document}
+            canWrite={canWrite}
+            isSaving={isSaving}
+            catalog={state.catalog}
+            catalogIsLoading={state.isLoading}
+            catalogError={state.requestError}
+            onRefreshCatalog={() => onRefreshCatalog(consumer)}
+            onSave={onSave}
+            credentials={
+              consumer === owner
+                ? {
+                    // The card, not a second key input. See this file's
+                    // header and `ModelConsumerPanel`'s `credentials` prop.
+                    keyCard: ownerKey ? (
+                      <Stack component="ul" sx={{ p: 0, m: 0 }}>
+                        {secretCard(ownerKey)}
+                      </Stack>
+                    ) : null,
+                    // Every other provider's key — shown so that holding one
+                    // per vendor is visibly a thing this deployment does, and
+                    // so that a key another consumer is using is never
+                    // unreachable.
+                    otherKeyCards:
+                      otherKeys.length > 0 ? (
+                        <Stack component="ul" spacing={2} sx={{ p: 0, m: 0 }}>
+                          {otherKeys.map((entry) => secretCard(entry))}
+                        </Stack>
+                      ) : null,
+                  }
+                : undefined
+            }
+          />
+        );
+      })}
+
+      {consumers.length === 0 && (
+        <Alert severity="info" sx={{ mb: 4 }}>
+          This deployment&apos;s API publishes no{' '}
+          <code>&lt;consumer&gt;.model.provider</code> setting, so there is no
+          model to choose here.
+        </Alert>
+      )}
 
       <Divider sx={{ mb: 3 }} />
 

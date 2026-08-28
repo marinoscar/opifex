@@ -10,13 +10,21 @@
  *
  * ## The model catalogue is re-asked where it is known to have moved
  *
- * `useSupervisorModels` reads on mount and then only when asked. The two
- * moments its answer is known to have changed are a provider write and a key
- * write, and both arrive here as a patch — so the refresh is triggered from
- * the patch's keys, in one place, rather than from each control that might
- * cause one. That is also why saving the key re-lists: a new credential
- * reaches a different set of models, and leaving the previous list on screen
- * would make the dropdown a claim about a key that is no longer configured.
+ * `useModelCatalogs` reads on mount and then only when asked. The two moments
+ * its answer is known to have changed are a provider write and a key write,
+ * and both arrive here as a patch — so the refresh is triggered from the
+ * patch's keys, in one place, rather than from each control that might cause
+ * one. That is also why saving the key re-lists: a new credential reaches a
+ * different set of models, and leaving the previous list on screen would make
+ * the dropdown a claim about a key that is no longer configured.
+ *
+ * Since #423 there is one list per consumer and a save invalidates only the
+ * ones it actually moved — `catalogRefreshTargets` decides which, so that
+ * choosing the chat's provider does not drop the supervisor's list and leave
+ * a second dropdown empty for no reason. The consumers themselves come from
+ * the settings document, which is why the catalogue hook is given a list
+ * rather than reading one: nothing in `apps/web` declares who the consumers
+ * are.
  *
  * ## What it says after a save
  *
@@ -27,15 +35,18 @@
  * frozen in a constructor is not, and only the API knows which.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import { CredentialsSection } from './CredentialsSection';
 import { useCeilingSpend } from '../../hooks/useCeilingSpend';
 import { useCredentialProbes } from '../../hooks/useCredentialProbes';
 import { useOperatorSettings } from '../../hooks/useOperatorSettings';
-import { useSupervisorModels } from '../../hooks/useSupervisorModels';
+import { useModelCatalogs } from '../../hooks/useModelCatalogs';
 import type { ProbeDescriptor } from '../../config/credentialProbes';
-import { affectsModelCatalog } from '../../config/supervisorModel';
+import {
+  catalogRefreshTargets,
+  modelConsumers,
+} from '../../config/supervisorModel';
 import type { OperatorSettingsPatch } from '../../types/operatorSettings';
 
 export interface CredentialsSectionContainerProps {
@@ -55,7 +66,13 @@ export function CredentialsSectionContainer({
     useOperatorSettings();
   const probes = useCredentialProbes();
   const spend = useCeilingSpend();
-  const models = useSupervisorModels();
+  // Discovered from the response, memoised on the document so the hook's own
+  // effect does not re-ask both providers on every render.
+  const consumers = useMemo(
+    () => modelConsumers(document?.settings ?? []),
+    [document],
+  );
+  const models = useModelCatalogs(consumers);
 
   const handleSave = useCallback(
     async (patch: OperatorSettingsPatch) => {
@@ -75,11 +92,13 @@ export function CredentialsSectionContainer({
       // ceiling beside the new configured one.
       void spend.refresh();
 
-      // A provider or a key change moves what the catalogue answers. The
-      // previous list is dropped inside the hook before the new one is asked
-      // for, so nothing offers the old provider's models in the meantime.
-      if (keys.some(affectsModelCatalog)) {
-        void models.refresh();
+      // A provider or a key change moves what the catalogue answers, for the
+      // consumers it moved it for. The previous list is dropped inside the
+      // hook before the new one is asked for, so nothing offers the old
+      // provider's models in the meantime — and a consumer whose answer did
+      // not change keeps the list it already has.
+      for (const consumer of catalogRefreshTargets(keys, consumers)) {
+        void models.refresh(consumer);
       }
 
       onSaved(
@@ -89,7 +108,7 @@ export function CredentialsSectionContainer({
             : 'The values shown are the API re-resolved after the write.'),
       );
     },
-    [document, save, spend, models, onSaved],
+    [document, consumers, save, spend, models, onSaved],
   );
 
   // Nothing was patched from here: the guided sign-in seals the token
@@ -105,9 +124,12 @@ export function CredentialsSectionContainer({
     );
   }, [refresh, onSaved]);
 
-  const refreshCatalog = useCallback(() => {
-    void models.refresh();
-  }, [models]);
+  const refreshCatalog = useCallback(
+    (consumer: string) => {
+      void models.refresh(consumer);
+    },
+    [models],
+  );
 
   const runProbe = useCallback(
     (descriptor: ProbeDescriptor) => {
@@ -130,9 +152,7 @@ export function CredentialsSectionContainer({
       spend={spend.summary}
       spendIsLoading={spend.isLoading}
       spendProblem={spend.problem}
-      catalog={models.catalog}
-      catalogIsLoading={models.isLoading}
-      catalogError={models.requestError}
+      catalogs={models.catalogs}
       onRefreshCatalog={refreshCatalog}
       onSave={handleSave}
       onConnected={handleConnected}

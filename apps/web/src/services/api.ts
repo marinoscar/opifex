@@ -1714,8 +1714,17 @@ export async function patchOperatorSettings(
 // ---------------------------------------------------------------------------
 
 /**
- * `GET /operator-settings/supervisor-models` — the models the configured key
- * can actually reach, on the configured provider.
+ * `GET /operator-settings/supervisor-models` — the models one consumer's
+ * configured key can actually reach, on the provider that consumer selects.
+ *
+ * **`consumer` is required here although the API defaults it** (#423). The
+ * default exists so the route means what it meant before there was a second
+ * consumer; a caller in this build always knows which of them it is asking
+ * for, and one that omitted the parameter would silently read the
+ * supervisor's provider while rendering somebody else's dropdown. The answer
+ * echoes the consumer back, and callers file it under that echo rather than
+ * under what they asked for — two lists are in flight at once and they must
+ * not be able to land under each other.
  *
  * **This spends nothing.** A catalogue read bills no tokens on either vendor,
  * which is why it can be offered as a plain refresh next to a Test button that
@@ -1733,11 +1742,14 @@ export async function patchOperatorSettings(
  * Both settings are read per request on the API side, so a provider or a key
  * saved a moment ago is the one this asks with.
  */
-export async function getSupervisorModelCatalog(
+export async function getModelCatalog(
+  consumer: string,
   signal?: AbortSignal,
 ): Promise<SupervisorModelCatalog> {
+  const query = new URLSearchParams({ consumer });
+
   return api.get<SupervisorModelCatalog>(
-    '/operator-settings/supervisor-models',
+    `/operator-settings/supervisor-models?${query.toString()}`,
     { signal },
   );
 }

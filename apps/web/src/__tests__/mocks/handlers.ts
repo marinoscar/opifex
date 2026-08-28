@@ -582,9 +582,19 @@ export const handlers = [
    * error-shaped default to choose here: the default is a provider that
    * answered.
    */
-  http.get(`${API_BASE}/operator-settings/supervisor-models`, () =>
-    HttpResponse.json({ data: supervisorModelCatalogFixture() }),
-  ),
+  http.get(`${API_BASE}/operator-settings/supervisor-models`, ({ request }) => {
+    // The `consumer` parameter is echoed, as the API echoes it (#423): the
+    // Control Center holds one list per consumer and files each answer under
+    // the consumer the ANSWER names. A default handler that always said
+    // `supervisor` would make every one of those files land on top of each
+    // other, which is precisely the bug the echo exists to prevent.
+    const consumer =
+      new URL(request.url).searchParams.get('consumer') ?? 'supervisor';
+
+    return HttpResponse.json({
+      data: supervisorModelCatalogFixture({ consumer }),
+    });
+  }),
 
   /**
    * `GET /api/cost/summary` — read by the Credentials section for

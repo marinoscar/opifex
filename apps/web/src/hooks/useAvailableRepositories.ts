@@ -11,7 +11,7 @@
  * complete, because the account may not hold `projects:read` or because the
  * API is down. Collapsing the two would let "we could not ask" render as
  * "your token is bad", which is the wrong conclusion to hand somebody holding
- * a working credential. The same rule `useSupervisorModels` states.
+ * a working credential. The same rule `useModelCatalogs` states.
  *
  * ## Search and paging are the API's, not this file's
  *
@@ -175,7 +175,7 @@ export function useAvailableRepositories(): UseAvailableRepositoriesResult {
   // writes before the first `await` are no-ops on mount (`isLoading` starts
   // true and `requestError` starts null), and on a later page they are the
   // spinner the operator is owed; deferring them would delay it instead. Same
-  // reasoning as `useSupervisorModels` and `useRepositoryLadder`.
+  // reasoning as `useModelCatalogs` and `useRepositoryLadder`.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount and on page/search change, see above
     void refresh();

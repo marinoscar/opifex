@@ -17,7 +17,11 @@
  *  - `createdAt` is ISO-8601 on both, normalised by the API from Unix seconds
  *    on one of them;
  *  - `spendsTokens` is `false` and is a FIELD, so a test can flip it and
- *    assert the UI followed the response rather than a hard-coded sentence.
+ *    assert the UI followed the response rather than a hard-coded sentence;
+ *  - `consumer` is ECHOED (#423) — the API answers for whichever consumer was
+ *    asked for, and the Control Center files the answer under that echo rather
+ *    than under what it asked. A fixture that omitted it, or that always said
+ *    `supervisor`, would let a client that ignores the echo pass.
  */
 
 import type {
@@ -90,6 +94,7 @@ export function supervisorModelCatalogFixture(
   overrides: Partial<SupervisorModelCatalog> = {},
 ): SupervisorModelCatalog {
   return {
+    consumer: 'supervisor',
     provider: 'anthropic',
     status: 'ok',
     detail: 'Anthropic listed 4 models; 2 are at or above the 4.6 floor.',
@@ -118,6 +123,29 @@ export function supervisorModelFailureFixture(
     status,
     detail,
     models: [],
+    ...overrides,
+  });
+}
+
+/**
+ * The OpenAI listing, for a consumer that selects OpenAI (#423).
+ *
+ * Named rather than assembled at each call site, because the assertion the
+ * two-consumer tests make — the chat shows OpenAI's models while the
+ * supervisor shows Anthropic's — is only worth anything if the two lists are
+ * genuinely disjoint, which is a property of these fixtures rather than of
+ * any one test.
+ */
+export function openaiCatalogFixture(
+  consumer: string,
+  overrides: Partial<SupervisorModelCatalog> = {},
+): SupervisorModelCatalog {
+  return supervisorModelCatalogFixture({
+    consumer,
+    provider: 'openai',
+    detail: 'OpenAI listed 3 models; 1 is at or above the 5.4 floor.',
+    minimumVersion: '5.4',
+    models: OPENAI_MODELS,
     ...overrides,
   });
 }

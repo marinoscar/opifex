@@ -102,21 +102,40 @@ function withEntry(
 }
 
 /**
- * Answer the catalogue read, one response per call.
+ * Answer the SUPERVISOR's catalogue read, one response per call.
  *
  * The count is the assertion for "changing the provider re-resolves the list":
  * a second GET is the only observable difference between asking again and
  * leaving the previous vendor's models on screen.
+ *
+ * It counts the supervisor's requests only (#423). There are two consumers on
+ * this screen and both ask on mount, so a counter that totalled them would
+ * make every "asked exactly once" assertion in this file a statement about
+ * two panels at once — true for the wrong reason, and still true if the
+ * supervisor's request stopped being made at all. The chat's requests are
+ * answered from the default fixture, echoing its own consumer.
  */
 function serveCatalog(...responses: SupervisorModelCatalog[]) {
   const calls = { count: 0 };
 
   server.use(
-    http.get(`${API_BASE}/operator-settings/supervisor-models`, () => {
-      const body = responses[Math.min(calls.count, responses.length - 1)];
-      calls.count += 1;
-      return HttpResponse.json({ data: body });
-    }),
+    http.get(
+      `${API_BASE}/operator-settings/supervisor-models`,
+      ({ request }) => {
+        const consumer =
+          new URL(request.url).searchParams.get('consumer') ?? 'supervisor';
+
+        if (consumer !== 'supervisor') {
+          return HttpResponse.json({
+            data: supervisorModelCatalogFixture({ consumer }),
+          });
+        }
+
+        const body = responses[Math.min(calls.count, responses.length - 1)];
+        calls.count += 1;
+        return HttpResponse.json({ data: body });
+      },
+    ),
   );
 
   return calls;
@@ -141,8 +160,8 @@ function recordPatch(...responses: OperatorSettingsDocument[]) {
 
 /** The panel, once the first catalogue answer has landed. */
 async function panel() {
-  const found = await screen.findByLabelText('Supervisor model');
-  await screen.findByRole('button', { name: 'List models' });
+  const found = await screen.findByLabelText('Supervisor model settings');
+  await screen.findByRole('button', { name: 'List supervisor models' });
   return found;
 }
 
@@ -155,7 +174,7 @@ async function openSelect(
   return screen.getAllByRole('option');
 }
 
-describe('SupervisorModelPanel', () => {
+describe('ModelConsumerPanel — the supervisor', () => {
   describe('One screen, not two tabs', () => {
     it('offers the provider, the key and the model together', async () => {
       renderSection();
@@ -265,7 +284,7 @@ describe('SupervisorModelPanel', () => {
         screen.getByRole('option', { name: /claude-daybreak-latest/ }),
       );
       await user.click(
-        screen.getByRole('button', { name: 'Save model settings' }),
+        screen.getByRole('button', { name: 'Save supervisor model settings' }),
       );
 
       await waitFor(() => expect(patches.bodies).toHaveLength(1));
@@ -441,18 +460,23 @@ describe('SupervisorModelPanel', () => {
 
       const user = userEvent.setup();
       renderSection();
-      await panel();
+      // Scoped to the supervisor's own panel throughout: the chat has a list
+      // of its own on this screen and it is NOT dropped by a provider change
+      // that is not its own (#423).
+      const supervisor = await panel();
       expect(
-        await screen.findByText(/Anthropic listed 4 models/),
+        await within(supervisor).findByText(/Anthropic listed 4 models/),
       ).toBeInTheDocument();
 
       await openSelect(user, 'Supervisor model provider');
       await user.click(screen.getByRole('option', { name: 'openai' }));
 
       // Mid-flight: the Anthropic answer is gone and nothing has replaced it.
-      await screen.findByRole('button', { name: 'Asking the provider…' });
+      await within(supervisor).findByRole('button', {
+        name: 'Asking the provider…',
+      });
       expect(
-        screen.queryByText(/Anthropic listed 4 models/),
+        within(supervisor).queryByText(/Anthropic listed 4 models/),
       ).not.toBeInTheDocument();
       expect(
         screen.queryByRole('option', { name: /claude-opus-4-6/ }),
@@ -460,7 +484,7 @@ describe('SupervisorModelPanel', () => {
 
       release();
       expect(
-        await screen.findByText(/OpenAI listed 3 models/),
+        await within(supervisor).findByText(/OpenAI listed 3 models/),
       ).toBeInTheDocument();
     });
 
@@ -569,22 +593,30 @@ describe('SupervisorModelPanel', () => {
       );
 
       renderSection();
-      await screen.findByLabelText('Supervisor model');
+      const supervisor = await screen.findByLabelText(
+        'Supervisor model settings',
+      );
 
+      // Both consumers' requests are refused by that handler, so the panels
+      // each say so; this asserts about the supervisor's.
       expect(
-        await screen.findByText(/The list could not be requested/),
+        await within(supervisor).findByText(/The list could not be requested/),
       ).toBeInTheDocument();
-      expect(screen.getByText(/not a verdict on the key/)).toBeInTheDocument();
+      expect(
+        within(supervisor).getByText(/not a verdict on the key/),
+      ).toBeInTheDocument();
     });
   });
 
   describe('Listing is free; the Test button is not', () => {
     it('says listing costs nothing, and does not say that of the probe', async () => {
       renderSection();
-      await panel();
+      const supervisor = await panel();
 
       expect(
-        screen.getByText(/Listing models bills nothing on either provider/),
+        within(supervisor).getByText(
+          /Listing models bills nothing on either provider/,
+        ),
       ).toBeInTheDocument();
       // The spending one keeps #349's label, unchanged and adjacent.
       expect(
@@ -596,13 +628,13 @@ describe('SupervisorModelPanel', () => {
       serveCatalog(supervisorModelCatalogFixture({ spendsTokens: true }));
 
       renderSection();
-      await panel();
+      const supervisor = await panel();
 
       expect(
-        await screen.findByText(/this refresh costs money/),
+        await within(supervisor).findByText(/this refresh costs money/),
       ).toBeInTheDocument();
       expect(
-        screen.queryByText(/Listing models bills nothing/),
+        within(supervisor).queryByText(/Listing models bills nothing/),
       ).not.toBeInTheDocument();
     });
   });
@@ -635,7 +667,7 @@ describe('SupervisorModelPanel', () => {
       await openSelect(user, 'Supervisor model name');
       await user.click(screen.getByRole('option', { name: /claude-opus-4-6/ }));
       await user.click(
-        screen.getByRole('button', { name: 'Save model settings' }),
+        screen.getByRole('button', { name: 'Save supervisor model settings' }),
       );
 
       await waitFor(() => expect(patches.bodies).toHaveLength(1));
@@ -653,7 +685,7 @@ describe('SupervisorModelPanel', () => {
         'https://gateway.internal/v1',
       );
       await user.click(
-        screen.getByRole('button', { name: 'Save model settings' }),
+        screen.getByRole('button', { name: 'Save supervisor model settings' }),
       );
 
       await waitFor(() => expect(patches.bodies).toHaveLength(1));
@@ -923,7 +955,7 @@ describe('SupervisorModelPanel', () => {
         'https://gateway.internal/v1',
       );
       await user.click(
-        screen.getByRole('button', { name: 'Save model settings' }),
+        screen.getByRole('button', { name: 'Save supervisor model settings' }),
       );
 
       await waitFor(() => expect(patches.bodies).toHaveLength(1));
@@ -974,11 +1006,18 @@ describe('SupervisorModelPanel', () => {
       );
 
       renderSection();
-      await panel();
+      const supervisor = await panel();
 
-      expect(screen.getByText(/models\.anthropic\.apiKey/)).toBeInTheDocument();
+      // Named in both panels now: the supervisor's, which cannot offer a key
+      // field for a slot the API does not publish, and the chat's, which
+      // names the same shared slot as the one it resolves to (#423).
       expect(
-        screen.getByText(/no key to set for the selected provider/i),
+        within(supervisor).getAllByText(/models\.anthropic\.apiKey/).length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(supervisor).getByText(
+          /no key to set for the selected provider/i,
+        ),
       ).toBeInTheDocument();
     });
   });
@@ -986,19 +1025,21 @@ describe('SupervisorModelPanel', () => {
   describe('Read-only accounts', () => {
     it('disables the controls without hiding the answer', async () => {
       renderSection({ canWrite: false, canWriteSecret: false });
-      await screen.findByLabelText('Supervisor model');
+      await screen.findByLabelText('Supervisor model settings');
 
       expect(
         screen.getByRole('combobox', { name: 'Supervisor model provider' }),
       ).toHaveAttribute('aria-disabled', 'true');
       expect(
-        screen.getByRole('button', { name: 'Save model settings' }),
+        screen.getByRole('button', { name: 'Save supervisor model settings' }),
       ).toBeDisabled();
       // The list itself is still readable — a reader entitled to see the
       // configuration is entitled to see it, and the API refuses the write
       // regardless.
       expect(
-        await screen.findByText(/Anthropic listed 4 models/),
+        await within(
+          screen.getByLabelText('Supervisor model settings'),
+        ).findByText(/Anthropic listed 4 models/),
       ).toBeInTheDocument();
     });
   });
