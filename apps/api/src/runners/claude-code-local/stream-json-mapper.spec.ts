@@ -284,6 +284,12 @@ describe('stream-json mapper', () => {
       // The runner already emitted run.started when it spawned the process. A
       // second would be two answers to "when did this begin", which is the
       // number detection latency (#59) is measured from.
+      //
+      // The model on this line is the other half of #420's run record, and the
+      // authoritative half: `run.started` says which model the control plane
+      // ASKED for, and this says which one the CLI actually resolved. An
+      // untiered run passes no `--model` at all, so this is the only place its
+      // model is ever recorded — which is why the summary carries it.
       const event = expectEvent(map(INIT_LINE));
 
       expect(event.type).toBe('run.progress');

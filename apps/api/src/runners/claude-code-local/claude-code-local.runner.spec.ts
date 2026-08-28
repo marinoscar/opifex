@@ -363,6 +363,124 @@ describe('ClaudeCodeLocalRunner', () => {
       expect(argv[argv.indexOf('--session-id') + 1]).toBe(order.runId);
     }, 30_000);
 
+    // -----------------------------------------------------------------------
+    // tier -> --model (#420)
+    //
+    // Asserted against the CHILD'S REAL ARGV, not against the builder or the
+    // configuration, because the bug being fixed was precisely that everything
+    // upstream of the argv was already correct: the label was parsed, routed
+    // and recorded, and the flag never reached the process. A test that stops
+    // short of the process would have passed the whole time it was broken.
+    // -----------------------------------------------------------------------
+
+    /** Runs one work order against a recording fake and returns its argv. */
+    async function argvFor(
+      name: string,
+      order: WorkOrderSpec,
+      overrides: OperatorSettingsOverrides = {},
+    ): Promise<string[]> {
+      const binary = await fakeClaude(name, 'exit 0');
+      const runner = build({
+        'runners.claudeCodeLocal.binary': binary,
+        ...overrides,
+      });
+
+      const handle = await runner.submit(order);
+      await drainUntilTerminal(runner, handle);
+
+      return (await readFile(`${binary}.argv`, 'utf8')).trim().split('\n');
+    }
+
+    it('runs tier:small and tier:large on different models', async () => {
+      const small = await argvFor(
+        'tier-small',
+        workOrder({
+          identity: 'wo_acme-widgets_42_abc1234_a1',
+          modelTier: 'small',
+        }),
+      );
+      const large = await argvFor(
+        'tier-large',
+        workOrder({
+          identity: 'wo_acme-widgets_43_abc1234_a1',
+          modelTier: 'large',
+        }),
+      );
+
+      expect(small[small.indexOf('--model') + 1]).toBe('claude-haiku-4-5');
+      expect(large[large.indexOf('--model') + 1]).toBe('claude-opus-5');
+      expect(small[small.indexOf('--model') + 1]).not.toBe(
+        large[large.indexOf('--model') + 1],
+      );
+    }, 60_000);
+
+    it('passes the model an operator configured, not a compiled-in one', async () => {
+      // The mapping is a setting so that adopting a newly shipped model is a
+      // form field rather than a release. If the runner ignored the setting
+      // this would still be green against a hardcoded default, so it asks for
+      // a model no default anywhere names.
+      const argv = await argvFor(
+        'tier-configured',
+        workOrder({ modelTier: 'standard' }),
+        { 'runners.claudeCodeLocal.model.standard': 'claude-sonnet-4-6' },
+      );
+
+      expect(argv[argv.indexOf('--model') + 1]).toBe('claude-sonnet-4-6');
+    }, 30_000);
+
+    it('passes NO --model flag at all for a work order with no tier', async () => {
+      // The single most important assertion in #420, and the reason it is on
+      // the ABSENCE of the flag: most work orders declare no tier, and naming
+      // today's CLI default for them would freeze it against a future release
+      // while looking, in every other test, exactly like this one.
+      const argv = await argvFor('no-tier', workOrder());
+
+      expect(argv).not.toContain('--model');
+      expect(argv.join(' ')).not.toContain('claude-');
+    }, 30_000);
+
+    it('runs an unmappable tier on the default rather than refusing it', async () => {
+      // A tier outside the closed union — reachable from a schema minor this
+      // build predates. #297's rule is that a routing declaration the factory
+      // cannot act on is ignored and reported, never fatal, so the run has to
+      // COMPLETE and to carry no model flag.
+      const binary = await fakeClaude('bad-tier', 'exit 0');
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const handle = await runner.submit(
+        workOrder({ modelTier: 'gargantuan' as WorkOrderSpec['modelTier'] }),
+      );
+      const { status, events } = await drainUntilTerminal(runner, handle);
+      const argv = (await readFile(`${binary}.argv`, 'utf8'))
+        .trim()
+        .split('\n');
+
+      expect(status).toBe('succeeded');
+      expect(events.some((event) => event.type === 'run.completed')).toBe(true);
+      expect(argv).not.toContain('--model');
+
+      // Reported, not merely tolerated: the run record has to say the tier was
+      // dropped, or an operator reads a completed run as one that honoured it.
+      const started = events.find((event) => event.type === 'run.started');
+      expect(started?.summary).toContain('gargantuan');
+      expect(started?.summary).toContain("runner's own default model");
+    }, 30_000);
+
+    it('records on the run which model the tier resolved to', async () => {
+      // #420's acceptance criterion that a tier claim be CHECKABLE after the
+      // fact. `run_events.summary` is a NOT NULL column, so this survives the
+      // process — a log line would not.
+      const binary = await fakeClaude('tier-record', 'exit 0');
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const handle = await runner.submit(workOrder({ modelTier: 'small' }));
+      const { events } = await drainUntilTerminal(runner, handle);
+
+      const started = events.find((event) => event.type === 'run.started');
+      expect(started?.summary).toContain('claude-haiku-4-5');
+      expect(started?.summary).toContain('small');
+    }, 30_000);
+
     it('sends the prompt on stdin, never in argv', async () => {
       // argv is world-readable through `ps`, and a task spec is unbounded
       // prose from an issue.
@@ -756,6 +874,25 @@ describe('ClaudeCodeLocalRunner', () => {
       expect(capabilities.key).toBe('claude-code-local');
       expect(capabilities.invocationModel).toBe('process');
       expect(capabilities.executionLocus).toBe('own_infrastructure');
+    }, 30_000);
+
+    it('advertises no modelTiers, which is the truthful claim (#420)', async () => {
+      // Absent means ANY on this field (`servesTier`), and that is exactly
+      // what this runner does now that the tiers reach the argv: each of the
+      // three maps to a model, and one it cannot map runs on the CLI's
+      // default rather than being refused. Listing the three would say the
+      // same thing AND become false the day the vocabulary grows by a minor
+      // bump, at which point dispatch would refuse this runner work it would
+      // have run perfectly well.
+      const binary = await fakeClaude('tiers', 'echo "2.1.246 (Claude Code)"');
+      const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+      const capabilities = await runner.capabilities();
+
+      expect(capabilities.modelTiers).toBeUndefined();
+      expect(capabilities.manifest).not.toHaveProperty('modelTiers');
+      // Not a vacuous read of an empty object.
+      expect(capabilities.manifest).toMatchObject({ key: 'claude-code-local' });
     }, 30_000);
 
     it('declares itself unavailable when the binary cannot be probed', async () => {

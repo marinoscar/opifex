@@ -1,9 +1,15 @@
-import type { WorkOrderSpec } from '../runner.types';
+import { OPERATOR_SETTINGS } from '../../settings/operator-settings/operator-settings.registry';
+import { MODEL_RATES } from '../../supervisor/invocation/model-pricing';
+import { WORK_ORDER_MODEL_TIER } from '../../contracts/generated';
+import type { ModelTier, WorkOrderSpec } from '../runner.types';
 import {
   buildInvocationArgs,
   buildInvocationEnv,
   buildPrompt,
+  MODEL_SETTING_KEY_BY_TIER,
+  resolveModel,
   PERMISSION_MODES,
+  type ModelSettingKey,
 } from './claude-code-invocation';
 
 const workOrder = (overrides: Partial<WorkOrderSpec> = {}): WorkOrderSpec => ({
@@ -51,6 +57,45 @@ describe('claude-code invocation', () => {
       });
 
       expect(args[args.indexOf('--session-id') + 1]).toBe(order.runId);
+    });
+
+    it('passes --model when the resolution pinned one', () => {
+      const args = buildInvocationArgs({
+        permissionMode: 'acceptEdits',
+        sessionId: 'abc',
+        model: 'claude-haiku-4-5',
+      });
+
+      expect(args[args.indexOf('--model') + 1]).toBe('claude-haiku-4-5');
+    });
+
+    it('omits --model ENTIRELY when no model was resolved', () => {
+      // #420's second decision, and the one thing in this change that is most
+      // easily got wrong by being helpful. The assertion is on the ABSENCE of
+      // the flag rather than on it carrying some other value: passing today's
+      // CLI default explicitly would freeze it against a future release, and
+      // that mistake would pass any test that only compared two models.
+      const args = buildInvocationArgs({
+        permissionMode: 'acceptEdits',
+        sessionId: 'abc',
+      });
+
+      expect(args).not.toContain('--model');
+      expect(args.join(' ')).not.toContain('claude-');
+    });
+
+    it('treats an empty model as no model rather than as an empty flag', () => {
+      // `--model ''` is an argument the CLI would reject, and empty is how an
+      // operator says "let the CLI choose for this tier" in a settings field
+      // that cannot hold null.
+      const args = buildInvocationArgs({
+        permissionMode: 'acceptEdits',
+        sessionId: 'abc',
+        model: '',
+      });
+
+      expect(args).not.toContain('--model');
+      expect(args).not.toContain('');
     });
 
     it('offers only permission modes the CLI accepts', () => {
@@ -180,6 +225,151 @@ describe('claude-code invocation', () => {
       const env = buildInvocationEnv(workOrder());
       for (const key of Object.keys(env)) {
         expect(key).not.toMatch(/TOKEN|SECRET|KEY|PASSWORD/i);
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+
+  describe('resolveModel', () => {
+    /** A lookup that answers with the registry's declared defaults. */
+    const declared = (key: ModelSettingKey): string =>
+      OPERATOR_SETTINGS[key].default;
+
+    it('pins the configured model for a tier that maps', () => {
+      const resolution = resolveModel('small', declared);
+
+      expect(resolution.kind).toBe('pinned');
+      expect(resolution).toMatchObject({ model: 'claude-haiku-4-5' });
+      expect(resolution.statement).toContain('claude-haiku-4-5');
+      expect(resolution.statement).toContain('small');
+    });
+
+    it('resolves each tier to a DIFFERENT model', () => {
+      // The bug #420 fixes was not that the tier was unread — it was that
+      // every tier produced an identical invocation. A mapping that resolved
+      // three tiers to one model would be the same bug wearing this change's
+      // clothes.
+      const models = WORK_ORDER_MODEL_TIER.map((tier) => {
+        const resolution = resolveModel(tier, declared);
+        return resolution.kind === 'pinned' ? resolution.model : null;
+      });
+
+      expect(models).not.toContain(null);
+      expect(new Set(models).size).toBe(WORK_ORDER_MODEL_TIER.length);
+    });
+
+    it('resolves an absent tier to no model at all', () => {
+      const resolution = resolveModel(undefined, declared);
+
+      expect(resolution.kind).toBe('no-tier');
+      expect(resolution).not.toHaveProperty('model');
+      expect(resolution.statement).toContain('no tier');
+    });
+
+    it('runs an unmappable tier on the default rather than refusing it', () => {
+      // #297's rule: a routing declaration the factory cannot act on is
+      // ignored and REPORTED, never fatal. A tier outside the closed union is
+      // reachable from a schema minor this build predates, and throwing here
+      // would turn a forward-compatible contract change into a failed run.
+      const resolution = resolveModel('gargantuan', declared);
+
+      expect(resolution.kind).toBe('unmapped-tier');
+      expect(resolution).not.toHaveProperty('model');
+      expect(resolution).toMatchObject({ tier: 'gargantuan' });
+      expect(resolution.statement).toContain('gargantuan');
+    });
+
+    it('is not fooled by a tier that names a property of Object.prototype', () => {
+      // `MODEL_SETTING_KEY_BY_TIER['constructor']` is a FUNCTION, not
+      // undefined, so a blind index would sail past a `=== undefined` check
+      // and hand a function to the settings lookup. Found by mutation-testing
+      // the guard: dropping it left every other assertion in this block green,
+      // because 'gargantuan' is not on the prototype and this is.
+      const resolution = resolveModel('constructor', declared);
+
+      expect(resolution.kind).toBe('unmapped-tier');
+      expect(resolution).not.toHaveProperty('model');
+    });
+
+    it('never asks the lookup about a tier it does not map', () => {
+      // The lookup is `settings.get()`, which throws on a key the registry
+      // does not declare. Reaching it with `runners.claudeCodeLocal.model.
+      // gargantuan` would turn a bad label into an exception on the dispatch
+      // path — the exact opposite of the line above.
+      const asked: string[] = [];
+      resolveModel('gargantuan', (key) => {
+        asked.push(key);
+        return 'claude-opus-5';
+      });
+
+      expect(asked).toEqual([]);
+    });
+
+    it('treats a tier the operator mapped to nothing as the default', () => {
+      // Distinct from `unmapped-tier` on purpose: this one is a deliberate
+      // operator choice, so it is not worth a warning, and the statement says
+      // which of the two happened.
+      const resolution = resolveModel('large', () => '   ');
+
+      expect(resolution.kind).toBe('not-configured');
+      expect(resolution).not.toHaveProperty('model');
+      expect(resolution.statement).toContain('large');
+    });
+  });
+
+  describe('the tier -> setting mapping', () => {
+    it('covers every tier in the contract, and nothing else', () => {
+      // Enumerated from the generated contract rather than from a list here,
+      // so a fourth tier added by a schema minor shows up as a failure to
+      // decide what it costs rather than as silence.
+      expect(Object.keys(MODEL_SETTING_KEY_BY_TIER).sort()).toEqual(
+        [...WORK_ORDER_MODEL_TIER].sort(),
+      );
+    });
+
+    it('names a key the registry actually declares', () => {
+      // `satisfies` catches this at compile time; the assertion is here for
+      // the reader, and because a compile-time guarantee is invisible in a
+      // test report.
+      for (const key of Object.values(MODEL_SETTING_KEY_BY_TIER)) {
+        expect(OPERATOR_SETTINGS[key]).toBeDefined();
+        expect(OPERATOR_SETTINGS[key].group).toBe('runner');
+      }
+    });
+
+    it('defaults to models the pricing table has a rate for', () => {
+      // A wrong model id is a runtime failure on EVERY dispatch of that tier,
+      // and nothing else in this repository would catch one: the CLI is faked
+      // in every test that spawns it. `model-pricing.ts` is a hand-maintained,
+      // dated list keyed on exact strings, so a default that is not in it is
+      // either a typo or a model nobody has priced — both worth failing on.
+      for (const tier of WORK_ORDER_MODEL_TIER) {
+        const model =
+          OPERATOR_SETTINGS[MODEL_SETTING_KEY_BY_TIER[tier]].default;
+        expect(Object.keys(MODEL_RATES)).toContain(model);
+      }
+    });
+
+    it('defaults to a strictly increasing cost ladder', () => {
+      // The property that makes the vocabulary mean what it says. An operator
+      // who applies `tier:small` to save money must actually save money, and
+      // this is the only assertion in the repository that checks the three
+      // defaults are in the order their names claim.
+      const rates = (['small', 'standard', 'large'] as const).map(
+        (tier: ModelTier) =>
+          MODEL_RATES[
+            OPERATOR_SETTINGS[MODEL_SETTING_KEY_BY_TIER[tier]].default
+          ],
+      );
+
+      for (let index = 1; index < rates.length; index += 1) {
+        expect(rates[index].inputPerMillionUsd).toBeGreaterThan(
+          rates[index - 1].inputPerMillionUsd,
+        );
+        expect(rates[index].outputPerMillionUsd).toBeGreaterThan(
+          rates[index - 1].outputPerMillionUsd,
+        );
       }
     });
   });
