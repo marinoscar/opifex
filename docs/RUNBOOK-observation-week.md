@@ -340,6 +340,71 @@ action evidence instead of the label itself.
   label as something to set, the way `needs:`/`tier:`/`factory:` are set, is
   the specific mix-up this section exists to head off.
 
+**Three routes write `factory:ready` and `factory:hold`; this runbook only
+exercises the first.**
+
+- **By hand, on GitHub itself** — click the label on the issue, the way this
+  runbook does throughout §4 onward. VISION §3.3's rule that labels are "a
+  bidirectional edge, never the state machine" means this is not a fallback
+  route: a hand-applied `factory:ready` and one applied through either screen
+  below produce the identical row the reconciler reads on its next tick, and
+  nothing downstream can tell which of the three you used.
+- **The queue screen's Hold / Mark ready controls** (`/queue`) — one work
+  order at a time, or several via multi-select. A UI directly over `POST
+/api/queue/{workOrderId}/hold` and `/release`, documented in `docs/API.md`'s
+  Cockpit section (#421). No confirmation step: picking a work order you are
+  already looking at and pressing Hold is not the action the review screen
+  below exists for.
+- **The `/steering` screen** (#426, epic #419) — type an instruction in
+  prose ("only work on #412 and #418, hold everything else"), read the
+  proposed diff before anything is written, and confirm it as a second,
+  deliberate act. Built for the instruction the other two routes are clumsy
+  for: one sentence that reaches more issues than you would want to click
+  through one at a time, where an "only" clause un-readies every other issue
+  currently in scope — the screen renders that collateral separately from
+  what you actually named, and equally prominently, before Apply is enabled.
+  A few things worth knowing before you type into it:
+
+  - **It never applies on its own.** Propose only ever returns a diff to
+    read; a second, explicit confirm is the only thing that writes anything,
+    for every instruction — including a one-issue diff with no removals in
+    it. There is no "obviously simple" exception anywhere in the page, the
+    hook behind it, or the API client.
+  - **Only explicit issue and epic references parse today.** `#412`,
+    `epic #419`, "hold everything else" have a grammar and are read in code —
+    no model call, no cost. Prose that needs interpretation ("just the auth
+    epic") comes back `needs-interpretation`: this is the chat's model path
+    refusing itself on purpose, not a bug, because it has no durable spend
+    ledger yet to bound a model call against (`chat-spend-gate.ts`). The
+    remedy the screen states is the one to reach for here too: name the
+    issue numbers.
+  - **A proposal is only good for 30 minutes.** Applying a stale one is
+    refused (`409`) rather than written against a backlog picture that has
+    had that long to move; the screen's answer is "propose again," not a
+    retry.
+  - **With `github.writesEnabled` off — the default throughout this
+    runbook — applying a steering proposal is recorded and writes no
+    label**, the same fact this runbook states for mirror labels above (`the
+write adapter returns performed: false`). Confirming an instruction
+    during the observation week is safe to try for exactly this reason: the
+    audit row is written, GitHub is not touched.
+  - **Between proposing and applying, a label can drift.** Apply re-reads
+    every named issue first; one whose recognised `factory:` labels changed
+    since the proposal was made is skipped and reported on its own, and
+    every other operation in the same apply still lands.
+
+  See `docs/API.md`'s `POST /api/steering/proposals` / `.../apply` for the
+  full request and response shapes, and `docs/ARCHITECTURE.md` §3.7 for how
+  the screen sits beside the queue read models.
+
+All three routes write only `factory:ready` and `factory:hold` — never a
+mirror label, and never `factory:clear-quarantine`: #49 requires that one be
+applied by hand on GitHub regardless of which of the three you used to get
+here, so the applier's identity stays native and verifiable from the issue
+timeline (see "Release does not clear a quarantine" in `docs/API.md`).
+Whichever route sets a label, it is only ever a request — the reconciler's
+next tick is what actually moves a work order between `queued` and `held`.
+
 ---
 
 ## 4. Register a repository
