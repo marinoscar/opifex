@@ -42,12 +42,22 @@ export interface WriteResult {
  *
  * ## The kill switch
  *
- * `GITHUB_WRITES_ENABLED` defaults to **false**. VISION §12 requires the
- * reconciler to observe for a week and record what it *would* have done, and
- * that diff log is the deliverable of the phase, not a debugging aid. With
- * writes off, every method here returns a fully-formed `WriteResult` with
- * `performed: false` — so the calling code path is the real one, exercised for
- * a week, rather than a branch that has never run.
+ * `GITHUB_WRITES_ENABLED` defaults to **true** since ADR-0019 (#439), and it
+ * used to default to false. VISION §12's observation week is now something an
+ * operator turns writes OFF for, deliberately, rather than something they get
+ * by never turning them on — the argument being #432, where a release path
+ * that never removed `factory:hold` went undetected for exactly as long as
+ * nothing was permitted to act.
+ *
+ * With writes off, every method here still returns a fully-formed
+ * `WriteResult` with `performed: false` — so the calling code path is the real
+ * one, exercised for the whole week, rather than a branch that has never run.
+ * That property is what makes the observation week worth having, and it is
+ * unchanged by which way the flag points on a fresh install.
+ *
+ * Note what this switch is NOT gated by: the hard spend ceiling. An install
+ * that has set no ceiling cannot dispatch a work order, but it CAN mirror
+ * labels and post comments, because those cost nothing and are reversible.
  *
  * ## Reversibility
  *
@@ -77,9 +87,31 @@ export class GitHubWriteService {
     // The boot line still reports the posture the process STARTS in, which is
     // the thing an operator reads a startup log for. It is not the value any
     // write consults — `guardedWrite` resolves that per call.
-    if (!this.enabled) {
+    //
+    // Both postures are stated now, and the OFF one is the warning. That is
+    // the reverse of how this read before ADR-0019 (#439): while writes were
+    // off by default, the only line worth printing was the one explaining why
+    // nothing was happening. With them on, the surprising state is a process
+    // that records every write and performs none — an observation week, or a
+    // flag somebody left off and forgot — and that is the one an operator
+    // needs to be told about at the level that gets read.
+    //
+    // Neither line names an environment variable as the cause. Since #348 the
+    // value can equally have come from a database row written in the Control
+    // Center, and `GITHUB_WRITES_ENABLED=false` printed at a deployment whose
+    // .env says nothing of the kind sends an operator to edit the wrong thing.
+    if (this.enabled) {
       this.logger.log(
-        'GitHub writes are DISABLED (GITHUB_WRITES_ENABLED=false) - writes will be recorded, not performed',
+        'GitHub writes are ENABLED (the default since ADR-0019): labels, comments and ' +
+          'pull requests on the repositories this deployment watches will really change. ' +
+          'Turn github.writesEnabled off for a read-only observation week (VISION §12).',
+      );
+    } else {
+      this.logger.warn(
+        'GitHub writes are DISABLED, which is no longer the default: every write will be ' +
+          'recorded with what it WOULD have done and performed by nobody, so the factory ' +
+          'will look busy and change nothing. Turn github.writesEnabled on when the ' +
+          'observation week is over.',
       );
     }
   }

@@ -152,7 +152,8 @@ export class RunExecutorService {
       // it would have done, produced by the same code path that will do it.
       const reason =
         `DISPATCH DISABLED — would have dispatched ${workOrder.identity} to ` +
-        `${decision.runnerKey}@${capabilities.version}. Set DISPATCH_ENABLED=true to act.`;
+        `${decision.runnerKey}@${capabilities.version}. Dispatch ships enabled ` +
+        `(ADR-0019), so this was turned off deliberately; turn it back on to act.`;
       this.logger.warn(reason);
       return {
         outcome: 'observed',
