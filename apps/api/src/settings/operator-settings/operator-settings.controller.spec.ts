@@ -21,6 +21,7 @@ import {
   PatchOperatorSettingsDto,
   patchOperatorSettingsSchema,
 } from './dto/patch-operator-settings.dto';
+import { modelCatalogQuerySchema } from './dto/model-catalog-query.dto';
 import { OperatorSettingsController } from './operator-settings.controller';
 import { OPERATOR_SETTING_KEYS } from './operator-settings.registry';
 import type { OperatorSettingsService } from './operator-settings.service';
@@ -602,6 +603,7 @@ describe('OperatorSettingsController (#338)', () => {
   describe('GET supervisor-models (#393)', () => {
     /** A catalogue answer, as the service would build it. */
     const CATALOGUE = {
+      consumer: 'supervisor' as const,
       provider: 'openai' as const,
       status: 'ok' as const,
       detail: 'OpenAI listed 1 model, 1 of them 5.4 or newer.',
@@ -633,10 +635,39 @@ describe('OperatorSettingsController (#338)', () => {
       // `{ data: { data: ... } }` on the wire.
       const list = jest.fn().mockResolvedValue(CATALOGUE);
 
-      await expect(withCatalogue(list).listSupervisorModels()).resolves.toBe(
-        CATALOGUE,
-      );
+      await expect(
+        withCatalogue(list).listSupervisorModels({ consumer: 'supervisor' }),
+      ).resolves.toBe(CATALOGUE);
       expect(list).toHaveBeenCalledTimes(1);
+    });
+
+    it('asks for the consumer the query named, and no other (#423)', async () => {
+      // The parameter is the whole of what makes two independent dropdowns
+      // possible. A handler that ignored it would answer both of them with
+      // the supervisor's provider — a list of models the chat's key may not
+      // reach, rendered as though it were the chat's own.
+      const list = jest.fn().mockResolvedValue({
+        ...CATALOGUE,
+        consumer: 'chat' as const,
+      });
+
+      await expect(
+        withCatalogue(list).listSupervisorModels({ consumer: 'chat' }),
+      ).resolves.toMatchObject({ consumer: 'chat' });
+      expect(list).toHaveBeenCalledWith('chat');
+    });
+
+    it('defaults the consumer to the supervisor, as the route always meant', () => {
+      // Compatibility, asserted on the SCHEMA rather than on the handler: the
+      // clients that called this route before #423 send no parameter at all,
+      // and a default that meant anything else would repoint them at another
+      // provider's catalogue without a line of theirs changing.
+      expect(modelCatalogQuerySchema.parse({})).toEqual({
+        consumer: 'supervisor',
+      });
+      expect(
+        modelCatalogQuerySchema.safeParse({ consumer: 'runner' }).success,
+      ).toBe(false);
     });
 
     it('does not turn a reported failure into an HTTP error', async () => {
@@ -651,7 +682,7 @@ describe('OperatorSettingsController (#338)', () => {
       const list = jest.fn().mockResolvedValue(failure);
 
       await expect(
-        withCatalogue(list).listSupervisorModels(),
+        withCatalogue(list).listSupervisorModels({ consumer: 'supervisor' }),
       ).resolves.toMatchObject({ status: 'invalid_key' });
     });
 

@@ -116,7 +116,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
         jsonResponse(anthropicList('claude-opus-4-6')),
       );
 
-      await catalog(ANTHROPIC_SETTINGS).list();
+      await catalog(ANTHROPIC_SETTINGS).list('supervisor');
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       // `limit`, because the default page size is 20 and a truncated
@@ -135,7 +135,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
     it("asks OpenAI's catalogue with OpenAI's header", async () => {
       fetchMock.mockResolvedValue(jsonResponse(openAiList('gpt-5.4')));
 
-      await catalog(OPENAI_SETTINGS).list();
+      await catalog(OPENAI_SETTINGS).list('supervisor');
 
       expect(fetchMock.mock.calls[0][0]).toBe(
         'https://api.openai.test/v1/models',
@@ -158,7 +158,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
       await catalog({
         ...OPENAI_SETTINGS,
         'models.openai.baseUrl': '',
-      }).list();
+      }).list('supervisor');
 
       expect(String(fetchMock.mock.calls[0][0])).toContain('api.openai.com');
     });
@@ -167,7 +167,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
       const result = await catalog({
         ...ANTHROPIC_SETTINGS,
         'models.anthropic.apiKey': '',
-      }).list();
+      }).list('supervisor');
 
       expect(fetchMock).not.toHaveBeenCalled();
       expect(result.status).toBe('no_key');
@@ -183,7 +183,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
         jsonResponse(anthropicList('claude-sonnet-5')),
       );
 
-      const result = await catalog(ANTHROPIC_SETTINGS).list();
+      const result = await catalog(ANTHROPIC_SETTINGS).list('supervisor');
 
       expect(result.status).toBe('ok');
       expect(result.provider).toBe('anthropic');
@@ -201,7 +201,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
     it("reads OpenAI's Unix timestamp and its absent label", async () => {
       fetchMock.mockResolvedValue(jsonResponse(openAiList('gpt-5.4')));
 
-      const result = await catalog(OPENAI_SETTINGS).list();
+      const result = await catalog(OPENAI_SETTINGS).list('supervisor');
 
       expect(result.models).toEqual([
         {
@@ -220,14 +220,14 @@ describe('SupervisorModelCatalogService (#393)', () => {
       fetchMock.mockResolvedValue(
         jsonResponse(anthropicList('claude-opus-4-6')),
       );
-      expect((await catalog(ANTHROPIC_SETTINGS).list()).minimumVersion).toBe(
-        '4.6',
-      );
+      expect(
+        (await catalog(ANTHROPIC_SETTINGS).list('supervisor')).minimumVersion,
+      ).toBe('4.6');
 
       fetchMock.mockResolvedValue(jsonResponse(openAiList('gpt-5.4')));
-      expect((await catalog(OPENAI_SETTINGS).list()).minimumVersion).toBe(
-        '5.4',
-      );
+      expect(
+        (await catalog(OPENAI_SETTINGS).list('supervisor')).minimumVersion,
+      ).toBe('5.4');
     });
 
     it('says the call spent nothing, as a field and not only as prose', async () => {
@@ -236,7 +236,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
       // would be hard-coding a fact about this endpoint.
       fetchMock.mockResolvedValue(jsonResponse(openAiList('gpt-5.4')));
 
-      const result = await catalog(OPENAI_SETTINGS).list();
+      const result = await catalog(OPENAI_SETTINGS).list('supervisor');
 
       expect(result.spendsTokens).toBe(false);
       expect(result.detail).toContain('spends no tokens');
@@ -246,7 +246,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
     it('reports a key that works and can reach nothing, rather than an error', async () => {
       fetchMock.mockResolvedValue(jsonResponse({ data: [] }));
 
-      const result = await catalog(OPENAI_SETTINGS).list();
+      const result = await catalog(OPENAI_SETTINGS).list('supervisor');
 
       expect(result.status).toBe('ok');
       expect(result.models).toEqual([]);
@@ -258,7 +258,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
         jsonResponse({ data: [{ id: 'gpt-5.4' }, { object: 'model' }, null] }),
       );
 
-      const result = await catalog(OPENAI_SETTINGS).list();
+      const result = await catalog(OPENAI_SETTINGS).list('supervisor');
 
       expect(result.models.map((model) => model.id)).toEqual(['gpt-5.4']);
     });
@@ -275,7 +275,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
 
     async function listed(): Promise<readonly CatalogModel[]> {
       fetchMock.mockResolvedValue(jsonResponse(openAiList(...IDS)));
-      return (await catalog(OPENAI_SETTINGS).list()).models;
+      return (await catalog(OPENAI_SETTINGS).list('supervisor')).models;
     }
 
     it('RETURNS an id it could not parse, marked — never drops it', async () => {
@@ -309,7 +309,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
     it('counts the marked ones in the sentence an operator reads', async () => {
       fetchMock.mockResolvedValue(jsonResponse(openAiList(...IDS)));
 
-      const result = await catalog(OPENAI_SETTINGS).list();
+      const result = await catalog(OPENAI_SETTINGS).list('supervisor');
 
       expect(result.detail).toContain('5 models');
       expect(result.detail).toContain('2 of them 5.4 or newer');
@@ -336,7 +336,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
         jsonResponse(anthropicList('claude-opus-5-9', 'claude-opus-5-10')),
       );
 
-      const result = await catalog(ANTHROPIC_SETTINGS).list();
+      const result = await catalog(ANTHROPIC_SETTINGS).list('supervisor');
 
       expect(result.models.map((model) => model.id)).toEqual([
         'claude-opus-5-10',
@@ -351,7 +351,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
         jsonResponse({ error: { message: 'invalid x-api-key' } }, 401),
       );
 
-      const result = await catalog(ANTHROPIC_SETTINGS).list();
+      const result = await catalog(ANTHROPIC_SETTINGS).list('supervisor');
 
       expect(result.status).toBe('invalid_key');
       expect(result.detail).toContain('invalid x-api-key');
@@ -369,7 +369,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
       const result = await catalog({
         ...OPENAI_SETTINGS,
         'models.openai.apiKey': 'sk-ant-api03-something',
-      }).list();
+      }).list('supervisor');
 
       expect(result.status).toBe('wrong_provider');
       expect(result.detail).toContain('Anthropic');
@@ -382,7 +382,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
       const result = await catalog({
         ...ANTHROPIC_SETTINGS,
         'models.anthropic.apiKey': 'sk-proj-something',
-      }).list();
+      }).list('supervisor');
 
       expect(result.status).toBe('wrong_provider');
     });
@@ -396,7 +396,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
       const result = await catalog({
         ...OPENAI_SETTINGS,
         'models.openai.apiKey': 'gateway-token-abc',
-      }).list();
+      }).list('supervisor');
 
       expect(result.status).toBe('invalid_key');
     });
@@ -409,7 +409,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
       const result = await catalog({
         ...OPENAI_SETTINGS,
         'models.openai.apiKey': 'sk-ant-a-key-the-gateway-accepts',
-      }).list();
+      }).list('supervisor');
 
       expect(result.status).toBe('ok');
     });
@@ -422,7 +422,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
         ),
       );
 
-      const result = await catalog(OPENAI_SETTINGS).list();
+      const result = await catalog(OPENAI_SETTINGS).list('supervisor');
 
       expect(result.status).toBe('refused');
       expect(result.detail).toContain('accepted the key');
@@ -431,7 +431,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
     it('reports an unreachable host as unreachable, and says so about the key', async () => {
       fetchMock.mockRejectedValue(new Error('getaddrinfo ENOTFOUND'));
 
-      const result = await catalog(ANTHROPIC_SETTINGS).list();
+      const result = await catalog(ANTHROPIC_SETTINGS).list('supervisor');
 
       expect(result.status).toBe('unreachable');
       expect(result.detail).toContain('api.anthropic.test');
@@ -448,7 +448,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
       );
       fetchMock.mockRejectedValue(timeout);
 
-      const result = await catalog(ANTHROPIC_SETTINGS).list();
+      const result = await catalog(ANTHROPIC_SETTINGS).list('supervisor');
 
       expect(result.status).toBe('unreachable');
       expect(result.detail).toContain('no answer within 5000ms');
@@ -459,7 +459,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
         jsonResponse({ error: { message: 'slow down' } }, 429),
       );
 
-      const result = await catalog(OPENAI_SETTINGS).list();
+      const result = await catalog(OPENAI_SETTINGS).list('supervisor');
 
       expect(result.status).toBe('failed');
       expect(result.detail).toContain('429');
@@ -474,7 +474,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
         }),
       );
 
-      const result = await catalog(OPENAI_SETTINGS).list();
+      const result = await catalog(OPENAI_SETTINGS).list('supervisor');
 
       expect(result.status).toBe('failed');
       expect(result.models).toEqual([]);
@@ -483,7 +483,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
     it('reports a 200 with no model list in it', async () => {
       fetchMock.mockResolvedValue(jsonResponse({ object: 'list' }));
 
-      const result = await catalog(OPENAI_SETTINGS).list();
+      const result = await catalog(OPENAI_SETTINGS).list('supervisor');
 
       expect(result.status).toBe('failed');
       expect(result.detail).toContain('no list of models');
@@ -501,7 +501,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
 
       for (const arrange of failures) {
         arrange();
-        const result = await catalog(OPENAI_SETTINGS).list();
+        const result = await catalog(OPENAI_SETTINGS).list('supervisor');
 
         expect(result.provider).toBe('openai');
         expect(result.minimumVersion).toBe('5.4');
@@ -527,10 +527,117 @@ describe('SupervisorModelCatalogService (#393)', () => {
         const result = await catalog({
           ...ANTHROPIC_SETTINGS,
           'models.anthropic.apiKey': key,
-        }).list();
+        }).list('supervisor');
 
         expect(JSON.stringify(result)).not.toContain('super-secret-value');
       }
+    });
+  });
+
+  describe('per consumer (#423, epic #419)', () => {
+    /**
+     * Both consumers configured, on OPPOSITE providers, with both keys stored.
+     *
+     * The state the whole issue is about, and the one where a service that
+     * ignored its `consumer` argument would still look correct on one of the
+     * two calls.
+     */
+    const SPLIT: OperatorSettingsOverrides = {
+      'supervisor.model.provider': 'anthropic',
+      'models.anthropic.apiKey': 'sk-ant-test-key',
+      'models.anthropic.baseUrl': 'https://api.anthropic.test',
+      'chat.model.provider': 'openai',
+      'models.openai.apiKey': 'sk-proj-test-key',
+      'models.openai.baseUrl': 'https://api.openai.test',
+    };
+
+    it('lists the chat’s provider when the chat is the one asked about', () => {
+      fetchMock.mockResolvedValue(jsonResponse(openAiList('gpt-5.4')));
+
+      return catalog(SPLIT)
+        .list('chat')
+        .then((result) => {
+          // OpenAI's endpoint, OpenAI's header, OpenAI's key — while the
+          // supervisor on the same deployment is pointed at Anthropic.
+          expect(fetchMock.mock.calls[0][0]).toBe(
+            'https://api.openai.test/v1/models',
+          );
+          expect(requestInit().headers).toMatchObject({
+            authorization: 'Bearer sk-proj-test-key',
+          });
+          expect(result).toMatchObject({
+            consumer: 'chat',
+            provider: 'openai',
+            status: 'ok',
+          });
+        });
+    });
+
+    it('lists the supervisor’s provider on the same deployment, unchanged', () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse(anthropicList('claude-opus-4-6')),
+      );
+
+      return catalog(SPLIT)
+        .list('supervisor')
+        .then((result) => {
+          expect(fetchMock.mock.calls[0][0]).toBe(
+            'https://api.anthropic.test/v1/models?limit=1000',
+          );
+          expect(requestInit().headers).toMatchObject({
+            'x-api-key': 'sk-ant-test-key',
+          });
+          expect(result).toMatchObject({
+            consumer: 'supervisor',
+            provider: 'anthropic',
+          });
+        });
+    });
+
+    it('reports no_key against the slot the CHAT’s provider needs', () => {
+      // The mistake this endpoint has to describe well: an operator holding
+      // one vendor's key selects the other for the chat. Nothing is asked at
+      // all, and the sentence has to name the empty slot rather than say the
+      // key is bad — a remedy that would send them to reissue a working
+      // credential.
+      return catalog({
+        'models.anthropic.apiKey': 'sk-ant-test-key',
+        'chat.model.provider': 'openai',
+      })
+        .list('chat')
+        .then((result) => {
+          expect(fetchMock).not.toHaveBeenCalled();
+          expect(result).toMatchObject({
+            consumer: 'chat',
+            provider: 'openai',
+            status: 'no_key',
+            models: [],
+          });
+          expect(result.detail).toContain('models.openai.apiKey');
+          expect(result.detail).toContain('chat');
+        });
+    });
+
+    it('uses the asked-for consumer’s own timeout', () => {
+      // The timeouts are split, so the catalogue call has to take the one
+      // belonging to the consumer it was asked about. Reading the
+      // supervisor's here would abort a chat listing on a number the chat's
+      // operator never set.
+      const abort = jest
+        .spyOn(AbortSignal, 'timeout')
+        .mockReturnValue(AbortSignal.timeout(50_000));
+      fetchMock.mockResolvedValue(jsonResponse(openAiList('gpt-5.4')));
+
+      return catalog({
+        ...SPLIT,
+        'supervisor.model.timeoutMs': 60_000,
+        'chat.model.timeoutMs': 7_000,
+      })
+        .list('chat')
+        .then(() => {
+          expect(abort).toHaveBeenCalledWith(7_000);
+          abort.mockRestore();
+        });
     });
   });
 

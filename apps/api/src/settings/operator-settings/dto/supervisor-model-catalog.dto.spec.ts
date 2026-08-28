@@ -65,7 +65,7 @@ describe('supervisorModelCatalogSchema (#393)', () => {
     );
 
     return service()
-      .list()
+      .list('supervisor')
       .then((catalogue) => {
         const parsed = supervisorModelCatalogSchema.safeParse(catalogue);
 
@@ -93,7 +93,7 @@ describe('supervisorModelCatalogSchema (#393)', () => {
       );
     }
 
-    const catalogue = await service(apiKey).list();
+    const catalogue = await service(apiKey).list('supervisor');
 
     expect(supervisorModelCatalogSchema.safeParse(catalogue).success).toBe(
       true,
@@ -103,7 +103,7 @@ describe('supervisorModelCatalogSchema (#393)', () => {
   it('accepts the answer when nothing answered at all', async () => {
     fetchMock.mockRejectedValue(new Error('ENOTFOUND'));
 
-    const catalogue = await service().list();
+    const catalogue = await service().list('supervisor');
 
     expect(supervisorModelCatalogSchema.safeParse(catalogue).success).toBe(
       true,
@@ -112,7 +112,7 @@ describe('supervisorModelCatalogSchema (#393)', () => {
 
   it('refuses a state outside the three, so the wire cannot invent a fourth', async () => {
     fetchMock.mockResolvedValue(listResponse('gpt-5.4'));
-    const catalogue = await service().list();
+    const catalogue = await service().list('supervisor');
 
     const tampered = {
       ...catalogue,
