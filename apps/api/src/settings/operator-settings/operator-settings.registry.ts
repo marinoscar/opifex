@@ -1202,10 +1202,20 @@ export const OPERATOR_SETTINGS = {
   // what is written below, per consumer.
   //
   // Note what is NOT here: a chat spend ceiling. The supervisor has one and
-  // refuses to run without it (#261), and the chat will need the same
-  // treatment once #425 gives it a caller that can spend. It has no caller
-  // yet, so a ceiling now would guard nothing and would have to be designed
-  // against a consumer that does not exist.
+  // refuses to run without it (#261). #425 gave the chat its caller and did
+  // NOT add one, because a ceiling is a cumulative bound over a window and
+  // needs a durable tally to enforce; the chat has nowhere to keep one without
+  // a schema change. So the caller REFUSES rather than defaulting to unlimited
+  // — `steering/chat-spend-gate.ts` is the single place that decides it, and
+  // the steering endpoint reports the refusal as data beside the readiness
+  // these four keys describe. Nothing here spends today; when a chat spend
+  // ledger exists, its ceiling keys belong in this section beside them.
+  //
+  // `reload: 'live'` below was re-checked against that caller and still holds:
+  // `SteeringService` resolves this consumer's config inside one request, only
+  // when the deterministic parser could not answer, and holds no copy across
+  // requests. There is no conversation object and nothing that would make
+  // these `next-unit`.
   // -------------------------------------------------------------------------
 
   'chat.model.provider': enumSetting({
