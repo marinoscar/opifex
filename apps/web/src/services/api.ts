@@ -454,7 +454,8 @@ export interface CreateRepositoryInput {
  *
  * **Null does not mean "no labels".** It is the belt-and-braces case: a bug in
  * provisioning itself must not cost a registration. A GitHub refusal arrives
- * as a full report with `status: 'refused'`, not as null.
+ * as a full report with `status: 'refused'`, not as null — and that report's
+ * own counts are null only when the labels could not be READ.
  */
 export interface RegisteredRepository extends RepositorySummary {
   labelProvisioning: LabelProvisioningReport | null;
@@ -486,7 +487,8 @@ export async function createRepository(
  * REQUEST failed (the account lacks `projects:read`, the id is not a
  * registered repository, or the API is down) and never that GitHub said no.
  *
- * `labels` is EMPTY on every GitHub-level failure. See
+ * When the label list could not be read at all, `labels` is empty and all
+ * seven counts are **null — which means "not read", never zero**. See
  * `config/repositoryLabels.ts`: no count may be rendered from such a report.
  */
 export async function getRepositoryLabels(
@@ -509,10 +511,16 @@ export async function getRepositoryLabels(
  * because deleting one strips it from every issue carrying it. Idempotent: run
  * twice, the second run writes nothing and reports `unchanged`.
  *
- * Answers the same shape as the inspection above, with `applied: true`, so a
- * refusal is again a 200 with `status: 'refused'`. Read `action` for what this
- * call did; `state` is what GitHub had BEFORE it and is deliberately not
- * rewritten by a successful write.
+ * Answers the same shape as the inspection above, with `attempted: true` —
+ * which says only that this call TRIED to write, not that anything landed, so
+ * a refusal is again a 200 with `status: 'refused'` and `attempted: true`.
+ * Read `action` for what this call did; `stateBefore` is what GitHub had
+ * before it and is deliberately not rewritten by a successful write.
+ *
+ * **A refusal here can still carry real counts.** If the label list was read
+ * and GitHub then refused the write, the report knows exactly what is on the
+ * repository — and may have created some labels before being cut off. Only a
+ * failure of the READ nulls the counts.
  */
 export async function repairRepositoryLabels(
   id: string,

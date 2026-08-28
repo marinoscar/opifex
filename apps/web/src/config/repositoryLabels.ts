@@ -10,13 +10,29 @@
  *
  * ## The rule this file exists to enforce: a count needs a READ
  *
- * `present: 0, declared: 15, labels: []` arrives for `refused`,
- * `no_credential`, `not_found`, `rate_limited`, `unreachable` and `failed` —
- * every case where nobody could look. Rendering that as "0 of 15 labels
- * present" states a fact about the repository that nothing established, and
- * sends an operator to create labels that may already all be there. So
- * `wasRead` gates every number in this file, and `countSentence` answers
- * `null` rather than a zero when the answer was never observed.
+ * The API's seven count fields are `number | null`, null together, and **null
+ * means the labels were never read — never that there are none**. `wasRead`
+ * is the gate, and `countSentence` answers `null` rather than a zero for a
+ * report that observed nothing, because "the repository has none of them" and
+ * "nobody found out" are different facts with different remedies, and the
+ * first sends an operator to create fifteen labels that may all already exist.
+ *
+ * ## The gate is a NULL check, not a `status` check
+ *
+ * This is the part that is easy to get subtly wrong, because the two
+ * conditions agree on eight of nine statuses and then come apart on the case
+ * that matters most:
+ *
+ *  - a **read-phase** failure never got the label list: counts null, `labels`
+ *    empty, and no number about this repository can be honest;
+ *  - a **write-phase** failure got the list and was then refused mid-write:
+ *    `status` is still `refused`, and the counts are REAL — this call knows
+ *    exactly what is on the repository and may have created some labels before
+ *    being cut off.
+ *
+ * A gate keyed on `status ∈ {ok, incomplete}` blanks that second case, turning
+ * a genuine observation into "we could not ask" and throwing away the count an
+ * operator most wants. So `wasRead` reads the nulls themselves.
  *
  * ## The API's `detail` is quoted, never paraphrased
  *
@@ -28,21 +44,26 @@
  *
  * ## Repair is offered only where pressing it could change something
  *
- * `incomplete` is the only status a repair can fix: the read succeeded and
+ * That decision is made from `status`, and correctly so: `status` is the field
+ * that names the REMEDY, and whether pressing the button again could help is a
+ * question about the remedy rather than about how much was observed.
+ * `incomplete` is the only status a repair can fix — the read succeeded and
  * some labels are missing, drifted, or failed to write. `refused` and
  * `no_credential` are not fixed by pressing the button again, and offering it
- * there would imply they might be — the remedy is the token's PERMISSIONS, or
- * a token at all. `rate_limited` and `unreachable` will clear on their own,
- * which is what Check answers; a repair issued into either just spends another
+ * there would imply they might be; that stays true for a write-phase refusal,
+ * which knows its counts and is still refused for exactly the reason another
+ * attempt would be. `rate_limited` and `unreachable` clear on their own, which
+ * is what Check answers; a repair issued into either just spends another
  * request on a refusal.
  *
- * ## After a repair, read `action` and never `state`
+ * ## After a repair, read `action` and never `stateBefore`
  *
- * `state` is what GitHub had before the call and is deliberately not rewritten
- * by a successful write, so a created label reads `state: 'missing'` with
- * `action: 'created'`. `repairOutcome` reports the counts — created, updated,
- * failed — rather than re-deriving anything from `state`, which would report a
- * label as still missing having just made it.
+ * `stateBefore` is what GitHub had before the call and is deliberately not
+ * rewritten by a successful write, so a created label reads
+ * `stateBefore: 'missing'` with `action: 'created'`. `repairOutcome` reports
+ * the counts — created, updated, failed — rather than re-deriving anything
+ * from `stateBefore`, which would report a label as still missing having just
+ * made it.
  */
 
 import type {
@@ -56,17 +77,48 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
- * Whether this report is the result of a successful read of GitHub's labels.
+ * A report whose labels WERE read, so its counts are numbers.
  *
- * The gate on every count in this file. `ok` and `incomplete` are the only two
- * statuses that mean the label list was read; the per-label array is required
- * as well, because a count that cannot be broken down into named labels is a
- * number with nothing behind it.
+ * The narrowing is the point: past `wasRead`, TypeScript stops accepting
+ * `report.present` in a template string, so a count cannot be rendered from an
+ * unread report even by mistake. That is a compile error rather than a review
+ * comment, which is what the API asked for when it made these nullable.
  */
-export function wasRead(report: LabelProvisioningReport): boolean {
-  const readSucceeded =
-    report.status === 'ok' || report.status === 'incomplete';
-  return readSucceeded && report.labels.length > 0;
+export type ReadLabelReport = LabelProvisioningReport & {
+  declared: number;
+  present: number;
+  missing: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  failed: number;
+};
+
+/**
+ * Whether GitHub's label list was actually obtained.
+ *
+ * **A null check, deliberately, and not a `status` check** — see the header:
+ * a write-phase refusal carries a real count and would be blanked by one.
+ *
+ * All seven are checked rather than just `present`, though the API guarantees
+ * they move together. It costs one expression, it makes the type predicate
+ * something this file has verified rather than something it asserts on the
+ * API's behalf, and a contract violation then degrades to "not read" — the
+ * safe direction, since the failure mode being guarded against is rendering a
+ * number nobody established.
+ */
+export function wasRead(
+  report: LabelProvisioningReport,
+): report is ReadLabelReport {
+  return (
+    report.declared !== null &&
+    report.present !== null &&
+    report.missing !== null &&
+    report.created !== null &&
+    report.updated !== null &&
+    report.unchanged !== null &&
+    report.failed !== null
+  );
 }
 
 /**
@@ -178,37 +230,39 @@ export function groupByKind(labels: readonly LabelState[]): KindGroup[] {
 // ---------------------------------------------------------------------------
 
 /**
- * The labels that are not on GitHub, **as observed** — `state`, not `action`.
+ * The labels that were not on GitHub, **as observed** — `stateBefore`, not
+ * `action`.
  *
  * Called only on an inspection. After a repair the caller reads
- * `outstandingLabels` instead, because `state` is not rewritten by a
+ * `outstandingLabels` instead, because `stateBefore` is not rewritten by a
  * successful write and this would name a label that now exists.
  */
 export function missingLabels(report: LabelProvisioningReport): LabelState[] {
-  return report.labels.filter((label) => label.state === 'missing');
+  return report.labels.filter((label) => label.stateBefore === 'missing');
 }
 
-/** The labels that exist and no longer match the declaration. */
+/** The labels that existed and no longer matched the declaration. */
 export function driftedLabels(report: LabelProvisioningReport): LabelState[] {
-  return report.labels.filter((label) => label.state === 'drifted');
+  return report.labels.filter((label) => label.stateBefore === 'drifted');
 }
 
 /**
  * What is STILL wrong after this report, whether or not it wrote anything.
  *
- * For an inspection (`applied: false`) that is everything not `present`. For a
- * repair it is what the repair did not fix: a label whose write failed, or one
- * that was missing and that the call did not act on. A label with
- * `action: 'created'` or `'updated'` is NOT outstanding — reading `state`
- * there would report a label as missing having just created it, which is the
- * exact trap the API's comment warns about.
+ * For an inspection (`attempted: false`) that is everything not `present`. For
+ * a repair it is what the repair did not fix: a label whose write failed, one
+ * that was missing and that the call did not act on, or — after a write-phase
+ * refusal — everything the call never got to. A label with `action: 'created'`
+ * or `'updated'` is NOT outstanding; reading `stateBefore` there would report
+ * a label as missing having just created it, which is the exact trap the API's
+ * field name warns about.
  */
 export function outstandingLabels(
   report: LabelProvisioningReport,
 ): LabelState[] {
   return report.labels.filter((label) => {
     if (label.action === 'created' || label.action === 'updated') return false;
-    return label.state !== 'present' || label.action === 'failed';
+    return label.stateBefore !== 'present' || label.action === 'failed';
   });
 }
 
@@ -219,7 +273,7 @@ export function repairedLabels(report: LabelProvisioningReport): LabelState[] {
   );
 }
 
-/** The labels this call tried to write and could not. */
+/** The labels this call tried to write and could not, one at a time. */
 export function failedLabels(report: LabelProvisioningReport): LabelState[] {
   return report.labels.filter((label) => label.action === 'failed');
 }
@@ -265,7 +319,7 @@ const STATUS_PRESENTATION: Record<string, LabelStatusPresentation> = {
     remedy:
       'Set github.token in the Credentials section, then check again. ' +
       'Nothing is wrong with this repository — there was simply nothing to ' +
-      'ask GitHub with, so the labels below are unknown rather than absent.',
+      'ask GitHub with.',
     repairable: false,
   },
   invalid_credential: {
@@ -314,8 +368,8 @@ const STATUS_PRESENTATION: Record<string, LabelStatusPresentation> = {
     title: 'Nothing answered',
     remedy:
       'The request never got a usable reply, so the credential was never ' +
-      'judged and this says nothing at all about the token or the labels. ' +
-      'Check the network, the proxy and github.apiBaseUrl, then check again.',
+      'judged and this says nothing at all about the token. Check the ' +
+      'network, the proxy and github.apiBaseUrl, then check again.',
     repairable: false,
   },
   failed: {
@@ -354,7 +408,16 @@ export function labelStatusPresentation(
   );
 }
 
-/** Whether to offer the repair action for this report at all. */
+/**
+ * Whether to offer the repair action for this report at all.
+ *
+ * Decided from `status` on purpose. `status` is the field that names the
+ * remedy, and "would pressing this again help?" is a question about the
+ * remedy — not about how much this particular call managed to observe. So a
+ * write-phase refusal, which knows its counts perfectly well, still does not
+ * get the button: it was refused for precisely the reason a second attempt
+ * would be, and the fix is the token's permissions.
+ */
 export function canRepair(report: LabelProvisioningReport): boolean {
   return labelStatusPresentation(report.status).repairable;
 }
@@ -388,15 +451,23 @@ export interface RepairOutcome {
 /**
  * What the repair did, in its own counts — created, updated, failed.
  *
- * Reported from `action` and the report's counters, never from `state`; see
- * the header. Partial success is an ordinary outcome and is reported as one:
- * the labels that were created stay created, and saying "the repair failed"
- * over eleven successful creations would be false in the direction that costs
- * the operator another attempt.
+ * Reported from `action` and the report's counters, never from `stateBefore`;
+ * see the header. Partial success is an ordinary outcome and is reported as
+ * one: the labels that were created stay created, and saying "the repair
+ * failed" over eleven successful creations would be false in the direction
+ * that costs the operator another attempt.
+ *
+ * Three shapes of partial, and they are not the same:
+ *
+ *  - **per-label failures** — GitHub refused these particular labels and the
+ *    run continued (`status: 'incomplete'`, `failed > 0`);
+ *  - **a write cut short** — GitHub refused the repository, so the loop
+ *    stopped where it was (a failure `status` WITH real counts, `failed: 0`,
+ *    and possibly some already created);
+ *  - **nothing attempted at all** — the read itself failed, so no count exists
+ *    and none is invented.
  */
 export function repairOutcome(report: LabelProvisioningReport): RepairOutcome {
-  const wrote = report.created + report.updated;
-
   if (!wasRead(report)) {
     const presentation = labelStatusPresentation(report.status);
     return {
@@ -405,6 +476,30 @@ export function repairOutcome(report: LabelProvisioningReport): RepairOutcome {
       body:
         `${presentation.title}. ${presentation.remedy} No label on this ` +
         'repository was created, changed or removed.',
+    };
+  }
+
+  const wrote = report.created + report.updated;
+
+  // The read succeeded and GitHub then stopped the write — a refusal, a rate
+  // limit, a network that went away mid-loop. Distinguished from a per-label
+  // failure because the remedy is about the repository rather than about the
+  // labels that did not take, and from an unread report because the counts
+  // here are real and worth saying.
+  if (report.status !== 'ok' && report.status !== 'incomplete') {
+    const presentation = labelStatusPresentation(report.status);
+    return {
+      severity: presentation.severity === 'success' ? 'warning' : 'error',
+      title:
+        wrote === 0
+          ? presentation.title
+          : `${wrote} written before GitHub stopped the rest`,
+      body:
+        `${presentation.remedy} ${report.present} of ${report.declared} ` +
+        `declared labels are on ${report.repository} as of now` +
+        (wrote === 0
+          ? ', unchanged by this attempt.'
+          : ', counting what this attempt managed to create.'),
     };
   }
 
@@ -461,6 +556,15 @@ export interface RegistrationLabelNote {
   body: string;
 }
 
+/** What to do next, given whether pressing repair could help. */
+function nextStep(repairable: boolean): string {
+  return repairable
+    ? 'The repository is registered and observed either way — use Create ' +
+        'missing labels on its card.'
+    : 'The repository is registered and observed either way. Deal with the ' +
+        'reason above, then check its labels again from its card.';
+}
+
 /**
  * What to say about the labels of a repository that was just registered — or
  * null when there is nothing worth saying.
@@ -501,21 +605,28 @@ export function registrationLabelNote(
   if (report.ok) return null;
 
   const presentation = labelStatusPresentation(report.status);
+  const severity =
+    presentation.severity === 'success' ? 'warning' : presentation.severity;
 
-  if (report.status === 'incomplete') {
+  // The labels WERE read, so how many are absent is known — including after a
+  // write GitHub cut short, which knows its counts perfectly well. Saying the
+  // number is better than "could not be created", which is vaguer and, for a
+  // partial write, not even true of every label.
+  if (wasRead(report)) {
+    const absent = report.missing + report.failed;
     return {
-      severity: 'warning',
-      title: `${fullName} is registered; ${report.missing + report.failed} of ${report.declared} labels are not on it`,
+      severity,
+      title:
+        `${fullName} is registered; ${absent} of ${report.declared} labels ` +
+        'are not on it',
       body:
-        `${presentation.remedy} ${report.detail} The repository is ` +
-        'registered and observed either way — use Create missing labels on ' +
-        'its card.',
+        `${presentation.remedy} ${report.detail} ` +
+        nextStep(presentation.repairable),
     };
   }
 
   return {
-    severity:
-      presentation.severity === 'success' ? 'warning' : presentation.severity,
+    severity,
     title: `${fullName} is registered; its labels could not be created`,
     body:
       `${presentation.title}. ${presentation.remedy} ${report.detail} The ` +
@@ -539,13 +650,13 @@ export function registrationLabelLine(
   // `registrationLabelNote`.
   if (report === undefined) return null;
   if (report === null) return 'Label provisioning gave no account of itself.';
+  if (!wasRead(report)) {
+    return `Labels not created: ${labelStatusPresentation(report.status).title.toLowerCase()}.`;
+  }
   if (report.ok) {
     return report.created > 0
       ? `${report.created} of ${report.declared} labels created.`
       : `All ${report.declared} labels were already present.`;
   }
-  if (wasRead(report)) {
-    return `${report.present} of ${report.declared} labels present.`;
-  }
-  return `Labels not created: ${labelStatusPresentation(report.status).title.toLowerCase()}.`;
+  return `${report.present} of ${report.declared} labels present.`;
 }

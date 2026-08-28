@@ -13,22 +13,46 @@
  * never that GitHub said no. The two are reported separately for the same
  * reason `types/repositories.ts` states.
  *
- * ## `labels` is EMPTY on every GitHub-level failure
+ * ## The counts are nullable, and **null means NOT READ — never zero**
  *
- * This is the one property of the shape that a renderer can get wrong without
- * looking wrong. `present: 0, declared: 15, labels: []` on a `refused` report
- * does not mean "no label exists on that repository" — it means nobody was
- * able to look. "None are present" and "we could not ask" are different facts
- * with different remedies, and `config/repositoryLabels.ts` keeps them apart
- * (`wasRead`) so that no count is ever rendered for an answer that never
- * observed anything.
+ * `declared`, `present`, `missing`, `created`, `updated`, `unchanged` and
+ * `failed` are null together or populated together. They are null exactly when
+ * GitHub's label list was never obtained, which is the one condition under
+ * which no number about this repository's labels can be honest: a token that
+ * cannot read them says nothing whatever about what is on it. The API made
+ * these nullable rather than merely documented so that "0 of 15 labels
+ * present" — a lie with a plausible shape — cannot be rendered by accident.
  *
- * ## `state` is the observation; `action` is the outcome
+ * ## Nullness is a fact about the READ, not about `status`
  *
- * `state` is what GitHub had BEFORE the call and is deliberately not rewritten
- * when a write succeeds, so a repaired label reads `state: 'missing'` with
- * `action: 'created'`. A renderer that shows `state` after a repair would
- * report the label still missing, having just created it.
+ * This is the distinction that decides whether a client is right or only
+ * looks right, and the two conditions come apart:
+ *
+ *  - **Read-phase failure** — the label list could not be fetched at all. All
+ *    seven counts are null and `labels` is empty.
+ *  - **Write-phase failure** — the list came back and a write was then
+ *    refused. `status` is still `refused` (or `rate_limited`, or any of the
+ *    others), and the counts are **real**, with the full `labels` array: this
+ *    call knows exactly what is on the repository, and may even have created
+ *    some labels before being cut off.
+ *
+ * So a `refused` report can legitimately carry counts. Deriving nullness from
+ * `status` throws a genuine observation away to satisfy a rule about a word;
+ * `config/repositoryLabels.ts`'s `wasRead` checks the nulls themselves.
+ *
+ * ## `attempted` is not a success signal
+ *
+ * True when the call TRIED to write — false for `GET`, true for every `POST`,
+ * including one that wrote nothing because it was refused. What landed is
+ * `created`, `updated` and `failed`.
+ *
+ * ## `stateBefore` is the observation; `action` is the outcome
+ *
+ * `stateBefore` is what GitHub had before the call and is deliberately not
+ * rewritten when a write succeeds, so a repaired label reads
+ * `stateBefore: 'missing'` with `action: 'created'`. The name carries the
+ * tense; a renderer still has to join the two, and one that showed
+ * `stateBefore` after a repair would report the label it just made as absent.
  */
 
 /**
@@ -44,7 +68,8 @@ export type ProvisionedLabelKind = 'input' | 'mirror' | 'routing';
  * `refused` is the one this feature exists to report: ADR-0001's fine-grained
  * PAT grants access one repository and one permission at a time, so a token
  * that can READ a repository need not be able to write its labels, and there
- * is no way to know before trying.
+ * is no way to know before trying. It is also the status that can arrive from
+ * either phase — see the header.
  */
 export type LabelProvisioningStatus =
   | 'ok'
@@ -69,8 +94,9 @@ export interface LabelState {
   name: string;
   kind: ProvisionedLabelKind;
   /** GitHub's state BEFORE this call. Never rewritten by a write. */
-  state: LabelStateName;
-  /** What this call did. `none` for an inspection. */
+  stateBefore: LabelStateName;
+  /** What this call did. `none` for an inspection, or for a label a
+   * write-phase refusal never got to. */
   action: LabelActionName;
   /** For `drifted`: what differs, e.g. `color ededed -> d93f0b`. */
   differences: string[];
@@ -85,22 +111,39 @@ export interface LabelProvisioningReport {
   /** True only when `status` is `ok`. */
   ok: boolean;
   status: LabelProvisioningStatus;
-  /** True when the call attempted writes; false for an inspection. */
-  applied: boolean;
+  /**
+   * True when this call TRIED to write; false for an inspection.
+   *
+   * **Not "the writes landed."** A refused repair is `attempted: true` having
+   * written nothing.
+   */
+  attempted: boolean;
   /** One human sentence, safe to render. Never contains the GitHub token. */
   detail: string;
   /** ISO-8601. When this was observed — not when it was stored. */
   checkedAt: string;
-  /** The M in "N of M labels present". */
-  declared: number;
-  /** The N, as of `checkedAt`. Includes anything this call just created. */
-  present: number;
-  missing: number;
-  created: number;
-  updated: number;
-  /** Already present and already correct: a no-op, reported as one. */
-  unchanged: number;
-  failed: number;
-  /** Per-label state. **Empty on every GitHub-level failure** — see above. */
+  /** The M in "N of M labels present". **Null when the labels were not read.** */
+  declared: number | null;
+  /**
+   * The N, as of `checkedAt`, including anything this call just created.
+   *
+   * **Null means the labels could not be read, not that there are none.**
+   */
+  present: number | null;
+  /** Null when not read. */
+  missing: number | null;
+  /** Null when not read. */
+  created: number | null;
+  /** Null when not read. */
+  updated: number | null;
+  /** Already present and already correct. Null when not read. */
+  unchanged: number | null;
+  /** Null when not read. */
+  failed: number | null;
+  /**
+   * Per-label state. **Empty when the labels could not be read** — the same
+   * condition that nulls every count above. A write-phase refusal keeps its
+   * full array.
+   */
   labels: LabelState[];
 }

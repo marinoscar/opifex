@@ -36,18 +36,22 @@
  * Two properties of the API's answer decide how this renders, and getting
  * either wrong produces a screen that looks fine and is false:
  *
- *  - **A GitHub-level failure carries an EMPTY `labels` array** and a
- *    `present` of zero. "None are present" and "nobody could ask" are
+ *  - **A report whose labels could not be read carries NULL counts** and an
+ *    empty `labels` array. "None are present" and "nobody could ask" are
  *    different facts with different remedies, so `wasRead` gates every number
- *    and a refused report shows the remedy instead of a count.
- *  - **`state` is not rewritten by a successful write.** A label created by a
- *    repair still reads `state: 'missing'`, with `action: 'created'`. The
- *    outcome is rendered from `action`, so a repair never reports the label it
- *    just made as still absent.
+ *    and such a report shows the remedy instead of a count. It is a null
+ *    check and not a `status` check: a write GitHub cut short is still
+ *    `refused` and still knows exactly what is on the repository.
+ *  - **`stateBefore` is not rewritten by a successful write.** A label created
+ *    by a repair still reads `stateBefore: 'missing'`, with
+ *    `action: 'created'`. The outcome is rendered from `action`, so a repair
+ *    never reports the label it just made as still absent.
  *
  * The repair action is withheld where pressing it cannot help — a `refused` or
  * `no_credential` report is not fixed by asking again — because offering a
- * button implies it might work.
+ * button implies it might work. That is decided from `status`, which is the
+ * field naming the remedy, so a write-phase refusal that knows its counts is
+ * still not offered one.
  */
 
 import { useState } from 'react';
@@ -720,21 +724,26 @@ function headlineOf(probe: RepositoryAccessProbeResult): string {
  *
  * ## "0 present" and "could not ask" are never allowed to look the same
  *
- * `wasRead` is the gate. On `refused`, `no_credential`, `not_found`,
- * `rate_limited`, `unreachable` and `failed` the API sends `present: 0` with an
- * empty `labels` array, and printing "0 of 15 labels present" from that would
- * be a claim about a repository nobody managed to read — one that would send an
+ * `wasRead` is the gate, and it is a NULL check. When the label list could not
+ * be fetched the API sends every count as null with an empty `labels` array,
+ * because printing "0 of 15 labels present" from such an answer would be a
+ * claim about a repository nobody managed to read — one that would send an
  * operator to create fifteen labels that may all already exist. So the count
  * only appears when the labels were actually read, and otherwise the status's
  * remedy stands in its place.
  *
+ * The same gate deliberately LETS a write-phase refusal keep its count. That
+ * report read the labels and was refused afterwards, so "3 of 15 present, and
+ * here is why the other twelve were not written" is a real observation; a gate
+ * keyed on `status` would have blanked it.
+ *
  * ## After a repair, the outcome comes from `action`
  *
- * `state` is what GitHub had BEFORE the call and the API deliberately does not
- * rewrite it, so a created label still reads `state: 'missing'`. Everything
- * below reads `action` for what happened and `outstandingLabels` for what is
- * still wrong, which is why a successful repair does not go on listing the
- * labels it just created as missing.
+ * `stateBefore` is what GitHub had BEFORE the call and the API deliberately
+ * does not rewrite it, so a created label still reads
+ * `stateBefore: 'missing'`. Everything below reads `action` for what happened
+ * and `outstandingLabels` for what is still wrong, which is why a successful
+ * repair does not go on listing the labels it just created as missing.
  */
 function LabelStatus({
   repository,
@@ -822,9 +831,10 @@ function LabelReport({
 }) {
   const observed = wasRead(report);
   const count = countSentence(report);
-  // An applied report leads with what the WRITES did; an inspection leads with
-  // what is there. Both then carry the API's own sentence verbatim.
-  const headline = report.applied
+  // A report that tried to write leads with what the WRITES did; an
+  // inspection leads with what is there. Both then carry the API's own
+  // sentence verbatim.
+  const headline = report.attempted
     ? repairOutcome(report)
     : (() => {
         const presentation = observationPresentation(report);
@@ -847,7 +857,7 @@ function LabelReport({
 
       {/* The count, when the labels were actually read AND it is not already
           the headline. Never rendered from a report that observed nothing. */}
-      {count !== null && report.applied && (
+      {count !== null && report.attempted && (
         <Typography variant="body2" sx={{ mt: 1 }}>
           {count} on {report.repository}.
         </Typography>
@@ -915,13 +925,13 @@ function LabelReport({
                     color="text.secondary"
                   >
                     <code>{label.name}</code>
-                    {label.state === 'drifted' &&
+                    {label.stateBefore === 'drifted' &&
                       ` — on GitHub and out of date${
                         label.differences.length > 0
                           ? `: ${label.differences.join(', ')}`
                           : ''
                       }`}
-                    {label.state === 'missing' && ' — not on GitHub'}
+                    {label.stateBefore === 'missing' && ' — not on GitHub'}
                   </Typography>
                 ))}
               </Stack>
