@@ -57,6 +57,22 @@
  *    retry; keeping everything would invite a second `POST` for a repository
  *    that already registered, whose only possible answer is a 409 that means
  *    nothing.
+ *
+ * ## Registering also creates the factory labels, and that half can fail alone (#415)
+ *
+ * `POST /repositories` provisions the label taxonomy on the repository it just
+ * registered and answers `labelProvisioning` alongside the row. ADR-0001's
+ * fine-grained PAT grants one repository and one permission at a time, so
+ * "could read it" genuinely does not imply "can create labels in it" — a
+ * refusal here is an **expected outcome of a correct configuration**, not an
+ * exception, and reads as one.
+ *
+ * Both facts are therefore reported together and in that order: the repository
+ * IS registered, and its labels are not there. Presenting a refused
+ * provisioning as a failed registration would be false — the row is in the
+ * list behind this dialog either way — and presenting the registration alone
+ * would leave an operator with a repository in which no issue can ever be
+ * marked `factory:ready`, which is the exact state #415 exists to end.
  */
 
 import { useState } from 'react';
@@ -99,8 +115,9 @@ import {
   truncationNote,
   type RegistrationResult,
 } from '../../config/availableRepositories';
+import { registrationLabelNote } from '../../config/repositoryLabels';
 import { useAvailableRepositories } from '../../hooks/useAvailableRepositories';
-import type { RepositorySummary } from '../../types/cockpit';
+import type { RegisteredRepository } from '../../services/api';
 import type {
   AvailableRepositories,
   AvailableRepository,
@@ -134,8 +151,12 @@ export interface AddRepositoryDialogProps {
    * still puts everything that landed into the list behind. The refusals are
    * reported in this dialog and are not announced to the panel — there is no
    * row to add for them.
+   *
+   * The row carries `labelProvisioning`, so the card behind this dialog opens
+   * with the label observation the registration already took (#415) rather
+   * than asking GitHub again a second later.
    */
-  onRegistered: (repository: RepositorySummary) => void;
+  onRegistered: (repository: RegisteredRepository) => void;
   /** Send the operator to a registration that already exists, in the list behind. */
   onShowRegistered: (repositoryId: string) => void;
 }
@@ -668,52 +689,119 @@ function RegistrationReport({
   }
 
   return (
-    <Alert severity={presentation.severity} sx={{ mb: 2 }}>
-      <AlertTitle>{presentation.title}</AlertTitle>
-      {presentation.body}
+    <>
+      <Alert severity={presentation.severity} sx={{ mb: 2 }}>
+        <AlertTitle>{presentation.title}</AlertTitle>
+        {presentation.body}
 
-      {results.length > 1 && (
-        <List
-          dense
-          aria-label="What happened to each repository"
-          sx={{ mt: 1 }}
-        >
-          {results.map((result) => (
-            <ListItem
-              key={result.fullName}
-              disableGutters
-              aria-label={`Registration result for ${result.fullName}`}
-            >
-              <ListItemText
-                primary={
-                  <Stack
-                    direction="row"
-                    spacing={1}
-                    sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}
-                  >
-                    <span>{result.fullName}</span>
-                    <Chip
-                      size="small"
-                      variant="outlined"
-                      color={result.refusal === null ? 'success' : 'error'}
-                      label={result.refusal === null ? 'registered' : 'refused'}
-                    />
-                  </Stack>
-                }
-                secondary={resultLine(result)}
-              />
-            </ListItem>
+        {results.length > 1 && (
+          <List
+            dense
+            aria-label="What happened to each repository"
+            sx={{ mt: 1 }}
+          >
+            {results.map((result) => (
+              <ListItem
+                key={result.fullName}
+                disableGutters
+                aria-label={`Registration result for ${result.fullName}`}
+              >
+                <ListItemText
+                  primary={
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      sx={{
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        rowGap: 0.5,
+                      }}
+                    >
+                      <span>{result.fullName}</span>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        color={result.refusal === null ? 'success' : 'error'}
+                        label={
+                          result.refusal === null ? 'registered' : 'refused'
+                        }
+                      />
+                    </Stack>
+                  }
+                  secondary={resultLine(result)}
+                />
+              </ListItem>
+            ))}
+          </List>
+        )}
+
+        {results.length > 1 &&
+          refusalRemedies(results).map((remedy) => (
+            <Typography key={remedy} variant="body2" sx={{ mt: 1 }}>
+              {remedy}
+            </Typography>
           ))}
-        </List>
-      )}
+      </Alert>
 
-      {results.length > 1 &&
-        refusalRemedies(results).map((remedy) => (
-          <Typography key={remedy} variant="body2" sx={{ mt: 1 }}>
-            {remedy}
-          </Typography>
-        ))}
-    </Alert>
+      <LabelProvisioningNotes results={results} />
+    </>
+  );
+}
+
+/**
+ * What happened to the LABELS of the repositories that registered (#415).
+ *
+ * ## Only where there is something to say
+ *
+ * `registrationLabelNote` answers null for a clean provisioning, so a
+ * successful batch shows nothing here: "and its labels were created" is the
+ * expected case, and an alert per repository saying so would bury the one that
+ * matters.
+ *
+ * ## Below the registration alert, never instead of it
+ *
+ * The order carries the meaning. Registration succeeded — the row is in the
+ * list behind this dialog and is being observed — and separately its labels
+ * are not on GitHub. Merging the two would either report a registration that
+ * failed (false) or a registration that is fine (also false, since no issue in
+ * it can be marked ready).
+ *
+ * ## Per repository, because the answer is per repository
+ *
+ * The credential is fine-grained: it can be permitted to label one repository
+ * of a batch of eight and refused on the other seven. One summarised sentence
+ * could not say which.
+ */
+function LabelProvisioningNotes({
+  results,
+}: {
+  results: RegistrationResult[];
+}) {
+  const notes = results.flatMap((result) => {
+    if (result.refusal !== null) return [];
+    const note = registrationLabelNote(
+      result.fullName,
+      result.repository.labelProvisioning,
+    );
+    return note === null ? [] : [{ fullName: result.fullName, note }];
+  });
+
+  if (notes.length === 0) return null;
+
+  return (
+    <>
+      {notes.map(({ fullName, note }) => (
+        <Alert
+          key={fullName}
+          severity={note.severity}
+          sx={{ mb: 2 }}
+          aria-label={`Label provisioning for ${fullName}`}
+        >
+          <AlertTitle>{note.title}</AlertTitle>
+          {note.body}
+        </Alert>
+      ))}
+    </>
   );
 }
 
