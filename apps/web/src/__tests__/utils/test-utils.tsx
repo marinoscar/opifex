@@ -96,6 +96,11 @@ export const mockAdminUser: MockUser = {
     'projects:write',
     'runs:read',
     'workorders:read',
+    // Hold and release are `workorders:write`, which the seeded `admin` role
+    // grants (apps/api/prisma/seed.ts) — an admin fixture missing it would
+    // test a user that cannot exist, and would assert that an admin cannot
+    // steer the queue, which is false (#421).
+    'workorders:write',
     'escalations:read',
     // The admin holds all three approval-related permissions, which is what
     // makes VISION §8's third option — "Always approve this class" — available
