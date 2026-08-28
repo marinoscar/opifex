@@ -470,7 +470,13 @@ export class OperatorProbesService {
    * did not select, which is a Test button that tests something else.
    */
   protected createModel(): SupervisorModel {
-    return createSupervisorModel(this.settings);
+    // The SUPERVISOR's consumer, named explicitly since #425 threaded the
+    // consumer through the factory. This probe is reached from the
+    // supervisor-model Test button and reports on `supervisor.model.*`; a
+    // probe for the chat's four keys is a separate button that does not exist
+    // yet, and defaulting the argument would have let it appear to exist while
+    // testing the wrong consumer's model name.
+    return createSupervisorModel(this.settings, 'supervisor');
   }
 
   /**

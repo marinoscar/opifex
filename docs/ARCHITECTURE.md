@@ -387,8 +387,35 @@ concern, all under `/api`:
 Adjacent, related read/write surfaces registered alongside cockpit:
 `repositories.controller.ts` and `projects.controller.ts` (`/api/repositories`,
 `/api/projects` — repository and project management, §3.10), `quota.controller.ts`
-(`/api/quota`), `escalations.controller.ts`, and `reconciler.controller.ts`
-(the tick log, §3.1).
+(`/api/quota`), `escalations.controller.ts`, `reconciler.controller.ts`
+(the tick log, §3.1), and `apps/api/src/steering/steering.controller.ts`
+(`POST /api/steering/proposals`, `POST /api/steering/proposals/apply`) — a
+separate module, not literally under `cockpit/`, but tagged `Cockpit` in the
+OpenAPI spec because it writes the same two input labels §3.1 names as the
+only steering surface, `factory:ready` and `factory:hold`, that queue
+hold/release write above.
+
+**Steering turns an operator instruction into a proposed diff of those same
+two labels, applied only on a confirmed second call (#425, epic #419).**
+`POST /api/steering/proposals` parses the instruction in code where it can
+(`steering-instruction.parser.ts`) — explicit issue and epic references, the
+ready/hold verbs, "only"/else-clauses — and writes nothing; when the parser
+cannot read the instruction confidently, no model is asked either, today,
+because the chat has no durable spend ledger to bound a model call against
+(`chat-spend-gate.ts`; see
+[`docs/operator-configuration.md`](operator-configuration.md#the-chats-model-a-second-consumer-called-but-not-yet-spending-425)).
+`POST /api/steering/proposals/apply` is the only call that writes, requires
+an interactive session (#346 — no personal access token, no device-flow
+token, the same guard `PATCH /api/operator-settings` enforces) precisely
+because it is the one call in this API where a typed sentence becomes an
+unbounded number of label writes, and re-reads every named issue first so a
+label changed since the proposal was made **skips that one operation, never
+the batch**. VISION §3.6 — no model output takes effect without passing
+through deterministic policy, and here the policy is a human confirming a
+concrete list of operations. Opifex stores no scope of its own for this: the
+proposal is returned to the caller and handed back on apply, never persisted
+server-side. See [`docs/API.md`](API.md) for the full request/response
+shapes.
 
 The frontend cockpit consuming these lives at `apps/web/src/pages/`:
 `DashboardPage`, `ProjectsPage`, `QueuePage`, `RunsPage`, `RunDetailPage`,

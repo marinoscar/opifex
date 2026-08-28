@@ -33,6 +33,7 @@ import { RunEventsModule } from './run-events/run-events.module';
 import { EscalationsModule } from './escalations/escalations.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { CockpitModule } from './cockpit/cockpit.module';
+import { SteeringModule } from './steering/steering.module';
 import { DispatchModule } from './dispatch/dispatch.module';
 import { QuotaModule } from './quota/quota.module';
 import { RunnersModule } from './runners/runners.module';
@@ -128,6 +129,13 @@ import { validateEnv } from './config/env.validation';
     DispatchModule,
     // The cockpit read models (#80) — read-only, one family per module.
     CockpitModule,
+    // Steering (#425, epic #419): an operator instruction becomes a proposed
+    // diff of GitHub labels, and a separate confirmation writes it. Registered
+    // after CockpitModule because it shares that surface's audience and its
+    // `workorders:write` permission, and it stores no scope of its own — the
+    // diff lands as labels, which is what keeps the chat a translator rather
+    // than a second dispatcher.
+    SteeringModule,
     RunnersModule,
     // Vendor quota windows (#231). After RunnersModule, which imports it: the
     // poller is the only writer, and everything here reads what a runner saw.

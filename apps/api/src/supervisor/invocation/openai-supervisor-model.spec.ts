@@ -40,7 +40,7 @@ function operatorSettings(overrides: OperatorSettingsOverrides = {}) {
 
 /** Through the factory, so every case is about the object production binds. */
 function adapter(overrides: OperatorSettingsOverrides = {}) {
-  return createSupervisorModel(operatorSettings(overrides));
+  return createSupervisorModel(operatorSettings(overrides), 'supervisor');
 }
 
 /**
@@ -468,7 +468,7 @@ describe('provider selection (#392)', () => {
         'supervisor.model.name': MODEL,
       },
     });
-    const model = createSupervisorModel(settings);
+    const model = createSupervisorModel(settings, 'supervisor');
 
     await model.ask({ snapshot: 'S', instruction: 'I' });
     // Default provider, default base URL: Anthropic's Messages API.
@@ -508,6 +508,7 @@ describe('provider selection (#392)', () => {
           'models.openai.baseUrl': PROVIDER_BASE_URLS.anthropic,
         },
       }),
+      'supervisor',
     );
 
     await model.ask({ snapshot: 'S', instruction: 'I' });
@@ -539,7 +540,7 @@ describe('provider selection (#392)', () => {
     // row says. If either adapter grew its own opinion, this is where the two
     // would stop agreeing.
     const settings = operatorSettings({ 'supervisor.model.name': '' });
-    const model = createSupervisorModel(settings);
+    const model = createSupervisorModel(settings, 'supervisor');
 
     for (const provider of ['anthropic', 'openai'] as const) {
       const slot = modelApiKeySettingKey(provider);
@@ -567,8 +568,8 @@ describe('provider selection (#392)', () => {
     // above is what would catch that, so this only pins the two classes as the
     // things being routed BETWEEN.
     const bothAdapters = [
-      new AnthropicSupervisorModel(operatorSettings()),
-      new OpenAiSupervisorModel(operatorSettings()),
+      new AnthropicSupervisorModel(operatorSettings(), 'supervisor'),
+      new OpenAiSupervisorModel(operatorSettings(), 'supervisor'),
     ];
 
     expect(bothAdapters.map((each) => each.name)).toEqual([MODEL, MODEL]);

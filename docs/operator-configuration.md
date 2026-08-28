@@ -22,7 +22,7 @@ is the fix for it.
 - [What actually moved, and what did not](#what-actually-moved-and-what-did-not)
 - [The Control Center](#the-control-center)
 - [The supervisor's model: provider, base URL and price](#the-supervisors-model-provider-base-url-and-price)
-- [The chat's model: a second consumer, no caller yet](#the-chats-model-a-second-consumer-no-caller-yet)
+- [The chat's model: a second consumer, called but not yet spending](#the-chats-model-a-second-consumer-called-but-not-yet-spending-425)
 - [Resolution order: `default → env → DB row`](#resolution-order-default--env--db-row)
 - [Reload semantics: three values, and the third is the point](#reload-semantics-three-values-and-the-third-is-the-point)
 - [Reading the API response](#reading-the-api-response)
@@ -188,7 +188,7 @@ operator-facing shape of that decision; the code-facing shape is
 questions.** The chat has its own `chat.model.provider` / `chat.model.name`
 pair, under a separate `chat` group, resolved through the identical function
 with `'chat'` in place of `'supervisor'` — see
-[The chat's model](#the-chats-model-a-second-consumer-no-caller-yet) below.
+[The chat's model](#the-chats-model-a-second-consumer-called-but-not-yet-spending-425) below.
 Everything in the rest of this section — the provider selection, the base
 URL rule, the per-provider credential slots, the model picker and the
 pricing table — is written from the supervisor's side because the supervisor
@@ -255,7 +255,7 @@ configured provider what its configured key can see, and the Credentials
 screen renders the answer as a picker. Since #423 the route also takes a
 `consumer` query parameter (`supervisor`, the default, or `chat`) so it can
 answer the same question for either consumer's own provider selection — see
-[The chat's model](#the-chats-model-a-second-consumer-no-caller-yet) below
+[The chat's model](#the-chats-model-a-second-consumer-called-but-not-yet-spending-425) below
 for what that parameter is for and what the response echoes back. Provider, key and model are now one
 screen, one decision, for the reason the Configuration section states to an
 operator who goes looking for `supervisor.model.name` there anyway: choosing
@@ -434,7 +434,7 @@ aliases (`claude-sonnet-4-0`, `claude-3-5-haiku-latest`, and similar) are a
 different case and are priced: they resolve within one minor version, at
 one price, so the alias cannot go stale in the same way.
 
-## The chat's model: a second consumer, no caller yet
+## The chat's model: a second consumer, called but not yet spending (#425)
 
 Until #423 (epic #419), the AI supervisor was the only thing in the API process that
 asked a model a question, so "the supervisor's model" and "the model" were
@@ -447,12 +447,24 @@ consumer)` in
 supervisor has used since #392, called this time with `'chat'` instead of
 `'supervisor'`.
 
-**Document this as what it is: a consumer with settings and no caller.**
-Nothing in this codebase reads `chat.model.*` yet — the steering endpoint
-that would (#425) and the chat surface that would call it (#426) are both
-unbuilt as of this writing. Configuring these four keys today changes
-nothing observable; it prepares the ground #425 will build on. There is no
-chat feature to describe here, only a model consumer waiting for one.
+**#425 shipped the caller. #426 — the chat surface a human would type
+into — has not, and there is still no chat UI to describe here.**
+`POST /api/steering/proposals` (`SteeringService.describeInterpretation`)
+reads `chat.model.provider` / `chat.model.name`, through the same
+`resolveModelConfig` / `modelReadiness` this section describes, whenever
+`parseSteeringInstruction` cannot read an instruction confidently — so
+configuring these four keys is no longer inert: it changes what
+`interpretation.model` reports back on that response. **It still spends
+nothing.** `chat-spend-gate.ts` refuses to admit a model call
+unconditionally today, for a reason unrelated to whether a model is
+configured (`apps/api/src/steering/chat-spend-gate.ts` — no durable spend
+ledger exists for the chat to enforce a cumulative ceiling against, and
+running a metered consumer with no bound is the failure #261 exists to
+prevent) — so `interpretation.modelInvoked` is `false` on every response
+regardless of how well-formed `chat.model.*` is. Configuring these keys
+today changes an `available` flag in a JSON response; it still changes no
+bill. See [`docs/API.md`](API.md) for `POST /api/steering/proposals`'s full
+`interpretation` shape.
 
 **No credential keys, and that absence is deliberate, not an oversight.**
 There is no `chat.model.apiKey` or `chat.model.baseUrl`, mirroring the
@@ -522,20 +534,25 @@ keeps its own signal." A chat turn already waiting on
 `AbortSignal.timeout(oldValue)` does not have that signal rewound by a
 setting changed mid-turn; only the next turn honours the new number.
 
-**The contract's fine print: this holds only as long as #425 reads
-`chat.model.provider` / `chat.model.name` fresh on every turn.** If the
-steering endpoint instead resolves its model configuration once per
-conversation and reuses it across turns — a caching shape
-`resolveModelConfig` does not itself prevent, since nothing about the
-function forces a caller to call it again — then a provider or model changed
+**The contract held: #425 reads `chat.model.provider` / `chat.model.name`
+fresh on every call, and `reload: 'live'` remains true.**
+`SteeringService.propose()` calls `resolveModelConfig(this.settings, 'chat')`
+directly inside `describeInterpretation`, once per `POST
+/api/steering/proposals` request, and caches nothing between calls — there
+is no conversation for a resolved value to be cached across, because #425 is
+a stateless propose/apply pair with no session of its own, and #426 (the
+chat surface that would hold a conversation open across turns) is still
+unbuilt. Whoever builds #426 inherits the same obligation this paragraph
+originally stated as a forward contract: if that surface resolves its model
+configuration once per conversation and reuses it across turns — a caching
+shape `resolveModelConfig` does not itself prevent, since nothing about the
+function forces a caller to call it again — a provider or model changed
 mid-conversation would not take effect until the next conversation starts,
 which is `next-unit`, not `live`, by the same definition this document uses
-everywhere else. Whoever builds #425 must either call `resolveModelConfig`
-fresh on every turn (keeping the declaration true) or change
-`chat.model.provider` and `chat.model.name`'s `reload` values to `next-unit`
-in the same change that makes them stop being read per turn — a registry
-entry claiming `live` for a value a caller actually caches is exactly the
-kind of drift this document exists to catch.
+everywhere else, and the registry entries must be updated in the same change
+that makes them stop being read per turn — a registry entry claiming `live`
+for a value a caller actually caches is exactly the kind of drift this
+document exists to catch.
 
 **`GET /api/operator-settings/supervisor-models` gained a `consumer` query
 parameter (#423), and the response echoes it back.** The route predates the

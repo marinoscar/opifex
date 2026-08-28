@@ -60,12 +60,15 @@ function operatorSettings(overrides: OperatorSettingsOverrides = {}) {
  * adapter after #392 put a router in front of it.
  */
 function adapter(overrides: OperatorSettingsOverrides = {}) {
-  return createSupervisorModel(operatorSettings(overrides));
+  return createSupervisorModel(operatorSettings(overrides), 'supervisor');
 }
 
 /** The Anthropic adapter alone, with no router in the way. */
 function bareAdapter(overrides: OperatorSettingsOverrides = {}) {
-  return new AnthropicSupervisorModel(operatorSettings(overrides));
+  return new AnthropicSupervisorModel(
+    operatorSettings(overrides),
+    'supervisor',
+  );
 }
 
 /**
@@ -416,7 +419,7 @@ describe('AnthropicSupervisorModel (ADR-0015)', () => {
 
 describe('createSupervisorModel (ADR-0015, #344, #392)', () => {
   it('builds the adapter when an API key is configured', () => {
-    const model = createSupervisorModel(operatorSettings());
+    const model = createSupervisorModel(operatorSettings(), 'supervisor');
 
     expect(model).toBeInstanceOf(ProviderRoutingSupervisorModel);
     expect(model.name).toBe(MODEL);
@@ -429,6 +432,7 @@ describe('createSupervisorModel (ADR-0015, #344, #392)', () => {
     expect(
       createSupervisorModel(
         operatorSettings({ 'models.anthropic.apiKey': '' }),
+        'supervisor',
       ),
     ).toBeInstanceOf(ProviderRoutingSupervisorModel);
   });
@@ -437,8 +441,8 @@ describe('createSupervisorModel (ADR-0015, #344, #392)', () => {
     // A missing key must never stop the API booting. No overrides and a
     // hermetic environment, so this is the registry's own defaults.
     const empty = makeOperatorSettings();
-    expect(() => createSupervisorModel(empty)).not.toThrow();
-    expect(createSupervisorModel(empty)).toBeInstanceOf(
+    expect(() => createSupervisorModel(empty, 'supervisor')).not.toThrow();
+    expect(createSupervisorModel(empty, 'supervisor')).toBeInstanceOf(
       ProviderRoutingSupervisorModel,
     );
   });
@@ -481,7 +485,7 @@ describe('per-call configuration (#344)', () => {
     // The failure #344 exists to close, at the adapter's own level: the same
     // object refuses, then calls, with no reconstruction in between.
     const settings = operatorSettings({ 'models.anthropic.apiKey': '' });
-    const model = createSupervisorModel(settings);
+    const model = createSupervisorModel(settings, 'supervisor');
 
     await expect(
       model.ask({ snapshot: 'S', instruction: 'I' }),
@@ -503,7 +507,7 @@ describe('per-call configuration (#344)', () => {
   it('stops calling when the key is removed again', async () => {
     fetchMock.mockImplementation(async () => messageResponse(answer('hi')));
     const settings = operatorSettings();
-    const model = createSupervisorModel(settings);
+    const model = createSupervisorModel(settings, 'supervisor');
 
     await model.ask({ snapshot: 'S', instruction: 'I' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -519,7 +523,7 @@ describe('per-call configuration (#344)', () => {
   it('resolves the model name, base URL and token ceiling per call, not once', async () => {
     fetchMock.mockImplementation(async () => messageResponse(answer('hi')));
     const settings = operatorSettings();
-    const model = createSupervisorModel(settings);
+    const model = createSupervisorModel(settings, 'supervisor');
 
     await model.ask({ snapshot: 'S', instruction: 'I' });
 
@@ -670,10 +674,28 @@ async function buildSupervisor(overrides: OperatorSettingsOverrides) {
 
 describe('SupervisorModule binding (ADR-0015)', () => {
   it('binds SUPERVISOR_MODEL through the factory', () => {
+    // Identity with `createSupervisorModel` was the assertion until #425 gave
+    // the factory a `consumer` argument, which Nest cannot inject: the module
+    // now names the consumer in a one-line wrapper. So the claim is checked by
+    // what the binding PRODUCES rather than by which function reference it is
+    // — which is the stronger statement anyway. It asserts the seam (a
+    // provider-routing adapter, no vendor named) AND the consumer, and the
+    // consumer is the part that could regress silently.
     const provider = supervisorModelProvider();
+    const settings = operatorSettings({
+      'supervisor.model.name': 'supervisor-model',
+      'chat.model.name': 'chat-model',
+      'models.anthropic.apiKey': 'sk-test',
+    });
 
-    expect(provider.useFactory).toBe(createSupervisorModel);
+    const bound = provider.useFactory(settings) as SupervisorModel;
+
     expect(provider.inject).toEqual([OperatorSettingsService]);
+    expect(bound).toBeInstanceOf(ProviderRoutingSupervisorModel);
+    // Reads `supervisor.model.name`, not `chat.model.name`. A binding wired to
+    // the wrong consumer would spend on a model nobody selected and record it
+    // in the decision log under the supervisor's name.
+    expect(bound.name).toBe('supervisor-model');
   });
 
   it('hands SupervisorService the adapter when a key is configured', async () => {

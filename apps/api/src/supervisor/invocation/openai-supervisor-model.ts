@@ -8,7 +8,8 @@ import {
   errorMessage,
   isAbort,
   reportedModelName,
-  resolveSupervisorModelConfig,
+  resolveModelConfig,
+  type ModelConsumer,
   unavailableReason,
   type ModelConfig,
 } from './supervisor-model.config';
@@ -69,7 +70,20 @@ const USER_ROLE = 'user';
 export class OpenAiSupervisorModel implements SupervisorModel {
   private readonly logger = new Logger(OpenAiSupervisorModel.name);
 
-  constructor(private readonly settings: OperatorSettingsService) {}
+  /**
+   * @param consumer Which thing in this process is asking (#423).
+   *
+   * Required rather than defaulted to `'supervisor'`, and that is the whole
+   * point of threading it: a default would let a second consumer be wired up
+   * by supplying only `settings` and silently spend on the SUPERVISOR's model
+   * name, provider and timeout — a misconfiguration with no symptom except a
+   * bill against the wrong budget and a decision log naming a model nobody
+   * selected. An argument that must be written is one a reviewer can see.
+   */
+  constructor(
+    private readonly settings: OperatorSettingsService,
+    private readonly consumer: ModelConsumer,
+  ) {}
 
   /**
    * The exact string sent as the request's `model` field.
@@ -82,14 +96,14 @@ export class OpenAiSupervisorModel implements SupervisorModel {
    * for no key at all.
    */
   get name(): string {
-    return reportedModelName(resolveSupervisorModelConfig(this.settings));
+    return reportedModelName(resolveModelConfig(this.settings, this.consumer));
   }
 
   async ask(request: SupervisorModelRequest): Promise<SupervisorModelResponse> {
     // Once per call, and everything below reads THIS object rather than the
     // settings again: a tick whose base URL changed halfway through building
     // its own request would be a worse thing to debug than a stale value.
-    const config = resolveSupervisorModelConfig(this.settings);
+    const config = resolveModelConfig(this.settings, this.consumer);
 
     // The same predicate a caller can ask BEFORE it gets here (#423): one
     // function decides whether this consumer is configured, so an endpoint
