@@ -90,9 +90,11 @@ move: it moves entirely, or not at all. A key half-migrated — read from
 the exact two-paths problem this section exists to close, one key at a time.
 
 **What never moves.** Anything that is raw secret material — `JWT_SECRET`,
-`GOOGLE_CLIENT_SECRET`, `GITHUB_TOKEN`, `SUPERVISOR_MODEL_API_KEY`, the database
-credentials, the VAPID private key — is never a managed key, structurally, not by
-oversight. See point 3.
+`GOOGLE_CLIENT_SECRET`, `GITHUB_TOKEN`, `SUPERVISOR_MODEL_API_KEY` (superseded
+by one per-provider key per vendor — `MODEL_ANTHROPIC_API_KEY`,
+`MODEL_OPENAI_API_KEY` — since #422), the database credentials, the VAPID
+private key — is never a managed key, structurally, not by oversight. See
+point 3.
 
 ### 2. Resolution order is `default → env → DB row`, and absence never coerces to `false`
 

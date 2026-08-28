@@ -101,9 +101,13 @@ credential is a different act from tuning a knob, and it lives on Credentials,
 where it needs `operator_settings:write_secret` **and** an interactive session
 on top of `system_settings:write`.
 
-All three secrets — `github.token`, `runners.claudeCodeLocal.oauthToken` and
-`supervisor.model.apiKey` — are set from Credentials now (#349). No `.env`
-edit, no restart.
+All secrets are set from Credentials now (#349), no `.env` edit and no
+restart: `github.token`, `runners.claudeCodeLocal.oauthToken`, and — since
+#422 split the single shared model credential into one slot per provider —
+one API key per supervisor model provider (`models.anthropic.apiKey`,
+`models.openai.apiKey`, generated one per entry in
+`SUPERVISOR_MODEL_PROVIDERS` rather than hand-listed, so a third adapter
+gets its own card with no edit here).
 
 **The Claude subscription token additionally has a Connect flow, because it is
 the one credential you cannot paste from memory (#386).** It comes out of
@@ -166,29 +170,47 @@ explains why they are kept apart rather than merged into one settings blob.
 ## The supervisor's model: provider, base URL and price
 
 The AI supervisor (VISION §7) has spoken to exactly one vendor since
-ADR-0015 and now speaks to two, Anthropic and OpenAI (epic #391). Four
-settings, all under the `supervisor` group in the registry, describe that
-choice — `supervisor.model.provider`, `supervisor.model.apiKey`,
-`supervisor.model.name` and `supervisor.model.baseUrl` — and they are one
-decision, not four independent knobs, which is why they are edited together
-rather than each on its own row. What follows is the operator-facing shape
-of that decision; the code-facing shape is
+ADR-0015 and now speaks to two, Anthropic and OpenAI (epic #391). Two
+settings, under the `supervisor` group in the registry, describe _which_
+vendor and _which_ model — `supervisor.model.provider` and
+`supervisor.model.name`. The credential and its endpoint are a separate
+question, and since #422 they are not one shared pair of keys but one pair
+**per provider**, under a new `models` group: `models.anthropic.apiKey` /
+`models.anthropic.baseUrl` and `models.openai.apiKey` /
+`models.openai.baseUrl`, generated from `SUPERVISOR_MODEL_PROVIDERS`
+(`supervisor-model.config.ts`) rather than declared by hand, so a third
+adapter gets its own slot with no registry edit. What follows is the
+operator-facing shape of that decision; the code-facing shape is
 `apps/api/src/supervisor/invocation/supervisor-model.config.ts`.
 
+**Why the credential is a property of the provider and not of the
+supervisor.** Before #422 there was one `supervisor.model.apiKey`, so an
+operator holding both an Anthropic key and an OpenAI key could store only
+one at a time, and switching `supervisor.model.provider` destroyed whichever
+key was not selected. A credential belongs to the vendor that issued it, not
+to whichever consumer is currently asking; the same argument applies to the
+base URL, because the key is sent to whatever host is named — "which host"
+and "which key" are one fact, and a shared override across two providers
+would post one vendor's credential to another vendor's proxy. Splitting the
+slot by provider means switching `supervisor.model.provider` now selects the
+other stored key instead of finding the same one and posting it to a host
+that will reject it, and neither entering a key nor losing one is tied to
+which provider happens to be selected today.
+
 **`supervisor.model.provider` (`SUPERVISOR_MODEL_PROVIDER`, `anthropic |
-openai`) selects two things at once: which adapter answers, and which host
-the base URL derives from.** Nothing else in the registry, or in this
-document, names a vendor's endpoint — `supervisor-model.port.ts`'s own rule
-is that nothing outside `apps/api/src/supervisor/invocation/` may name a
-model provider, and the operator-facing settings inherit that discipline:
-change the provider and the key, the model name and the base URL all now
-mean "for whichever vendor this says," without being retyped.
+openai`) selects two things at once: which adapter answers, and which
+provider's credential slot is read.** Nothing else in the registry, or in
+this document, names a vendor's endpoint — `supervisor-model.port.ts`'s own
+rule is that nothing outside `apps/api/src/supervisor/invocation/` may name
+a model provider, and the operator-facing settings inherit that discipline:
+change the provider and the model name, the key and the base URL that answer
+for it all follow, without being retyped.
 
 **The base URL rule is subtle enough to state precisely, because getting it
 wrong here is exactly how a credential ends up posted to the wrong vendor.**
-`supervisor.model.baseUrl` (`SUPERVISOR_MODEL_BASE_URL`) resolves in three
-cases, checked in this order (`effectiveBaseUrl` in
-`supervisor-model.config.ts`):
+`models.<provider>.baseUrl` (`MODEL_<PROVIDER>_BASE_URL` — e.g.
+`MODEL_ANTHROPIC_BASE_URL`) resolves in three cases, checked in this order
+(`effectiveBaseUrl` in `supervisor-model.config.ts`):
 
 1. **Empty** (the default) → the selected provider's own published host —
    `https://api.anthropic.com` or `https://api.openai.com`.
@@ -219,12 +241,17 @@ configured provider what its configured key can see, and the Credentials
 screen renders the answer as a picker. Provider, key and model are now one
 screen, one decision, for the reason the Configuration section states to an
 operator who goes looking for `supervisor.model.name` there anyway: choosing
-a model means asking the provider what the key can reach, so these four keys
-are one control on Credentials rather than a free-text box on Configuration.
-Configuration still lists all four keys — as chips, read-only, under
-"Configured on the Credentials tab" — with a button that jumps to
-Credentials, precisely so the setting is never simply missing from the
-screen an operator expects it on.
+a model means asking the provider what the key can reach, so the provider,
+the model name, and the selected provider's key and base URL are one control
+on Credentials rather than a free-text box on Configuration. Configuration
+still lists the model-related keys — as chips, read-only, under "Configured
+on the Credentials tab" — with a button that jumps to Credentials, precisely
+so a setting is never simply missing from the screen an operator expects it
+on. (As of this writing the frontend composite control (`config/supervisorModel.ts`)
+still names the pre-#422 singular `supervisor.model.apiKey` /
+`supervisor.model.baseUrl` keys; verify against that file and
+`CredentialsSection.tsx` for whether the per-provider keys have been wired
+in yet.)
 
 **The version filter's rule is worth stating exactly, including its one
 counter-intuitive case: an id the filter cannot read is _shown_, not
@@ -266,6 +293,72 @@ to confirm the model actually answers — the two exist side by side
 precisely because "the key authenticates" and "the model answers and costs
 what the table expects" are different findings, and collapsing them into one
 button would hide which one failed.
+
+### Migrating off the single shared key (#422)
+
+Until #422 there was one `supervisor.model.apiKey` and one
+`supervisor.model.baseUrl`, shared by whichever provider
+`supervisor.model.provider` named. Three things carry a deployment that
+already had one configured across the split without it re-entering anything:
+
+**A stored key moves itself, once, at boot.** If a `supervisor.model.apiKey`
+row still exists in `operator_settings` when the API starts,
+`LegacyModelSettingsMigration` decrypts it and re-seals it under
+`models.<provider>.apiKey`, where `<provider>` is whatever
+`supervisor.model.provider` is set to _right now_ — the slot for the vendor
+the key already meant, not the default vendor. It is a decrypt-and-reseal
+rather than a `key = 'new.key'` update because `secret-box.ts` binds every
+ciphertext to its setting key as AES-GCM additional authenticated data,
+deliberately, so a ciphertext copied between slots fails to open rather than
+silently decrypting into a use its owner never authorised — the same
+property [described below](#secrets-at-rest-and-opifex_settings_encryption_key)
+for the settings table generally. The new row is written **before** the old
+one is deleted, on purpose: a crash between the two steps leaves the
+credential in both slots, which the next boot reports as `occupied` — an
+operator resolves that by deleting one row — rather than in neither, which
+would not be recoverable. The migration refuses, leaving the legacy row
+untouched, in exactly three named cases: `occupied` (the destination already
+holds a value), `unreadable` (the stored ciphertext will not decrypt — see
+below), and `rejected` (it decrypted, and the new key's schema does not
+accept the value). None of the three aborts the boot.
+
+**`SUPERVISOR_MODEL_API_KEY` and `SUPERVISOR_MODEL_BASE_URL` still work**,
+through a declarative `legacyEnvVar` on the default provider's registry
+entry, read only when the current name (`MODEL_ANTHROPIC_API_KEY` /
+`MODEL_ANTHROPIC_BASE_URL`, since Anthropic is
+`DEFAULT_SUPERVISOR_MODEL_PROVIDER`) is unset — with a warning at boot
+naming the replacement. They attach to the **default provider's slot only**:
+one ambiguous variable cannot honestly name a credential for two vendors, and
+mapping it onto both slots would put an `sk-ant-` key in the OpenAI slot too,
+ready to be posted there the next time `supervisor.model.provider` is
+switched. A deployment that still sets the old variable _and_ has selected a
+non-default provider is told so by name, as an error, at boot — that
+combination is the one case the compatibility shim does not cover, because
+covering it would recreate the exact cross-vendor leak the split exists to
+prevent.
+
+**An unreadable secret is now reported at boot, not at the next model
+call.** `UnreadableSecretsBootCheck` resolves every registry key marked
+`secret` once at startup and logs an error, naming the key and the remedy,
+for any that fail to decrypt — where previously the first read of a model
+credential was the first scheduled supervisor tick, up to an hour later,
+buried inside an unrelated failure. It logs at `error` and does **not** abort
+startup: unlike `JWT_SECRET`, an unreadable model credential voids no
+authorization decision — every other request is still answered correctly,
+and the adapter that needs the credential refuses per call and records the
+refusal, which is a state an operator can be told about and act on rather
+than one that takes the process down to report.
+
+**Why the new variables are named `MODEL_*` and not `ANTHROPIC_API_KEY`.**
+`ANTHROPIC_API_KEY` is already spoken for — it is one of the two credentials
+`claude-code-local` itself authenticates with
+(`apps/api/src/runners/process/child-environment.ts`), and it sits on that
+file's inherited-environment allowlist so agent subprocesses can read it.
+Reusing the name for the supervisor's separately metered credential (ADR-0015)
+would have carried that credential into every agent subprocess, silently,
+through a line that already existed — the sharpest hazard in this change, and
+the reason it is written down here as well as in the allowlist's own
+comments.
 
 ### The pricing table: a hand-maintained snapshot that says when it doesn't know
 
@@ -555,7 +648,8 @@ Three permissions, and the third is not the real barrier:
 - **`system_settings:write`** — required for any `PATCH`.
 - **`operator_settings:write_secret`** — required _in addition_ to the above
   for a `PATCH` that touches a secret key (`github.token`,
-  `runners.claudeCodeLocal.oauthToken`, `supervisor.model.apiKey`).
+  `runners.claudeCodeLocal.oauthToken`, `models.anthropic.apiKey`,
+  `models.openai.apiKey`).
 
 **The permission check is defence in depth, not the actual guarantee, and
 saying so plainly matters more than the check itself.** What actually keeps
@@ -587,9 +681,12 @@ API call — is never stored in the clear. It is sealed
 with AES-256-GCM (`apps/api/src/common/crypto/secret-box.ts`), with the
 setting key itself bound in as additional authenticated data — so a
 ciphertext copied from one slot to another (`github.token`'s row pasted into
-`supervisor.model.apiKey`, say, by a stray `UPDATE` or a restored backup)
+`models.anthropic.apiKey`, say, by a stray `UPDATE` or a restored backup)
 fails to decrypt rather than silently taking effect somewhere it was never
-authorised for.
+authorised for. This is the same property `LegacyModelSettingsMigration`
+works around deliberately by decrypting and re-sealing rather than renaming a
+row — see [Migrating off the single shared key](#migrating-off-the-single-shared-key-422)
+above.
 
 Generate the data key once per deployment, and never reuse another
 deployment's:
@@ -609,7 +706,9 @@ it:
 
 - Everything unrelated to secrets works exactly as normal.
 - Every read of a secret key falls back to whatever the environment says
-  (`GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `SUPERVISOR_MODEL_API_KEY`).
+  (`GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `MODEL_ANTHROPIC_API_KEY`,
+  `MODEL_OPENAI_API_KEY` — plus the superseded `SUPERVISOR_MODEL_API_KEY` for
+  the default provider's slot, #422).
 - Any attempt to **store** a secret through the API answers `503`, naming the
   variable.
 

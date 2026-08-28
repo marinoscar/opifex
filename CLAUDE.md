@@ -504,10 +504,19 @@ Admin has ever overridden that key from the Control Center. The env value
 listed below and in `.env.example` is still real: it is the floor a fresh
 install runs on and the fallback if the database overlay is unavailable, but
 it is no longer the last word on a deployment that has touched the Control
-Center. The three secret keys in that set (`GITHUB_TOKEN`,
-`CLAUDE_CODE_OAUTH_TOKEN`, `SUPERVISOR_MODEL_API_KEY`) are the one exception
-still requiring a plain `.env` edit, because the UI that would let an Admin
-rotate them from a form (Credentials, #349) has not shipped. See
+Center. The secret keys in that set — `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`,
+and one API key per supervisor model provider (`MODEL_ANTHROPIC_API_KEY`,
+`MODEL_OPENAI_API_KEY` today; #422 split the former single
+`SUPERVISOR_MODEL_API_KEY` into one slot per provider, and that old name
+still works as a fallback for the default provider's slot only) — are
+**no longer an exception**. The Credentials section of the Control Center
+(#349, shipped) renders a card for every registry key marked `secret`, so an
+Admin holding `operator_settings:write_secret` rotates any of them from a
+form, masked and write-only, with no `.env` edit and no restart. The env
+value remains the floor a fresh install boots on. This paragraph claimed the
+opposite until #422 — the claim was written before #349 landed and outlived
+it, which is exactly the drift the one-declaration rule below exists to
+stop. See
 [`docs/operator-configuration.md`](docs/operator-configuration.md) for the
 full resolution order, reload semantics, and what to do if
 `OPIFEX_SETTINGS_ENCRYPTION_KEY` is lost. The variables listed below this
