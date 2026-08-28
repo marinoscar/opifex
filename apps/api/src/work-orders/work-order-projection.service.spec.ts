@@ -317,6 +317,35 @@ P1
       expect(result.holdsLifted).toBe(1);
     });
 
+    /**
+     * The second half of #432's chain, pinned at the layer that acts on it.
+     *
+     * `reconcileHold` reads the hold from `factory:hold` and nothing else, so
+     * a release that added `factory:ready` while leaving the hold in place hit
+     * `shouldHold === isHeld` and returned early — the row kept `status:
+     * 'held'` and `queuedAt: null` while the API answered 202 with
+     * `labelWritten: true`. The removal is what moves the row.
+     */
+    it('leaves a held work order held while factory:hold is still on the issue', async () => {
+      const result = await project(
+        [issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] })],
+        [existing('held')],
+      );
+
+      expect(update).not.toHaveBeenCalled();
+      expect(result.holdsLifted).toBe(0);
+    });
+
+    it('lifts the hold only once factory:hold is REMOVED', async () => {
+      const result = await project(
+        [issue({ inputLabels: [INPUT_LABELS.READY] })],
+        [existing('held')],
+      );
+
+      expect(update.mock.calls[0][0].data).toMatchObject({ status: 'queued' });
+      expect(result.holdsLifted).toBe(1);
+    });
+
     it('does nothing when the row already agrees with the label', async () => {
       await project([issue()], [existing('queued')]);
 
