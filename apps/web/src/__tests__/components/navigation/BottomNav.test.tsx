@@ -55,6 +55,13 @@ const ADMIN_PERMISSIONS = [
   // grants `trust:read` to all three roles — a viewer may see what runs
   // unattended and stop nothing.
   'trust:read',
+  // #426 gave the Steering destination a real permission, and it is the one
+  // WRITE permission any destination gates on: `SteeringController` enforces
+  // `workorders:write` on propose as well as apply, so there is nothing on
+  // that screen a reader could reach. `prisma/seed.ts` grants it to admin and
+  // contributor, and withholds it from viewer — which is why it is here and
+  // NOT in the viewer fixture below.
+  'workorders:write',
 ];
 
 /**
