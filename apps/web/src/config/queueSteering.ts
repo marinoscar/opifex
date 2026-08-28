@@ -278,10 +278,22 @@ const NEXT_TICK =
   'The label is the request; the reconciler acts on it on the next tick. ' +
   'Nothing on this screen changes until that tick has run.';
 
+/**
+ * The fact itself, with nothing about the queue in it.
+ *
+ * Split out so the steering chat (#426) states the SAME fact in the SAME
+ * words rather than inventing a second sentence for one kill switch — the
+ * thing `steering.dto.ts` calls "a second vocabulary for recorded, not
+ * performed". What follows it below is the queue's own remedy, which is about
+ * a selection the chat does not have.
+ */
+export const WRITES_DISABLED_FACT =
+  'GitHub writes are disabled on this deployment, so the intent was recorded ' +
+  'and no label was written. No reconciler tick will act on it.';
+
 /** Said whenever anything at all was suppressed. Never softened. */
 const WRITES_DISABLED =
-  'GitHub writes are disabled on this deployment, so the intent was recorded ' +
-  'and no label was written. No reconciler tick will act on it. These work ' +
+  `${WRITES_DISABLED_FACT} These work ` +
   'orders are still selected: enable github.writesEnabled and try again, or ' +
   'apply the label on GitHub by hand.';
 
