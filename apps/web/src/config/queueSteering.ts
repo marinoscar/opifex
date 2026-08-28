@@ -18,14 +18,21 @@
  * middle one into either of its neighbours is the single worst thing this
  * screen could do.
  *
- * `POST /queue/:id/hold` answers `200` with `labelWritten: false` when
- * `github.writesEnabled` is off: the request succeeded, the audit event was
- * recorded, and **no label reached GitHub**, so no reconciler tick will ever
- * act on it. Treating that 200 as success would put "3 work orders marked
- * ready" on screen when nothing was written — the exact failure this codebase
- * is organised against — and treating it as an error would be wrong the other
- * way, since the request was accepted and nothing is broken. So it is its own
- * outcome, with its own sentence and its own remedy.
+ * `POST /queue/:id/hold` answers **`202 Accepted`**
+ * (`queue.controller.ts`: `@HttpCode(HttpStatus.ACCEPTED)`) with
+ * `labelWritten: false` when `github.writesEnabled` is off: the request
+ * succeeded, the audit event was recorded, and **no label reached GitHub**, so
+ * no reconciler tick will ever act on it.
+ *
+ * The status cannot tell those apart, and is not asked to. 202 is the same 202
+ * either way — it says the request was accepted, which is true of a suppressed
+ * write as much as of a written one, and it deliberately says nothing about the
+ * label or the tick. Treating that 202 as success would put "3 work orders
+ * marked ready" on screen when nothing was written — the exact failure this
+ * codebase is organised against — and treating it as an error would be wrong
+ * the other way, since the request WAS accepted and nothing is broken. So the
+ * whole decision rests on `labelWritten`, and the suppressed case is its own
+ * outcome with its own sentence and its own remedy.
  *
  * ## Partial application is the ORDINARY result
  *
@@ -84,7 +91,8 @@ export type SteerOutcome =
  * One API answer, classified.
  *
  * `labelWritten` is the whole decision, and it is read from the response rather
- * than inferred from the HTTP status — a suppressed write is a 200.
+ * than inferred from the HTTP status. A suppressed write is a `202`, exactly
+ * like a written one; the status is not a discriminator and never was.
  *
  * `workOrderId` is the id that was SENT, not `result.workOrderId`. The queue
  * gives each row its identity (`queue.service.ts` sets `workOrder.id` from
@@ -282,7 +290,7 @@ const WRITES_DISABLED =
  *
  * Every count is out of the total attempted, so a partial application cannot
  * be read as a whole one. The suppressed case is checked FIRST and taken on
- * its own terms: a run in which every request answered 200 and no label was
+ * its own terms: a run in which every request answered 202 and no label was
  * written is not a success, and it is not a refusal either.
  */
 export function bulkPresentation(

@@ -7,8 +7,8 @@
  * can get wrong without failing:
  *
  *  1. A partial application never reads as a complete one.
- *  2. A suppressed write (`labelWritten: false`, HTTP 200) never reads as a
- *     success.
+ *  2. A suppressed write (`labelWritten: false`, on the same HTTP 202 as a
+ *     written one) never reads as a success.
  *  3. A release never reads as though it restored a queue position or cleared
  *     a quarantine.
  */
@@ -58,8 +58,10 @@ function refused(id: string, status: number | null): SteerOutcome {
 
 describe('classifyResult', () => {
   it('reads labelWritten rather than the HTTP status', () => {
-    // Both of these are 200s as far as the transport is concerned. The only
-    // thing telling them apart is the field.
+    // Both of these are the same 202 as far as the transport is concerned —
+    // the endpoints carry `@HttpCode(HttpStatus.ACCEPTED)` and answer it
+    // whether or not the label was written. The only thing telling the two
+    // apart is the field.
     expect(classifyResult('wo-1', steerResultFixture()).kind).toBe('written');
     expect(classifyResult('wo-1', suppressedSteerResultFixture()).kind).toBe(
       'suppressed',
@@ -114,8 +116,8 @@ describe('bulkPresentation', () => {
       'release',
     );
 
-    // The one assertion this whole feature turns on. Three requests answered
-    // 200 and three labels do not exist.
+    // The one assertion this whole feature turns on. Three requests were
+    // accepted with a 202 apiece and three labels do not exist.
     expect(presentation?.severity).not.toBe('success');
     expect(presentation?.title).toContain('Nothing was written');
     expect(presentation?.title.toLowerCase()).not.toContain('marked ready');

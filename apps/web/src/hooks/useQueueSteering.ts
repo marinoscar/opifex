@@ -36,11 +36,13 @@
  *
  * ## `labelWritten: false` is not a success and not an error
  *
- * The steer endpoints answer 200 with `labelWritten: false` when
- * `github.writesEnabled` is off. Both the single and the bulk path read that
- * field rather than the HTTP status, and neither marks such a work order
- * pending: a pending badge for a request that never left the building is the
- * same optimistic lie in a different place.
+ * The steer endpoints answer `202 Accepted` — the status is the same whether
+ * or not the label reached GitHub, because "accepted" is true of both — and
+ * carry `labelWritten: false` when `github.writesEnabled` is off. Both the
+ * single and the bulk path therefore read that FIELD and never the status,
+ * which is also why nothing here would break if the status changed. Neither
+ * path marks such a work order pending: a pending badge for a request that
+ * never left the building is the same optimistic lie in a different place.
  */
 
 import { useCallback, useState } from 'react';

@@ -11,8 +11,9 @@
  *    `bulkPresentation` produces for a mixed run is a fraction out of the
  *    total attempted, and the per-work-order list underneath is always there.
  * 2. **Show a suppressed write as a success.** With `github.writesEnabled`
- *    off the endpoints answer 200 and write nothing; that is its own outcome
- *    with its own sentence, and those rows stay selected.
+ *    off the endpoints answer the same `202 Accepted` as ever and write
+ *    nothing; that is its own outcome with its own sentence, and those rows
+ *    stay selected.
  * 3. **Imply a release restores a queue position, or clears a quarantine.**
  *    Neither is true, and both are said next to the button rather than only
  *    after the fact.

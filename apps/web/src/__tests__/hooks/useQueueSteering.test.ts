@@ -143,9 +143,9 @@ describe('useQueueSteering', () => {
     it('marks only the written ones pending, never the suppressed ones', async () => {
       vi.spyOn(api, 'holdWorkOrder')
         .mockResolvedValueOnce(written)
-        // Writes disabled: a 200 that wrote no label. A pending badge here
-        // would claim a tick is coming for a request that never left the
-        // building.
+        // Writes disabled: the same 202 as any other answer, and no label
+        // written. A pending badge here would claim a tick is coming for a
+        // request that never left the building.
         .mockResolvedValueOnce({ ...written, labelWritten: false });
       const { result } = renderHook(() => useQueueSteering());
 

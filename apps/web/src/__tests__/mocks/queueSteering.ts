@@ -10,7 +10,7 @@
  * keeps apart:
  *
  *  - `labelWritten` — whether the label REACHED GitHub. False when
- *    `github.writesEnabled` is off, on an otherwise ordinary 200.
+ *    `github.writesEnabled` is off, on the same `202` as any other answer.
  *  - `reconciled` — always false. The label is the request; a later tick acts
  *    on it.
  *
@@ -20,7 +20,25 @@
  * its selection on.
  */
 
+import { HttpResponse } from 'msw';
+
 import type { QueueSteerResult } from '../../services/api';
+
+/**
+ * The status both steer endpoints really answer with.
+ *
+ * `queue.controller.ts` puts `@HttpCode(HttpStatus.ACCEPTED)` on `hold` and on
+ * `release`, and both `@ApiResponse` annotations say 202;
+ * `TransformInterceptor` wraps the body and leaves the status alone. It is 202
+ * rather than 200 for the reason the whole feature turns on: the label is a
+ * REQUEST that a later reconciler tick acts on, so the work is accepted and
+ * not done.
+ *
+ * Kept here rather than in each handler so no test can quietly go back to
+ * MSW's 200 default — which is what a `HttpResponse.json(...)` with no status
+ * sends, and which is a status this server never returns.
+ */
+export const STEER_ACCEPTED = 202;
 
 export const STEER_EFFECT =
   'The label is the request. It takes effect on the next reconciler tick.';
@@ -44,4 +62,18 @@ export function suppressedSteerResultFixture(
   overrides: Partial<QueueSteerResult> = {},
 ): QueueSteerResult {
   return steerResultFixture({ labelWritten: false, ...overrides });
+}
+
+/**
+ * One steer endpoint's whole answer: the 202 and the envelope together.
+ *
+ * `TransformInterceptor` wraps every payload as `{ data }`, so the fixture
+ * does too — a handler returning the bare result would be testing a shape the
+ * API does not serve.
+ */
+export function steerResponse(overrides: Partial<QueueSteerResult> = {}) {
+  return HttpResponse.json(
+    { data: steerResultFixture(overrides) },
+    { status: STEER_ACCEPTED },
+  );
 }

@@ -19,7 +19,7 @@ import userEvent from '@testing-library/user-event';
 
 import { render, mockAdminUser } from '../utils/test-utils';
 import { server } from '../mocks/server';
-import { steerResultFixture } from '../mocks/queueSteering';
+import { STEER_ACCEPTED, steerResponse } from '../mocks/queueSteering';
 import QueuePage from '../../pages/QueuePage';
 import type { QueueEntry } from '../../types/cockpit';
 import type { UseRunQueueResult } from '../../hooks/useRunQueue';
@@ -104,10 +104,17 @@ function serveSteering(
   );
 }
 
+/**
+ * A successful answer from a steer endpoint — `202 Accepted`, not `200`.
+ *
+ * The status comes from the fixture rather than from here, because
+ * `HttpResponse.json(...)` with no status silently sends 200, which is a
+ * status these endpoints never return. Every test in this file went through
+ * that default until #421's own review caught it: the suite was exercising a
+ * response the server does not produce (#417's failure mode exactly).
+ */
 function ok(identity: string, overrides = {}) {
-  return HttpResponse.json({
-    data: steerResultFixture({ identity, ...overrides }),
-  });
+  return steerResponse({ identity, ...overrides });
 }
 
 function renderQueue(entries: QueueEntry[] = ENTRIES) {
@@ -234,8 +241,8 @@ describe('QueuePage — bulk steering', () => {
 
     const report = await screen.findByRole('alert');
 
-    // THE assertion this feature turns on. Three requests answered 200 and
-    // three labels do not exist on GitHub.
+    // THE assertion this feature turns on. Three requests were accepted with
+    // a 202 apiece and three labels do not exist on GitHub.
     expect(report).toHaveClass('MuiAlert-colorWarning');
     expect(
       within(report).getByText(/Nothing was written for any of the 3/),
@@ -279,6 +286,37 @@ describe('QueuePage — bulk steering', () => {
 
     await waitFor(() => expect(writes).toHaveLength(2));
     expect(writes.every((write) => write.endsWith('/hold'))).toBe(true);
+  });
+
+  it('accepts the 202 the endpoints actually answer with', async () => {
+    const user = userEvent.setup();
+    const statuses: number[] = [];
+    server.events.on('response:mocked', ({ response }) => {
+      statuses.push(response.status);
+    });
+    serveSteering('release', (identity) => ok(identity));
+    renderQueue();
+
+    await user.click(checkboxFor(IDENTITIES[0]));
+    await user.click(markReady());
+
+    const report = await screen.findByRole('alert');
+
+    // The status is 202 — `queue.controller.ts` puts
+    // `@HttpCode(HttpStatus.ACCEPTED)` on both handlers — because the label is
+    // a request a later tick acts on. `api.ts` gates on `response.ok`, which
+    // is true of any 2xx, and the classifier reads `labelWritten` from the
+    // body and never looks at the status at all.
+    await waitFor(() => expect(statuses).toContain(STEER_ACCEPTED));
+    expect(statuses).not.toContain(200);
+
+    // Narrowing the client to `status === 200` would make this a thrown
+    // ApiError and there would be no success report at all.
+    expect(within(report).getAllByText(/factory:ready/).length).toBeGreaterThan(
+      0,
+    );
+    expect(within(report).queryByText(/Request failed/)).toBeNull();
+    expect(within(report).queryByText(/could not be steered/)).toBeNull();
   });
 
   it('says a release goes to the back of the queue and clears no quarantine', () => {
