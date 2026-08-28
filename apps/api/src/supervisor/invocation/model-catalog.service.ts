@@ -250,7 +250,7 @@ export class SupervisorModelCatalogService {
       const host = hostOf(config.baseUrl);
       // The provider's own words, minus the credential. Neither vendor
       // echoes a key in full today and OpenAI masks the middle of one, but a
-      // proxy sitting on `supervisor.model.baseUrl` is under nobody's control
+      // proxy sitting on `models.<provider>.baseUrl` is under nobody's control
       // and this string is rendered in the Control Center beside the field
       // the key was typed into, and logged on the way. Redacting once, here,
       // is cheaper than being sure of every hop.

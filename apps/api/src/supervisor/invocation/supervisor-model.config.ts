@@ -45,7 +45,7 @@ export const DEFAULT_SUPERVISOR_MODEL_PROVIDER: SupervisorModelProvider =
 /**
  * Each provider's own published API host.
  *
- * These are the values `supervisor.model.baseUrl` derives from when it is not
+ * These are the values `models.<provider>.baseUrl` derives from when it is not
  * overridden — see `effectiveBaseUrl` for what "overridden" means, which is
  * the subtle part.
  */
@@ -185,7 +185,7 @@ export interface SupervisorModelConfig {
  *
  * ## What "explicitly overridden" means, and why it is a property of the VALUE
  *
- * `supervisor.model.baseUrl` is an override point for proxies and tests, and
+ * The base URL is an override point for proxies and tests, and
  * before #392 it defaulted to Anthropic's host — which made switching provider
  * a two-step operation where forgetting the second step produced an OpenAI key
  * being posted to Anthropic. #392 makes the URL follow the provider unless it

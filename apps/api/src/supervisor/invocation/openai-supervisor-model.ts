@@ -35,7 +35,7 @@ import type {
  * ## Chat Completions rather than Responses
  *
  * Both would serve. Chat Completions wins on the one property that is specific
- * to this setting: `supervisor.model.baseUrl` is documented as an override
+ * to this setting: `models.<provider>.baseUrl` is documented as an override
  * point for proxies and gateways, and `/v1/chat/completions` is the surface
  * an "OpenAI-compatible" endpoint actually implements. Choosing the newer API
  * would make the override point work only against OpenAI itself.
