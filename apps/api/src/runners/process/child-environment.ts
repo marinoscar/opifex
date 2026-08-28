@@ -7,7 +7,11 @@
  * list itself.
  *
  * The API process holds `JWT_SECRET`, `POSTGRES_PASSWORD`, `GITHUB_TOKEN` and
- * `SUPERVISOR_MODEL_API_KEY`. Until #334 every one of them was spread into the
+ * the model credentials (`MODEL_ANTHROPIC_API_KEY`, `MODEL_OPENAI_API_KEY`,
+ * and the superseded `SUPERVISOR_MODEL_API_KEY` — #422 split one key into one
+ * per provider, and an allowlist covered all three the day the split landed
+ * without an edit here, which is the argument below in miniature). Until #334
+ * every one of them was spread into the
  * agent's environment. With the first, the agent can mint itself an admin
  * token and call the control plane that is supervising it; with the second it
  * can reach the database directly and edit the record of its own run. VISION
@@ -84,6 +88,13 @@ export const INHERITED_ENV_ALLOWLIST: readonly string[] = [
   // quota an autonomous run spends. Removing them would break every run —
   // `claude --version` still succeeds unauthenticated, so the runner would go
   // on registering itself healthy while every dispatch failed at auth.
+  //
+  // `ANTHROPIC_API_KEY` here is the RUNNER's credential and is deliberately
+  // NOT the supervisor's metered one — which is why #422 named the supervisor
+  // slots `MODEL_<PROVIDER>_API_KEY` rather than reusing the vendor's
+  // conventional variable. Had it reused this name, the split would have
+  // carried the separately metered key ADR-0015 exists to keep apart into
+  // every agent subprocess, through this line, silently.
   'CLAUDE_CODE_OAUTH_TOKEN',
   'ANTHROPIC_API_KEY',
 ];

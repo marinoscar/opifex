@@ -226,10 +226,12 @@ export class OperatorSettingsController {
   @ApiOperation({
     summary: 'List the models the configured supervisor key can reach',
     description:
-      'Asks the configured provider (`supervisor.model.provider`) what the configured key ' +
-      '(`supervisor.model.apiKey`) can actually reach, so that `supervisor.model.name` can be ' +
+      'Asks the configured provider (`supervisor.model.provider`) what that provider’s own key ' +
+      '(`models.<provider>.apiKey`) can actually reach, so that `supervisor.model.name` can be ' +
       'chosen from a list rather than typed from memory. Both settings are read per request, ' +
-      'so a key or a provider saved a moment ago is the one used here.\n\n' +
+      'so a key or a provider saved a moment ago is the one used here — and since #422 the ' +
+      'credential is selected BY the provider, so switching provider lists the models the ' +
+      'other stored key reaches rather than re-testing the same one.\n\n' +
       '**This spends no tokens.** A model listing bills nothing on either provider, which ' +
       'makes it a credential check that costs nothing — unlike ' +
       '`POST /api/operator-settings/probes/supervisor-model`, which deliberately makes a real, ' +

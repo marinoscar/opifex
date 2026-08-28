@@ -468,7 +468,7 @@ describe('OperatorSettingsController (#338)', () => {
       it('names the secret permission in the refusal, so the message is actionable', async () => {
         await expect(
           controller.patch(
-            { 'supervisor.model.apiKey': 'sk-ant-api03-Zx4Nq8' } as never,
+            { 'models.anthropic.apiKey': 'sk-ant-api03-Zx4Nq8' } as never,
             TUNER,
           ),
         ).rejects.toThrow(/operator_settings:write_secret/);

@@ -44,7 +44,12 @@ import { OPERATOR_SETTINGS } from './operator-settings.registry';
 const SECRETS = {
   'github.token': 'ghp_7Qk2Vx9ZmT4bWpL8nRcJ3sYd6HgzQ7m',
   'runners.claudeCodeLocal.oauthToken': 'sk-ant-oat01-Zt5Mq8XvB2wKjD7pHn4vB9x',
-  'supervisor.model.apiKey': 'sk-ant-api03-Fj3Wb7Yn2QxMd8Kp5Tzk6Wd',
+  // Both provider credentials, held at once (#422). Two entries and not one,
+  // because the last assertion in this file requires this table to be exactly
+  // the registry's secret keys — so the credential split cannot land without
+  // the leak test covering both halves of it.
+  'models.anthropic.apiKey': 'sk-ant-api03-Fj3Wb7Yn2QxMd8Kp5Tzk6Wd',
+  'models.openai.apiKey': 'sk-proj-Hn4Vt7Qz2Lm9Rb5Xd8Kp3Wy6Jc',
 } as const;
 
 /** Every contiguous run of `value` longer than `length`. */
@@ -80,7 +85,13 @@ describe('GET /api/operator-settings never returns a secret (#338)', () => {
       env: {
         GITHUB_TOKEN: 'ghp_Nb8Ry4Ldx2Pv7WqJ5Zt3MgKc9HsdR4v',
         CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-Cw6Kd3Jx8Zn5Rb2Vy7pT2j',
-        SUPERVISOR_MODEL_API_KEY: 'sk-ant-api03-Ug9Tv2Mz5Xr8Bd4Nkw7Sc',
+        MODEL_ANTHROPIC_API_KEY: 'sk-ant-api03-Ug9Tv2Mz5Xr8Bd4Nkw7Sc',
+        MODEL_OPENAI_API_KEY: 'sk-proj-Rw3Kq8Vn5Zb2Md7Xt4Lp9Hc',
+        // The SUPERSEDED name, which the resolver still reads for the default
+        // provider's slot (#422). A compatibility path is a second way a
+        // credential enters the process, and therefore a second way one could
+        // leave it.
+        SUPERVISOR_MODEL_API_KEY: 'sk-ant-api03-Yb6Nq2Vd9Zm4Kt7Rx5Ls',
       },
     });
 
@@ -124,7 +135,12 @@ describe('GET /api/operator-settings never returns a secret (#338)', () => {
       env: {
         GITHUB_TOKEN: 'ghp_Yh4Pm7Zq2Kx9Wd5Bn3Lr8Vt6Jcg1Su',
         CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-Dq7Rz3Nv9Xb2Mk6Ty5wP8l',
-        SUPERVISOR_MODEL_API_KEY: 'sk-ant-api03-Ke5Bw8Jn2Vx7Zd4Rq9Ms3T',
+        MODEL_ANTHROPIC_API_KEY: 'sk-ant-api03-Ke5Bw8Jn2Vx7Zd4Rq9Ms3T',
+        MODEL_OPENAI_API_KEY: 'sk-proj-Tz8Lv4Nq7Xm2Bd9Kw5Rc3Hj',
+        // Superseded, and read only because the line above is what is unset
+        // in a real upgraded deployment — see the sibling case. Included here
+        // so the env branch covers the compatibility path too.
+        SUPERVISOR_MODEL_API_KEY: 'sk-ant-api03-Pw2Jm9Vz6Xn3Bt8Kd5Rq',
       },
     });
     const envController = new OperatorSettingsController(
@@ -139,6 +155,8 @@ describe('GET /api/operator-settings never returns a secret (#338)', () => {
       'ghp_Yh4Pm7Zq2Kx9Wd5Bn3Lr8Vt6Jcg1Su',
       'sk-ant-oat01-Dq7Rz3Nv9Xb2Mk6Ty5wP8l',
       'sk-ant-api03-Ke5Bw8Jn2Vx7Zd4Rq9Ms3T',
+      'sk-proj-Tz8Lv4Nq7Xm2Bd9Kw5Rc3Hj',
+      'sk-ant-api03-Pw2Jm9Vz6Xn3Bt8Kd5Rq',
     ]) {
       expect(serialized).not.toContain(plaintext);
       for (const run of runsLongerThan(plaintext, REVEALED_SUFFIX_LENGTH)) {
@@ -193,7 +211,7 @@ describe('GET /api/operator-settings never returns a secret (#338)', () => {
     it('reveals at most the last four characters, and only as a hint', () => {
       const entry = controller
         .list()
-        .settings.find((item) => item.key === 'supervisor.model.apiKey');
+        .settings.find((item) => item.key === 'models.anthropic.apiKey');
 
       const hint = (entry as { hint: string }).hint;
       expect(hint.startsWith(MASK)).toBe(true);

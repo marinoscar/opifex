@@ -29,15 +29,15 @@ import {
 
 const ANTHROPIC_SETTINGS: OperatorSettingsOverrides = {
   'supervisor.model.provider': 'anthropic',
-  'supervisor.model.apiKey': 'sk-ant-test-key',
-  'supervisor.model.baseUrl': 'https://api.anthropic.test',
+  'models.anthropic.apiKey': 'sk-ant-test-key',
+  'models.anthropic.baseUrl': 'https://api.anthropic.test',
   'supervisor.model.timeoutMs': 5000,
 };
 
 const OPENAI_SETTINGS: OperatorSettingsOverrides = {
   'supervisor.model.provider': 'openai',
-  'supervisor.model.apiKey': 'sk-proj-test-key',
-  'supervisor.model.baseUrl': 'https://api.openai.test',
+  'models.openai.apiKey': 'sk-proj-test-key',
+  'models.openai.baseUrl': 'https://api.openai.test',
   'supervisor.model.timeoutMs': 5000,
 };
 
@@ -157,7 +157,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
 
       await catalog({
         ...OPENAI_SETTINGS,
-        'supervisor.model.baseUrl': '',
+        'models.openai.baseUrl': '',
       }).list();
 
       expect(String(fetchMock.mock.calls[0][0])).toContain('api.openai.com');
@@ -166,7 +166,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
     it('does not call anything at all when there is no key', async () => {
       const result = await catalog({
         ...ANTHROPIC_SETTINGS,
-        'supervisor.model.apiKey': '',
+        'models.anthropic.apiKey': '',
       }).list();
 
       expect(fetchMock).not.toHaveBeenCalled();
@@ -368,7 +368,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
 
       const result = await catalog({
         ...OPENAI_SETTINGS,
-        'supervisor.model.apiKey': 'sk-ant-api03-something',
+        'models.openai.apiKey': 'sk-ant-api03-something',
       }).list();
 
       expect(result.status).toBe('wrong_provider');
@@ -381,7 +381,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
 
       const result = await catalog({
         ...ANTHROPIC_SETTINGS,
-        'supervisor.model.apiKey': 'sk-proj-something',
+        'models.anthropic.apiKey': 'sk-proj-something',
       }).list();
 
       expect(result.status).toBe('wrong_provider');
@@ -395,7 +395,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
 
       const result = await catalog({
         ...OPENAI_SETTINGS,
-        'supervisor.model.apiKey': 'gateway-token-abc',
+        'models.openai.apiKey': 'gateway-token-abc',
       }).list();
 
       expect(result.status).toBe('invalid_key');
@@ -408,7 +408,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
 
       const result = await catalog({
         ...OPENAI_SETTINGS,
-        'supervisor.model.apiKey': 'sk-ant-a-key-the-gateway-accepts',
+        'models.openai.apiKey': 'sk-ant-a-key-the-gateway-accepts',
       }).list();
 
       expect(result.status).toBe('ok');
@@ -526,7 +526,7 @@ describe('SupervisorModelCatalogService (#393)', () => {
         fetchMock.mockResolvedValue(response);
         const result = await catalog({
           ...ANTHROPIC_SETTINGS,
-          'supervisor.model.apiKey': key,
+          'models.anthropic.apiKey': key,
         }).list();
 
         expect(JSON.stringify(result)).not.toContain('super-secret-value');

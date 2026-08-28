@@ -81,13 +81,26 @@ export function operatorEnvDisagreements(
 
   for (const key of keys) {
     const definition = OPERATOR_SETTINGS[key];
-    const raw = env[definition.envVar];
+
+    // The current name first, then the superseded one (#422) — the same
+    // precedence `OperatorSettingsService.environmentValue` applies, so the
+    // variable NAMED in the warning is the one actually supplying the value.
+    // Reporting the new name for a value the old one supplied would send an
+    // operator to edit a line that is not there.
+    const candidates = [definition.envVar, definition.legacyEnvVar].filter(
+      (name): name is string => name !== undefined,
+    );
+    const supplier = candidates.find((name) => {
+      const value = env[name];
+      return value !== undefined && value.trim() !== '';
+    });
 
     // Unset, and empty-means-unset, match `OperatorSettingsService.rawValue`.
     // A variable written `FOO=` to mean "unset" supplies nothing, so there is
     // nothing for it to disagree with.
-    if (raw === undefined || raw.trim() === '') continue;
+    if (supplier === undefined) continue;
 
+    const raw = env[supplier] as string;
     const supplied = parseOperatorSetting(key, raw.trim());
     // An unparseable value is already reported by the resolver, which names
     // the variable and says the default is being used instead. Saying it again
@@ -99,10 +112,10 @@ export function operatorEnvDisagreements(
     if (Object.is(effective.value, supplied.value)) continue;
 
     warnings.push(
-      `${definition.envVar} is set to ${describe(key, supplied.value)} and is NOT ` +
+      `${supplier} is set to ${describe(key, supplied.value)} and is NOT ` +
         `the value in force: ${key} resolves to ${describe(key, effective.value)} ` +
         `from the ${effective.source}, which overrides the environment. ` +
-        `Change it in the Control Center, or remove ${definition.envVar} from ` +
+        `Change it in the Control Center, or remove ${supplier} from ` +
         `your environment so the two stop disagreeing.`,
     );
   }

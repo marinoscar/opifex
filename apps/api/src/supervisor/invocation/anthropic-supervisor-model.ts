@@ -115,8 +115,8 @@ export class AnthropicSupervisorModel implements SupervisorModel {
     // its own request would be a worse thing to debug than a stale value.
     const config = resolveSupervisorModelConfig(this.settings);
 
-    if (config.apiKey === '') throw noApiKeyError();
-    if (config.model === '') throw noModelNamedError();
+    if (config.apiKey === '') throw noApiKeyError(config.provider);
+    if (config.model === '') throw noModelNamedError(config.provider);
 
     const body = {
       model: config.model,

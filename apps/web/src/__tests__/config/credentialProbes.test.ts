@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  CREDENTIAL_PROBES,
+  credentialProbes,
   formatDuration,
   probeFreshness,
   probeWitness,
@@ -26,8 +26,16 @@ import type { OperatorSetting } from '../../types/operatorSettings';
 
 const SETTINGS = OPERATOR_SETTINGS_FIXTURE;
 
+/**
+ * The descriptors for the fixture's configuration.
+ *
+ * A function of the document since #422: `supervisor-model`'s subject is the
+ * slot of whichever provider is selected, so there is no list to import.
+ */
+const PROBES = credentialProbes(SETTINGS);
+
 function descriptor(name: string) {
-  const found = CREDENTIAL_PROBES.find((probe) => probe.name === name);
+  const found = PROBES.find((probe) => probe.name === name);
   if (!found) throw new Error(`no descriptor for ${name}`);
   return found;
 }
@@ -61,7 +69,7 @@ describe('the probe registry', () => {
     // A descriptor whose subject is not a real setting key renders a Test
     // button on nothing, which is invisible rather than broken — so it is
     // asserted here instead.
-    for (const probe of CREDENTIAL_PROBES) {
+    for (const probe of PROBES) {
       expect(
         SETTINGS.some((entry) => entry.key === probe.subject),
         `${probe.name} names ${probe.subject}`,
@@ -73,7 +81,7 @@ describe('the probe registry', () => {
     // `claude-cli` is the deliberate exception and the reason the section
     // shows it: it tests the BINARY, which is why its green tick says nothing
     // about the credential it sits under.
-    for (const probe of CREDENTIAL_PROBES) {
+    for (const probe of PROBES) {
       if (probe.name === 'claude-cli') {
         expect(probe.dependsOn).not.toContain(probe.subject);
         continue;
@@ -83,21 +91,108 @@ describe('the probe registry', () => {
   });
 
   it('carries a cost note on exactly the probes that spend', () => {
-    for (const probe of CREDENTIAL_PROBES) {
+    for (const probe of PROBES) {
       expect(probe.costNote === null).toBe(!probe.spends);
     }
     expect(
-      CREDENTIAL_PROBES.filter((probe) => probe.spends).map(
-        (probe) => probe.name,
-      ),
+      PROBES.filter((probe) => probe.spends).map((probe) => probe.name),
     ).toEqual(['claude-credential', 'supervisor-model']);
   });
 
   it('groups the two Claude questions onto one card', () => {
     expect(
-      probesForSetting('runners.claudeCodeLocal.oauthToken').map((p) => p.name),
+      probesForSetting('runners.claudeCodeLocal.oauthToken', SETTINGS).map(
+        (p) => p.name,
+      ),
     ).toEqual(['claude-cli', 'claude-credential']);
-    expect(probesForSetting('runners.claudeCodeLocal.binary')).toEqual([]);
+    expect(
+      probesForSetting('runners.claudeCodeLocal.binary', SETTINGS),
+    ).toEqual([]);
+  });
+});
+
+describe('the model probe follows the provider (#422)', () => {
+  /** The fixture with a different provider selected. */
+  function selecting(provider: string) {
+    return withEntry('supervisor.model.provider', { value: provider });
+  }
+
+  it('tests the SELECTED provider’s slot and no other', () => {
+    expect(descriptor('supervisor-model').subject).toBe(
+      'models.anthropic.apiKey',
+    );
+
+    const openai = credentialProbes(selecting('openai')).find(
+      (probe) => probe.name === 'supervisor-model',
+    );
+    expect(openai?.subject).toBe('models.openai.apiKey');
+  });
+
+  it('puts the billed button on that card only', () => {
+    // The unselected provider's key is on screen and rotatable; what it must
+    // NOT have is a button that spends money testing a credential nothing is
+    // currently using.
+    expect(
+      probesForSetting('models.anthropic.apiKey', SETTINGS).map((p) => p.name),
+    ).toEqual(['supervisor-model']);
+    expect(probesForSetting('models.openai.apiKey', SETTINGS)).toEqual([]);
+
+    const openaiSelected = selecting('openai');
+    expect(
+      probesForSetting('models.openai.apiKey', openaiSelected).map(
+        (p) => p.name,
+      ),
+    ).toEqual(['supervisor-model']);
+    expect(probesForSetting('models.anthropic.apiKey', openaiSelected)).toEqual(
+      [],
+    );
+  });
+
+  it('names the provider and the slot in what it says it will do', () => {
+    const openai = credentialProbes(selecting('openai')).find(
+      (probe) => probe.name === 'supervisor-model',
+    );
+
+    // The old text said "Anthropic" whichever provider was selected, which
+    // after the split is a sentence about the wrong vendor's money.
+    expect(openai?.question).toContain('openai');
+    expect(openai?.question).toContain('models.openai.apiKey');
+    expect(openai?.costNote).toContain('models.openai.apiKey');
+    expect(openai?.question).not.toContain('Anthropic');
+  });
+
+  it('depends on the provider and on the host the key is sent to', () => {
+    // Switching provider or repointing the endpoint makes an answer a fact
+    // about a different call — the same reason `github-token` depends on
+    // `github.apiBaseUrl`.
+    expect(descriptor('supervisor-model').dependsOn).toEqual([
+      'models.anthropic.apiKey',
+      'models.anthropic.baseUrl',
+      'supervisor.model.provider',
+      'supervisor.model.name',
+    ]);
+  });
+
+  it('goes stale the moment the provider changes', () => {
+    const before = observation('supervisor-model');
+    expect(probeFreshness(before, SETTINGS).state).toBe('current');
+    expect(probeFreshness(before, selecting('openai')).state).toBe('stale');
+  });
+
+  it('offers no model probe at all when the provider is not published', () => {
+    // Nothing in the response then says which credential a Test button would
+    // spend money on, and guessing would be the one thing this module must
+    // not do.
+    const withoutProvider = SETTINGS.filter(
+      (entry) => entry.key !== 'supervisor.model.provider',
+    );
+
+    expect(
+      credentialProbes(withoutProvider).map((probe) => probe.name),
+    ).not.toContain('supervisor-model');
+    expect(
+      probesForSetting('models.anthropic.apiKey', withoutProvider),
+    ).toEqual([]);
   });
 });
 

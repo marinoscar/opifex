@@ -398,7 +398,11 @@ export function SecretCredentialCard({
         </Alert>
       )}
 
-      {probesForSetting(entry.key).map((descriptor) => {
+      {/* Which probes belong here is read off the DOCUMENT and not off the
+          key alone: since #422 the supervisor's Test button belongs to the
+          model slot of the selected provider, so the unselected provider's
+          card correctly renders with no billed button on it. */}
+      {probesForSetting(entry.key, settings).map((descriptor) => {
         const observation = observations[descriptor.name];
         return (
           <ProbeResultPanel

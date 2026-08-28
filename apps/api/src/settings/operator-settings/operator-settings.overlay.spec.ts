@@ -958,17 +958,17 @@ describe('OperatorSettingsService: the database overlay (#339)', () => {
       const { settings, prisma } = makeService();
       await settings.set('github.token', TOKEN, null);
       const stolen = prisma.rows.get('github.token') as FakeRow;
-      prisma.rows.set('supervisor.model.apiKey', {
+      prisma.rows.set('models.anthropic.apiKey', {
         ...stolen,
-        key: 'supervisor.model.apiKey',
+        key: 'models.anthropic.apiKey',
       });
 
       await settings.refresh();
 
-      expect(settings.resolve('supervisor.model.apiKey').error?.reason).toBe(
+      expect(settings.resolve('models.anthropic.apiKey').error?.reason).toBe(
         'decrypt_failed',
       );
-      expect(settings.get('supervisor.model.apiKey')).toBe('');
+      expect(settings.get('models.anthropic.apiKey')).toBe('');
     });
   });
 

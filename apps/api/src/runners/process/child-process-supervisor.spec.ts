@@ -546,7 +546,9 @@ describe('ChildProcessSupervisor', () => {
       withParentEnv({
         POSTGRES_PASSWORD: 'leaked-postgres-password',
         GITHUB_TOKEN: 'ghp_leaked_github_token',
-        SUPERVISOR_MODEL_API_KEY: 'sk-ant-leaked-supervisor-key',
+        MODEL_ANTHROPIC_API_KEY: 'sk-ant-leaked-supervisor-key',
+        MODEL_OPENAI_API_KEY: 'sk-proj-leaked-supervisor-key',
+        SUPERVISOR_MODEL_API_KEY: 'sk-ant-leaked-superseded-key',
       });
 
       it('does not hand the agent JWT_SECRET', async () => {
@@ -567,7 +569,14 @@ describe('ChildProcessSupervisor', () => {
         expect(await childValueOf('GITHUB_TOKEN')).toBeNull();
       });
 
-      it('does not hand the agent SUPERVISOR_MODEL_API_KEY', async () => {
+      it('does not hand the agent either model credential', async () => {
+        // Both slots, and the superseded name beside them (#422). Note the
+        // near miss this is guarding: `ANTHROPIC_API_KEY` IS inherited, on
+        // purpose — it is the CLI's own credential — so a supervisor key named
+        // after the vendor rather than the setting would have been carried
+        // straight through by the line above it.
+        expect(await childValueOf('MODEL_ANTHROPIC_API_KEY')).toBeNull();
+        expect(await childValueOf('MODEL_OPENAI_API_KEY')).toBeNull();
         expect(await childValueOf('SUPERVISOR_MODEL_API_KEY')).toBeNull();
       });
     });

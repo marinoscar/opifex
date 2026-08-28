@@ -1,7 +1,10 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 
 import { PrismaService } from '../../../prisma/prisma.service';
-import { SupervisorModelError } from '../../../supervisor/invocation/supervisor-model.config';
+import {
+  SupervisorModelError,
+  resolveSupervisorModelConfig,
+} from '../../../supervisor/invocation/supervisor-model.config';
 import { createSupervisorModel } from '../../../supervisor/invocation/supervisor-model.factory';
 import type { SupervisorModel } from '../../../supervisor/invocation/supervisor-model.port';
 import { buildChildEnvironment } from '../../../runners/process/child-environment';
@@ -380,7 +383,12 @@ export class OperatorProbesService {
    * token costs less than the operator's next click.
    */
   private async supervisorModel(): Promise<ProbeResult> {
-    const apiKey = this.settings.get('supervisor.model.apiKey');
+    // Through `resolveSupervisorModelConfig` rather than a settings key named
+    // here (#422). The credential slot is now a function of the provider, and
+    // this file sits outside `invocation/` — the one directory allowed to know
+    // which vendors exist. Reading it this way also guarantees the probe skips
+    // on exactly the key the adapter would have refused on.
+    const { apiKey } = resolveSupervisorModelConfig(this.settings);
 
     if (apiKey === '') {
       return this.result('supervisor-model', {

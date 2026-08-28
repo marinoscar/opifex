@@ -34,8 +34,26 @@
  * key is not in the response renders nothing, and a secret with no probe
  * renders a card with no Test button rather than an empty panel — which is
  * how a credential added later behaves until somebody writes a probe for it.
+ *
+ * ## One subject is no longer a constant (#422, epic #419)
+ *
+ * `supervisor-model` used to name `supervisor.model.apiKey`, a key that no
+ * longer exists: the API holds one credential slot per provider and reads the
+ * one `supervisor.model.provider` selects. So the descriptors are produced by
+ * `credentialProbes(settings)` rather than declared as an array, and the
+ * billed Test button lands on the selected provider's card only. The
+ * unselected provider's key is still shown, still rotatable, and deliberately
+ * has no button — testing a credential nothing is currently using would spend
+ * money to answer a question nobody asked.
  */
 
+import {
+  SUPERVISOR_MODEL_NAME_KEY,
+  SUPERVISOR_PROVIDER_KEY,
+  modelApiKeySettingKey,
+  modelBaseUrlSettingKey,
+  selectedProvider,
+} from './supervisorModel';
 import type { OperatorProbeName } from '../types/operatorProbes';
 import type { OperatorProbeOutcome } from '../services/api';
 import type { OperatorSetting } from '../types/operatorSettings';
@@ -61,7 +79,7 @@ export interface ProbeDescriptor {
 }
 
 /**
- * The probes this section offers, and what each one is really asking.
+ * The probes whose subject is one fixed key, whatever the configuration says.
  *
  * `git` is deliberately absent: it tests a binary rather than a credential,
  * and the Readiness section already asks it as step 1. `claude-cli` IS here,
@@ -69,8 +87,11 @@ export interface ProbeDescriptor {
  * deceptive one — `claude --version` succeeds with no credential at all, so
  * the pair of buttons on that card is the finding epic #324 documented,
  * rendered as two separate questions.
+ *
+ * `supervisor-model` is NOT here, because since #422 its subject is not fixed:
+ * see `credentialProbes` below.
  */
-export const CREDENTIAL_PROBES: readonly ProbeDescriptor[] = [
+const FIXED_SUBJECT_PROBES: readonly ProbeDescriptor[] = [
   {
     name: 'github-token',
     subject: 'github.token',
@@ -125,26 +146,76 @@ export const CREDENTIAL_PROBES: readonly ProbeDescriptor[] = [
       'This spends real quota and real money: it is one billed model call ' +
       'against the same Claude account a dispatched run uses.',
   },
-  {
-    name: 'supervisor-model',
-    subject: 'supervisor.model.apiKey',
-    label: 'Test the key (spends money)',
-    question:
-      'Makes one minimal Anthropic call through the supervisor’s own ' +
-      'adapter, capped at four output tokens. It also catches a key that is ' +
-      'set while no model name is, which otherwise records a failure once an ' +
-      'hour with nobody looking.',
-    dependsOn: ['supervisor.model.apiKey', 'supervisor.model.name'],
-    spends: true,
-    costNote:
-      'This spends real money: a billed Anthropic API call on the ' +
-      'separately metered supervisor key (ADR-0015).',
-  },
 ];
 
+/**
+ * The supervisor's model probe, whose subject is a FUNCTION of the provider
+ * (#422, epic #419).
+ *
+ * There is no longer one model credential to test. The API resolves the key
+ * from the selected provider (`resolveSupervisorModelConfig`), so the Test
+ * button belongs on THAT provider's card and on no other — a button on the
+ * unselected slot would make one real, billed call against a credential the
+ * supervisor is not using, and report the answer as if it were about the
+ * supervisor.
+ *
+ * `dependsOn` gains two keys for the same reason `github-token` depends on
+ * `github.apiBaseUrl`: the provider decides which slot was read, and the base
+ * URL decides which host the key was sent to. An answer that survived either
+ * of those changing would be a fact about a different call.
+ */
+function supervisorModelProbe(provider: string): ProbeDescriptor {
+  const keySetting = modelApiKeySettingKey(provider);
+
+  return {
+    name: 'supervisor-model',
+    subject: keySetting,
+    label: 'Test the key (spends money)',
+    question:
+      `Makes one minimal call to ${provider} — the selected provider — ` +
+      `through the supervisor’s own adapter, capped at four output tokens, ` +
+      `using ${keySetting}. It also catches a key that is set while no model ` +
+      'name is, which otherwise records a failure once an hour with nobody ' +
+      'looking.',
+    dependsOn: [
+      keySetting,
+      modelBaseUrlSettingKey(provider),
+      SUPERVISOR_PROVIDER_KEY,
+      SUPERVISOR_MODEL_NAME_KEY,
+    ],
+    spends: true,
+    costNote:
+      `This spends real money: a billed ${provider} API call on ` +
+      `${keySetting}, the separately metered supervisor credential ` +
+      '(ADR-0015).',
+  };
+}
+
+/**
+ * Every probe this section offers, given the configuration on screen.
+ *
+ * A function rather than a constant since #422: one descriptor's subject and
+ * dependencies are read off `supervisor.model.provider`, so they cannot be
+ * decided until the document has arrived. When the response does not publish
+ * the provider at all, the model probe is OMITTED rather than pointed at a
+ * guess — this build then cannot say which credential a Test button would
+ * spend money on, and the honest answer is to offer no button.
+ */
+export function credentialProbes(
+  settings: readonly OperatorSetting[],
+): ProbeDescriptor[] {
+  const provider = selectedProvider(settings);
+  return provider === ''
+    ? [...FIXED_SUBJECT_PROBES]
+    : [...FIXED_SUBJECT_PROBES, supervisorModelProbe(provider)];
+}
+
 /** The probes that belong on one setting's card, in declaration order. */
-export function probesForSetting(key: string): ProbeDescriptor[] {
-  return CREDENTIAL_PROBES.filter((probe) => probe.subject === key);
+export function probesForSetting(
+  key: string,
+  settings: readonly OperatorSetting[],
+): ProbeDescriptor[] {
+  return credentialProbes(settings).filter((probe) => probe.subject === key);
 }
 
 // ---------------------------------------------------------------------------
@@ -230,7 +301,7 @@ export function probeFreshness(
   settings: readonly OperatorSetting[],
   pendingKeys: readonly string[] = [],
 ): ProbeFreshness {
-  const descriptor = CREDENTIAL_PROBES.find(
+  const descriptor = credentialProbes(settings).find(
     (candidate) => candidate.name === observation.probe,
   );
 

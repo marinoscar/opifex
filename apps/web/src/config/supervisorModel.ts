@@ -7,12 +7,12 @@
  * response alone, so a key added to the backend registry needs no frontend
  * edit. That property cannot hold for this control and the reason is worth
  * stating rather than quietly breaking: **the API does not publish that these
- * four keys are one decision.** The registry says `supervisor.model.provider`
- * is an enum and `supervisor.model.name` is a string; nothing in the response
- * says that the second is only choosable once the first and the key are set,
- * or that the fourth's empty value means "follow the first". That edge exists
- * in an operator's head and in `supervisor/invocation/`, and guessing it from
- * key names would be worse than declaring it — the same argument
+ * keys are one decision.** The registry says `supervisor.model.provider` is an
+ * enum and `supervisor.model.name` is a string; nothing in the response says
+ * that the second is only choosable once the first and a key are set, or that
+ * an empty base URL means "follow the first". That edge exists in an
+ * operator's head and in `supervisor/invocation/`, and guessing it from key
+ * names would be worse than declaring it — the same argument
  * `config/credentialProbes.ts` makes where it declares which settings a probe
  * reads.
  *
@@ -21,6 +21,24 @@
  * API does not publish these keys shows a shorter panel rather than crashing,
  * and the Configuration section keeps showing whatever this file does not
  * claim.
+ *
+ * ## The credential is now a FUNCTION of the provider (#422, epic #419)
+ *
+ * There is no longer a `supervisor.model.apiKey`. A credential belongs to a
+ * VENDOR and a consumer SELECTS a vendor, so the API holds one slot per
+ * provider — `models.<provider>.apiKey` and `models.<provider>.baseUrl` — and
+ * the supervisor reads the slot for whatever `supervisor.model.provider`
+ * names. Two consequences run through this file:
+ *
+ *  - Nothing here is a constant any more except the two `supervisor.model.*`
+ *    keys. The credential keys are BUILT from the provider, mirroring
+ *    `modelApiKeySettingKey` in the API, and the slots actually present are
+ *    DISCOVERED from the response so that a third provider needs no edit.
+ *  - The slots that are not selected are still real. `unselectedSlots` exists
+ *    so the panel can show that the other vendor's key is stored and
+ *    untouched, because "switching provider destroyed my other key" is the
+ *    bug this split removes and a screen that stops mentioning it looks
+ *    identical to one that did.
  *
  * ## The three admission marks, and the tone of the middle one
  *
@@ -55,32 +73,80 @@ import type {
 } from '../types/operatorSettings';
 
 // ---------------------------------------------------------------------------
-// The four keys this control owns
+// The keys this control owns — one of which is a FUNCTION of another (#422)
 // ---------------------------------------------------------------------------
 
 export const SUPERVISOR_PROVIDER_KEY = 'supervisor.model.provider';
-export const SUPERVISOR_API_KEY_KEY = 'supervisor.model.apiKey';
 export const SUPERVISOR_MODEL_NAME_KEY = 'supervisor.model.name';
-export const SUPERVISOR_BASE_URL_KEY = 'supervisor.model.baseUrl';
 
 /**
- * The keys the composite control takes over from the generated sections.
+ * The registry group every model credential slot is filed under.
  *
- * Declared as one list so that the Configuration section can say where they
- * went instead of rendering a second, worse editor for the same decision — a
- * free-text model field on another tab is the precise split epic #391 exists
- * to remove, and leaving one behind would recreate it at half scale.
+ * Its own group rather than `supervisor`, which is the whole shape of #422: a
+ * CREDENTIAL belongs to a vendor, a CONSUMER selects one. The supervisor is
+ * the only consumer today and will not be the only one, so the keys are not
+ * filed under it.
  */
-export const SUPERVISOR_MODEL_KEYS: readonly string[] = [
-  SUPERVISOR_PROVIDER_KEY,
-  SUPERVISOR_API_KEY_KEY,
-  SUPERVISOR_MODEL_NAME_KEY,
-  SUPERVISOR_BASE_URL_KEY,
-];
+export const MODEL_CREDENTIAL_GROUP = 'models';
 
-/** Whether a row belongs to the composite control rather than to a list. */
-export function isSupervisorModelKey(key: string): boolean {
-  return SUPERVISOR_MODEL_KEYS.includes(key);
+/**
+ * The settings key holding one provider's API key.
+ *
+ * A mirror of `modelApiKeySettingKey` in
+ * `apps/api/src/supervisor/invocation/supervisor-model.config.ts`, which is
+ * the authority on this shape — the registry GENERATES one slot per entry in
+ * `SUPERVISOR_MODEL_PROVIDERS` from exactly that function, so a third adapter
+ * gets its slot with no edit there and none here. Mirroring a template rather
+ * than listing the keys is what keeps this file free of a vendor list; that
+ * the mirror still agrees with the API is asserted, against the API's own
+ * source, by `__tests__/config/settingKeyDrift.test.ts`.
+ */
+export function modelApiKeySettingKey(provider: string): string {
+  return `${MODEL_CREDENTIAL_GROUP}.${provider}.apiKey`;
+}
+
+/** The settings key holding one provider's base-URL override. */
+export function modelBaseUrlSettingKey(provider: string): string {
+  return `${MODEL_CREDENTIAL_GROUP}.${provider}.baseUrl`;
+}
+
+/** `models.<provider>.<apiKey|baseUrl>`, and nothing else. */
+const MODEL_CREDENTIAL_KEY = /^models\.([^.]+)\.(apiKey|baseUrl)$/;
+
+/** The provider a credential key belongs to, or null if it is not one. */
+export function modelSlotProvider(key: string): string | null {
+  return MODEL_CREDENTIAL_KEY.exec(key)?.[1] ?? null;
+}
+
+/**
+ * Whether saving this key changes what the model catalogue would answer.
+ *
+ * The provider decides which slot is read and which vendor is asked; the slot
+ * decides which credential and which host. `supervisor.model.name` is
+ * deliberately NOT here — it is chosen FROM the list and has no effect on what
+ * the provider returns, so re-asking after it is saved would be a request made
+ * to learn nothing.
+ */
+export function affectsModelCatalog(key: string): boolean {
+  return key === SUPERVISOR_PROVIDER_KEY || modelSlotProvider(key) !== null;
+}
+
+/**
+ * Whether a row belongs to this composite control rather than to a list.
+ *
+ * Takes the ENTRY and not the key, so that the rule can be "everything in the
+ * credentials group" rather than a list of key names. A provider this build
+ * has never heard of therefore lands in the panel — where its card is drawn
+ * from the response — instead of appearing as a second, worse editor on the
+ * Configuration tab.
+ */
+export function isModelPanelSetting(entry: OperatorSetting): boolean {
+  return (
+    entry.group === MODEL_CREDENTIAL_GROUP ||
+    modelSlotProvider(entry.key) !== null ||
+    entry.key === SUPERVISOR_PROVIDER_KEY ||
+    entry.key === SUPERVISOR_MODEL_NAME_KEY
+  );
 }
 
 /** The entry for a key, or null when this deployment does not publish it. */
@@ -113,6 +179,99 @@ export function findSecretSetting(
 export function stringValue(entry: PlainOperatorSetting | null): string {
   if (entry === null || entry.value === null) return '';
   return String(entry.value);
+}
+
+// ---------------------------------------------------------------------------
+// The credential slots — both of them, always (#422, epic #419)
+// ---------------------------------------------------------------------------
+
+/** One provider's credential: the key it authenticates with and the host. */
+export interface ModelCredentialSlot {
+  /** The provider id, as it appears in the key and in the provider enum. */
+  provider: string;
+  apiKey: SecretOperatorSetting | null;
+  baseUrl: PlainOperatorSetting | null;
+}
+
+/**
+ * Every slot the response carries, DISCOVERED rather than listed.
+ *
+ * Read off the keys, in the order the API sent them, so that the panel can
+ * show an operator that the provider they are not using still has its key —
+ * the fact this whole issue exists to make true. A provider added to the API
+ * appears here with no edit in `apps/web`, which is the property the
+ * generated Configuration section has and which this control keeps for
+ * everything except the four edges it declares.
+ */
+export function modelCredentialSlots(
+  settings: readonly OperatorSetting[],
+): ModelCredentialSlot[] {
+  const slots = new Map<string, ModelCredentialSlot>();
+
+  for (const entry of settings) {
+    const provider = modelSlotProvider(entry.key);
+    if (provider === null) continue;
+
+    const slot = slots.get(provider) ?? {
+      provider,
+      apiKey: null,
+      baseUrl: null,
+    };
+    if (entry.key === modelApiKeySettingKey(provider) && entry.secret) {
+      slot.apiKey = entry;
+    }
+    if (entry.key === modelBaseUrlSettingKey(provider) && !entry.secret) {
+      slot.baseUrl = entry;
+    }
+    slots.set(provider, slot);
+  }
+
+  return [...slots.values()];
+}
+
+/**
+ * The provider that is STORED — never the one mid-flight in a select.
+ *
+ * Every credential lookup on this screen goes through here, so that "which
+ * key" and "which vendor is billed" cannot disagree: the API resolves the
+ * credential from the stored provider (`resolveSupervisorModelConfig`), and a
+ * panel that read an unsaved selection instead would show one key while the
+ * supervisor used the other.
+ */
+export function selectedProvider(settings: readonly OperatorSetting[]): string {
+  return stringValue(findPlainSetting(settings, SUPERVISOR_PROVIDER_KEY));
+}
+
+/** The slot the selected provider uses, or null when there is no such slot. */
+export function selectedSlot(
+  settings: readonly OperatorSetting[],
+): ModelCredentialSlot | null {
+  const provider = selectedProvider(settings);
+  if (provider === '') return null;
+
+  return (
+    modelCredentialSlots(settings).find(
+      (slot) => slot.provider === provider,
+    ) ?? { provider, apiKey: null, baseUrl: null }
+  );
+}
+
+/**
+ * The slots for every provider that is NOT selected.
+ *
+ * Rendered rather than hidden, and that is the decision this issue turns on.
+ * An operator holding two credentials has to be able to see that the second
+ * one survived selecting the first — "switching provider destroyed the other
+ * key" is the bug being fixed, and a screen that simply stops mentioning the
+ * other key looks exactly like it.
+ */
+export function unselectedSlots(
+  settings: readonly OperatorSetting[],
+): ModelCredentialSlot[] {
+  const provider = selectedProvider(settings);
+  return modelCredentialSlots(settings).filter(
+    (slot) => slot.provider !== provider,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -217,25 +376,27 @@ const STATUS_PRESENTATION: Record<
     severity: 'info',
     title: 'No key is configured yet',
     remedy:
-      'Save a supervisor model API key below and the list fills in. Nothing ' +
-      'is wrong: there is simply nothing to ask yet.',
+      'Save the selected provider’s API key above and the list fills in. ' +
+      'Nothing is wrong: there is simply nothing to ask yet. Each provider ' +
+      'has its own key, and this is a statement about the one selected.',
   },
   invalid_key: {
     severity: 'error',
     title: 'The provider rejected the key',
     remedy:
-      'The key is wrong, expired or revoked. Replace it below. The provider ' +
-      'answered, so this is a verdict on the credential and not on the ' +
-      'network.',
+      'The key is wrong, expired or revoked. Replace it above — the slot ' +
+      'that belongs to the selected provider. The provider answered, so this ' +
+      'is a verdict on that credential and not on the network.',
   },
   wrong_provider: {
     severity: 'warning',
     title: 'That key looks like the other provider’s',
     remedy:
       'The key was rejected AND it is shaped like a key for the provider you ' +
-      'have not selected. Changing the provider above is far more likely to ' +
-      'fix this than reissuing the credential — which was probably never the ' +
-      'problem.',
+      'have not selected — so it is very likely in the wrong slot. Selecting ' +
+      'that provider above, or moving the key to that provider’s own slot, ' +
+      'is far more likely to fix this than reissuing the credential, which ' +
+      'was probably never the problem.',
   },
   unreachable: {
     severity: 'warning',
@@ -375,7 +536,7 @@ export function missingModelExplanation(
 // ---------------------------------------------------------------------------
 
 /**
- * The placeholder for `supervisor.model.baseUrl`, whose default is empty.
+ * The placeholder for `models.<provider>.baseUrl`, whose default is empty.
  *
  * Empty means "follow `supervisor.model.provider`" — an answer, not an
  * unfilled field — so it is rendered as that sentence rather than as a blank
@@ -431,21 +592,32 @@ export function buildSupervisorModelPatch(
     patch[SUPERVISOR_MODEL_NAME_KEY] = draft.name;
   }
 
-  const baseUrl = findPlainSetting(settings, SUPERVISOR_BASE_URL_KEY);
+  // The SELECTED provider's base URL, and never another provider's (#422).
+  // The host is where the key is sent, so "which host" and "which key" are
+  // one fact — writing this field to a slot the operator was not looking at
+  // would post one vendor's credential to another vendor's proxy.
+  const slot = selectedSlot(settings);
+  const baseUrl = slot?.baseUrl ?? null;
   if (baseUrl !== null && draft.baseUrl !== stringValue(baseUrl)) {
-    patch[SUPERVISOR_BASE_URL_KEY] = draft.baseUrl;
+    patch[baseUrl.key] = draft.baseUrl;
   }
 
   return patch;
 }
 
-/** The draft a fresh document seeds. Derived, never stored across documents. */
+/**
+ * The draft a fresh document seeds. Derived, never stored across documents.
+ *
+ * The base URL is seeded from the selected provider's slot, which is why the
+ * panel re-seeds after a provider change rather than carrying the field over:
+ * the value belonged to the vendor that was selected when it was typed.
+ */
 export function seedSupervisorModelDraft(
   settings: readonly OperatorSetting[],
 ): SupervisorModelDraft {
   return {
     name: stringValue(findPlainSetting(settings, SUPERVISOR_MODEL_NAME_KEY)),
-    baseUrl: stringValue(findPlainSetting(settings, SUPERVISOR_BASE_URL_KEY)),
+    baseUrl: stringValue(selectedSlot(settings)?.baseUrl ?? null),
   };
 }
 

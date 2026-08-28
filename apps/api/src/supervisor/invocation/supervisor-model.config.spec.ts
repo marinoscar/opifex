@@ -21,7 +21,7 @@ import { UnavailableSupervisorModel } from './supervisor-model.port';
 
 describe('effectiveBaseUrl (#392)', () => {
   it('follows the provider when nothing is configured', () => {
-    // The registry's default for `supervisor.model.baseUrl` is empty, so this
+    // The registry's default for `models.<provider>.baseUrl` is empty, so this
     // is what an untouched deployment resolves to on either provider.
     expect(effectiveBaseUrl('anthropic', '')).toBe(
       PROVIDER_BASE_URLS.anthropic,
@@ -105,7 +105,7 @@ describe('resolveSupervisorModelConfig (#344, #392)', () => {
     const settings = makeOperatorSettings();
     expect(resolveSupervisorModelConfig(settings).apiKey).toBe('');
 
-    settings.setOverride('supervisor.model.apiKey', 'sk-set-later');
+    settings.setOverride('models.anthropic.apiKey', 'sk-set-later');
     settings.setOverride('supervisor.model.name', 'a-model');
     settings.setOverride('supervisor.model.timeoutMs', 1234);
     settings.setOverride('supervisor.model.defaultMaxTokens', 77);

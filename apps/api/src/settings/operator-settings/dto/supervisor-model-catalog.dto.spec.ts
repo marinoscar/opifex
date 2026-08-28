@@ -38,8 +38,8 @@ function service(apiKey = 'sk-proj-test'): SupervisorModelCatalogService {
     makeOperatorSettings({
       overrides: {
         'supervisor.model.provider': 'openai',
-        'supervisor.model.apiKey': apiKey,
-        'supervisor.model.baseUrl': 'https://api.openai.test',
+        'models.openai.apiKey': apiKey,
+        'models.openai.baseUrl': 'https://api.openai.test',
       },
     }),
   );

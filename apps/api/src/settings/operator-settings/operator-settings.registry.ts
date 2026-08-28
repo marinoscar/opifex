@@ -3,7 +3,14 @@ import { z } from 'zod';
 import { PERMISSION_MODES } from '../../runners/claude-code-local/claude-code-invocation';
 import {
   DEFAULT_SUPERVISOR_MODEL_PROVIDER,
+  PROVIDER_LABELS,
   SUPERVISOR_MODEL_PROVIDERS,
+  modelApiKeyEnvVar,
+  modelApiKeySettingKey,
+  modelBaseUrlEnvVar,
+  modelBaseUrlSettingKey,
+  type ModelApiKeySettingKey,
+  type ModelBaseUrlSettingKey,
 } from '../../supervisor/invocation/supervisor-model.config';
 
 // =============================================================================
@@ -107,6 +114,11 @@ export const OPERATOR_SETTING_GROUPS = [
   'runner',
   'dispatch',
   'reconciler',
+  // Model CREDENTIALS, one slot per provider — separate from `supervisor`
+  // deliberately (#422). A credential belongs to a vendor; a consumer selects
+  // a vendor. Filing the keys under the one consumer that exists today would
+  // make the second consumer #419 adds look like a supervisor setting.
+  'models',
   'supervisor',
   'promotion',
   'notifications',
@@ -133,6 +145,18 @@ export type OperatorSettingKind = (typeof OPERATOR_SETTING_KINDS)[number];
 /** One managed key. See the file header for what each field means. */
 export interface OperatorSettingDefinition<T> {
   readonly envVar: string;
+  /**
+   * A SUPERSEDED variable, still read when `envVar` is unset (#422).
+   *
+   * Not an alias for convenience. `SUPERVISOR_MODEL_API_KEY` is one of the
+   * three keys that still requires a plain `.env` edit, because the
+   * Credentials UI (#349) has not shipped — so a release that simply renamed
+   * it would take the supervisor of every env-configured deployment offline at
+   * the restart, silently, which is the one outcome #422 rules out. The
+   * resolver reads it only after the new variable comes back unset, and warns
+   * once naming the replacement.
+   */
+  readonly legacyEnvVar?: string;
   readonly kind: OperatorSettingKind;
   /** Whether `null` is a legal value distinct from "use the default". */
   readonly nullable: boolean;
@@ -306,6 +330,110 @@ function enumSetting<const V extends readonly [string, ...string[]]>(
     nullable: false,
     schema: z.string().trim().pipe(z.enum(fields.values)),
   };
+}
+
+// ---------------------------------------------------------------------------
+// The model credential slots (#422, epic #419)
+// ---------------------------------------------------------------------------
+
+/**
+ * The variable that used to hold the ONE model credential.
+ *
+ * Kept as `models.<default provider>.apiKey`'s `legacyEnvVar` rather than
+ * deleted. See that field's own doc comment for why a rename alone would have
+ * been a silent outage, and `legacy-model-settings.migration.ts` for the
+ * matching treatment of the stored row, which is a harder problem because a
+ * sealed row cannot simply be re-pointed.
+ */
+export const LEGACY_MODEL_API_KEY_ENV = 'SUPERVISOR_MODEL_API_KEY';
+
+/** The same, for the base URL. */
+export const LEGACY_MODEL_BASE_URL_ENV = 'SUPERVISOR_MODEL_BASE_URL';
+
+/** One credential slot per provider, plus its endpoint. */
+type ModelCredentialSettings = {
+  [
+    K in ModelApiKeySettingKey | ModelBaseUrlSettingKey
+  ]: OperatorSettingDefinition<string>;
+};
+
+/**
+ * Generate a credential slot for every provider there is an adapter for.
+ *
+ * GENERATED and not written out, which is the point rather than a convenience.
+ * `supervisor-model.port.ts` says nothing outside `invocation/` may name a
+ * model provider, and `test/governing/supervisor-provider-seam.spec.ts`
+ * asserts it over the source — so two hand-written `models.anthropic.*` /
+ * `models.openai.*` blocks here would be the settings layer growing its own
+ * copy of the vendor list, which is the drift this whole file exists to
+ * remove. Iterating `SUPERVISOR_MODEL_PROVIDERS` means a third adapter gets
+ * its key field, its base-URL field, its env variables and its Control Center
+ * card with no edit here at all.
+ *
+ * The LEGACY variables attach to the DEFAULT provider's slot only, and never
+ * to both. `SUPERVISOR_MODEL_API_KEY` is a single ambiguous name and mapping
+ * it onto every slot would put an Anthropic key in the OpenAI slot, so that
+ * selecting OpenAI posts an `sk-ant-` credential to OpenAI — the exact
+ * confusion this issue exists to remove, reintroduced by the compatibility
+ * shim meant to smooth it over. The default provider is the one every
+ * deployment configured before #392 is pointed at, so it is the arm that
+ * covers essentially everybody; a deployment that set the old variable AND
+ * selected a non-default provider is told so, by name, at boot
+ * (`legacy-model-settings.migration.ts`).
+ */
+function modelCredentialSettings(): ModelCredentialSettings {
+  const slots = {} as Record<string, OperatorSettingDefinition<string>>;
+
+  for (const provider of SUPERVISOR_MODEL_PROVIDERS) {
+    const vendor = PROVIDER_LABELS[provider];
+    const isDefault = provider === DEFAULT_SUPERVISOR_MODEL_PROVIDER;
+
+    slots[modelApiKeySettingKey(provider)] = stringSetting({
+      envVar: modelApiKeyEnvVar(provider),
+      ...(isDefault ? { legacyEnvVar: LEGACY_MODEL_API_KEY_ENV } : {}),
+      default: '',
+      allowEmpty: true,
+      secret: true,
+      // Live, as `supervisor.model.apiKey` was since #344: the adapter is
+      // bound unconditionally and resolves the credential per call, so a key
+      // saved in the Control Center answers the next invocation rather than
+      // the next restart.
+      reload: 'live',
+      group: 'models',
+      label: `${vendor} API key`,
+      help:
+        `A separately metered ${vendor} credential — NOT the subscription the ` +
+        `agent authenticates with (ADR-0015). It is held independently of ` +
+        `every other provider's key, so switching a consumer between vendors ` +
+        `neither requires re-entering a credential nor destroys one. Empty ` +
+        `means nothing can call ${vendor}, and each invocation that tries ` +
+        `records that refusal in the decision log.`,
+    });
+
+    slots[modelBaseUrlSettingKey(provider)] = stringSetting({
+      envVar: modelBaseUrlEnvVar(provider),
+      ...(isDefault ? { legacyEnvVar: LEGACY_MODEL_BASE_URL_ENV } : {}),
+      // EMPTY, not a host — #392's rule, now per provider. Empty means
+      // "follow the provider", which is both the honest default and the only
+      // way an operator can EXPRESS "follow it" after typing something here.
+      default: '',
+      allowEmpty: true,
+      format: 'url',
+      secret: false,
+      reload: 'live',
+      group: 'models',
+      label: `${vendor} base URL`,
+      dangerous: true,
+      help:
+        `Leave empty and ${vendor} is called at its own endpoint. Set it only ` +
+        `for a proxy, a gateway or a test server: the ${vendor} API key above ` +
+        `is sent to whatever host is named here. Naming a provider's own ` +
+        `published host is treated as empty, so a deployment that pinned one ` +
+        `before switching provider still reaches the right vendor.`,
+    });
+  }
+
+  return slots as ModelCredentialSettings;
 }
 
 // ---------------------------------------------------------------------------
@@ -902,6 +1030,15 @@ export const OPERATOR_SETTINGS = {
   }),
 
   // -------------------------------------------------------------------------
+  // Model credentials, one slot per provider (#422, epic #419)
+  //
+  // Spread rather than written out: see `modelCredentialSettings` for why the
+  // settings layer must not contain a hand-maintained vendor list.
+  // -------------------------------------------------------------------------
+
+  ...modelCredentialSettings(),
+
+  // -------------------------------------------------------------------------
   // The supervisor (epic #21, #89, ADR-0015)
   // -------------------------------------------------------------------------
 
@@ -936,22 +1073,7 @@ export const OPERATOR_SETTINGS = {
     group: 'supervisor',
     label: 'Supervisor model provider',
     dangerous: true,
-    help: 'Which vendor the supervisor asks. The API key and the model name are sent to whichever provider is selected here, and the base URL below follows it — so switching provider is one change, not two. Changing this without also changing the key sends a credential to a host that will reject it, which is why it is marked dangerous. The next invocation honours a change.',
-  }),
-
-  'supervisor.model.apiKey': stringSetting({
-    envVar: 'SUPERVISOR_MODEL_API_KEY',
-    default: '',
-    allowEmpty: true,
-    secret: true,
-    // Live since #344. The key's presence used to decide whether an adapter
-    // was BOUND at all, which made setting it later a restart; the adapter is
-    // now bound unconditionally and resolves this key per call, so the next
-    // invocation uses what is set here.
-    reload: 'live',
-    group: 'supervisor',
-    label: 'Supervisor model API key',
-    help: 'A separately metered Anthropic credential — NOT the subscription the agent authenticates with. That separation is the point: a supervisor invocation no longer competes with a worker for anything the worker needs. Empty means no model is available and every invocation records that refusal in the decision log.',
+    help: 'Which vendor the supervisor asks. Since #422 this SELECTS a credential rather than being paired with one: the key and the base URL come from the Model credentials section’s slot for the provider named here, so switching provider neither requires re-entering a key nor destroys the one you had. It is still marked dangerous because it changes which vendor is billed, and because selecting a provider you have not given a key to leaves the supervisor with nothing to ask. The next invocation honours a change.',
   }),
 
   'supervisor.model.name': stringSetting({
@@ -963,25 +1085,6 @@ export const OPERATOR_SETTINGS = {
     group: 'supervisor',
     label: 'Supervisor model',
     help: 'Sent verbatim as the request’s `model` field and recorded verbatim against the invocation — a literal catalogue entry rather than a tier, so the log says which model actually answered. A key set with no model named is a half-configured deployment, and each invocation reports it as one.',
-  }),
-
-  'supervisor.model.baseUrl': stringSetting({
-    envVar: 'SUPERVISOR_MODEL_BASE_URL',
-    // EMPTY, not a host (#392). It used to default to Anthropic's endpoint,
-    // which made this key a second thing to remember when switching provider
-    // and made forgetting it post an OpenAI credential to Anthropic. Empty
-    // means "follow `supervisor.model.provider`", which is both the honest
-    // default and the only way an operator can EXPRESS "follow it" once they
-    // have typed something here and want to undo it.
-    default: '',
-    allowEmpty: true,
-    format: 'url',
-    secret: false,
-    reload: 'live',
-    group: 'supervisor',
-    label: 'Supervisor model base URL',
-    dangerous: true,
-    help: 'Leave empty and the supervisor calls the selected provider’s own endpoint. Set it only for a proxy, a gateway or a test server: the supervisor model API key is sent to whatever host is named here. Naming a provider’s own published host is treated as empty, so a deployment that pinned one before switching provider still reaches the right vendor.',
   }),
 
   'supervisor.model.timeoutMs': integerSetting({

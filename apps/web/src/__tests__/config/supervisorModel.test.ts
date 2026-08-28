@@ -16,11 +16,16 @@ import {
   buildSupervisorModelPatch,
   catalogStatusPresentation,
   configuredModelState,
-  isSupervisorModelKey,
+  isModelPanelSetting,
   listingCostNote,
+  modelApiKeySettingKey,
+  modelBaseUrlSettingKey,
+  modelCredentialSlots,
   modelLabel,
   modelOptions,
   seedSupervisorModelDraft,
+  selectedSlot,
+  unselectedSlots,
 } from '../../config/supervisorModel';
 import {
   ANTHROPIC_MODELS,
@@ -28,25 +33,136 @@ import {
   supervisorModelFailureFixture,
 } from '../mocks/supervisorModels';
 import { OPERATOR_SETTINGS_FIXTURE } from '../mocks/operatorSettings';
+import type { OperatorSetting } from '../../types/operatorSettings';
+
+/** The fixture with one entry replaced — used to move the provider. */
+function withEntry(key: string, change: Partial<OperatorSetting>) {
+  return OPERATOR_SETTINGS_FIXTURE.map((entry) =>
+    entry.key === key ? ({ ...entry, ...change } as OperatorSetting) : entry,
+  );
+}
+
+/** The fixture with OpenAI selected instead of the default Anthropic. */
+const OPENAI_SELECTED = withEntry('supervisor.model.provider', {
+  value: 'openai',
+});
+
+/** An entry the fixture carries, by key. */
+function entry(settings: readonly OperatorSetting[], key: string) {
+  const found = settings.find((candidate) => candidate.key === key);
+  if (!found) throw new Error(`the fixture has no ${key}`);
+  return found;
+}
 
 describe('supervisorModel', () => {
   describe('The keys the composite control owns', () => {
-    it('claims exactly the four that make up one decision', () => {
-      expect(isSupervisorModelKey('supervisor.model.provider')).toBe(true);
-      expect(isSupervisorModelKey('supervisor.model.apiKey')).toBe(true);
-      expect(isSupervisorModelKey('supervisor.model.name')).toBe(true);
-      expect(isSupervisorModelKey('supervisor.model.baseUrl')).toBe(true);
+    it('claims the decision, and every credential slot with it', () => {
+      const owned = OPERATOR_SETTINGS_FIXTURE.filter(isModelPanelSetting).map(
+        (candidate) => candidate.key,
+      );
+
+      expect(owned).toEqual([
+        'models.anthropic.apiKey',
+        'models.anthropic.baseUrl',
+        'models.openai.apiKey',
+        'models.openai.baseUrl',
+        'supervisor.model.provider',
+        'supervisor.model.name',
+      ]);
+    });
+
+    it('claims a provider slot this build has never heard of', () => {
+      // The rule is the GROUP, not a list of vendors — so the day the API
+      // grows a third adapter, its key and its endpoint arrive on the
+      // Credentials tab rather than as a second editor on Configuration.
+      expect(
+        isModelPanelSetting({
+          ...entry(OPERATOR_SETTINGS_FIXTURE, 'models.openai.apiKey'),
+          key: 'models.mistral.apiKey',
+        }),
+      ).toBe(true);
     });
 
     it('claims nothing else, including the neighbouring supervisor keys', () => {
       // The ceiling and the timeout live in the same registry group and are
       // ordinary settings. Over-claiming here would silently remove rows from
       // the Configuration section that nothing replaced.
-      expect(isSupervisorModelKey('supervisor.model.timeoutMs')).toBe(false);
-      expect(isSupervisorModelKey('supervisor.hardSpendCeilingUsd')).toBe(
-        false,
+      for (const key of [
+        'supervisor.hardSpendCeilingUsd',
+        'supervisor.hardSpendCeilingWindowDays',
+        'github.token',
+      ]) {
+        expect(
+          isModelPanelSetting(entry(OPERATOR_SETTINGS_FIXTURE, key)),
+          key,
+        ).toBe(false);
+      }
+    });
+  });
+
+  describe('One slot per provider, and both of them real (#422)', () => {
+    it('builds the API’s own key shapes', () => {
+      expect(modelApiKeySettingKey('openai')).toBe('models.openai.apiKey');
+      expect(modelBaseUrlSettingKey('openai')).toBe('models.openai.baseUrl');
+    });
+
+    it('discovers every slot the response carried', () => {
+      expect(
+        modelCredentialSlots(OPERATOR_SETTINGS_FIXTURE).map((slot) => ({
+          provider: slot.provider,
+          apiKey: slot.apiKey?.key ?? null,
+          baseUrl: slot.baseUrl?.key ?? null,
+        })),
+      ).toEqual([
+        {
+          provider: 'anthropic',
+          apiKey: 'models.anthropic.apiKey',
+          baseUrl: 'models.anthropic.baseUrl',
+        },
+        {
+          provider: 'openai',
+          apiKey: 'models.openai.apiKey',
+          baseUrl: 'models.openai.baseUrl',
+        },
+      ]);
+    });
+
+    it('follows the selected provider from one slot to the other', () => {
+      expect(selectedSlot(OPERATOR_SETTINGS_FIXTURE)?.apiKey?.key).toBe(
+        'models.anthropic.apiKey',
       );
-      expect(isSupervisorModelKey('supervisor.enabled')).toBe(false);
+      expect(selectedSlot(OPENAI_SELECTED)?.apiKey?.key).toBe(
+        'models.openai.apiKey',
+      );
+    });
+
+    it('keeps the unselected provider’s key, whichever one is selected', () => {
+      // The bug this issue removes: selecting a provider used to leave the
+      // other credential unreachable. Both directions are asserted, because an
+      // implementation that simply returned "the one that is not anthropic"
+      // would pass only one of them.
+      const otherThanAnthropic = unselectedSlots(OPERATOR_SETTINGS_FIXTURE);
+      expect(otherThanAnthropic.map((slot) => slot.provider)).toEqual([
+        'openai',
+      ]);
+      expect(otherThanAnthropic[0].apiKey?.configured).toBe(true);
+
+      const otherThanOpenai = unselectedSlots(OPENAI_SELECTED);
+      expect(otherThanOpenai.map((slot) => slot.provider)).toEqual([
+        'anthropic',
+      ]);
+    });
+
+    it('reports an unpublished slot as absent rather than inventing one', () => {
+      const without = OPERATOR_SETTINGS_FIXTURE.filter(
+        (candidate) => candidate.key !== 'models.anthropic.apiKey',
+      );
+      const slot = selectedSlot(without);
+
+      expect(slot?.provider).toBe('anthropic');
+      expect(slot?.apiKey).toBeNull();
+      // The endpoint is still published, and is still that provider's.
+      expect(slot?.baseUrl?.key).toBe('models.anthropic.baseUrl');
     });
   });
 
@@ -80,7 +196,24 @@ describe('supervisorModel', () => {
 
       expect(
         buildSupervisorModelPatch(OPERATOR_SETTINGS_FIXTURE, draft),
-      ).toEqual({ 'supervisor.model.baseUrl': 'https://gateway.internal/v1' });
+      ).toEqual({
+        'models.anthropic.baseUrl': 'https://gateway.internal/v1',
+      });
+    });
+
+    it('sends it to the SELECTED provider’s slot and never the other', () => {
+      // The endpoint is where the key is posted, so writing this field to the
+      // slot the operator was not looking at would send one vendor's
+      // credential to another vendor's proxy — the confusion #422 removed
+      // from the key, rebuilt one field over.
+      const draft = {
+        ...seedSupervisorModelDraft(OPENAI_SELECTED),
+        baseUrl: 'https://gateway.internal/v1',
+      };
+
+      expect(buildSupervisorModelPatch(OPENAI_SELECTED, draft)).toEqual({
+        'models.openai.baseUrl': 'https://gateway.internal/v1',
+      });
     });
 
     it('sends an empty model as an empty string, which stores "no model"', () => {
@@ -96,7 +229,7 @@ describe('supervisorModel', () => {
 
     it('never sends a key the response did not carry', () => {
       const without = OPERATOR_SETTINGS_FIXTURE.filter(
-        (entry) => entry.key !== 'supervisor.model.baseUrl',
+        (candidate) => candidate.key !== 'models.anthropic.baseUrl',
       );
 
       expect(
@@ -229,7 +362,11 @@ describe('supervisorModel', () => {
       // and the one `invalid_key` would describe misleadingly — sending an
       // operator off to reissue a credential that was never the problem.
       const presentation = catalogStatusPresentation('wrong_provider');
-      expect(presentation.remedy).toMatch(/Changing the provider/);
+      // Two remedies since #422, because there are now two places the mistake
+      // can be: the wrong provider is selected, or the key was pasted into the
+      // wrong vendor's slot. Neither is "get a new key".
+      expect(presentation.remedy).toMatch(/Selecting that provider/);
+      expect(presentation.remedy).toMatch(/wrong slot/);
       expect(presentation.remedy).toMatch(/never the problem/);
     });
 

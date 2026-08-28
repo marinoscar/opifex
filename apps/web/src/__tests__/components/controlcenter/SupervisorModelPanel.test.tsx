@@ -8,7 +8,16 @@
  * provider asked again — and a mocked hook would let all of them be true of
  * nothing.
  *
- * ## The two tests that carry the issue
+ * ## What #422 added to this suite
+ *
+ * The credential is no longer one key but one slot per provider, so the tests
+ * that carry THAT issue are `Each provider keeps its own credential`. They are
+ * written against a fixture where the two slots are in opposite states —
+ * `models.anthropic.apiKey` empty and `models.openai.apiKey` stored — because
+ * a fixture where both are empty cannot tell a panel that holds two
+ * credentials apart from one that shows the selected one twice.
+ *
+ * ## The two tests that carry #394
  *
  * `offers an unrecognised-version model and lets it be selected` and
  * `no rendered node anywhere in the document contains the API key`. The second
@@ -161,7 +170,7 @@ describe('SupervisorModelPanel', () => {
       // The key — the same card every other credential gets, composed in
       // rather than reimplemented.
       expect(
-        within(supervisor).getByLabelText('supervisor.model.apiKey'),
+        within(supervisor).getByLabelText('models.anthropic.apiKey'),
       ).toBeInTheDocument();
       // And the model, on the same screen, which is the whole issue.
       expect(
@@ -175,7 +184,7 @@ describe('SupervisorModelPanel', () => {
       renderSection();
       await panel();
 
-      expect(screen.getAllByLabelText('supervisor.model.apiKey')).toHaveLength(
+      expect(screen.getAllByLabelText('models.anthropic.apiKey')).toHaveLength(
         1,
       );
     });
@@ -467,7 +476,7 @@ describe('SupervisorModelPanel', () => {
       await panel();
       expect(calls.count).toBe(1);
 
-      const card = screen.getByLabelText('supervisor.model.apiKey');
+      const card = screen.getByLabelText('models.anthropic.apiKey');
       await user.click(
         within(card).getByRole('button', { name: 'Set a value' }),
       );
@@ -508,7 +517,7 @@ describe('SupervisorModelPanel', () => {
           'api.anthropic.com rejected the key (401), and the key is shaped ' +
           'like an OpenAI key while the configured provider is Anthropic.',
         title: /looks like the other provider/,
-        remedy: /Changing the provider above/,
+        remedy: /Selecting that provider above/,
       },
       {
         status: 'unreachable',
@@ -603,7 +612,7 @@ describe('SupervisorModelPanel', () => {
       renderSection();
       await panel();
 
-      const field = screen.getByLabelText('Supervisor model base URL');
+      const field = screen.getByLabelText('Anthropic base URL');
       expect(field).toHaveValue('');
       expect(field).toHaveAttribute(
         'placeholder',
@@ -630,7 +639,7 @@ describe('SupervisorModelPanel', () => {
       );
 
       await waitFor(() => expect(patches.bodies).toHaveLength(1));
-      expect(patches.bodies[0]).not.toHaveProperty('supervisor.model.baseUrl');
+      expect(patches.bodies[0]).not.toHaveProperty('models.anthropic.baseUrl');
     });
 
     it('is sent when the operator actually types one', async () => {
@@ -640,7 +649,7 @@ describe('SupervisorModelPanel', () => {
       await panel();
 
       await user.type(
-        screen.getByLabelText('Supervisor model base URL'),
+        screen.getByLabelText('Anthropic base URL'),
         'https://gateway.internal/v1',
       );
       await user.click(
@@ -649,7 +658,7 @@ describe('SupervisorModelPanel', () => {
 
       await waitFor(() => expect(patches.bodies).toHaveLength(1));
       expect(patches.bodies[0]).toEqual({
-        'supervisor.model.baseUrl': 'https://gateway.internal/v1',
+        'models.anthropic.baseUrl': 'https://gateway.internal/v1',
       });
     });
   });
@@ -664,7 +673,7 @@ describe('SupervisorModelPanel', () => {
       renderSection();
       await panel();
 
-      const card = screen.getByLabelText('supervisor.model.apiKey');
+      const card = screen.getByLabelText('models.anthropic.apiKey');
       await user.click(
         within(card).getByRole('button', { name: 'Set a value' }),
       );
@@ -692,7 +701,7 @@ describe('SupervisorModelPanel', () => {
       renderSection();
       await panel();
 
-      const card = screen.getByLabelText('supervisor.model.apiKey');
+      const card = screen.getByLabelText('models.anthropic.apiKey');
       await user.click(
         within(card).getByRole('button', { name: 'Set a value' }),
       );
@@ -724,7 +733,7 @@ describe('SupervisorModelPanel', () => {
       // in `detail` would be asserting a guarantee the UI cannot make.
       serve(
         operatorSettingsFixture({
-          settings: withEntry('supervisor.model.apiKey', {
+          settings: withEntry('models.anthropic.apiKey', {
             configured: true,
             hint: '********cdef',
             value: SUPERVISOR_KEY,
@@ -745,8 +754,232 @@ describe('SupervisorModelPanel', () => {
       expectNoLeak(document.body, SUPERVISOR_KEY);
       // The masked hint IS shown on this card, so the scan above passed over
       // a rendered credential rather than over an empty screen.
-      const card = screen.getByLabelText('supervisor.model.apiKey');
+      const card = screen.getByLabelText('models.anthropic.apiKey');
       expect(within(card).getByText('********cdef')).toBeInTheDocument();
+    });
+  });
+
+  describe('Each provider keeps its own credential (#422)', () => {
+    /** The fixture with OpenAI selected rather than the default Anthropic. */
+    function openaiSelected() {
+      serve(
+        operatorSettingsFixture({
+          settings: withEntry('supervisor.model.provider', {
+            value: 'openai',
+            source: 'database',
+          }),
+        }),
+      );
+    }
+
+    /** The block holding the credentials that are stored and not in use. */
+    function otherCredentials() {
+      return screen.getByLabelText('Other providers’ credentials');
+    }
+
+    it('shows the selected provider’s slot, and the other one as stored', async () => {
+      renderSection();
+      const supervisor = await panel();
+
+      // Anthropic is selected, so its card is the one beside the model list.
+      expect(
+        within(supervisor).getByLabelText('models.anthropic.apiKey'),
+      ).toBeInTheDocument();
+      // …and OpenAI's is below, in the block that says it is not in use.
+      expect(
+        within(otherCredentials()).getByLabelText('models.openai.apiKey'),
+      ).toBeInTheDocument();
+      expect(
+        within(otherCredentials()).queryByLabelText('models.anthropic.apiKey'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('surfaces the OTHER slot when the other provider is selected', async () => {
+      // The whole point of the split: which credential is in use is a
+      // function of the provider. An implementation that hard-coded the
+      // first slot, or the default one, passes the test above and fails this.
+      openaiSelected();
+      renderSection();
+      const supervisor = await panel();
+
+      expect(
+        within(supervisor).getByLabelText('models.openai.apiKey'),
+      ).toBeInTheDocument();
+      expect(
+        within(otherCredentials()).getByLabelText('models.anthropic.apiKey'),
+      ).toBeInTheDocument();
+      expect(
+        within(otherCredentials()).queryByLabelText('models.openai.apiKey'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('says the unselected key is kept, and shows that it is', async () => {
+      // "Switching provider destroyed my other key" is the bug being fixed,
+      // and a screen that simply stopped mentioning the other key would look
+      // identical to it. So the evidence is on screen: the stored hint, and
+      // the sentence that says selecting a provider does not clear it.
+      renderSection();
+      await panel();
+
+      const openai = within(otherCredentials()).getByLabelText(
+        'models.openai.apiKey status',
+      );
+      expect(within(openai).getByText('********mnop')).toBeInTheDocument();
+      expect(
+        within(otherCredentials()).getByText(/does not clear the other/i),
+      ).toBeInTheDocument();
+      expect(
+        within(otherCredentials()).getByText(/stored and not in use/i),
+      ).toBeInTheDocument();
+    });
+
+    it('says an empty slot is empty without implying the other one is', async () => {
+      // The selected provider has no key in this fixture and the unselected
+      // one does. Both facts are on screen at once, which is the state that
+      // used to be unrepresentable.
+      renderSection();
+      const supervisor = await panel();
+
+      expect(
+        within(
+          within(supervisor).getByLabelText('models.anthropic.apiKey status'),
+        ).getByText('not configured'),
+      ).toBeInTheDocument();
+      expect(
+        within(
+          within(otherCredentials()).getByLabelText(
+            'models.openai.apiKey status',
+          ),
+        ).queryByText('not configured'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('puts the billed Test button on the selected slot only', async () => {
+      // The unselected credential is rotatable and deliberately not testable:
+      // the probe makes one real, billed call through the supervisor's
+      // adapter, which reads the SELECTED provider's slot. A button on the
+      // other card would spend money to answer a question about a key nothing
+      // is using.
+      renderSection();
+      const supervisor = await panel();
+
+      const selected = within(supervisor).getByLabelText(
+        'models.anthropic.apiKey',
+      );
+      expect(
+        within(selected).getByRole('button', {
+          name: 'Test the key (spends money)',
+        }),
+      ).toBeInTheDocument();
+      expect(
+        within(otherCredentials()).queryByRole('button', {
+          name: 'Test the key (spends money)',
+        }),
+      ).not.toBeInTheDocument();
+
+      // And it says which vendor's money it spends, rather than naming the
+      // one vendor there used to be.
+      expect(
+        within(selected).getByText(
+          /a billed anthropic API call on models\.anthropic\.apiKey/i,
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('moves the Test button with the provider', async () => {
+      openaiSelected();
+      renderSection();
+      const supervisor = await panel();
+
+      expect(
+        within(
+          within(supervisor).getByLabelText('models.openai.apiKey'),
+        ).getByRole('button', { name: 'Test the key (spends money)' }),
+      ).toBeInTheDocument();
+      expect(
+        within(otherCredentials()).queryByRole('button', {
+          name: 'Test the key (spends money)',
+        }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('edits the base URL of the provider that is selected', async () => {
+      // The endpoint is where the key is SENT, so a save that wrote it to the
+      // other provider's slot would post one vendor's credential to another
+      // vendor's proxy — the confusion this issue removed from the key,
+      // rebuilt one field over.
+      openaiSelected();
+      const user = userEvent.setup();
+      const patches = recordPatch();
+      renderSection();
+      await panel();
+
+      expect(
+        screen.queryByLabelText('Anthropic base URL'),
+      ).not.toBeInTheDocument();
+
+      await user.type(
+        screen.getByLabelText('OpenAI base URL'),
+        'https://gateway.internal/v1',
+      );
+      await user.click(
+        screen.getByRole('button', { name: 'Save model settings' }),
+      );
+
+      await waitFor(() => expect(patches.bodies).toHaveLength(1));
+      expect(patches.bodies[0]).toEqual({
+        'models.openai.baseUrl': 'https://gateway.internal/v1',
+      });
+    });
+
+    it('re-seeds the endpoint field when the provider is switched', async () => {
+      // An unsaved base URL belongs to the provider that was selected when it
+      // was typed. Carrying it across would write one vendor's proxy into the
+      // other vendor's slot on the next save.
+      const user = userEvent.setup();
+      recordPatch(
+        operatorSettingsFixture({
+          revision: 8,
+          settings: withEntry('supervisor.model.provider', {
+            value: 'openai',
+            source: 'database',
+          }),
+        }),
+      );
+      renderSection();
+      await panel();
+
+      await user.type(
+        screen.getByLabelText('Anthropic base URL'),
+        'https://gateway.internal/v1',
+      );
+
+      await openSelect(user, 'Supervisor model provider');
+      await user.click(screen.getByRole('option', { name: 'openai' }));
+
+      const field = await screen.findByLabelText('OpenAI base URL');
+      expect(field).toHaveValue('');
+      expect(
+        screen.queryByLabelText('Anthropic base URL'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('names the slot rather than a key that no longer exists, when absent', async () => {
+      serve(
+        operatorSettingsFixture({
+          settings: OPERATOR_SETTINGS_FIXTURE.filter(
+            (entry) => entry.key !== 'models.anthropic.apiKey',
+          ),
+        }),
+      );
+
+      renderSection();
+      await panel();
+
+      expect(screen.getByText(/models\.anthropic\.apiKey/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/no key to set for the selected provider/i),
+      ).toBeInTheDocument();
     });
   });
 

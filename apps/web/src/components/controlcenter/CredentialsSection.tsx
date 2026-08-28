@@ -19,15 +19,22 @@
  * that has nothing to do with it — or worse, apply half of it. Each card
  * sends its own key.
  *
- * ## One credential is not on its own card, and that is the point
+ * ## The model credentials are not on cards of their own, and that is the point
  *
- * `supervisor.model.apiKey` is rendered INSIDE `SupervisorModelPanel` (#394,
- * epic #391) rather than in the list above it. The key on its own was never
- * the operator's problem: they saved it here, pressed Test, and were told a
- * model name they had never heard of was unset — on another tab, in a
+ * Every `models.<provider>.apiKey` is rendered INSIDE `SupervisorModelPanel`
+ * (#394, epic #391) rather than in the list above it. The key on its own was
+ * never the operator's problem: they saved it here, pressed Test, and were
+ * told a model name they had never heard of was unset — on another tab, in a
  * free-text box. So the key, the provider and the model are one control, and
- * the card itself is passed into that control rather than reimplemented, so
- * the write-only discipline below holds for it unchanged.
+ * the cards themselves are passed into that control rather than
+ * reimplemented, so the write-only discipline below holds for them unchanged.
+ *
+ * Since #422 there is one such key per provider rather than one in total, and
+ * ALL of them go into the panel: the selected provider's beside the model list
+ * it fills, the rest below it as stored-and-idle. Splitting them — one in the
+ * panel, the other up here between the GitHub token and the runner's — would
+ * put two halves of one decision on one screen in two places, which is the
+ * shape of the problem this panel was built to remove.
  *
  * ## Nothing here shows a secret, because nothing here has one
  *
@@ -52,7 +59,11 @@ import { SecretCredentialCard } from './SecretCredentialCard';
 import { SpendCeilingsPanel } from './SpendCeilingsPanel';
 import { SupervisorModelPanel } from './SupervisorModelPanel';
 import { supportsGuidedSignIn } from '../../config/claudeAuth';
-import { SUPERVISOR_API_KEY_KEY } from '../../config/supervisorModel';
+import {
+  modelSlotProvider,
+  selectedSlot,
+  unselectedSlots,
+} from '../../config/supervisorModel';
 import type {
   ProbeDescriptor,
   ProbeObservation,
@@ -136,16 +147,19 @@ export function CredentialsSection({
     (entry): entry is SecretOperatorSetting => entry.secret,
   );
 
-  // The supervisor key is not listed with the others; it is composed into the
-  // panel that also owns the provider and the model. Filtering by key is a
-  // named exception, declared in `config/supervisorModel.ts` with its reason,
-  // rather than a lost property: every other secret the registry publishes
+  // The model credentials are not listed with the others; they are composed
+  // into the panel that also owns the provider and the model. Filtering by
+  // GROUP rather than by a list of key names is what keeps this a named
+  // exception instead of a lost property: a provider added to the API arrives
+  // with its card in the panel, and every other secret the registry publishes
   // still gets a card here with no frontend change.
   const listedSecrets = secrets.filter(
-    (entry) => entry.key !== SUPERVISOR_API_KEY_KEY,
+    (entry) => modelSlotProvider(entry.key) === null,
   );
-  const supervisorKey =
-    secrets.find((entry) => entry.key === SUPERVISOR_API_KEY_KEY) ?? null;
+  const supervisorKey = selectedSlot(document.settings)?.apiKey ?? null;
+  const otherKeys = unselectedSlots(document.settings).flatMap((slot) =>
+    slot.apiKey === null ? [] : [slot.apiKey],
+  );
 
   const secretCard = (entry: SecretOperatorSetting) => (
     <SecretCredentialCard
@@ -241,6 +255,15 @@ export function CredentialsSection({
           supervisorKey ? (
             <Stack component="ul" sx={{ p: 0, m: 0 }}>
               {secretCard(supervisorKey)}
+            </Stack>
+          ) : null
+        }
+        // The credentials nothing is currently using — shown so that holding
+        // a key for each vendor is visibly a thing this deployment does.
+        otherKeyCards={
+          otherKeys.length > 0 ? (
+            <Stack component="ul" spacing={2} sx={{ p: 0, m: 0 }}>
+              {otherKeys.map((entry) => secretCard(entry))}
             </Stack>
           ) : null
         }

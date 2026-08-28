@@ -485,6 +485,35 @@ possible, and none of them touch the port:
   `effectiveBaseUrl` in
   `apps/api/src/supervisor/invocation/supervisor-model.config.ts`.
 
+## Amendment (2026-08-28): one credential slot per provider, #422
+
+The #391 amendment above gave the two vendors one shared credential —
+`supervisor.model.apiKey` and `supervisor.model.baseUrl`, read against
+whichever vendor `supervisor.model.provider` named. That shape had a real
+cost the amendment did not flag: an operator holding both an Anthropic key
+and an OpenAI key could store only one at a time, and switching provider
+destroyed whichever key was not currently selected. #422 does not revisit
+anything the Decision above settled — the port, the transport, the per-call
+resolution discipline are all unchanged — it corrects the one place a shared
+key and a per-vendor choice were the wrong shape for each other.
+
+The key and its base-URL override are now a property of the **provider**,
+not of the supervisor: `models.<provider>.apiKey` and
+`models.<provider>.baseUrl`, one pair per entry in
+`SUPERVISOR_MODEL_PROVIDERS`, generated rather than declared by hand so a
+third adapter gets its own slot with no registry edit
+(`apps/api/src/settings/operator-settings/operator-settings.registry.ts`).
+`supervisor.model.provider` and `supervisor.model.name` are unchanged and
+stay under the `supervisor` group; only the credential moved. The former
+single names, `SUPERVISOR_MODEL_API_KEY` and `SUPERVISOR_MODEL_BASE_URL`,
+still work as a fallback for the default provider's slot only — one
+ambiguous variable cannot honestly name a credential for two vendors — and a
+stored `supervisor.model.apiKey` row is decrypted and re-sealed under the
+provider slot it already meant at boot, once, rather than left behind. See
+[`docs/operator-configuration.md`](../operator-configuration.md#migrating-off-the-single-shared-key-422)
+for the full shape of the migration, the compatibility path, and the new
+boot-time check for a credential that will not decrypt.
+
 ## Alternatives considered
 
 **The Anthropic SDK, in-process.** Typed requests and built-in retry, at the

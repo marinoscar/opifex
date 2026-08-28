@@ -6,7 +6,18 @@ import {
   OperatorSettingsService,
   type OperatorSettingSource,
 } from '../../src/settings/operator-settings/operator-settings.service';
+import type { LegacyModelSettingKey } from '../../src/settings/operator-settings/legacy-model-settings.migration';
 import type { OperatorSettingKey } from '../../src/settings/operator-settings/operator-settings.registry';
+
+/**
+ * A key a row may legitimately exist under.
+ *
+ * Includes the keys #422 SUPERSEDED, because the migration spec's whole
+ * subject is a row sitting under a key the registry no longer declares — and a
+ * fixture that could not express one would make the migration untestable
+ * through the same seam every other settings spec uses.
+ */
+type StorableKey = OperatorSettingKey | LegacyModelSettingKey;
 
 /**
  * A minimal `operator_settings` stand-in for the #338 endpoint specs.
@@ -75,7 +86,7 @@ export class FakeOperatorSettingsPrisma {
   };
 
   /** Put a sealed secret in the table, exactly as `set()` would have. */
-  sealInto(key: OperatorSettingKey, plaintext: string): void {
+  sealInto(key: StorableKey, plaintext: string): void {
     const sealed = seal(plaintext, key);
     this.rows.set(key, {
       key,
@@ -90,7 +101,7 @@ export class FakeOperatorSettingsPrisma {
   }
 
   /** Put a plain override in the table. */
-  put(key: OperatorSettingKey, value: unknown): void {
+  put(key: StorableKey, value: unknown): void {
     this.rows.set(key, {
       key,
       value: value as Prisma.JsonValue,
@@ -104,7 +115,7 @@ export class FakeOperatorSettingsPrisma {
   }
 
   /** A row whose ciphertext has been tampered with, so it will not open. */
-  corrupt(key: OperatorSettingKey): void {
+  corrupt(key: StorableKey): void {
     const row = this.rows.get(key);
     if (!row) throw new Error(`no row for ${key} to corrupt`);
     row.secretCiphertext = Buffer.from('not the ciphertext').toString('base64');

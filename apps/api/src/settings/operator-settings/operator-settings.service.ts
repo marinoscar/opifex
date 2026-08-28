@@ -703,13 +703,32 @@ export class OperatorSettingsService implements OnModuleInit {
   protected environmentValue(
     key: OperatorSettingKey,
   ): { raw: string; source: OperatorSettingSource } | undefined {
-    const raw = this.environment()[OPERATOR_SETTINGS[key].envVar];
-    if (raw === undefined) return undefined;
+    const definition = OPERATOR_SETTINGS[key];
+    const env = this.environment();
 
-    const trimmed = raw.trim();
-    if (trimmed === '') return undefined;
+    const primary = trimmedEnv(env, definition.envVar);
+    if (primary !== undefined) return { raw: primary, source: 'env' };
 
-    return { raw: trimmed, source: 'env' };
+    // The superseded name, read ONLY after the current one came back unset
+    // (#422). A key whose variable was renamed must not go dark on the
+    // restart that picks up the rename — `legacyEnvVar`'s own doc says why —
+    // but the operator is told once, by name, so the compatibility path is
+    // something they can leave rather than something they never learn about.
+    if (definition.legacyEnvVar !== undefined) {
+      const legacy = trimmedEnv(env, definition.legacyEnvVar);
+      if (legacy !== undefined) {
+        this.warnOnce(
+          `legacy-env:${key}`,
+          `${definition.legacyEnvVar} is still supplying ${key}. It has been ` +
+            `superseded by ${definition.envVar}; rename it in your ` +
+            `environment. The old name is read only while the new one is ` +
+            `unset, and will stop being read.`,
+        );
+        return { raw: legacy, source: 'env' };
+      }
+    }
+
+    return undefined;
   }
 
   /** Overridden by the test double so specs never depend on the host's env. */
@@ -1076,6 +1095,20 @@ function diffOverlays(
   }
 
   return changed;
+}
+
+/**
+ * One environment variable, with empty-means-unset applied.
+ *
+ * Shared by the current and the superseded name so the two cannot disagree
+ * about what "set" means — a `.env` full of `FOO=` written to mean "unset"
+ * would otherwise stop the legacy fallback from ever being reached.
+ */
+function trimmedEnv(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const raw = env[name];
+  if (raw === undefined) return undefined;
+  const trimmed = raw.trim();
+  return trimmed === '' ? undefined : trimmed;
 }
 
 function asMessage(error: unknown): string {

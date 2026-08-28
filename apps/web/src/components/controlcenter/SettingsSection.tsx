@@ -67,7 +67,7 @@ import {
 import { SettingRow } from './SettingRow';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { groupSettings, observedFor } from '../../config/operatorSettings';
-import { isSupervisorModelKey } from '../../config/supervisorModel';
+import { isModelPanelSetting } from '../../config/supervisorModel';
 import {
   buildPatch,
   type DraftFieldValue,
@@ -211,17 +211,17 @@ export function SettingsSection({
             {group.label}
           </Typography>
           <Divider sx={{ mb: 2 }} />
-          {group.entries.some((entry) => isSupervisorModelKey(entry.key)) && (
+          {group.entries.some(isModelPanelSetting) && (
             <PromotedKeysSignpost
               keys={group.entries
-                .filter((entry) => isSupervisorModelKey(entry.key))
+                .filter(isModelPanelSetting)
                 .map((entry) => entry.key)}
               onNavigateToSection={onNavigateToSection}
             />
           )}
           <Stack component="ul" spacing={2} sx={{ p: 0, m: 0 }}>
             {group.entries
-              .filter((entry) => !isSupervisorModelKey(entry.key))
+              .filter((entry) => !isModelPanelSetting(entry))
               .map((entry) => (
                 <SettingRow
                   key={entry.key}
@@ -332,7 +332,7 @@ function OverlayBanner({ document }: { document: OperatorSettingsDocument }) {
 }
 
 /**
- * Where four keys went, and why they are not editable here.
+ * Where these keys went, and why they are not editable here.
  *
  * Named rather than hidden. An operator who came looking for
  * `supervisor.model.name` — the setting the Test button on the other tab used
@@ -340,6 +340,12 @@ function OverlayBanner({ document }: { document: OperatorSettingsDocument }) {
  * expected it in, with a way to get to it. Silently omitting the rows would
  * make this section quietly incomplete, which is worse than a duplicate
  * editor, not better.
+ *
+ * Since #422 the set is not four fixed keys but "everything in the model
+ * credentials group, plus the provider and the model name", so a provider
+ * added to the API lands on the Credentials tab with the rest of them rather
+ * than appearing here as a second, worse editor for a base URL that decides
+ * where a credential is sent.
  */
 function PromotedKeysSignpost({
   keys,
@@ -363,7 +369,10 @@ function PromotedKeysSignpost({
       Choosing a model means asking the provider what the key can reach, so
       these are one control there rather than a free-text box here. That split —
       the key on one tab, the model name on another — is what sent an operator
-      looking for a setting the Test button had just named at them.
+      looking for a setting the Test button had just named at them. Each
+      provider&apos;s key and endpoint are held separately and are all on that
+      one screen, so selecting a provider neither asks for a credential again
+      nor discards the one you had.
       <Box sx={{ mt: 1 }}>
         <Button size="small" onClick={() => onNavigateToSection('credentials')}>
           Go to Credentials
