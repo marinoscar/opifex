@@ -420,6 +420,50 @@ P1
       expect(a.workOrder).toEqual(b.workOrder);
     });
 
+    /**
+     * The fact that made #432 a bug rather than an untidiness, pinned.
+     *
+     * `QueueSteeringService.release` used to ADD `factory:ready` and stop,
+     * leaving `factory:hold` in place. That is only a no-op because the hold
+     * outranks the ready HERE. If this precedence were ever quietly inverted —
+     * so that a later `factory:ready` won — a release would appear to start
+     * working, and so would every other path that adds a ready label to a held
+     * issue, including a human doing it by hand on GitHub. Both directions are
+     * asserted so neither can be changed without a test failing.
+     */
+    it('is held when BOTH labels are present, whatever order they arrive in', () => {
+      const both = project({
+        issue: issue({ inputLabels: [INPUT_LABELS.HOLD, INPUT_LABELS.READY] }),
+      });
+      const reversed = project({
+        issue: issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] }),
+      });
+
+      if (!both.eligible || !reversed.eligible) {
+        throw new Error('expected eligible');
+      }
+      expect(both.held).toBe(true);
+      expect(reversed.held).toBe(true);
+    });
+
+    it('reads the hold from factory:hold alone — the ready label cannot lift it', () => {
+      // Stated as the contrapositive of the release fix: removing the hold is
+      // the ONLY thing that releases, so adding a ready label beside it must
+      // never be enough.
+      const stillHeld = project({
+        issue: issue({ inputLabels: [INPUT_LABELS.READY, INPUT_LABELS.HOLD] }),
+      });
+      const released = project({
+        issue: issue({ inputLabels: [INPUT_LABELS.READY] }),
+      });
+
+      if (!stillHeld.eligible || !released.eligible) {
+        throw new Error('expected eligible');
+      }
+      expect(stillHeld.held).toBe(true);
+      expect(released.held).toBe(false);
+    });
+
     it('is not held when only ready is present', () => {
       const result = project();
       if (!result.eligible) throw new Error('expected eligible');

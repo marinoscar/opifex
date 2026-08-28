@@ -64,7 +64,9 @@ export class QueueController {
   /**
    * Ask the factory to stop acting on this work order's issue.
    *
-   * Writes `factory:hold` and nothing else. VISION §3.3 makes labels "a
+   * Writes `factory:hold` and nothing else — in particular it does NOT remove
+   * `factory:ready`, which release is not symmetric with on purpose
+   * (`queue-steering.service.ts`, `LABEL_PLAN`). VISION §3.3 makes labels "a
    * bidirectional edge, never the state machine", so this endpoint is a UI over
    * the input label — the effect arrives on the next reconciler tick, exactly
    * as it would if the operator had typed the label into GitHub themselves.
@@ -93,6 +95,11 @@ export class QueueController {
     description: 'Label written; effective next tick',
   })
   @ApiResponse({ status: 404, description: 'Work order not found' })
+  @ApiResponse({
+    status: 503,
+    description:
+      'The label write did not reach GitHub. Nothing was applied; retrying is safe.',
+  })
   async hold(
     @Param('workOrderId') workOrderId: string,
     @CurrentUser('id') actorUserId: string,
@@ -103,7 +110,17 @@ export class QueueController {
   /**
    * Authorize this work order's issue for dispatch again.
    *
-   * Writes `factory:ready`. There is deliberately NO endpoint for
+   * Writes `factory:ready` AND removes `factory:hold`, in that order. The
+   * removal is what makes it a release: an issue carrying both labels is held
+   * (`issue-projection.ts`), so adding the ready label alone wrote something
+   * that changed nothing while every layer reported success (#432).
+   *
+   * That makes this endpoint two writes, so half of it can land. When it does,
+   * the answer is a 503 naming what did and did not reach GitHub rather than a
+   * 202 — reporting a release that did not take as accepted would put the same
+   * bug back one level up.
+   *
+   * There is deliberately NO endpoint for
    * `factory:clear-quarantine`: #49 requires a human apply it on GitHub, where
    * the applier's identity is native and verifiable from the issue timeline.
    * Proxying it here would launder the actor — every clear would look like it
@@ -114,10 +131,14 @@ export class QueueController {
   @Auth({ permissions: [PERMISSIONS.WORKORDERS_WRITE] })
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
-    summary: "Apply factory:ready to a work order's issue",
+    summary:
+      "Apply factory:ready and remove factory:hold from a work order's issue",
     description:
-      'The counterpart to hold. Does NOT clear quarantine — that label must be applied by a ' +
-      'human on GitHub so the actor is verifiable (#49, VISION §8).',
+      'The counterpart to hold, and two label writes rather than one: the hold must be ' +
+      'REMOVED or the release changes nothing, since an issue carrying both labels is held ' +
+      '(#432). A release that only partly reached GitHub answers 503 naming both writes, ' +
+      'never 202. Does NOT clear quarantine — that label must be applied by a human on ' +
+      'GitHub so the actor is verifiable (#49, VISION §8).',
   })
   @ApiParam({
     name: 'workOrderId',
@@ -125,9 +146,15 @@ export class QueueController {
   })
   @ApiResponse({
     status: 202,
-    description: 'Label written; effective next tick',
+    description: 'Both labels written; effective next tick',
   })
   @ApiResponse({ status: 404, description: 'Work order not found' })
+  @ApiResponse({
+    status: 503,
+    description:
+      'The release did not fully reach GitHub, so the work order may still be held. ' +
+      'The message names each write and what became of it; retrying is safe.',
+  })
   async release(
     @Param('workOrderId') workOrderId: string,
     @CurrentUser('id') actorUserId: string,
