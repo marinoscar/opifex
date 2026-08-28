@@ -30,6 +30,7 @@ import type { SvgIconComponent } from '@mui/icons-material';
 import SpeedIcon from '@mui/icons-material/Speed';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
+import ForumIcon from '@mui/icons-material/Forum';
 import ThumbsUpDownIcon from '@mui/icons-material/ThumbsUpDown';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import PaidIcon from '@mui/icons-material/Paid';
@@ -44,6 +45,7 @@ export type DestinationKey =
   | 'approvals'
   | 'trust'
   | 'queue'
+  | 'steering'
   | 'projects'
   | 'cost'
   | 'settings'
@@ -97,6 +99,7 @@ export const DESTINATION_ROUTES: Record<DestinationKey, readonly string[]> = {
   // not a place of its own — it is the destination's whole point.
   trust: ['/trust'],
   queue: ['/queue'],
+  steering: ['/steering'],
   projects: ['/projects'],
   cost: ['/cost'],
   settings: ['/settings'],
@@ -265,6 +268,29 @@ export const DESTINATIONS: readonly Destination[] = [
     // destination to nobody it should not.
     status: 'live',
     permission: 'workorders:read',
+  },
+  {
+    key: 'steering',
+    label: 'Steering',
+    compactLabel: 'Steer',
+    Icon: ForumIcon,
+    path: '/steering',
+    section: 'operate',
+    // LIVE as of #426, gaining its real permission in the same pull request as
+    // the surface — the rule this file's header sets. `workorders:write` is
+    // what `SteeringController` enforces on BOTH of its endpoints, propose
+    // included: proposing reads a whole backlog to compute a blast radius and
+    // is of no use to somebody who could not apply it, and the controller says
+    // so in as many words.
+    //
+    // This is the one Operate destination gated on a WRITE permission, and the
+    // reason it is not `workorders:read` is that there is nothing here to
+    // read. The screen has no list, no table and no state of its own: it is a
+    // box that produces a proposal from an endpoint a viewer is refused. A
+    // reachability gate on the read permission would put a rail row in front
+    // of a viewer whose every use of the page is a 403.
+    status: 'live',
+    permission: 'workorders:write',
   },
   {
     key: 'projects',

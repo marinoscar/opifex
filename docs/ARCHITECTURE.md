@@ -420,8 +420,22 @@ shapes.
 The frontend cockpit consuming these lives at `apps/web/src/pages/`:
 `DashboardPage`, `ProjectsPage`, `QueuePage`, `RunsPage`, `RunDetailPage`,
 `WorkOrderDetailPage`, `CostPage`, `ApprovalsPage`/`ApprovalDetailPage`,
-`TrustPage`/`TrustGrantDetailPage` — built on the same React/MUI/context
-foundation as §10.
+`TrustPage`/`TrustGrantDetailPage`, `SteeringPage` — built on the same
+React/MUI/context foundation as §10.
+
+**`SteeringPage` (`/steering`, #426) is the propose-then-confirm screen over
+the two steering endpoints above** — an operator instruction becomes a
+`SteeringProposal` rendered by `ProposalReview`, which never writes on its
+own; only an explicit Apply press (a second, separate call to `POST
+/api/steering/proposals/apply`) does. `LabelDiff` renders every `add`/`remove`
+pair identically regardless of direction, and `ProposalReview` partitions the
+diff into issues the operator named versus collateral an "only" clause
+touched without being asked — the same distinction `blastRadius` and
+`operations[].named` carry over the wire (see `docs/API.md`). This is the
+UI's own defence of VISION §3.6's rule that no model output takes effect
+without passing through deterministic policy: there is no code path in
+`useSteering.ts`, `SteeringPage.tsx` or `ProposalReview.tsx` from a proposal
+to a write, for any proposal, regardless of size or confidence.
 
 ### 3.8 The supervisor, autonomy, and the promotion ladder
 

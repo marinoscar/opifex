@@ -23,6 +23,7 @@ const RunsPage = lazy(() => import('./pages/RunsPage'));
 const RunDetailPage = lazy(() => import('./pages/RunDetailPage'));
 const WorkOrderDetailPage = lazy(() => import('./pages/WorkOrderDetailPage'));
 const QueuePage = lazy(() => import('./pages/QueuePage'));
+const SteeringPage = lazy(() => import('./pages/SteeringPage'));
 const ApprovalsPage = lazy(() => import('./pages/ApprovalsPage'));
 const ApprovalDetailPage = lazy(() => import('./pages/ApprovalDetailPage'));
 const TrustPage = lazy(() => import('./pages/TrustPage'));
@@ -82,6 +83,33 @@ function AppRoutes() {
                   element={<WorkOrderDetailPage />}
                 />
                 <Route path="/queue" element={<QueuePage />} />
+                {/* Steering (#426, epic #419). Gated on `workorders:write`,
+                    which is what `SteeringController` enforces on BOTH of its
+                    endpoints — propose as well as apply, because computing a
+                    blast radius reads a whole backlog and is of no use to
+                    somebody who could not apply the result.
+
+                    This is the one Operate route whose gate is a WRITE
+                    permission, and it is a reachability gate rather than a
+                    content one for a reason peculiar to this page: there is
+                    nothing here to read. Unlike the queue, the approvals list
+                    or the trust screen, it has no list a viewer could usefully
+                    look at with the buttons removed — the whole surface is a
+                    box that calls an endpoint a viewer is refused. Applying
+                    additionally needs an INTERACTIVE session (#346), which no
+                    route guard can check and the API enforces: a confirmation
+                    a script can send is not a confirmation. */}
+                <Route
+                  path="/steering"
+                  element={
+                    <RequirePermission
+                      permission="workorders:write"
+                      fallback={<Navigate to="/" replace />}
+                    >
+                      <SteeringPage />
+                    </RequirePermission>
+                  }
+                />
                 {/* Approvals (#98, epic #22). Unlike the cockpit routes above,
                     these DO carry a `RequirePermission`, because there is a
                     controller behind them enforcing exactly this string:

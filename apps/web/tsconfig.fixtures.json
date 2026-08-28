@@ -23,6 +23,7 @@
   "files": [
     "src/__tests__/mocks/repositories.ts",
     "src/__tests__/mocks/queueSteering.ts",
+    "src/__tests__/mocks/steering.ts",
     "src/__tests__/mocks/operatorSettings.ts"
   ]
 }

@@ -53,6 +53,7 @@ import {
   modelApiKeySettingKey,
   modelBaseUrlSettingKey,
 } from '../../config/supervisorModel';
+import { PROPOSAL_TTL_MINUTES } from '../../config/steeringChat';
 import { OPERATOR_SETTINGS_FIXTURE } from '../mocks/operatorSettings';
 import type { OperatorSetting } from '../../types/operatorSettings';
 
@@ -67,6 +68,10 @@ const MODEL_CONFIG = resolve(
   API_SRC,
   'supervisor/invocation/supervisor-model.config.ts',
 );
+/** The steering contract (#425), consumed by the chat surface (#426). */
+const STEERING_DTO = resolve(API_SRC, 'steering/dto/steering.dto.ts');
+/** Where `src/types/steering.ts` mirrors it, read as text for the same reason. */
+const WEB_STEERING_TYPES = resolve(HERE, '../../types/steering.ts');
 
 function apiSource(path: string): string {
   // A missing file is a failure, not a skip. The alternative — quietly passing
@@ -255,5 +260,78 @@ describe('no frontend module names a setting the API does not serve', () => {
       expect(served.has(modelApiKeySettingKey(provider)), provider).toBe(true);
       expect(served.has(modelBaseUrlSettingKey(provider)), provider).toBe(true);
     }
+  });
+});
+
+/**
+ * The steering vocabulary, in both places it is written down (#426).
+ *
+ * `apps/web` mirrors `steering.dto.ts` by hand — importing it would drag
+ * NestJS into this TypeScript project — so the mirror can drift, and the two
+ * things that would drift SILENTLY are here.
+ *
+ * The TTL is the sharper of the two. `config/steeringChat.ts` restates it only
+ * to warn an operator before a proposal goes stale; the server is still the
+ * authority and answers 409 either way. So a change to the API's constant
+ * would not break anything visibly — the screen would simply promise thirty
+ * minutes on a proposal that had twenty, which is the kind of wrong that gets
+ * discovered by somebody losing a confirmation they had already read.
+ *
+ * The reason enums drift the same way: the frontend renders `reason` verbatim
+ * today, so a value it has never heard of renders fine — right up until
+ * somebody adds a `switch` over the union and it silently misses an arm.
+ */
+describe('the steering contract the chat surface mirrors', () => {
+  function enumValues(source: string, name: string): string[] {
+    const declaration = new RegExp(`${name} = z\\.enum\\(\\[([^\\]]*)\\]`).exec(
+      source,
+    );
+    expect(declaration, `${name} is declared as a z.enum`).not.toBeNull();
+    return [...(declaration?.[1] ?? '').matchAll(/'([a-z-]+)'/g)]
+      .map((match) => match[1])
+      .sort();
+  }
+
+  /** The members of a string-literal union in the web's mirror. */
+  function unionMembers(source: string, name: string): string[] {
+    const declaration = new RegExp(
+      `export type ${name} =([\\s\\S]*?);\\n`,
+    ).exec(source);
+    expect(declaration, `${name} is declared in the web mirror`).not.toBeNull();
+    return [...(declaration?.[1] ?? '').matchAll(/'([a-z-]+)'/g)]
+      .map((match) => match[1])
+      .sort();
+  }
+
+  it('reads a steering DTO that is obviously real', () => {
+    // The guard against a regex that has quietly stopped matching, without
+    // which every assertion below would pass over an empty set.
+    const source = apiSource(STEERING_DTO);
+
+    expect(enumValues(source, 'unresolvedReasonSchema')).toContain(
+      'needs-interpretation',
+    );
+    expect(enumValues(source, 'skippedReasonSchema')).toContain('drift');
+  });
+
+  it('states the same proposal TTL the API enforces', () => {
+    const declared = /PROPOSAL_TTL_MINUTES = (\d+)/.exec(
+      apiSource(STEERING_DTO),
+    );
+
+    expect(declared, 'PROPOSAL_TTL_MINUTES is declared').not.toBeNull();
+    expect(PROPOSAL_TTL_MINUTES).toBe(Number(declared?.[1]));
+  });
+
+  it('knows every reason a reference can go unresolved', () => {
+    expect(
+      unionMembers(apiSource(WEB_STEERING_TYPES), 'UnresolvedReason'),
+    ).toEqual(enumValues(apiSource(STEERING_DTO), 'unresolvedReasonSchema'));
+  });
+
+  it('knows every reason an operation can be skipped', () => {
+    expect(
+      unionMembers(apiSource(WEB_STEERING_TYPES), 'SkippedReason'),
+    ).toEqual(enumValues(apiSource(STEERING_DTO), 'skippedReasonSchema'));
   });
 });

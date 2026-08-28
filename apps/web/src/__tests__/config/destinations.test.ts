@@ -239,6 +239,7 @@ describe('destinations — the table itself', () => {
    *   approvals.controller.ts       → PERMISSIONS.APPROVALS_READ    (#98)
    *   trust/trust.controller.ts     → PERMISSIONS.TRUST_READ        (#101)
    *   promotion/promotion.controller.ts → PERMISSIONS.TRUST_READ    (#101)
+   *   steering/steering.controller.ts → PERMISSIONS.WORKORDERS_WRITE (#426)
    * Nothing else in `apps/api` guards a page this app routes to.
    */
   const ENFORCED_PERMISSIONS = [
@@ -249,6 +250,10 @@ describe('destinations — the table itself', () => {
     'projects:read',
     'approvals:read',
     'trust:read',
+    // The one WRITE permission a destination gates on, and the only one that
+    // could be: `SteeringController` enforces it on propose as well as apply,
+    // so there is nothing on `/steering` for a reader to reach (#426).
+    'workorders:write',
   ];
 
   it('gates the admin destinations on the permission the API enforces', () => {
@@ -351,6 +356,9 @@ describe('destinations — the table itself', () => {
       'queue',
       'runs',
       'settings',
+      // #426, in the same pull request as the chat surface over
+      // `SteeringController` (#425).
+      'steering',
       'system',
       // #101, in the same pull request as `TrustController` and
       // `PromotionController`.
@@ -498,6 +506,9 @@ describe('destinations — the bottom-bar split', () => {
       // reaches it. It sits in the sheet, in table order.
       'approvals',
       'trust',
+      // Steering is reference-grade on a phone: it writes labels to a backlog
+      // after reading a diff, which is not a thumb-reachable decision.
+      'steering',
       'projects',
       'cost',
       'settings',
