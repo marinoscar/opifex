@@ -53,8 +53,10 @@ const INTERVAL_NAME = 'operator-settings-refresh';
  * ## Why the first load is NOT here
  *
  * `OperatorSettingsService.onModuleInit` does it. `OperatorSettingsModule` is
- * `@Global` and initialises early, so a consumer reading a managed key in its
- * own `onModuleInit` gets the overlay rather than the environment. Starting a
+ * `@Global` and initialises early, so a consumer in another module reading a
+ * managed key in its own `onModuleInit` gets the overlay rather than the
+ * environment — a consumer registered in THIS module does not, and must wait
+ * for `onApplicationBootstrap`; see that hook's comment and #436. Starting a
  * second load here would mean two queries racing on the first tick of every
  * process, for no benefit — `RunnerRegistrationTask` declines the same thing
  * for the same reason.

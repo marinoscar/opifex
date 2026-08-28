@@ -1,11 +1,14 @@
 import { Logger } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 
 import {
   FakeOperatorSettingsPrisma,
   TEST_ENCRYPTION_KEY,
+  TestOperatorSettingsService,
   makeOperatorSettings,
 } from '../../../test/fixtures/operator-settings.fixture';
 import { ENCRYPTION_KEY_ENV_VAR } from '../../common/crypto/secret-box';
+import { OperatorSettingsService } from './operator-settings.service';
 import {
   UnreadableSecretsBootCheck,
   unreadableSecrets,
@@ -48,7 +51,7 @@ describe('the unreadable-secret boot check (#422)', () => {
     prisma.corrupt('models.anthropic.apiKey');
 
     const { settings } = await makeOperatorSettings({ prisma });
-    new UnreadableSecretsBootCheck(settings).onModuleInit();
+    new UnreadableSecretsBootCheck(settings).onApplicationBootstrap();
 
     const said = errors.join('\n');
     expect(said).toContain('models.anthropic.apiKey');
@@ -86,7 +89,7 @@ describe('the unreadable-secret boot check (#422)', () => {
     prisma.sealInto('models.openai.apiKey', 'sk-proj-AlsoFine');
 
     const { settings } = await makeOperatorSettings({ prisma });
-    new UnreadableSecretsBootCheck(settings).onModuleInit();
+    new UnreadableSecretsBootCheck(settings).onApplicationBootstrap();
 
     expect(errors).toEqual([]);
     expect(unreadableSecrets(settings)).toEqual([]);
@@ -130,9 +133,35 @@ describe('the unreadable-secret boot check (#422)', () => {
     prisma.down = 'the database is away';
 
     const { settings } = await makeOperatorSettings({ prisma });
-    new UnreadableSecretsBootCheck(settings).onModuleInit();
+    new UnreadableSecretsBootCheck(settings).onApplicationBootstrap();
 
     expect(errors).toEqual([]);
+  });
+
+  it('reports through the container, not only when a spec calls it by hand (#436)', async () => {
+    // The gap #436 fell through. Every test above calls the hook directly,
+    // which is the one arrangement in which the overlay is guaranteed to be
+    // loaded — so they stayed green while the deployment's boot ran this check
+    // against an overlay that had not been read yet and found nothing to say.
+    // Nest starts a module's provider hooks together and awaits them with
+    // `Promise.all`, so `onModuleInit` here raced the service's own.
+    const prisma = new FakeOperatorSettingsPrisma();
+    prisma.sealInto('models.anthropic.apiKey', 'sk-ant-api03-Wz4Kd8Nb2Qm');
+    prisma.corrupt('models.anthropic.apiKey');
+    const settings = new TestOperatorSettingsService(prisma.asPrisma(), {});
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        { provide: OperatorSettingsService, useValue: settings },
+        UnreadableSecretsBootCheck,
+      ],
+    }).compile();
+    await moduleRef.init();
+
+    expect(errors.join('\n')).toContain('models.anthropic.apiKey');
+    expect(errors.join('\n')).toContain('decrypt_failed');
+
+    await moduleRef.close();
   });
 
   it('is driven off the registry, not a list of credentials somebody wrote down', async () => {

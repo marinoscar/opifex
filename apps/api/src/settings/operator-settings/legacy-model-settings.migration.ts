@@ -2,7 +2,7 @@ import {
   Injectable,
   Logger,
   Optional,
-  type OnModuleInit,
+  type OnApplicationBootstrap,
 } from '@nestjs/common';
 
 import { open, type SealedSecret } from '../../common/crypto/secret-box';
@@ -79,6 +79,36 @@ import {
  * Loud means `logger.error` naming the key and the remedy, at boot, rather
  * than a warning discovered at the first model call an hour later.
  *
+ * ## When it runs, and why not in `onModuleInit`
+ *
+ * `onApplicationBootstrap`. The first cut ran at `onModuleInit`, on the belief
+ * — stated in `OperatorSettingsService.onModuleInit` and in this module's own
+ * provider list — that a hook registered after the service's would see the
+ * overlay the service loads in its hook. It does not. Nest's
+ * `callModuleInitHook` STARTS every provider's `onModuleInit` in a single pass
+ * and then awaits them together with `Promise.all`, so this ran while the
+ * service's `refresh()` was still in flight, read `status: 'unavailable'` from
+ * a synchronous check before its own first `await`, and returned. Not a race:
+ * the overlay check happens before anything yields, so it loses every time.
+ * That is #436, and it stranded a sealed credential on the reference
+ * deployment across two boots.
+ *
+ * `onApplicationBootstrap` fires only after EVERY module's `onModuleInit` has
+ * settled, which is precisely the precondition this needs and is what the hook
+ * is for. The alternatives are worse: calling `refresh()` here would issue a
+ * second boot query for rows the service has just read — the duplicate
+ * `OperatorSettingsRefreshTask` declines by name — and reordering the
+ * providers fixes nothing, because the hooks are not run in sequence at all.
+ *
+ * ## Silence means exactly one thing
+ *
+ * An empty return used to mean three: no database client, an overlay that
+ * never loaded, and a deployment with nothing to migrate. #436 is what that
+ * ambiguity costs — a stranded credential presenting as a clean install, with
+ * no line anywhere to tell them apart. Both "I could not check" arms now say
+ * so at `error`. Only genuinely-nothing-found stays quiet, which is still
+ * every ordinary boot.
+ *
  * ## Idempotent
  *
  * A successful move deletes the legacy row, so the next boot finds nothing and
@@ -153,7 +183,7 @@ interface StoredSettingRow {
 }
 
 @Injectable()
-export class LegacyModelSettingsMigration implements OnModuleInit {
+export class LegacyModelSettingsMigration implements OnApplicationBootstrap {
   private readonly logger = new Logger(LegacyModelSettingsMigration.name);
 
   constructor(
@@ -161,7 +191,7 @@ export class LegacyModelSettingsMigration implements OnModuleInit {
     @Optional() private readonly prisma?: PrismaService,
   ) {}
 
-  async onModuleInit(): Promise<void> {
+  async onApplicationBootstrap(): Promise<void> {
     await this.migrate();
 
     for (const problem of legacyModelEnvErrors(
@@ -177,15 +207,42 @@ export class LegacyModelSettingsMigration implements OnModuleInit {
    *
    * Returns only the rows it FOUND: a deployment that never set the old keys —
    * which is every new one — produces an empty array and no log line at all.
+   * An empty array is therefore not by itself evidence that there was nothing
+   * to move; the two arms that could not LOOK return one too, and each of them
+   * logs at `error` before it does. The return value is for specs, the log
+   * line is for the operator, and #436 is what happens when the second is
+   * missing.
    */
   async migrate(): Promise<LegacyModelSettingOutcome[]> {
-    if (!this.prisma) return [];
+    if (!this.prisma) {
+      this.logger.error(
+        `The superseded model settings could not be checked for migration: ` +
+          `no database client is wired, so the settings table was never ` +
+          `read. If this deployment stored ${LEGACY_MODEL_API_KEY_SETTING} it ` +
+          `is still there, it is NOT in force, and no boot will move it until ` +
+          `this is fixed. A wiring bug, not a configuration one.`,
+      );
+      return [];
+    }
 
-    // The overlay's own loud complaint covers an unavailable database, and
-    // migrating against rows we could not read would be guessing. The 15s
-    // refresh loop does not retry this; the next boot does, which is the right
-    // cadence for a one-shot move.
-    if (this.settings.overlay().status !== 'loaded') return [];
+    // Migrating against an overlay we could not read would be guessing: the
+    // selected provider decides WHICH slot the value belongs in, and the
+    // overlay is what says whether that slot is already occupied. So this arm
+    // refuses — and, unlike the first cut, says that it refused. The 15s
+    // refresh loop does not retry the migration; the next boot does, which is
+    // the right cadence for a one-shot move.
+    const overlay = this.settings.overlay();
+    if (overlay.status !== 'loaded') {
+      this.logger.error(
+        `The superseded model settings could not be checked for migration: ` +
+          `the operator settings overlay is not loaded ` +
+          `(${overlay.problem ?? 'no reason given'}), so neither the selected ` +
+          `provider nor the destination's current contents are known. If ` +
+          `this deployment stored ${LEGACY_MODEL_API_KEY_SETTING} it is ` +
+          `untouched and still not in force; the next boot retries.`,
+      );
+      return [];
+    }
 
     let rows: StoredSettingRow[];
     try {

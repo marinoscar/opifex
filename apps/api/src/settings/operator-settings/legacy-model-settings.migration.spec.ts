@@ -1,10 +1,13 @@
 import { Logger } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 
 import {
   FakeOperatorSettingsPrisma,
   TEST_ENCRYPTION_KEY,
+  TestOperatorSettingsService,
   makeOperatorSettings,
 } from '../../../test/fixtures/operator-settings.fixture';
+import { PrismaService } from '../../prisma/prisma.service';
 import { ENCRYPTION_KEY_ENV_VAR, open } from '../../common/crypto/secret-box';
 import { modelApiKeySettingKey } from '../../supervisor/invocation/supervisor-model.config';
 import {
@@ -15,7 +18,7 @@ import {
   legacyModelSettingMoves,
   readStoredValue,
 } from './legacy-model-settings.migration';
-import type { OperatorSettingsService } from './operator-settings.service';
+import { OperatorSettingsService } from './operator-settings.service';
 
 /**
  * The decrypt-then-re-encrypt move (#422).
@@ -296,6 +299,211 @@ describe('LegacyModelSettingsMigration (#422)', () => {
       // Not vacuous: the migration really did run and really did succeed.
       expect(outcomes[0].result).toBe('moved');
       expect(prisma.audits.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('at boot, as Nest actually runs it (#436)', () => {
+    /**
+     * The real container, because the bug was in the hook and not in the move.
+     *
+     * `migrate()` called directly from a spec has always worked — every
+     * assertion above proves it — and on the reference deployment the row did
+     * not move and nothing was logged. What separates the two is the thing
+     * only Nest does: `callModuleInitHook` STARTS every provider's
+     * `onModuleInit` in one pass and then `Promise.all`s them, so a hook that
+     * reads state a SIBLING provider's hook is still awaiting reads it before
+     * it exists. A hand-rolled harness that awaits the service's hook first
+     * would assert the boot nobody runs.
+     */
+    async function bootModule(options: {
+      settings: OperatorSettingsService;
+      prisma?: FakeOperatorSettingsPrisma;
+    }): Promise<{
+      migration: LegacyModelSettingsMigration;
+      overlayDuringModuleInit: string[];
+      close: () => Promise<void>;
+    }> {
+      const overlayDuringModuleInit: string[] = [];
+
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          // Registered in the same order `OperatorSettingsModule` registers
+          // them, so the ordering this asserts is the deployment's ordering.
+          { provide: OperatorSettingsService, useValue: options.settings },
+          ...(options.prisma
+            ? [{ provide: PrismaService, useValue: options.prisma.asPrisma() }]
+            : []),
+          {
+            // A stand-in for any consumer that reads a managed key in its own
+            // `onModuleInit` — which is what the service's hook comment
+            // promises will see the overlay.
+            provide: 'OVERLAY_STATUS_PROBE',
+            useValue: {
+              onModuleInit: (): void => {
+                overlayDuringModuleInit.push(options.settings.overlay().status);
+              },
+            },
+          },
+          LegacyModelSettingsMigration,
+        ],
+      }).compile();
+
+      await moduleRef.init();
+
+      return {
+        migration: moduleRef.get(LegacyModelSettingsMigration),
+        overlayDuringModuleInit,
+        close: () => moduleRef.close(),
+      };
+    }
+
+    it('moves the stranded credential instead of silently doing nothing', async () => {
+      // THE regression test. #422 mutation-tested the copy-instead-of-reseal
+      // path, so a migration that ran and moved the wrong bytes would have
+      // been caught; nothing covered "it never ran at all", which is the bug
+      // that reached the deployment.
+      const prisma = new FakeOperatorSettingsPrisma();
+      prisma.sealInto(LEGACY_MODEL_API_KEY_SETTING, OLD_KEY);
+      const settings = new TestOperatorSettingsService(prisma.asPrisma(), {});
+
+      const booted = await bootModule({ settings, prisma });
+
+      expect(prisma.rows.has(LEGACY_MODEL_API_KEY_SETTING)).toBe(false);
+      expect(prisma.rows.has('models.anthropic.apiKey')).toBe(true);
+      expect(settings.get('models.anthropic.apiKey')).toBe(OLD_KEY);
+      expect(logs.join('\n')).toContain('has been migrated to');
+
+      await booted.close();
+    });
+
+    it('is why the hook moved: the overlay is NOT loaded during onModuleInit', async () => {
+      // The diagnosis, pinned. `OperatorSettingsService.onModuleInit` awaits
+      // the overlay read, and Nest does not await it before starting the other
+      // providers' hooks in the same module — so "a consumer that reads a
+      // managed key in its own onModuleInit gets the overlay" is false for
+      // consumers registered BESIDE the service. If this ever starts reporting
+      // 'loaded', Nest changed its hook semantics and the migration could move
+      // back to `onModuleInit`.
+      const prisma = new FakeOperatorSettingsPrisma();
+      const settings = new TestOperatorSettingsService(prisma.asPrisma(), {});
+
+      const booted = await bootModule({ settings, prisma });
+
+      expect(booted.overlayDuringModuleInit).toEqual(['unavailable']);
+      // And by the end of the boot it is loaded, which is what makes
+      // `onApplicationBootstrap` the hook that can see it.
+      expect(settings.overlay().status).toBe('loaded');
+
+      await booted.close();
+    });
+
+    it('says so when it could not check because the overlay never loaded', async () => {
+      // "I could not check" is a different fact from "there was nothing to
+      // move", and this deployment learned the hard way that they used to be
+      // the same silence.
+      const prisma = new FakeOperatorSettingsPrisma();
+      prisma.sealInto(LEGACY_MODEL_API_KEY_SETTING, OLD_KEY);
+      const settings = new TestOperatorSettingsService(prisma.asPrisma(), {});
+      prisma.down = 'the database is away';
+
+      const booted = await bootModule({ settings, prisma });
+
+      const said = errors.join('\n');
+      expect(said).toContain(LEGACY_MODEL_API_KEY_SETTING);
+      expect(said).toContain('could not be checked');
+      // And nothing was touched, which is the safe direction.
+      expect(prisma.rows.has(LEGACY_MODEL_API_KEY_SETTING)).toBe(true);
+
+      await booted.close();
+    });
+
+    it('says so when there is no database client at all', async () => {
+      // The wiring bug. It cannot be diagnosed from the settings table,
+      // because reading the settings table is the thing that did not happen.
+      const settings = new TestOperatorSettingsService(undefined, {});
+
+      const booted = await bootModule({ settings });
+
+      const said = errors.join('\n');
+      expect(said).toContain(LEGACY_MODEL_API_KEY_SETTING);
+      expect(said).toContain('could not be checked');
+
+      await booted.close();
+    });
+
+    it('stays completely quiet on a deployment with nothing to migrate', async () => {
+      // Every new deployment. A boot line per credential slot is how an
+      // operator learns to skim the lines this file exists to make visible —
+      // `unreadable-secrets.boot.ts` makes the same argument about itself.
+      const prisma = new FakeOperatorSettingsPrisma();
+      const settings = new TestOperatorSettingsService(prisma.asPrisma(), {});
+
+      const booted = await bootModule({ settings, prisma });
+
+      expect(errors).toEqual([]);
+      // Nest's own "dependencies initialized" line goes through the same
+      // mocked `Logger.prototype.log`; everything else on this boot would be
+      // the migration talking about a deployment that has nothing to migrate.
+      expect(
+        logs.filter((line) => !line.endsWith('dependencies initialized')),
+      ).toEqual([]);
+
+      await booted.close();
+    });
+
+    it('still reports each of the three refusals from the boot hook', async () => {
+      // The refusals are what this deployment should have seen and did not, so
+      // they have to survive the hook change — asserted through the boot path
+      // rather than through `migrate()`, which is the seam that was already
+      // covered and was green the whole time the deployment was broken.
+      const occupied = new FakeOperatorSettingsPrisma();
+      occupied.sealInto(LEGACY_MODEL_API_KEY_SETTING, OLD_KEY);
+      occupied.sealInto('models.anthropic.apiKey', 'sk-ant-api03-TheNewOne');
+
+      const unreadable = new FakeOperatorSettingsPrisma();
+      unreadable.sealInto(LEGACY_MODEL_API_KEY_SETTING, OLD_KEY);
+      unreadable.corrupt(LEGACY_MODEL_API_KEY_SETTING);
+
+      const rejected = new FakeOperatorSettingsPrisma();
+      rejected.put(LEGACY_MODEL_BASE_URL_SETTING, 'not-a-url');
+
+      const cases: Array<{
+        prisma: FakeOperatorSettingsPrisma;
+        from: string;
+        says: string;
+      }> = [
+        {
+          prisma: occupied,
+          from: LEGACY_MODEL_API_KEY_SETTING,
+          says: 'Nothing has been moved or overwritten',
+        },
+        {
+          prisma: unreadable,
+          from: LEGACY_MODEL_API_KEY_SETTING,
+          says: 'cannot be read',
+        },
+        {
+          prisma: rejected,
+          from: LEGACY_MODEL_BASE_URL_SETTING,
+          says: 'refuses the value',
+        },
+      ];
+
+      for (const scenario of cases) {
+        errors = [];
+        const settings = new TestOperatorSettingsService(
+          scenario.prisma.asPrisma(),
+          {},
+        );
+        const booted = await bootModule({ settings, prisma: scenario.prisma });
+
+        expect(errors.join('\n')).toContain(scenario.says);
+        // And in every one of them the superseded row is still there, which is
+        // the property that makes a refusal safe to retry next boot.
+        expect(scenario.prisma.rows.has(scenario.from)).toBe(true);
+
+        await booted.close();
+      }
     });
   });
 
