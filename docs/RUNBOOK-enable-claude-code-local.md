@@ -73,6 +73,20 @@ docker compose build --build-arg CLAUDE_CODE_VERSION=2.1.246 api
 Unpinned is the default, and that is defensible only because the version is
 observed — see step 3, where it shows up as a fact in the fleet.
 
+> **Pinning this version is also what keeps the tier → model mapping
+> honest.** Since #420, a work order labelled `tier:small` / `tier:standard`
+> / `tier:large` pins a model on this runner via `--model`, through three
+> registry keys — `runners.claudeCodeLocal.model.small` / `.standard` /
+> `.large` (`CLAUDE_CODE_MODEL_SMALL` / `_STANDARD` / `_LARGE`). Their
+> defaults (`claude-haiku-4-5`, `claude-sonnet-5`, `claude-opus-5`) were
+> checked against the model table compiled into `claude` 2.1.243 — an
+> unpinned CLI that has drifted past that build is drifting past the version
+> those defaults were verified against, not only the version this step
+> observes. See [`docs/operator-configuration.md`](operator-configuration.md)
+> for the full four-case behaviour (a mapped tier, no tier at all, a tier
+> deliberately mapped to nothing, and a tier this build cannot map) and its
+> `next-unit` reload semantics.
+
 ---
 
 ## Step 2 — the credential
