@@ -21,8 +21,10 @@
  *  - retired read off the four flags rather than off `retiredAt`;
  *  - de-register offered on a repository whose deletion the API would refuse;
  *  - the unassigned bucket rendered as a lesser screen than a project;
- *  - a GitHub-level label failure rendered as "0 of 15 labels present", which
- *    is the one mistake #415's row exists not to make.
+ *  - a label read that never happened rendered as "0 of 15 labels present",
+ *    which is the one mistake #415's row exists not to make;
+ *  - and its mirror image: a write GitHub cut short, which DID read the
+ *    labels, blanked because its status is a failure word.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -40,6 +42,7 @@ import {
   PROJECT_ID,
   labelFailureFixture,
   labelReportFixture,
+  labelWriteRefusalFixture,
   projectFixture,
   repositoryFixture,
 } from '../../mocks/repositories';
@@ -156,7 +159,7 @@ function serveLabels(options: {
     }),
     http.post(`${API_BASE}/repositories/:id/labels`, ({ params }) => {
       calls.push(`POST ${String(params.id)}`);
-      return answer(options.post ?? labelReportFixture({ applied: true }));
+      return answer(options.post ?? labelReportFixture({ attempted: true }));
     }),
   );
 
@@ -1416,6 +1419,98 @@ describe('ProjectRepositoriesPanel', () => {
       });
     });
 
+    /**
+     * A write GitHub cut short.
+     *
+     * The read succeeded, so the counts are real and `labels` is full; the
+     * write was then refused, so `status` is `refused`. Rendering this from
+     * `status` alone blanks a genuine observation — the operator loses both
+     * the count and the names, for an answer that actually found them out.
+     */
+    it('shows the count for a write GitHub refused after reading', async () => {
+      serveLabels({
+        get: labelReportFixture({ missing: ['factory:ready', 'tier:small'] }),
+        post: labelWriteRefusalFixture({
+          missing: ['factory:ready', 'tier:small'],
+          detail: 'GitHub answered 403 while creating factory:ready.',
+        }),
+      });
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel();
+
+      const row = labelRow(await awaitCard());
+      await user.click(
+        within(row).getByRole('button', { name: /check labels/i }),
+      );
+      await user.click(
+        await within(row).findByRole('button', {
+          name: /create missing labels/i,
+        }),
+      );
+
+      // The reason it stopped leads.
+      expect(
+        await within(row).findByText(
+          'The credential authenticated and was not permitted',
+        ),
+      ).toBeInTheDocument();
+      // And the observation survives: the count is stated, not blanked.
+      expect(row).toHaveTextContent(
+        `${M - 2} of ${M} declared labels are on acme/widgets`,
+      );
+      // Named, too — this report knows exactly which two are absent.
+      const outstanding = within(row).getByLabelText(/missing or out of date/i);
+      expect(
+        within(outstanding).getByText('factory:ready'),
+      ).toBeInTheDocument();
+      expect(within(outstanding).getByText('tier:small')).toBeInTheDocument();
+      // The repair is still withheld: refused is refused, however much was
+      // read, and pressing again would be refused for the same reason.
+      expect(
+        within(row).queryByRole('button', { name: /create missing labels/i }),
+      ).toBeNull();
+    });
+
+    it('credits what a cut-short write created before it stopped', async () => {
+      serveLabels({
+        get: labelReportFixture({
+          missing: ['factory:ready', 'tier:small', 'factory/review'],
+        }),
+        post: labelWriteRefusalFixture({
+          missing: ['factory:ready', 'tier:small', 'factory/review'],
+          created: ['factory:ready'],
+        }),
+      });
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel();
+
+      const row = labelRow(await awaitCard());
+      await user.click(
+        within(row).getByRole('button', { name: /check labels/i }),
+      );
+      await user.click(
+        await within(row).findByRole('button', {
+          name: /create missing labels/i,
+        }),
+      );
+
+      expect(
+        await within(row).findByText(
+          '1 written before GitHub stopped the rest',
+        ),
+      ).toBeInTheDocument();
+      // The one that landed is credited and is NOT listed as still absent,
+      // even though its `stateBefore` still reads `missing`.
+      const outstanding = within(row).getByLabelText(/missing or out of date/i);
+      expect(within(outstanding).queryByText('factory:ready')).toBeNull();
+      expect(
+        within(outstanding).getByText('factory/review'),
+      ).toBeInTheDocument();
+      expect(within(outstanding).getByText('tier:small')).toBeInTheDocument();
+    });
+
     it('tells a failed REQUEST apart from a GitHub refusal', async () => {
       serveLabels({
         get: { httpStatus: 403, message: 'Forbidden' },
@@ -1477,7 +1572,7 @@ describe('ProjectRepositoriesPanel', () => {
       const calls = serveLabels({
         get: labelReportFixture({ missing: ['factory:ready', 'tier:small'] }),
         post: labelReportFixture({
-          applied: true,
+          attempted: true,
           missing: ['factory:ready', 'tier:small'],
           created: ['factory:ready', 'tier:small'],
         }),
@@ -1516,7 +1611,7 @@ describe('ProjectRepositoriesPanel', () => {
       serveLabels({
         get: labelReportFixture({ missing: ['factory:ready', 'tier:small'] }),
         post: labelReportFixture({
-          applied: true,
+          attempted: true,
           missing: ['factory:ready', 'tier:small'],
           created: ['tier:small'],
           failed: { 'factory:ready': 'GitHub answered 403 for this label.' },
@@ -1555,7 +1650,7 @@ describe('ProjectRepositoriesPanel', () => {
       serveLabels({
         get: labelReportFixture({ missing: ['factory:ready'] }),
         post: labelFailureFixture('refused', 'GitHub answered 403.', {
-          applied: true,
+          attempted: true,
         }),
       });
       listing(repository());
@@ -1584,7 +1679,7 @@ describe('ProjectRepositoriesPanel', () => {
     it('reports an idempotent second run as the no-op it is', async () => {
       serveLabels({
         get: labelReportFixture({ missing: ['factory:ready'] }),
-        post: labelReportFixture({ applied: true }),
+        post: labelReportFixture({ attempted: true }),
       });
       listing(repository());
       const user = userEvent.setup();

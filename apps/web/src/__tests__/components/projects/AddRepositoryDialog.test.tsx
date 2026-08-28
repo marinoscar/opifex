@@ -40,6 +40,7 @@ import {
   PROJECT_ID,
   labelFailureFixture,
   labelReportFixture,
+  labelWriteRefusalFixture,
   projectFixture,
 } from '../../mocks/repositories';
 import {
@@ -1791,7 +1792,7 @@ describe('Adding several at once', () => {
       serveAvailable();
       serveRegistrationWithLabels(
         labelReportFixture({
-          applied: true,
+          attempted: true,
           missing: ['factory:ready'],
           created: ['factory:ready'],
         }),
@@ -1845,7 +1846,7 @@ describe('Adding several at once', () => {
       serveRegistrationWithLabels(
         labelReportFixture({
           repository: 'acme/gadgets',
-          applied: true,
+          attempted: true,
           missing: ['factory:ready', 'tier:small'],
           created: ['tier:small'],
           failed: { 'factory:ready': 'GitHub answered 403 for this label.' },
@@ -1858,6 +1859,36 @@ describe('Adding several at once', () => {
       );
       expect(note).toHaveTextContent(`2 of ${M} labels are not on it`);
       expect(note).toHaveTextContent(/registered and observed either way/);
+    });
+
+    it('names the count when provisioning read the labels and was then refused', async () => {
+      // The write-phase case: registration listed the labels, created none,
+      // and was refused. It knows exactly how many are absent, so saying "its
+      // labels could not be created" would be vaguer than the truth.
+      registered();
+      serveAvailable();
+      serveRegistrationWithLabels(
+        labelWriteRefusalFixture({
+          repository: 'acme/gadgets',
+          missing: ['factory:ready', 'tier:small'],
+          detail: 'GitHub answered 403 while creating factory:ready.',
+        }),
+      );
+      await registerGadgets();
+
+      const note = await screen.findByLabelText(
+        'Label provisioning for acme/gadgets',
+      );
+      expect(note).toHaveTextContent(
+        `acme/gadgets is registered; 2 of ${M} labels are not on it`,
+      );
+      expect(note).toHaveTextContent(/Issues: read and write/);
+      expect(note).toHaveTextContent(
+        'GitHub answered 403 while creating factory:ready.',
+      );
+      // Repair is withheld for this status, so the note must not send the
+      // operator to a button that is not there.
+      expect(note).not.toHaveTextContent('use Create missing labels');
     });
 
     it('flags a null report as the anomaly it is, without failing the add', async () => {
@@ -1915,7 +1946,7 @@ describe('Adding several at once', () => {
                       })
                     : labelReportFixture({
                         repository: fullName,
-                        applied: true,
+                        attempted: true,
                       }),
               },
             },

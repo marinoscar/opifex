@@ -109,7 +109,8 @@ export const DECLARED_LABELS: readonly (readonly [
 
 export interface LabelReportOptions {
   repository?: string;
-  applied?: boolean;
+  /** True when the call TRIED to write. Not a claim that anything landed. */
+  attempted?: boolean;
   /** Observed as absent from GitHub BEFORE the call. */
   missing?: readonly string[];
   /** Observed as present and out of date, with what differs. */
@@ -126,18 +127,20 @@ export interface LabelReportOptions {
 }
 
 /**
- * A report from a SUCCESSFUL read of GitHub's labels.
+ * A report from a SUCCESSFUL read of GitHub's labels, so its counts are real.
  *
  * Every count is derived from the named labels rather than passed in, so a
  * test cannot assert against a report whose summary and per-label array
  * disagree — which is a shape the API never produces and which would let a
- * component that reads the wrong one of the two pass.
+ * component that reads the wrong one of the two pass. The derivations mirror
+ * `label-provisioning.service.ts`'s `answer()`: `present` counts everything
+ * that was not missing plus everything this call created, and `unchanged`
+ * counts what was already correct.
  *
- * `state` is left as it was OBSERVED even where `action` says the label was
- * created, because that is what the API does and the comment in
- * `repository-labels.dto.ts` is explicit that it is deliberate. A fixture that
- * "helpfully" flipped `state` to `present` after a create would hide exactly
- * the bug that rule exists to catch.
+ * `stateBefore` is left as it was OBSERVED even where `action` says the label
+ * was created, because that is what the API does and its field name says so.
+ * A fixture that "helpfully" flipped it to `present` after a create would hide
+ * exactly the bug that rule exists to catch.
  */
 export function labelReportFixture(
   options: LabelReportOptions = {},
@@ -149,25 +152,24 @@ export function labelReportFixture(
   const failed = options.failed ?? {};
 
   const labels: LabelState[] = DECLARED_LABELS.map(([name, kind]) => {
-    const state = missing.includes(name)
+    const stateBefore: LabelState['stateBefore'] = missing.includes(name)
       ? 'missing'
       : name in drifted
         ? 'drifted'
         : 'present';
-    const action = (
+    const action: LabelState['action'] =
       name in failed
         ? 'failed'
         : created.includes(name)
           ? 'created'
           : updated.includes(name)
             ? 'updated'
-            : 'none'
-    ) as LabelState['action'];
+            : 'none';
 
     return {
       name,
       kind,
-      state,
+      stateBefore,
       action,
       differences: drifted[name] ?? [],
       detail: failed[name] ?? null,
@@ -191,7 +193,7 @@ export function labelReportFixture(
     repository: options.repository ?? 'acme/widgets',
     ok: status === 'ok',
     status,
-    applied: options.applied ?? false,
+    attempted: options.attempted ?? false,
     detail:
       options.detail ??
       `GitHub answered: ${present} of ${DECLARED_LABELS.length} declared labels are on the repository.`,
@@ -201,43 +203,75 @@ export function labelReportFixture(
     missing: stillMissing.length,
     created: created.length,
     updated: updated.length,
-    unchanged: labels.filter(
-      (label) => label.state === 'present' && label.action === 'none',
-    ).length,
+    unchanged: labels.filter((label) => label.stateBefore === 'present').length,
     failed: Object.keys(failed).length,
     labels,
   };
 }
 
 /**
- * A report for a GitHub-level failure — **`labels` is empty**, and that is the
- * whole point of having a separate builder for it.
+ * A **write-phase** refusal: the labels were read, and GitHub then refused the
+ * write (or rate-limited it, or went away) partway through.
  *
- * `present: 0` beside `declared: 15` here does NOT mean the repository has no
- * labels; it means nobody was able to look. This shape is what a renderer that
- * prints "0 of 15 labels present" gets wrong, so it is constructed here once,
- * correctly, rather than by hand in each test where the temptation to include
- * a label or two would quietly remove the trap.
+ * The shape that keeps `wasRead` honest. `status` is a failure word and the
+ * counts are REAL — this call knows exactly what is on the repository and may
+ * have created some labels before being cut off — so a gate keyed on `status`
+ * would blank a genuine observation. `failed` is 0 rather than the number left
+ * over: the service only marks a label `failed` when GitHub refused that
+ * particular label, and a refusal about the REPOSITORY stops the loop, leaving
+ * the remainder untouched with `action: 'none'`.
+ *
+ * Built on `labelReportFixture` so the count derivation lives in exactly one
+ * place, and the difference between this and a read-phase failure is visible
+ * as what it is: which fields are null.
+ */
+export function labelWriteRefusalFixture(
+  options: LabelReportOptions & { status?: LabelProvisioningStatus } = {},
+): LabelProvisioningReport {
+  return labelReportFixture({
+    status: 'refused',
+    attempted: true,
+    detail:
+      'The factory labels could not be created: the credential is not ' +
+      'permitted to write labels on this repository.',
+    ...options,
+  });
+}
+
+/**
+ * A **read-phase** failure — the labels were never obtained, so **every count
+ * is null and `labels` is empty**. That is the whole point of a separate
+ * builder for it.
+ *
+ * Null is not zero: `present: null` beside `declared: null` says nobody was
+ * able to look, and a renderer that printed "0 of 15 labels present" from a
+ * report like this would state a fact nobody established. Constructing it here
+ * once, correctly, keeps the trap intact — building it by hand in each test is
+ * how a stray count or a stray label creeps in and quietly removes it.
  */
 export function labelFailureFixture(
   status: LabelProvisioningStatus,
   detail: string,
-  options: { repository?: string; applied?: boolean; checkedAt?: string } = {},
+  options: {
+    repository?: string;
+    attempted?: boolean;
+    checkedAt?: string;
+  } = {},
 ): LabelProvisioningReport {
   return {
     repository: options.repository ?? 'acme/widgets',
     ok: false,
     status,
-    applied: options.applied ?? false,
+    attempted: options.attempted ?? false,
     detail,
     checkedAt: options.checkedAt ?? '2026-08-23T10:00:00.000Z',
-    declared: DECLARED_LABELS.length,
-    present: 0,
-    missing: 0,
-    created: 0,
-    updated: 0,
-    unchanged: 0,
-    failed: 0,
+    declared: null,
+    present: null,
+    missing: null,
+    created: null,
+    updated: null,
+    unchanged: null,
+    failed: null,
     labels: [],
   };
 }

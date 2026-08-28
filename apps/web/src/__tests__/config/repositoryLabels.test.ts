@@ -5,19 +5,25 @@
  * truth can be asserted without a React tree. Every case below is one a
  * plausible implementation gets wrong:
  *
- *  - **"0 of 15 present" for an answer that observed nothing.** Every
- *    GitHub-level failure carries `present: 0`, `declared: 15` and an EMPTY
- *    `labels` array. Reading the counters without checking whether anything
- *    was read turns "nobody could ask" into "the repository has no labels" —
- *    a different fact, with a different fix, and it sends an operator to
- *    create fifteen labels that may all already exist.
- *  - **Reading `state` after a repair.** The API deliberately does not rewrite
- *    `state` when a write succeeds, so a created label still reads
- *    `state: 'missing'`. An outcome derived from `state` reports the label it
+ *  - **"0 of 15 present" for an answer that observed nothing.** A report whose
+ *    label list was never fetched carries NULL counts and an empty `labels`
+ *    array. Rendering a number from it turns "nobody could ask" into "the
+ *    repository has no labels" — a different fact, with a different fix, and
+ *    it sends an operator to create fifteen labels that may all already exist.
+ *  - **Blanking a WRITE-phase refusal.** The mirror image, and the subtler of
+ *    the two. A repair whose read succeeded and whose write GitHub then
+ *    refused is still `status: 'refused'` and has REAL counts — it knows
+ *    exactly what is on the repository. A gate keyed on `status` rather than
+ *    on the nulls throws that observation away and reports "we could not ask"
+ *    about an answer that asked and found out.
+ *  - **Reading `stateBefore` after a repair.** The API deliberately does not
+ *    rewrite it when a write succeeds, so a created label still reads
+ *    `stateBefore: 'missing'`. An outcome derived from it reports the label it
  *    just created as still absent.
  *  - **Offering repair where it cannot help.** `refused` and `no_credential`
  *    are not fixed by pressing the button again, and a button that is there
- *    says they might be.
+ *    says they might be — including after a write-phase refusal, which was
+ *    refused for exactly the reason a second attempt would be.
  *  - **Calling a partial repair a failure.** Eleven labels created and one
  *    refused is a mixed answer, and the eleven stay created.
  */
@@ -44,10 +50,11 @@ import {
   DECLARED_LABELS,
   labelFailureFixture,
   labelReportFixture,
+  labelWriteRefusalFixture,
 } from '../mocks/repositories';
 import type { LabelProvisioningStatus } from '../../types/repositoryLabels';
 
-/** Every status for which the API sends an empty `labels` array. */
+/** Every status a READ can fail with — the reports that carry no counts. */
 const GITHUB_FAILURES: LabelProvisioningStatus[] = [
   'no_credential',
   'invalid_credential',
@@ -69,15 +76,57 @@ describe('wasRead — the gate on every count', () => {
     );
   });
 
-  it.each(GITHUB_FAILURES)('is false for %s', (status) => {
-    expect(wasRead(labelFailureFixture(status, 'GitHub said no.'))).toBe(false);
-  });
+  it.each(GITHUB_FAILURES)(
+    'is false for a %s that failed at the READ, which has null counts',
+    (status) => {
+      expect(wasRead(labelFailureFixture(status, 'GitHub said no.'))).toBe(
+        false,
+      );
+    },
+  );
 
   it('is false for a status this build has never heard of', () => {
     const report = {
       ...labelFailureFixture('failed', 'x'),
       status: 'quarantined' as LabelProvisioningStatus,
     };
+    expect(wasRead(report)).toBe(false);
+  });
+
+  /**
+   * The case that separates a null check from a `status` check.
+   *
+   * A repair whose read succeeded and whose WRITE was refused is still
+   * `status: 'refused'` — and it knows exactly what is on the repository,
+   * because it listed the labels before trying. Blanking it would throw away a
+   * real observation to satisfy a rule about a word.
+   */
+  it('is TRUE for a write-phase refusal, whose status is a failure word', () => {
+    const report = labelWriteRefusalFixture({
+      missing: ['factory:ready', 'tier:small'],
+    });
+    expect(report.status).toBe('refused');
+    expect(report.ok).toBe(false);
+    expect(report.present).not.toBeNull();
+    expect(wasRead(report)).toBe(true);
+  });
+
+  it('is true for a write-phase failure of any status', () => {
+    for (const status of GITHUB_FAILURES) {
+      const report = labelWriteRefusalFixture({
+        status,
+        missing: ['factory:ready'],
+      });
+      expect(wasRead(report)).toBe(true);
+    }
+  });
+
+  it('degrades to false if the API ever nulls only some of the counts', () => {
+    // The API's contract is that the seven move together, and this checks all
+    // seven rather than trusting that. A partial report is a contract
+    // violation, and treating it as unread is the safe direction: the failure
+    // being guarded against is rendering a number nobody established.
+    const report = { ...labelReportFixture(), missing: null };
     expect(wasRead(report)).toBe(false);
   });
 });
@@ -96,12 +145,32 @@ describe('countSentence', () => {
     'answers null for %s rather than a zero, because nothing was observed',
     (status) => {
       const report = labelFailureFixture(status, 'GitHub said no.');
-      // The single most important assertion in this file. `report.present` is
-      // 0 and `report.declared` is 15, and a sentence built from those two
-      // would be a claim about a repository nobody managed to read.
+      // The single most important assertion in this file. Every counter is
+      // null, and any sentence built from them would be a claim about a
+      // repository nobody managed to read.
       expect(countSentence(report)).toBeNull();
     },
   );
+
+  it('DOES count a write-phase refusal, which read the labels first', () => {
+    const report = labelWriteRefusalFixture({
+      missing: ['factory:ready', 'tier:small'],
+    });
+    expect(countSentence(report)).toBe(
+      `${DECLARED_LABELS.length - 2} of ${DECLARED_LABELS.length} labels present`,
+    );
+  });
+
+  it('counts what a cut-short write managed to create', () => {
+    // Three were missing, one was created, and GitHub then refused the rest.
+    const report = labelWriteRefusalFixture({
+      missing: ['factory:ready', 'tier:small', 'factory/review'],
+      created: ['factory:ready'],
+    });
+    expect(countSentence(report)).toBe(
+      `${DECLARED_LABELS.length - 2} of ${DECLARED_LABELS.length} labels present`,
+    );
+  });
 });
 
 describe('observationPresentation', () => {
@@ -147,6 +216,33 @@ describe('canRepair — offered only where pressing it could change something', 
     expect(canRepair(labelFailureFixture(status, 'GitHub said no.'))).toBe(
       false,
     );
+  });
+
+  /**
+   * The check the coordinator asked to be made deliberate rather than
+   * accidental.
+   *
+   * A write-phase refusal knows its counts — `wasRead` is true — and must
+   * still not offer the button. The decision is made from `status`, which is
+   * the field that names the REMEDY, and "would pressing this again help?" is
+   * a question about the remedy rather than about how much was observed. This
+   * report was refused for precisely the reason a second attempt would be.
+   */
+  it('is not offered for a write-phase refusal, even though it was read', () => {
+    const report = labelWriteRefusalFixture({ missing: ['factory:ready'] });
+    expect(wasRead(report)).toBe(true);
+    expect(canRepair(report)).toBe(false);
+  });
+
+  it('is not offered for a write cut short by a rate limit either', () => {
+    const report = labelWriteRefusalFixture({
+      status: 'rate_limited',
+      missing: ['factory:ready'],
+    });
+    expect(wasRead(report)).toBe(true);
+    // Waiting is the remedy; a repair issued now spends another refused
+    // request. Check labels is what clears it.
+    expect(canRepair(report)).toBe(false);
   });
 
   it('is not offered for a status this build cannot interpret', () => {
@@ -223,13 +319,14 @@ describe('which labels a report is about', () => {
 
   it('drops a label a repair created, even though its state still says missing', () => {
     const repaired = labelReportFixture({
-      applied: true,
+      attempted: true,
       missing: ['factory:ready'],
       created: ['factory:ready'],
     });
     // The trap: `state` is deliberately not rewritten by a successful write.
     expect(
-      repaired.labels.find((label) => label.name === 'factory:ready')?.state,
+      repaired.labels.find((label) => label.name === 'factory:ready')
+        ?.stateBefore,
     ).toBe('missing');
     expect(outstandingLabels(repaired)).toEqual([]);
     expect(repairedLabels(repaired).map((label) => label.name)).toEqual([
@@ -237,9 +334,27 @@ describe('which labels a report is about', () => {
     ]);
   });
 
+  it('keeps everything a cut-short write never reached', () => {
+    // The loop stopped where GitHub refused it, so the remainder is untouched
+    // — `action: 'none'` with `stateBefore: 'missing'` — rather than marked
+    // failed. Both are outstanding; only the created one is not.
+    const report = labelWriteRefusalFixture({
+      missing: ['factory:ready', 'tier:small', 'factory/review'],
+      created: ['factory:ready'],
+    });
+    expect(outstandingLabels(report).map((label) => label.name)).toEqual([
+      'factory/review',
+      'tier:small',
+    ]);
+    expect(repairedLabels(report).map((label) => label.name)).toEqual([
+      'factory:ready',
+    ]);
+    expect(failedLabels(report)).toEqual([]);
+  });
+
   it('keeps a label whose write failed outstanding, and carries its reason', () => {
     const repaired = labelReportFixture({
-      applied: true,
+      attempted: true,
       missing: ['factory:ready', 'tier:small'],
       created: ['tier:small'],
       failed: { 'factory:ready': 'GitHub answered 403.' },
@@ -288,7 +403,7 @@ describe('groupByKind', () => {
       {
         name: 'weird:thing',
         kind: 'ceremonial' as never,
-        state: 'missing',
+        stateBefore: 'missing',
         action: 'none',
         differences: [],
         detail: null,
@@ -303,7 +418,7 @@ describe('repairOutcome — what the write actually did', () => {
   it('reports created and updated counts, not the stale states', () => {
     const outcome = repairOutcome(
       labelReportFixture({
-        applied: true,
+        attempted: true,
         missing: ['factory:ready', 'tier:small'],
         drifted: { 'factory/review': ['description'] },
         created: ['factory:ready', 'tier:small'],
@@ -320,7 +435,7 @@ describe('repairOutcome — what the write actually did', () => {
   it('reports a partial failure as partial, keeping what was written', () => {
     const outcome = repairOutcome(
       labelReportFixture({
-        applied: true,
+        attempted: true,
         missing: ['factory:ready', 'tier:small'],
         created: ['tier:small'],
         failed: { 'factory:ready': 'GitHub answered 403.' },
@@ -334,7 +449,7 @@ describe('repairOutcome — what the write actually did', () => {
   it('says nothing was written when every write was refused', () => {
     const outcome = repairOutcome(
       labelReportFixture({
-        applied: true,
+        attempted: true,
         missing: ['factory:ready'],
         failed: { 'factory:ready': 'GitHub answered 403.' },
       }),
@@ -343,16 +458,69 @@ describe('repairOutcome — what the write actually did', () => {
   });
 
   it('reports an idempotent second run as the no-op it is', () => {
-    const outcome = repairOutcome(labelReportFixture({ applied: true }));
+    const outcome = repairOutcome(labelReportFixture({ attempted: true }));
     expect(outcome.severity).toBe('success');
     expect(outcome.title).toBe('Nothing needed creating');
     expect(outcome.body).toContain('no-op');
   });
 
+  /**
+   * A write GitHub cut short: real counts, a failure status, `failed: 0`.
+   *
+   * Distinct from a per-label failure — the remedy is about the repository,
+   * not about the labels that did not take — and distinct from an unread
+   * report, whose counts do not exist. Both distinctions are worth the arm:
+   * the first decides which remedy is printed, the second decides whether a
+   * number may be printed at all.
+   */
+  it('reports what a cut-short write managed, and why it stopped', () => {
+    const report = labelWriteRefusalFixture({
+      missing: ['factory:ready', 'tier:small', 'factory/review'],
+      created: ['factory:ready'],
+    });
+    const outcome = repairOutcome(report);
+
+    expect(outcome.title).toBe('1 written before GitHub stopped the rest');
+    // The count is real and is said, because the read succeeded.
+    expect(outcome.body).toContain(
+      `${DECLARED_LABELS.length - 2} of ${DECLARED_LABELS.length}`,
+    );
+    // And the remedy is the refusal's, not "create the missing ones below".
+    expect(outcome.body).toContain('Issues: read and write');
+    expect(outcome.body).toContain('counting what this attempt managed');
+  });
+
+  it('leads with the reason when a cut-short write managed nothing', () => {
+    const outcome = repairOutcome(
+      labelWriteRefusalFixture({ missing: ['factory:ready'] }),
+    );
+    expect(outcome.title).toBe(
+      'The credential authenticated and was not permitted',
+    );
+    expect(outcome.body).toContain('unchanged by this attempt');
+    // Still a real count — this is the case a status-keyed gate would blank.
+    expect(outcome.body).toContain(
+      `${DECLARED_LABELS.length - 1} of ${DECLARED_LABELS.length}`,
+    );
+  });
+
+  it('does not call a cut-short write a success', () => {
+    // `created > 0` and `failed === 0` is the shape of a clean partial repair,
+    // and reading only those two would report this one as "1 created".
+    const outcome = repairOutcome(
+      labelWriteRefusalFixture({
+        missing: ['factory:ready', 'tier:small'],
+        created: ['factory:ready'],
+      }),
+    );
+    expect(outcome.severity).not.toBe('success');
+    expect(outcome.title).not.toBe('1 created');
+  });
+
   it('never claims a count when GitHub refused the whole call', () => {
     const outcome = repairOutcome(
       labelFailureFixture('refused', 'GitHub answered 403.', {
-        applied: true,
+        attempted: true,
       }),
     );
     expect(outcome.title).toBe('Nothing was written');
@@ -388,7 +556,7 @@ describe('registrationLabelNote — two facts, in one sentence each', () => {
     const note = registrationLabelNote(
       'acme/widgets',
       labelReportFixture({
-        applied: true,
+        attempted: true,
         missing: ['factory:ready', 'tier:small'],
         created: ['tier:small'],
         failed: { 'factory:ready': 'GitHub answered 403.' },
@@ -396,6 +564,34 @@ describe('registrationLabelNote — two facts, in one sentence each', () => {
     );
     expect(note?.title).toContain('acme/widgets is registered');
     expect(note?.title).toContain(`2 of ${DECLARED_LABELS.length}`);
+  });
+
+  it('names the count for a write-phase refusal, which knows it', () => {
+    const note = registrationLabelNote(
+      'acme/widgets',
+      labelWriteRefusalFixture({
+        repository: 'acme/widgets',
+        missing: ['factory:ready', 'tier:small'],
+      }),
+    );
+    expect(note?.title).toContain('acme/widgets is registered');
+    expect(note?.title).toContain(`2 of ${DECLARED_LABELS.length} labels`);
+    // And it does not send the operator to a button that is not offered.
+    expect(note?.body).not.toContain('use Create missing labels');
+    expect(note?.body).toContain('check its labels again');
+  });
+
+  it('points at the repair button only where the repair is offered', () => {
+    const note = registrationLabelNote(
+      'acme/widgets',
+      labelReportFixture({
+        repository: 'acme/widgets',
+        attempted: true,
+        missing: ['factory:ready'],
+        failed: { 'factory:ready': 'GitHub answered 422.' },
+      }),
+    );
+    expect(note?.body).toContain('use Create missing labels');
   });
 
   it('flags a null report as the anomaly it is, without failing the registration', () => {
@@ -417,7 +613,7 @@ describe('registrationLabelLine — one line per row in a batch report', () => {
     expect(
       registrationLabelLine(
         labelReportFixture({
-          applied: true,
+          attempted: true,
           missing: ['factory:ready'],
           created: ['factory:ready'],
         }),
@@ -426,12 +622,22 @@ describe('registrationLabelLine — one line per row in a batch report', () => {
   });
 
   it('says so when they were all already there', () => {
-    expect(registrationLabelLine(labelReportFixture({ applied: true }))).toBe(
+    expect(registrationLabelLine(labelReportFixture({ attempted: true }))).toBe(
       `All ${DECLARED_LABELS.length} labels were already present.`,
     );
   });
 
-  it('never says "0 of 15" for a refusal', () => {
+  it('counts a write-phase refusal rather than refusing to', () => {
+    expect(
+      registrationLabelLine(
+        labelWriteRefusalFixture({ missing: ['factory:ready'] }),
+      ),
+    ).toBe(
+      `${DECLARED_LABELS.length - 1} of ${DECLARED_LABELS.length} labels present.`,
+    );
+  });
+
+  it('never says "0 of 15" for a read-phase refusal', () => {
     const line = registrationLabelLine(
       labelFailureFixture('refused', 'GitHub answered 403.'),
     );
