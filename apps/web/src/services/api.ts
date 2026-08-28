@@ -235,6 +235,7 @@ import type {
 } from '../types/operatorProbes';
 import type { SupervisorModelCatalog } from '../types/supervisorModels';
 import type { AvailableRepositories } from '../types/repositories';
+import type { LabelProvisioningReport } from '../types/repositoryLabels';
 import type {
   Project,
   ProjectDeletion,
@@ -442,11 +443,86 @@ export interface CreateRepositoryInput {
  * between the listing and the write — so these stay real states, not
  * impossible ones.
  */
+/**
+ * What `POST /repositories` ANSWERS: the repository, plus what happened to its
+ * labels (#415).
+ *
+ * `labelProvisioning` is an event of the registration rather than a property
+ * of the repository, which is why it is a wider type here and is absent from
+ * `RepositorySummary` — `GET /repositories` would otherwise have to call
+ * GitHub once per row, or publish a field that is always null there.
+ *
+ * **Null does not mean "no labels".** It is the belt-and-braces case: a bug in
+ * provisioning itself must not cost a registration. A GitHub refusal arrives
+ * as a full report with `status: 'refused'`, not as null.
+ */
+export interface RegisteredRepository extends RepositorySummary {
+  labelProvisioning: LabelProvisioningReport | null;
+}
+
 export async function createRepository(
   input: CreateRepositoryInput,
   signal?: AbortSignal,
-): Promise<RepositorySummary> {
-  return api.post<RepositorySummary>('/repositories', input, { signal });
+): Promise<RegisteredRepository> {
+  return api.post<RegisteredRepository>('/repositories', input, { signal });
+}
+
+// ---------------------------------------------------------------------------
+// The factory label taxonomy on one repository (#415)
+// ---------------------------------------------------------------------------
+
+/**
+ * `GET /repositories/:id/labels` — which declared factory labels exist on
+ * GitHub, as of now.
+ *
+ * Requires `projects:read`. **Writes nothing**, and answers an OBSERVATION
+ * with a `checkedAt` rather than a stored fact: nothing in Opifex remembers
+ * this between calls, because a label deleted on GitHub a minute later would
+ * make a remembered answer a lie.
+ *
+ * **A GitHub failure is a 200 carrying a `status`**, never an error status —
+ * "the request failed" and "the request found a failure" are the two things
+ * this endpoint exists to tell apart. So a rejection from here means the
+ * REQUEST failed (the account lacks `projects:read`, the id is not a
+ * registered repository, or the API is down) and never that GitHub said no.
+ *
+ * `labels` is EMPTY on every GitHub-level failure. See
+ * `config/repositoryLabels.ts`: no count may be rendered from such a report.
+ */
+export async function getRepositoryLabels(
+  id: string,
+  signal?: AbortSignal,
+): Promise<LabelProvisioningReport> {
+  return api.get<LabelProvisioningReport>(
+    `/repositories/${encodeURIComponent(id)}/labels`,
+    { signal },
+  );
+}
+
+/**
+ * `POST /repositories/:id/labels` — create the missing declared labels. **200,
+ * not 201**: the answer is a report about a repository that already existed,
+ * not a created resource.
+ *
+ * Requires `projects:write`. Creates what is missing, updates what has
+ * drifted, and **never deletes** — a label outside the taxonomy is left alone,
+ * because deleting one strips it from every issue carrying it. Idempotent: run
+ * twice, the second run writes nothing and reports `unchanged`.
+ *
+ * Answers the same shape as the inspection above, with `applied: true`, so a
+ * refusal is again a 200 with `status: 'refused'`. Read `action` for what this
+ * call did; `state` is what GitHub had BEFORE it and is deliberately not
+ * rewritten by a successful write.
+ */
+export async function repairRepositoryLabels(
+  id: string,
+  signal?: AbortSignal,
+): Promise<LabelProvisioningReport> {
+  return api.post<LabelProvisioningReport>(
+    `/repositories/${encodeURIComponent(id)}/labels`,
+    {},
+    { signal },
+  );
 }
 
 // ---------------------------------------------------------------------------
