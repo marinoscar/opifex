@@ -96,8 +96,16 @@ describe('groupSettings', () => {
       // they do in the registry (#422).
       'models',
       'supervisor',
+      // The second consumer sits directly after the first (#423): the two
+      // hold the same four keys and the question an operator asks on this
+      // screen is what one is set to against the other. Appended after
+      // everything — which is what an unlisted group gets — would put the
+      // chat below Notifications, as far from the supervisor as the screen
+      // allows.
+      'chat',
     ]);
     expect(groups[3].label).toBe('Model credentials');
+    expect(groups[5].label).toBe('Chat');
     expect(groups[0].entries.map((setting) => setting.key)).toEqual([
       'github.token',
       'github.requestTimeoutMs',

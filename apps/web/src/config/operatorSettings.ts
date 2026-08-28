@@ -156,6 +156,15 @@ const GROUP_LABELS: Record<string, string> = {
   // not a choice of model — the model itself is a supervisor setting.
   models: 'Model credentials',
   supervisor: 'Supervisor',
+  // The second model consumer (#423, epic #419). Its own group rather than a
+  // corner of `supervisor`, because the two choose a provider and a model
+  // INDEPENDENTLY — filing the chat's keys under the supervisor would put the
+  // decision this issue exists to separate back in one place. Placed and
+  // labelled here rather than left to the title-caser: an unlisted group is
+  // appended after everything, so a chat that nobody has configured would
+  // otherwise sit below Notifications, further from the supervisor it is
+  // meant to be read against than any two groups on the screen.
+  chat: 'Chat',
   promotion: 'Autonomy',
   notifications: 'Notifications',
 };
@@ -168,6 +177,10 @@ const GROUP_ORDER: readonly string[] = [
   'reconciler',
   'models',
   'supervisor',
+  // Directly after the supervisor, which is the comparison an operator is
+  // making: the two consumers' keys are the same four keys, and the question
+  // asked on this screen is what one is set to versus the other.
+  'chat',
   'promotion',
   'notifications',
 ];
