@@ -1438,6 +1438,41 @@ describe('ProjectRepositoriesPanel', () => {
       expect(within(row).getByText(/projects:read/)).toBeInTheDocument();
     });
 
+    it('drops a request failure once a later check answers', async () => {
+      // The two are mutually exclusive by construction: a report means the
+      // request completed. A stale error left under a fresh report would
+      // report a failure that has since been answered.
+      let call = 0;
+      server.use(
+        http.get(`${API_BASE}/repositories/:id/labels`, () => {
+          call += 1;
+          return call === 1
+            ? HttpResponse.json({ message: 'Forbidden' }, { status: 403 })
+            : HttpResponse.json({ data: labelReportFixture() });
+        }),
+      );
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel();
+
+      const row = labelRow(await awaitCard());
+      await user.click(
+        within(row).getByRole('button', { name: /check labels/i }),
+      );
+      await within(row).findByText(/could not be asked about/i);
+
+      // Still "Check labels" and not "again": a failed request observed
+      // nothing, so there is no earlier answer for this to be a second look at.
+      await user.click(
+        within(row).getByRole('button', { name: /^check labels$/i }),
+      );
+
+      expect(
+        await within(row).findByText(`${M} of ${M} labels present`),
+      ).toBeInTheDocument();
+      expect(within(row).queryByText(/could not be asked about/i)).toBeNull();
+    });
+
     it('repairs by POST, and reports what the writes did', async () => {
       const calls = serveLabels({
         get: labelReportFixture({ missing: ['factory:ready', 'tier:small'] }),
