@@ -894,7 +894,10 @@ function LabelReport({
           those have very different consequences. Only ever rendered from a
           report that read GitHub. */}
       {observed && outstanding.length > 0 && (
-        <Box sx={{ mt: 1 }}>
+        <Box
+          sx={{ mt: 1 }}
+          aria-label="Declared labels that are missing or out of date"
+        >
           {groupByKind(outstanding).map((group) => (
             <Box key={group.kind} sx={{ mt: 1 }}>
               <Typography variant="subtitle2">

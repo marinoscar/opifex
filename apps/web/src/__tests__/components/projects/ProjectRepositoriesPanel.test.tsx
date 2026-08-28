@@ -20,7 +20,9 @@
  *  - the access probe's missing endpoint drawn as a failure, or as a pass;
  *  - retired read off the four flags rather than off `retiredAt`;
  *  - de-register offered on a repository whose deletion the API would refuse;
- *  - the unassigned bucket rendered as a lesser screen than a project.
+ *  - the unassigned bucket rendered as a lesser screen than a project;
+ *  - a GitHub-level label failure rendered as "0 of 15 labels present", which
+ *    is the one mistake #415's row exists not to make.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -34,10 +36,14 @@ import { ProjectRepositoriesPanel } from '../../../components/projects/ProjectRe
 import type { RepositorySummary } from '../../../types/cockpit';
 import type { Project, ProjectScope } from '../../../types/projects';
 import {
+  DECLARED_LABELS,
   PROJECT_ID,
+  labelFailureFixture,
+  labelReportFixture,
   projectFixture,
   repositoryFixture,
 } from '../../mocks/repositories';
+import type { LabelProvisioningReport } from '../../../types/repositoryLabels';
 
 const API_BASE = '*/api';
 
@@ -117,6 +123,49 @@ function capturePatch(stored: RepositorySummary) {
     }),
   );
   return bodies;
+}
+
+/**
+ * The two label endpoints, RECORDING what was called (#415).
+ *
+ * The record is the point: checking must write nothing, so a test that only
+ * looked at the rendering could not tell a `GET` from a `POST`. `get` may be
+ * an HTTP failure instead of a report, which is a different thing from a
+ * report carrying a failure `status` — the panel has to keep those apart.
+ */
+function serveLabels(options: {
+  get?: LabelProvisioningReport | { httpStatus: number; message: string };
+  post?: LabelProvisioningReport | { httpStatus: number; message: string };
+}) {
+  const calls: string[] = [];
+
+  const answer = (
+    value: LabelProvisioningReport | { httpStatus: number; message: string },
+  ) =>
+    'httpStatus' in value
+      ? HttpResponse.json(
+          { message: value.message },
+          { status: value.httpStatus },
+        )
+      : HttpResponse.json({ data: value });
+
+  server.use(
+    http.get(`${API_BASE}/repositories/:id/labels`, ({ params }) => {
+      calls.push(`GET ${String(params.id)}`);
+      return answer(options.get ?? labelReportFixture());
+    }),
+    http.post(`${API_BASE}/repositories/:id/labels`, ({ params }) => {
+      calls.push(`POST ${String(params.id)}`);
+      return answer(options.post ?? labelReportFixture({ applied: true }));
+    }),
+  );
+
+  return calls;
+}
+
+/** The label row of one card. */
+function labelRow(card: HTMLElement) {
+  return within(card).getByLabelText(/^Factory labels/);
 }
 
 /**
@@ -1134,6 +1183,412 @@ describe('ProjectRepositoriesPanel', () => {
       await waitFor(() =>
         expect(removed).toEqual([`${PROJECT_ID}/${stored.id}`]),
       );
+    });
+  });
+
+  /**
+   * The observed label row (#415).
+   *
+   * The four switches are configured state; this is what GitHub had when
+   * somebody last looked. The cases below are the ones that decide whether
+   * that distinction survives contact with a real answer.
+   */
+  describe('The label row', () => {
+    const M = DECLARED_LABELS.length;
+
+    it('claims nothing before anybody has looked', async () => {
+      serveLabels({});
+      listing(repository());
+      renderPanel();
+
+      const row = labelRow(await awaitCard());
+      expect(
+        within(row).getByRole('button', { name: /^check labels$/i }),
+      ).toBeInTheDocument();
+      // No count, no verdict, no repair. "Nobody has looked" is a third state
+      // and it renders as one — not as a pass and not as an absence.
+      expect(within(row).queryByText(/labels present/i)).toBeNull();
+      expect(
+        within(row).queryByRole('button', { name: /create missing labels/i }),
+      ).toBeNull();
+    });
+
+    it('asks GitHub only when asked to, and writes nothing doing it', async () => {
+      const calls = serveLabels({});
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel();
+
+      const card = await awaitCard();
+      // Nothing on load: each check costs a GitHub request from a budget
+      // shared with the operator's own use.
+      expect(calls).toEqual([]);
+
+      await user.click(
+        within(labelRow(card)).getByRole('button', { name: /check labels/i }),
+      );
+
+      await waitFor(() =>
+        expect(calls).toEqual([`GET ${repositoryFixture().id}`]),
+      );
+    });
+
+    it('counts what is there against what is declared', async () => {
+      serveLabels({ get: labelReportFixture() });
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel();
+
+      const row = labelRow(await awaitCard());
+      await user.click(
+        within(row).getByRole('button', { name: /check labels/i }),
+      );
+
+      expect(
+        await within(row).findByText(`${M} of ${M} labels present`),
+      ).toBeInTheDocument();
+      // Nothing to repair, so nothing is offered: a button here would be a
+      // write with no work to do.
+      expect(
+        within(row).queryByRole('button', { name: /create missing labels/i }),
+      ).toBeNull();
+    });
+
+    it('names what is missing and what it costs, not just how many', async () => {
+      serveLabels({
+        get: labelReportFixture({ missing: ['factory:ready', 'tier:small'] }),
+      });
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel();
+
+      const row = labelRow(await awaitCard());
+      await user.click(
+        within(row).getByRole('button', { name: /check labels/i }),
+      );
+
+      expect(
+        await within(row).findByText(`${M - 2} of ${M} labels present`),
+      ).toBeInTheDocument();
+      // NAMED. A count cannot say whether the absent one is the eligibility
+      // signal or a model-tier hint, and those are not the same situation.
+      const outstanding = within(row).getByLabelText(/missing or out of date/i);
+      expect(
+        within(outstanding).getByText('factory:ready'),
+      ).toBeInTheDocument();
+      expect(within(outstanding).getByText('tier:small')).toBeInTheDocument();
+      // Grouped by kind, each saying what its absence costs.
+      expect(
+        within(outstanding).getByText(/Input labels — the control surface/),
+      ).toBeInTheDocument();
+      expect(
+        within(outstanding).getByText(/Routing labels — what the work needs/),
+      ).toBeInTheDocument();
+      expect(
+        within(outstanding).getByText(/whole eligibility signal/i),
+      ).toBeInTheDocument();
+    });
+
+    it('names what has drifted and what differs about it', async () => {
+      serveLabels({
+        get: labelReportFixture({
+          drifted: { 'factory:ready': ['color ededed -> d93f0b'] },
+        }),
+      });
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel();
+
+      const row = labelRow(await awaitCard());
+      await user.click(
+        within(row).getByRole('button', { name: /check labels/i }),
+      );
+
+      // Drifted labels EXIST, so the count does not dock them.
+      expect(
+        await within(row).findByText(`${M} of ${M} labels present`),
+      ).toBeInTheDocument();
+      expect(
+        within(row).getByText(/color ededed -> d93f0b/),
+      ).toBeInTheDocument();
+    });
+
+    it('renders the observation with an age, so it can be seen to go stale', async () => {
+      serveLabels({
+        get: labelReportFixture({ checkedAt: new Date().toISOString() }),
+      });
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel();
+
+      const row = labelRow(await awaitCard());
+      await user.click(
+        within(row).getByRole('button', { name: /check labels/i }),
+      );
+
+      expect(
+        await within(row).findByText(/Observed just now/),
+      ).toHaveTextContent(/Nothing here is stored or re-checked/);
+    });
+
+    /**
+     * Every GitHub-level failure, as the API actually sends it: `present: 0`,
+     * `declared: 15`, and an EMPTY `labels` array.
+     *
+     * This is the case the row exists to get right. "None are present" and
+     * "nobody could ask" are different facts with different fixes, and a
+     * component reading the counters without checking whether anything was
+     * read would print "0 of 15 labels present" for all seven of these.
+     */
+    describe.each([
+      ['no_credential', /No GitHub credential is configured/i],
+      ['invalid_credential', /GitHub rejected the credential/i],
+      ['refused', /authenticated and was not permitted/i],
+      ['not_found', /answered 404/i],
+      ['rate_limited', /rate limit is exhausted/i],
+      ['unreachable', /Nothing answered/i],
+      ['failed', /answered something unexpected/i],
+    ] as const)('when GitHub answers %s', (status, headline) => {
+      it('never renders a count, because nothing was observed', async () => {
+        serveLabels({
+          get: labelFailureFixture(status, 'GitHub said something specific.'),
+        });
+        listing(repository());
+        const user = userEvent.setup();
+        renderPanel();
+
+        const row = labelRow(await awaitCard());
+        await user.click(
+          within(row).getByRole('button', { name: /check labels/i }),
+        );
+
+        // Awaited on the API's own sentence, which is rendered whatever the
+        // status — so the count assertion below is the one that fails when
+        // this goes wrong, rather than a missing headline masking it.
+        await within(row).findByText('GitHub said something specific.');
+
+        // The assertion this whole feature turns on.
+        expect(row).not.toHaveTextContent(/\d+ of \d+ labels present/);
+        expect(row).not.toHaveTextContent(`0 of ${M}`);
+        expect(within(row).getByText(headline)).toBeInTheDocument();
+      });
+
+      it('quotes the API’s own sentence rather than paraphrasing it', async () => {
+        serveLabels({
+          get: labelFailureFixture(status, 'GitHub said something specific.'),
+        });
+        listing(repository());
+        const user = userEvent.setup();
+        renderPanel();
+
+        const row = labelRow(await awaitCard());
+        await user.click(
+          within(row).getByRole('button', { name: /check labels/i }),
+        );
+
+        expect(
+          await within(row).findByText('GitHub said something specific.'),
+        ).toBeInTheDocument();
+      });
+
+      it('withholds the repair action and says why', async () => {
+        serveLabels({
+          get: labelFailureFixture(status, 'GitHub said something specific.'),
+        });
+        listing(repository());
+        const user = userEvent.setup();
+        renderPanel();
+
+        const row = labelRow(await awaitCard());
+        await user.click(
+          within(row).getByRole('button', { name: /check labels/i }),
+        );
+
+        await within(row).findByText(headline);
+        expect(
+          within(row).queryByRole('button', { name: /create missing labels/i }),
+        ).toBeNull();
+        // A missing control with no explanation reads as a bug, and an
+        // operator who is not told will press again.
+        expect(
+          within(row).getByText(/Creating the labels is not offered here/i),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it('tells a failed REQUEST apart from a GitHub refusal', async () => {
+      serveLabels({
+        get: { httpStatus: 403, message: 'Forbidden' },
+      });
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel();
+
+      const row = labelRow(await awaitCard());
+      await user.click(
+        within(row).getByRole('button', { name: /check labels/i }),
+      );
+
+      expect(
+        await within(row).findByText(/could not be asked about/i),
+      ).toBeInTheDocument();
+      // A 403 is a fact about the ACCOUNT. Nothing about GitHub, the token or
+      // the labels was established, so no count and no verdict are shown.
+      expect(row).not.toHaveTextContent(/\d+ of \d+ labels present/);
+      expect(within(row).getByText(/projects:read/)).toBeInTheDocument();
+    });
+
+    it('repairs by POST, and reports what the writes did', async () => {
+      const calls = serveLabels({
+        get: labelReportFixture({ missing: ['factory:ready', 'tier:small'] }),
+        post: labelReportFixture({
+          applied: true,
+          missing: ['factory:ready', 'tier:small'],
+          created: ['factory:ready', 'tier:small'],
+        }),
+      });
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel();
+
+      const row = labelRow(await awaitCard());
+      await user.click(
+        within(row).getByRole('button', { name: /check labels/i }),
+      );
+      await user.click(
+        await within(row).findByRole('button', {
+          name: /create missing labels/i,
+        }),
+      );
+
+      expect(await within(row).findByText('2 created')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(calls).toEqual([
+          `GET ${repositoryFixture().id}`,
+          `POST ${repositoryFixture().id}`,
+        ]),
+      );
+      // `state` still reads `missing` on both labels — the API does not
+      // rewrite it — so a row that read `state` would go on listing them as
+      // absent immediately after creating them.
+      expect(row).not.toHaveTextContent(/not on GitHub/);
+      expect(
+        within(row).queryByRole('button', { name: /create missing labels/i }),
+      ).toBeNull();
+    });
+
+    it('is honest when a repair only partly worked', async () => {
+      serveLabels({
+        get: labelReportFixture({ missing: ['factory:ready', 'tier:small'] }),
+        post: labelReportFixture({
+          applied: true,
+          missing: ['factory:ready', 'tier:small'],
+          created: ['tier:small'],
+          failed: { 'factory:ready': 'GitHub answered 403 for this label.' },
+        }),
+      });
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel();
+
+      const row = labelRow(await awaitCard());
+      await user.click(
+        within(row).getByRole('button', { name: /check labels/i }),
+      );
+      await user.click(
+        await within(row).findByRole('button', {
+          name: /create missing labels/i,
+        }),
+      );
+
+      expect(
+        await within(row).findByText('1 written, 1 failed'),
+      ).toBeInTheDocument();
+      // The one that worked stays worked, and the one that did not carries
+      // GitHub's own reason.
+      expect(within(row).getByText(/stay written/)).toBeInTheDocument();
+      expect(
+        within(row).getByText(/GitHub answered 403 for this label\./),
+      ).toBeInTheDocument();
+      // Still repairable: the read succeeded and something is still missing.
+      expect(
+        within(row).getByRole('button', { name: /create missing labels/i }),
+      ).toBeInTheDocument();
+    });
+
+    it('reports a refused repair without inventing a count', async () => {
+      serveLabels({
+        get: labelReportFixture({ missing: ['factory:ready'] }),
+        post: labelFailureFixture('refused', 'GitHub answered 403.', {
+          applied: true,
+        }),
+      });
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel();
+
+      const row = labelRow(await awaitCard());
+      await user.click(
+        within(row).getByRole('button', { name: /check labels/i }),
+      );
+      await user.click(
+        await within(row).findByRole('button', {
+          name: /create missing labels/i,
+        }),
+      );
+
+      expect(
+        await within(row).findByText('Nothing was written'),
+      ).toBeInTheDocument();
+      expect(row).not.toHaveTextContent(/\d+ of \d+ labels present/);
+      expect(
+        within(row).queryByRole('button', { name: /create missing labels/i }),
+      ).toBeNull();
+    });
+
+    it('reports an idempotent second run as the no-op it is', async () => {
+      serveLabels({
+        get: labelReportFixture({ missing: ['factory:ready'] }),
+        post: labelReportFixture({ applied: true }),
+      });
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel();
+
+      const row = labelRow(await awaitCard());
+      await user.click(
+        within(row).getByRole('button', { name: /check labels/i }),
+      );
+      await user.click(
+        await within(row).findByRole('button', {
+          name: /create missing labels/i,
+        }),
+      );
+
+      expect(
+        await within(row).findByText('Nothing needed creating'),
+      ).toBeInTheDocument();
+    });
+
+    it('disables the repair without projects:write', async () => {
+      serveLabels({
+        get: labelReportFixture({ missing: ['factory:ready'] }),
+      });
+      listing(repository());
+      const user = userEvent.setup();
+      renderPanel({ canWrite: false });
+
+      const row = labelRow(await awaitCard());
+      // Checking is a read and stays available; only the write is refused.
+      await user.click(
+        within(row).getByRole('button', { name: /check labels/i }),
+      );
+
+      expect(
+        await within(row).findByRole('button', {
+          name: /create missing labels/i,
+        }),
+      ).toBeDisabled();
     });
   });
 });
