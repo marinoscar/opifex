@@ -40,9 +40,9 @@ import { SupervisorSpendLedgerService } from './supervisor-spend-ledger.service'
 const MODEL = 'claude-haiku-4-5';
 
 const SETTINGS: OperatorSettingsOverrides = {
-  'supervisor.model.apiKey': 'sk-ant-test',
+  'models.anthropic.apiKey': 'sk-ant-test',
   'supervisor.model.name': MODEL,
-  'supervisor.model.baseUrl': 'https://api.anthropic.test',
+  'models.anthropic.baseUrl': 'https://api.anthropic.test',
   'supervisor.model.timeoutMs': 5000,
   'supervisor.model.defaultMaxTokens': 1024,
 };
@@ -198,7 +198,7 @@ describe('AnthropicSupervisorModel (ADR-0015)', () => {
       fetchMock.mockImplementation(async () => messageResponse(answer('hi')));
 
       await adapter({
-        'supervisor.model.baseUrl': 'https://api.anthropic.test/',
+        'models.anthropic.baseUrl': 'https://api.anthropic.test/',
       }).ask({ snapshot: 'S', instruction: 'I' });
 
       expect(fetchMock.mock.calls[0][0]).toBe(
@@ -386,14 +386,14 @@ describe('AnthropicSupervisorModel (ADR-0015)', () => {
       // #344. This refusal used to be a missing DI binding; it is per call
       // now, and what an operator reads has to be actionable rather than an
       // instruction to bind a provider.
-      const model = adapter({ 'supervisor.model.apiKey': '' });
+      const model = adapter({ 'models.anthropic.apiKey': '' });
 
       await expect(
         model.ask({ snapshot: 'S', instruction: 'I' }),
       ).rejects.toThrow(SupervisorModelError);
       await expect(
         model.ask({ snapshot: 'S', instruction: 'I' }),
-      ).rejects.toThrow(/SUPERVISOR_MODEL_API_KEY/);
+      ).rejects.toThrow(/models\.anthropic\.apiKey/);
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -428,7 +428,7 @@ describe('createSupervisorModel (ADR-0015, #344, #392)', () => {
     // there was no model.
     expect(
       createSupervisorModel(
-        operatorSettings({ 'supervisor.model.apiKey': '' }),
+        operatorSettings({ 'models.anthropic.apiKey': '' }),
       ),
     ).toBeInstanceOf(ProviderRoutingSupervisorModel);
   });
@@ -451,8 +451,8 @@ describe('createSupervisorModel (ADR-0015, #344, #392)', () => {
     expect(adapter({ 'supervisor.model.name': '' }).name).toBe(
       bareAdapter({ 'supervisor.model.name': '' }).name,
     );
-    expect(adapter({ 'supervisor.model.apiKey': '' }).name).toBe(
-      bareAdapter({ 'supervisor.model.apiKey': '' }).name,
+    expect(adapter({ 'models.anthropic.apiKey': '' }).name).toBe(
+      bareAdapter({ 'models.anthropic.apiKey': '' }).name,
     );
   });
 
@@ -461,10 +461,10 @@ describe('createSupervisorModel (ADR-0015, #344, #392)', () => {
     // column for an unconfigured supervisor has to read after #344 exactly
     // what it read when no adapter was bound at all. If either string moves,
     // this is where the two stop agreeing.
-    expect(adapter({ 'supervisor.model.apiKey': '' }).name).toBe(
+    expect(adapter({ 'models.anthropic.apiKey': '' }).name).toBe(
       new UnavailableSupervisorModel().name,
     );
-    expect(adapter({ 'supervisor.model.apiKey': '' }).name).toBe('none');
+    expect(adapter({ 'models.anthropic.apiKey': '' }).name).toBe('none');
   });
 
   it("reports 'unconfigured' for a key that names no model, and the name otherwise", () => {
@@ -480,16 +480,16 @@ describe('per-call configuration (#344)', () => {
   it('picks up a key supplied after the adapter was built', async () => {
     // The failure #344 exists to close, at the adapter's own level: the same
     // object refuses, then calls, with no reconstruction in between.
-    const settings = operatorSettings({ 'supervisor.model.apiKey': '' });
+    const settings = operatorSettings({ 'models.anthropic.apiKey': '' });
     const model = createSupervisorModel(settings);
 
     await expect(
       model.ask({ snapshot: 'S', instruction: 'I' }),
-    ).rejects.toThrow(/SUPERVISOR_MODEL_API_KEY/);
+    ).rejects.toThrow(/models\.anthropic\.apiKey/);
     expect(model.name).toBe('none');
 
     fetchMock.mockImplementation(async () => messageResponse(answer('hi')));
-    settings.setOverride('supervisor.model.apiKey', 'sk-ant-set-later');
+    settings.setOverride('models.anthropic.apiKey', 'sk-ant-set-later');
 
     await expect(
       model.ask({ snapshot: 'S', instruction: 'I' }),
@@ -508,11 +508,11 @@ describe('per-call configuration (#344)', () => {
     await model.ask({ snapshot: 'S', instruction: 'I' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    settings.setOverride('supervisor.model.apiKey', '');
+    settings.setOverride('models.anthropic.apiKey', '');
 
     await expect(
       model.ask({ snapshot: 'S', instruction: 'I' }),
-    ).rejects.toThrow(/SUPERVISOR_MODEL_API_KEY/);
+    ).rejects.toThrow(/models\.anthropic\.apiKey/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -524,7 +524,7 @@ describe('per-call configuration (#344)', () => {
     await model.ask({ snapshot: 'S', instruction: 'I' });
 
     settings.setOverride('supervisor.model.name', 'claude-sonnet-4-5');
-    settings.setOverride('supervisor.model.baseUrl', 'https://proxy.test');
+    settings.setOverride('models.anthropic.baseUrl', 'https://proxy.test');
     settings.setOverride('supervisor.model.defaultMaxTokens', 99);
 
     await model.ask({ snapshot: 'S', instruction: 'I' });
@@ -701,7 +701,7 @@ describe('SupervisorModule binding (ADR-0015)', () => {
   it('records the same refusal it always did when no key is configured', async () => {
     const { service, bound, recorded } = await buildSupervisor({
       'supervisor.enabled': true,
-      'supervisor.model.apiKey': '',
+      'models.anthropic.apiKey': '',
     });
 
     // #344: the adapter IS in the graph now — that is the change — and the row
@@ -727,7 +727,7 @@ describe('SupervisorModule binding (ADR-0015)', () => {
     // typing a key into the Control Center between two ticks.
     const { service, settings, record, recorded } = await buildSupervisor({
       'supervisor.enabled': true,
-      'supervisor.model.apiKey': '',
+      'models.anthropic.apiKey': '',
     });
 
     await service.invoke(NOW);
@@ -737,7 +737,7 @@ describe('SupervisorModule binding (ADR-0015)', () => {
     fetchMock.mockImplementation(async () =>
       messageResponse(answer('because the runner died', 1000, 500)),
     );
-    settings.setOverride('supervisor.model.apiKey', 'sk-ant-set-in-the-ui');
+    settings.setOverride('models.anthropic.apiKey', 'sk-ant-set-in-the-ui');
 
     await service.invoke(NOW);
 

@@ -1,10 +1,17 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
-import { OPERATOR_SETTINGS } from '../../src/settings/operator-settings/operator-settings.registry';
+import {
+  OPERATOR_SETTINGS,
+  OPERATOR_SETTING_KEYS,
+} from '../../src/settings/operator-settings/operator-settings.registry';
 import {
   DEFAULT_SUPERVISOR_MODEL_PROVIDER,
   SUPERVISOR_MODEL_PROVIDERS,
+  modelApiKeyEnvVar,
+  modelApiKeySettingKey,
+  modelBaseUrlEnvVar,
+  modelBaseUrlSettingKey,
 } from '../../src/supervisor/invocation/supervisor-model.config';
 
 /**
@@ -192,11 +199,46 @@ describe('GOVERNING TEST: the supervisor model seam names no vendor (#392)', () 
       expect(DEFAULT_SUPERVISOR_MODEL_PROVIDER).toBe('anthropic');
     });
 
-    it('no longer defaults the base URL to one vendor’s host', () => {
-      // The key that made switching provider a two-step operation. Empty means
-      // "follow the provider"; see `effectiveBaseUrl` for why "overridden" is
-      // a property of the value rather than of where the value came from.
-      expect(OPERATOR_SETTINGS['supervisor.model.baseUrl'].default).toBe('');
+    it('offers one credential slot per provider, generated from the same list', () => {
+      // #422's structural claim, and the reason this belongs in THIS file
+      // rather than in the registry's own spec. The credential keys are
+      // GENERATED from `SUPERVISOR_MODEL_PROVIDERS`, so a third adapter gets
+      // its own key slot, base URL, env variables and Control Center card
+      // without an edit to the settings layer — and, more to the point, the
+      // settings layer cannot grow a hand-written vendor list that drifts from
+      // the adapters. A registry that hard-coded two entries would satisfy the
+      // regexes above (`'models.anthropic.apiKey'` is not a bare provider
+      // literal) and still be the second declaration point #332 exists to
+      // remove, so the regexes cannot carry this claim on their own.
+      for (const provider of SUPERVISOR_MODEL_PROVIDERS) {
+        const apiKey = OPERATOR_SETTINGS[modelApiKeySettingKey(provider)];
+        const baseUrl = OPERATOR_SETTINGS[modelBaseUrlSettingKey(provider)];
+
+        expect(apiKey.secret).toBe(true);
+        expect(apiKey.envVar).toBe(modelApiKeyEnvVar(provider));
+        // No vendor's host as a default, per provider — #392's rule, which
+        // survived the split. Empty means "follow the provider"; see
+        // `effectiveBaseUrl` for why "overridden" is a property of the value
+        // rather than of where the value came from.
+        expect(baseUrl.default).toBe('');
+        expect(baseUrl.envVar).toBe(modelBaseUrlEnvVar(provider));
+      }
+
+      // And no slot survives for a provider that has no adapter.
+      const slots = OPERATOR_SETTING_KEYS.filter((key) =>
+        key.startsWith('models.'),
+      );
+      expect(slots.length).toBe(SUPERVISOR_MODEL_PROVIDERS.length * 2);
+    });
+
+    it('no longer pairs one credential with one provider', () => {
+      // The regression #422 closes, stated as the absence it is. The old key
+      // WAS the coupling: one secret slot next to one provider setting, so
+      // that switching provider found the same credential and posted it to a
+      // host that would reject it — and re-entering was the only way to try
+      // the other vendor, destroying the first key.
+      expect(OPERATOR_SETTING_KEYS).not.toContain('supervisor.model.apiKey');
+      expect(OPERATOR_SETTING_KEYS).not.toContain('supervisor.model.baseUrl');
     });
   });
 });

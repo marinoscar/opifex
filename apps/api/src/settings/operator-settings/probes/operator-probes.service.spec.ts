@@ -393,6 +393,10 @@ describe('OperatorProbesService (#338)', () => {
       const binary = await script('claude', 'echo ok');
       await build({
         CLAUDE_CODE_BINARY: binary,
+        // The SUPERSEDED name, deliberately (#422): it still supplies the
+        // default provider's slot, and this is the one place the probe suite
+        // proves that an upgraded deployment that has not edited `.env` still
+        // has a supervisor credential to test.
         SUPERVISOR_MODEL_API_KEY: 'k',
       });
 
@@ -410,7 +414,7 @@ describe('OperatorProbesService (#338)', () => {
 
   describe('supervisor-model', () => {
     it('makes a call and reports what it cost', async () => {
-      await build({ SUPERVISOR_MODEL_API_KEY: 'sk-ant-api03-Kx7Vd2Nq9Zb4M' });
+      await build({ MODEL_ANTHROPIC_API_KEY: 'sk-ant-api03-Kx7Vd2Nq9Zb4M' });
 
       const result = await probes.run('supervisor-model');
 
@@ -423,13 +427,13 @@ describe('OperatorProbesService (#338)', () => {
       // The exact case #338 names: a key set with no `SUPERVISOR_MODEL_NAME`
       // leaves the supervisor recording a failure once an hour with nobody
       // watching. It is reported in the adapter's words, not a second opinion.
-      await build({ SUPERVISOR_MODEL_API_KEY: 'sk-ant-api03-Kx7Vd2Nq9Zb4M' });
+      await build({ MODEL_ANTHROPIC_API_KEY: 'sk-ant-api03-Kx7Vd2Nq9Zb4M' });
       probes.model = {
         name: 'unconfigured',
         ask: () =>
           Promise.reject(
             new SupervisorModelError(
-              'SUPERVISOR_MODEL_API_KEY is set but SUPERVISOR_MODEL_NAME is not, ' +
+              'models.anthropic.apiKey is set but SUPERVISOR_MODEL_NAME is not, ' +
                 'so there is no model to ask.',
             ),
           ),
@@ -442,7 +446,7 @@ describe('OperatorProbesService (#338)', () => {
     });
 
     it('reports an HTTP status when the vendor gave one', async () => {
-      await build({ SUPERVISOR_MODEL_API_KEY: 'sk-ant-api03-Kx7Vd2Nq9Zb4M' });
+      await build({ MODEL_ANTHROPIC_API_KEY: 'sk-ant-api03-Kx7Vd2Nq9Zb4M' });
       probes.model = {
         name: 'claude-test',
         ask: () =>
@@ -475,12 +479,18 @@ describe('OperatorProbesService (#338)', () => {
       // than by a class name: it is the host that receives the credential.
       await build({
         SUPERVISOR_MODEL_PROVIDER: 'openai',
-        SUPERVISOR_MODEL_API_KEY: 'sk-openai-probe',
+        MODEL_OPENAI_API_KEY: 'sk-openai-probe',
         SUPERVISOR_MODEL_NAME: 'gpt-5.6-luna',
+        // Held at the same time and NOT the one that should be sent (#422).
+        // Without this the assertion below would also pass on a probe that
+        // read a single global credential, because there would be only one.
+        MODEL_ANTHROPIC_API_KEY: 'sk-ant-api03-not-this-one',
       });
       const urls: string[] = [];
-      const fetchMock = jest.fn((url: unknown) => {
+      const inits: RequestInit[] = [];
+      const fetchMock = jest.fn((url: unknown, init: unknown) => {
         urls.push(String(url));
+        inits.push(init as RequestInit);
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -501,6 +511,10 @@ describe('OperatorProbesService (#338)', () => {
         expect(result.ok).toBe(true);
         expect(result.detail).toContain('gpt-5.6-luna answered');
         expect(urls).toEqual(['https://api.openai.com/v1/chat/completions']);
+        // The OpenAI slot's key, not the Anthropic one sitting beside it.
+        expect(inits[0].headers).toMatchObject({
+          authorization: 'Bearer sk-openai-probe',
+        });
       } finally {
         global.fetch = realFetch;
       }

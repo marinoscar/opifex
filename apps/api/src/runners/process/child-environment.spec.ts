@@ -20,19 +20,28 @@ describe('buildChildEnvironment', () => {
     JWT_SECRET: 'test-jwt-secret-test-jwt-secret-test-jwt-secret-',
     POSTGRES_PASSWORD: 'hunter2',
     GITHUB_TOKEN: 'ghp_fake',
-    SUPERVISOR_MODEL_API_KEY: 'sk-ant-api-fake',
+    MODEL_ANTHROPIC_API_KEY: 'sk-ant-api-fake',
+    MODEL_OPENAI_API_KEY: 'sk-proj-api-fake',
+    // The superseded name (#422), still readable by the resolver and
+    // therefore still a credential this process can be holding.
+    SUPERVISOR_MODEL_API_KEY: 'sk-ant-api-fake-old',
   };
 
   describe('what it refuses to carry', () => {
     it('drops every credential the API process holds', () => {
-      // The four that matter, by name: JWT_SECRET mints an admin token against
+      // The ones that matter, by name: JWT_SECRET mints an admin token against
       // the control plane supervising the run, POSTGRES_PASSWORD reaches the
-      // database behind it, and the other two are spend.
+      // database behind it, and the rest are spend. #422 turned one model
+      // credential into one per provider; each is named here rather than
+      // trusted to the allowlist, because a security assertion that stops
+      // covering the real variable is worse than none.
       const env = buildChildEnvironment({}, apiEnvironment);
 
       expect(env.JWT_SECRET).toBeUndefined();
       expect(env.POSTGRES_PASSWORD).toBeUndefined();
       expect(env.GITHUB_TOKEN).toBeUndefined();
+      expect(env.MODEL_ANTHROPIC_API_KEY).toBeUndefined();
+      expect(env.MODEL_OPENAI_API_KEY).toBeUndefined();
       expect(env.SUPERVISOR_MODEL_API_KEY).toBeUndefined();
     });
 

@@ -4,6 +4,7 @@ import { AnthropicSupervisorModel } from './anthropic-supervisor-model';
 import { OpenAiSupervisorModel } from './openai-supervisor-model';
 import {
   PROVIDER_BASE_URLS,
+  modelApiKeySettingKey,
   SupervisorModelError,
 } from './supervisor-model.config';
 import { createSupervisorModel } from './supervisor-model.factory';
@@ -26,9 +27,9 @@ const MODEL = 'gpt-5.6-luna';
 
 const SETTINGS: OperatorSettingsOverrides = {
   'supervisor.model.provider': 'openai',
-  'supervisor.model.apiKey': 'sk-openai-test',
+  'models.openai.apiKey': 'sk-openai-test',
   'supervisor.model.name': MODEL,
-  'supervisor.model.baseUrl': 'https://api.openai.test',
+  'models.openai.baseUrl': 'https://api.openai.test',
   'supervisor.model.timeoutMs': 5000,
   'supervisor.model.defaultMaxTokens': 1024,
 };
@@ -192,7 +193,7 @@ describe('OpenAiSupervisorModel (#392)', () => {
       fetchMock.mockImplementation(async () => chatResponse(answer('hi')));
 
       await adapter({
-        'supervisor.model.baseUrl': 'https://api.openai.test/',
+        'models.openai.baseUrl': 'https://api.openai.test/',
       }).ask({ snapshot: 'S', instruction: 'I' });
 
       expect(fetchMock.mock.calls[0][0]).toBe(
@@ -408,14 +409,14 @@ describe('OpenAiSupervisorModel (#392)', () => {
     it('refuses, naming the setting to change, when there is no API key', async () => {
       // The same refusal the other adapter gives, per call, naming the setting
       // rather than telling whoever reads the log to bind a provider (#344).
-      const model = adapter({ 'supervisor.model.apiKey': '' });
+      const model = adapter({ 'models.openai.apiKey': '' });
 
       await expect(
         model.ask({ snapshot: 'S', instruction: 'I' }),
       ).rejects.toThrow(SupervisorModelError);
       await expect(
         model.ask({ snapshot: 'S', instruction: 'I' }),
-      ).rejects.toThrow(/SUPERVISOR_MODEL_API_KEY/);
+      ).rejects.toThrow(/models\.openai\.apiKey/);
       expect(model.name).toBe('none');
       expect(fetchMock).not.toHaveBeenCalled();
     });
@@ -455,9 +456,15 @@ describe('provider selection (#392)', () => {
           )
         : chatResponse(answer('hi')),
     );
+    // Two DIFFERENT credentials, held at the same time (#422). Distinct
+    // values rather than one shared `sk-either`, because with one key both
+    // arms would pass on a router that ignored the credential split entirely
+    // — the switch has to select the OTHER stored key, not merely the other
+    // host.
     const settings = makeOperatorSettings({
       overrides: {
-        'supervisor.model.apiKey': 'sk-either',
+        'models.anthropic.apiKey': 'sk-ant-held',
+        'models.openai.apiKey': 'sk-openai-held',
         'supervisor.model.name': MODEL,
       },
     });
@@ -468,7 +475,7 @@ describe('provider selection (#392)', () => {
     expect(fetchMock.mock.calls[0][0]).toBe(
       `${PROVIDER_BASE_URLS.anthropic}/v1/messages`,
     );
-    expect(callInit(0).headers).toMatchObject({ 'x-api-key': 'sk-either' });
+    expect(callInit(0).headers).toMatchObject({ 'x-api-key': 'sk-ant-held' });
 
     settings.setOverride('supervisor.model.provider', 'openai');
     await model.ask({ snapshot: 'S', instruction: 'I' });
@@ -477,8 +484,14 @@ describe('provider selection (#392)', () => {
       `${PROVIDER_BASE_URLS.openai}/v1/chat/completions`,
     );
     expect(callInit(1).headers).toMatchObject({
-      authorization: 'Bearer sk-either',
+      authorization: 'Bearer sk-openai-held',
     });
+
+    // And neither key was consumed by the switch: going back reaches the
+    // first credential again, with nothing re-entered in between.
+    settings.setOverride('supervisor.model.provider', 'anthropic');
+    await model.ask({ snapshot: 'S', instruction: 'I' });
+    expect(callInit(2).headers).toMatchObject({ 'x-api-key': 'sk-ant-held' });
   });
 
   it('reaches the right host when the operator switches provider and forgets the URL', async () => {
@@ -490,9 +503,9 @@ describe('provider selection (#392)', () => {
       makeOperatorSettings({
         overrides: {
           'supervisor.model.provider': 'openai',
-          'supervisor.model.apiKey': 'sk-openai',
+          'models.openai.apiKey': 'sk-openai',
           'supervisor.model.name': MODEL,
-          'supervisor.model.baseUrl': PROVIDER_BASE_URLS.anthropic,
+          'models.openai.baseUrl': PROVIDER_BASE_URLS.anthropic,
         },
       }),
     );
@@ -529,16 +542,18 @@ describe('provider selection (#392)', () => {
     const model = createSupervisorModel(settings);
 
     for (const provider of ['anthropic', 'openai'] as const) {
+      const slot = modelApiKeySettingKey(provider);
       settings.setOverride('supervisor.model.provider', provider);
+      settings.setOverride(slot, 'sk-either');
 
       expect(model.name).toBe('unconfigured');
       await expect(
         model.ask({ snapshot: 'S', instruction: 'I' }),
       ).rejects.toThrow(/SUPERVISOR_MODEL_NAME is not/);
 
-      settings.setOverride('supervisor.model.apiKey', '');
+      settings.setOverride(slot, '');
       expect(model.name).toBe('none');
-      settings.setOverride('supervisor.model.apiKey', 'sk-either');
+      settings.setOverride(slot, 'sk-either');
     }
 
     // Nothing was billed on either provider, which is the other half of it.

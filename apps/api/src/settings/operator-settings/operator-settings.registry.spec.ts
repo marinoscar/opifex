@@ -9,6 +9,7 @@ import {
   SUPERVISOR_SPEND_CEILING_WINDOW_ENV,
 } from '../../supervisor/invocation/supervisor-spend-ceiling';
 import {
+  LEGACY_MODEL_API_KEY_ENV,
   OPERATOR_SETTINGS,
   OPERATOR_SETTING_GROUPS,
   OPERATOR_SETTING_KEYS,
@@ -185,8 +186,72 @@ describe('operator settings registry', () => {
   });
 
   it('uses each environment variable exactly once', () => {
-    const envVars = entries.map(([, def]) => def.envVar);
+    // Superseded names counted alongside current ones (#422). Two keys sharing
+    // a `legacyEnvVar` — or a legacy name that is some other key's current one
+    // — would make one variable feed two settings, which is precisely the
+    // ambiguity the credential split exists to remove.
+    const envVars = entries.flatMap(([, def]) =>
+      def.legacyEnvVar === undefined
+        ? [def.envVar]
+        : [def.envVar, def.legacyEnvVar],
+    );
     expect(new Set(envVars).size).toBe(envVars.length);
+  });
+
+  describe('the model credential slots (#422, epic #419)', () => {
+    // -----------------------------------------------------------------------
+    // The structural claims live in
+    // `test/governing/supervisor-provider-seam.spec.ts`, beside the rule they
+    // follow from: the slots are GENERATED from the adapter list, so the
+    // settings layer never names a vendor. What belongs here is the registry's
+    // own contract for them.
+    // -----------------------------------------------------------------------
+
+    it('marks both credentials secret and defaults both to unconfigured', () => {
+      for (const key of [
+        'models.anthropic.apiKey',
+        'models.openai.apiKey',
+      ] as const) {
+        expect(OPERATOR_SETTINGS[key].secret).toBe(true);
+        // Empty, and empty is a LEGAL value rather than a rejected one, so
+        // that clearing a credential in the Control Center is expressible.
+        expect(OPERATOR_SETTINGS[key].default).toBe('');
+        expect(parseOperatorSetting(key, '')).toEqual({ ok: true, value: '' });
+        expect(OPERATOR_SETTINGS[key].group).toBe('models');
+      }
+    });
+
+    it('carries the superseded name on exactly one slot', () => {
+      // One ambiguous variable cannot honestly name a credential for two
+      // vendors. Putting `SUPERVISOR_MODEL_API_KEY` on both slots would place
+      // an Anthropic key in the OpenAI slot, so that selecting OpenAI posts
+      // `sk-ant-…` to OpenAI — the confusion #422 removes, rebuilt by the
+      // compatibility shim meant to smooth it over.
+      const carrying = entries.filter(
+        ([, def]) => def.legacyEnvVar === LEGACY_MODEL_API_KEY_ENV,
+      );
+
+      expect(carrying.map(([key]) => key)).toEqual(['models.anthropic.apiKey']);
+      expect(OPERATOR_SETTINGS['models.openai.apiKey'].legacyEnvVar).toBe(
+        undefined,
+      );
+    });
+
+    it('no longer declares the single key the split replaced', () => {
+      expect(OPERATOR_SETTING_KEYS).not.toContain('supervisor.model.apiKey');
+      expect(isOperatorSettingKey('supervisor.model.apiKey')).toBe(false);
+      expect(isOperatorSettingKey('supervisor.model.baseUrl')).toBe(false);
+    });
+
+    it('validates each base URL as a URL, while leaving empty expressible', () => {
+      expect(
+        parseOperatorSetting('models.openai.baseUrl', 'not-a-url').ok,
+      ).toBe(false);
+      expect(parseOperatorSetting('models.openai.baseUrl', '')).toEqual({
+        ok: true,
+        value: '',
+      });
+    });
   });
 
   describe('the hard spend ceilings (#345, ADR-0018 §6)', () => {
