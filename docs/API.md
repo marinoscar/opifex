@@ -1633,8 +1633,31 @@ a single `enabled` flag would make the first write and the first run happen on
 one flip. `mirrorLabelsEnabled` is gated a second time by the global
 `GITHUB_WRITES_ENABLED`; both must be on for a label to be written.
 
-**Response:** `201` with the repository, including its `fullName` and the
-`defaultBranch` read from GitHub.
+**It also creates the factory label taxonomy on the repository** (#415).
+`factory:ready` is the whole eligibility signal, and GitHub's label picker
+only offers labels that exist — so a repository registered without them
+cannot be steered at all. Fifteen of the taxonomy's 40 labels are provisioned:
+the three `factory:*` input labels, the five `factory/*` mirror labels, and
+the seven `needs:*` / `tier:*` routing labels. The 25 organisational labels
+(`bug`, `phase:*`, component labels, …) are not — see [`GET
+/repositories/{id}/labels`](#get-repositoriesidlabels) below for why.
+
+**Provisioning failing does NOT fail the registration.** ADR-0001's
+fine-grained personal access token grants access one repository and one
+permission at a time and emits no `x-oauth-scopes` header, so whether it can
+create a label on this repository is unknowable until it is tried. The
+repository is registered either way, and the response's `labelProvisioning`
+reports what happened.
+
+**Response:** `201` with the repository, including its `fullName`, the
+`defaultBranch` read from GitHub, and `labelProvisioning` — the same report
+shape `GET /repositories/{id}/labels` answers (below). `ok: true` means every
+declared label is present; `status: "refused"` is the likeliest failure —
+the token authenticated and is not permitted to write this repository's
+labels, the remedy is granting it `Issues: Read and write`, and
+`POST /repositories/{id}/labels` repairs it once that is done. When the
+labels could not even be read, every count on the report is `null` —
+**null means the labels were never read, never that there are none.**
 
 **Errors:**
 
@@ -1722,6 +1745,90 @@ De-register a repository. Returns `204`.
 cascade away runs and their provenance, and VISION §5's premise is that the
 chain survives. Retire it instead (`POST /repositories/{id}/retire`), which
 stands the whole ladder down in one act and leaves that history in place.
+
+#### GET /repositories/{id}/labels
+
+Check which of the declared factory labels exist on this repository, as of
+right now (#415). **Writes nothing** — the observed half of the ladder,
+paired with `POST` below the way `POST /api/settings/probes/:probe` already
+pairs a check with a repair. Requires `projects:read`.
+
+Answers a `LabelProvisioningReport`: an **observation** with a `checkedAt`,
+not a stored fact — a label added or removed on GitHub since the last check
+is not reflected until you check again.
+
+**Per-label, not just a count.** `labels[]` names every declared label with
+`stateBefore` (`present`, `missing`, or `drifted` with `differences`), so a
+caller can say _which_ label is absent rather than only how many. `present` /
+`declared` is the "N of M labels present" summary.
+
+**Three kinds are declared**, and `labels[].kind` names which:
+
+| Kind      | Prefix              | What's lost while it's missing                                                            |
+| --------- | ------------------- | ----------------------------------------------------------------------------------------- |
+| `input`   | `factory:*`         | The repository cannot be steered at all — `factory:ready` is the whole eligibility signal |
+| `mirror`  | `factory/*`         | GitHub creates one on first write anyway, with a random colour and no description         |
+| `routing` | `needs:*`, `tier:*` | Work still runs, but only ever on the defaults                                            |
+
+This repository's organisational labels (`bug`, `phase:*`, component labels)
+are deliberately not part of the taxonomy this endpoint reports on — see
+`docs/RUNBOOK-observation-week.md` §3 for why, and `scripts/sync-labels.mjs`
+for the tool that covers them.
+
+**Every count is `null` when the labels could not be read, and `null` means
+NOT READ — never zero.** `declared`, `present`, `missing`, `created`,
+`updated`, `unchanged` and `failed` go `null` together whenever GitHub's
+label list was never obtained: a refused, expired or absent credential, a
+404, an exhausted rate-limit budget, an unreachable GitHub. A token that
+cannot read a repository's labels establishes nothing about what is on it,
+so rendering "0 of 15 present" from such a report would state a fact nobody
+found out. `labels` is `[]` in the same case.
+
+**Check the `null`, not the `status`, to decide whether the counts are
+trustworthy.** A repair whose _write_ was refused (`status: "refused"`)
+still carries real counts, because its read succeeded and only the write
+that followed was cut off — see [`POST
+/repositories/{id}/labels`](#post-repositoriesidlabels) below.
+
+**A failure is a `200` carrying a `status`, not an error status** —
+`no_credential`, `invalid_credential`, `refused` (authenticated, not
+permitted — the likeliest failure, since ADR-0001's fine-grained token can
+read a repository it cannot label), `not_found`, `rate_limited`,
+`unreachable`, or `failed`. `labels` is empty and every count is `null` in
+every one of these.
+
+#### POST /repositories/{id}/labels
+
+Create the missing factory labels and update the drifted ones on this
+repository (#415). The repair action for a repository whose registration
+provisioning was refused, or one registered before #415 shipped. Requires
+`projects:write`. Returns **`200`**, not `201` — this is a repair, not a
+creation of a new resource, and no request body is taken: there is nothing
+to choose, only the declared taxonomy to apply.
+
+**It never deletes.** A label present on the repository and absent from the
+taxonomy is left exactly as it is — deleting one strips it from every issue
+carrying it, and that is not recoverable from a declaration that knows names
+and colours but not which issues had them.
+
+**Idempotent.** It reads the repository's labels first and writes only the
+difference, so running it twice creates nothing the second time; `unchanged`
+counts the labels that needed no write at all.
+
+**Not gated by `github.writesEnabled`.** That switch governs whether the
+factory acts on issues during a reconciler tick; creating the taxonomy is
+operator setup, the same category as registering a repository. Gating it on
+the kill switch would mean VISION §12's observation week could not be set up
+without turning on the very writes the switch exists to withhold.
+
+**Response:** `200` with the same `LabelProvisioningReport` shape as `GET`
+above, with `attempted: true` and `created` / `updated` / `failed` filled in.
+`attempted` means this call **tried** to write — not that the writes landed:
+a refused repair is `attempted: true` having written nothing, and the
+outcome is `status`, `created` and `failed`. A refusal is a `200` with
+`status: "refused"`, and — because the read that preceded the refused write
+succeeded — its counts are real, not `null`; only a report whose _read_
+failed has `null` counts.
 
 ---
 

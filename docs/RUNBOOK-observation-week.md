@@ -152,12 +152,56 @@ rather than going quiet.
 
 ## 3. Create the label taxonomy
 
-`.github/labels.yml` is the declaration; nothing applies it on its own. Until it
-is applied, **the eight `factory:*` / `factory/*` labels do not exist on the
-repository** — and a label that does not exist cannot be put on an issue, so
-nothing can ever carry `factory:ready`, and the reconciler correctly computes
-zero actions on every tick, forever. That is how the first attempt at this week
-produced 302 empty ticks (#195).
+`.github/labels.yml` is the declaration, and `label-taxonomy.ts` is its twin
+in code (#415) — CI asserts the two agree. Until the taxonomy is applied to a
+repository, **the fifteen control-loop `factory:*` / `factory/*` / `needs:*` /
+`tier:*` labels do not exist on it** — and a label that does not exist cannot
+be put on an issue, so nothing can ever carry `factory:ready`, and the
+reconciler correctly computes zero actions on every tick, forever. That is
+how the first attempt at this week produced 302 empty ticks (#195). Which of
+the two routes below applies to you depends on when the repository was
+registered.
+
+### If you are registering the repository now (§4): nothing to do here
+
+**Registration provisions the fifteen control-loop labels automatically.**
+`POST /api/repositories` — the request §4's picker sends — creates the three
+`factory:*` input labels, the five `factory/*` mirror labels, and the seven
+`needs:*` / `tier:*` routing labels on the repository as part of registering
+it. Read §4 first if you have not registered anything yet; there is nothing
+to run from this section before you do.
+
+**A registration still succeeds if provisioning is refused**, and that is a
+normal outcome rather than a broken registration: ADR-0001's fine-grained
+GitHub token grants access one repository and one permission at a time, and
+whether it can write labels to a given repository is unknowable until it is
+tried — reading a repository never implies being able to label it. The
+response's `labelProvisioning` field says what happened, and the repository's
+card on `/projects` shows the same thing under **Check labels**. If it is not
+`ok`, the fix is almost always the token's **Issues: Read and write**
+permission on that repository; grant it, then press **Create missing
+labels** on the card (or `POST /api/repositories/{id}/labels`) to repair it
+without re-registering anything.
+
+### If the repository was registered before this change: run the CLI
+
+A repository already in the table when #415 shipped got nothing from
+registration — provisioning did not exist yet. Repair it the same way the
+card would: `POST /api/repositories/{id}/labels`, or the CLI below with
+`--apply`, either of which creates the same fifteen control-loop labels on an
+already-registered repository. Nothing about being pre-#415 changes the
+target set.
+
+### For the 25 organisational labels: the CLI is the only route, always
+
+`bug`, `phase:*`, the component labels — this repository's own conventions,
+which nothing in the control loop reads — are declared in
+`.github/labels.yml` alongside the fifteen but are **not** part of what
+either registration or the repair endpoint provisions (`label-taxonomy.ts`'s
+own header explains why: writing somebody else's issue tracker a `phase:4`
+label because they let Opifex watch their repository is presumptuous). The
+CLI applies the full 40-label file — the fifteen above plus these 25 — and is
+the only way to get the 25 onto any repository, new or old:
 
 ```bash
 node scripts/sync-labels.mjs                  # what is missing or drifted
@@ -169,9 +213,10 @@ Checking is the default; writing needs `--apply`. It **never deletes** a label
 it does not recognise — removing one strips it from every issue that carries it,
 and the file cannot restore that.
 
-This is operator setup, not factory behaviour, so it is deliberately outside
-`GITHUB_WRITES_ENABLED`. Gating it on that switch would mean the observation
-week could not be set up without turning on the writes it exists to withhold.
+Both routes are operator setup, not factory behaviour, so both are
+deliberately outside `GITHUB_WRITES_ENABLED` / `github.writesEnabled`.
+Gating either on that switch would mean the observation week could not be
+set up without first turning on the writes it exists to withhold.
 
 ### `needs:*` and `tier:*`: routing labels, a third kind next to `factory:`
 
