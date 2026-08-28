@@ -188,11 +188,18 @@ describe('OperatorSettingsService', () => {
       const settings = withEnv({
         CLAUDE_CODE_MAX_CONCURRENCY: 'lots',
         GITHUB_WRITES_ENABLED: 'yes',
+        RECONCILER_ENABLED: 'yes',
         CLAUDE_CODE_PERMISSION_MODE: 'yolo',
       });
 
       expect(settings.get('runners.claudeCodeLocal.maxConcurrency')).toBe(2);
-      expect(settings.get('github.writesEnabled')).toBe(false);
+      expect(settings.get('github.writesEnabled')).toBe(true);
+      // The falsifiable half of the boolean claim, and the reason a second
+      // switch is named here at all: since ADR-0019 (#439) `github.writesEnabled`
+      // defaults ON, so a parser that wrongly READ 'yes' as true would produce
+      // the same `true` as the fallback does. `reconciler.enabled` still
+      // defaults off, so only a genuine rejection of 'yes' yields false.
+      expect(settings.get('reconciler.enabled')).toBe(false);
       expect(settings.get('runners.claudeCodeLocal.permissionMode')).toBe(
         'acceptEdits',
       );
@@ -257,7 +264,12 @@ describe('OperatorSettingsService', () => {
         [...OPERATOR_SETTING_KEYS].sort(),
       );
       expect(snapshot['supervisor.enabled']).toBe(true);
-      expect(snapshot['dispatch.enabled']).toBe(false);
+      // A key the environment did NOT set, carrying its registry default. It
+      // is deliberately one that still defaults OFF: `dispatch.enabled` stood
+      // here until ADR-0019 (#439) flipped it, at which point every value in
+      // this assertion was `true` and the contrast that made it worth writing
+      // was gone.
+      expect(snapshot['reconciler.enabled']).toBe(false);
     });
   });
 

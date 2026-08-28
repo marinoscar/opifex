@@ -584,7 +584,13 @@ describe('ReconcilerService', () => {
       // that cannot say whether writes were permitted makes its own
       // `actionsExecuted: 0` unfalsifiable — it could equally mean the switch
       // was on and there was nothing to do.
-      expect((await build().tick()).settings.writesEnabled).toBe(false);
+      // Both postures are stated explicitly. `github.writesEnabled` defaults
+      // ON since ADR-0019 (#439), so a bare `build()` here would assert the
+      // read-only case against a tick that had writes.
+      expect(
+        (await build({ 'github.writesEnabled': false }).tick()).settings
+          .writesEnabled,
+      ).toBe(false);
       expect(
         (await build({ 'github.writesEnabled': true }).tick()).settings
           .writesEnabled,

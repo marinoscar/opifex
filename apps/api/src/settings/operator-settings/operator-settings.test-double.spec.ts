@@ -26,11 +26,20 @@ describe('makeOperatorSettings', () => {
     for (const key of OPERATOR_SETTING_KEYS) {
       expect(settings.resolve(key).source).toBe('default');
     }
-    // Which is off for everything that spends money or acts outwardly — the
-    // whole reason a migrating spec must state what it needs on.
-    expect(settings.get('dispatch.enabled')).toBe(false);
-    expect(settings.get('github.writesEnabled')).toBe(false);
-    expect(settings.get('runners.claudeCodeLocal.enabled')).toBe(false);
+    // Which since ADR-0019 (#439) is ON for the four switches that make the
+    // factory work — so the reason a migrating spec must state what it needs
+    // has INVERTED: a spec proving that nothing happens is now the one that
+    // has to say so, and a spec that says nothing is exercising a live
+    // control plane.
+    expect(settings.get('dispatch.enabled')).toBe(true);
+    expect(settings.get('github.writesEnabled')).toBe(true);
+    expect(settings.get('runners.claudeCodeLocal.enabled')).toBe(true);
+    expect(settings.get('dispatch.allowPreviewRunner')).toBe(true);
+    // And the one that is still, deliberately, not set: an unset ceiling
+    // refuses every dispatch, which is what keeps a default-on install ready
+    // rather than running. `test/governing/fresh-install-cannot-spend.spec.ts`
+    // is where that is pinned end to end.
+    expect(settings.get('dispatch.hardSpendCeilingUsd')).toBe('');
   });
 
   it('returns the overrides a spec asked for', () => {
@@ -53,10 +62,14 @@ describe('makeOperatorSettings', () => {
     // A spec that resolved the developer's shell would pass or fail depending
     // on who ran it, and CI disagreeing with a laptop about RECONCILER_ENABLED
     // is not a thing anyone should have to debug.
+    // Set to the OPPOSITE of the registry default (on since ADR-0019), so a
+    // double that leaked the host environment in would be caught. Asserting
+    // the default against a host value that agrees with it would prove
+    // nothing.
     const previous = process.env.DISPATCH_ENABLED;
-    process.env.DISPATCH_ENABLED = 'true';
+    process.env.DISPATCH_ENABLED = 'false';
     try {
-      expect(makeOperatorSettings().get('dispatch.enabled')).toBe(false);
+      expect(makeOperatorSettings().get('dispatch.enabled')).toBe(true);
     } finally {
       if (previous === undefined) delete process.env.DISPATCH_ENABLED;
       else process.env.DISPATCH_ENABLED = previous;

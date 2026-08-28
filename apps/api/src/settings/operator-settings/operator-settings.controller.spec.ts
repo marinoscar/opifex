@@ -116,7 +116,11 @@ describe('OperatorSettingsController (#338)', () => {
         reload: 'live',
         dangerous: true,
         source: 'default',
-        value: false,
+        // On since ADR-0019 (#439). Kept as a concrete literal rather than
+        // read back from the registry: a controller test that computed its
+        // expectation from the same table the controller serialises would
+        // agree with any value at all.
+        value: true,
         secret: false,
       });
     });
