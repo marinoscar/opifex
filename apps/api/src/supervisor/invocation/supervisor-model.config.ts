@@ -56,6 +56,82 @@ export const PROVIDER_BASE_URLS: Readonly<
   openai: 'https://api.openai.com',
 });
 
+/**
+ * How each provider's name is written for a human (#422).
+ *
+ * Here rather than in the settings registry for the reason this file's header
+ * gives: the registry GENERATES one credential slot per provider, and a label
+ * table over there would be a second place that spells a vendor. Derivation
+ * from the id was considered and rejected — `Uppercase`/title-case turns
+ * `openai` into `Openai`, and a credential form that misspells the vendor it
+ * belongs to is worse than a table.
+ */
+export const PROVIDER_LABELS: Readonly<
+  Record<SupervisorModelProvider, string>
+> = Object.freeze({
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+});
+
+// ---------------------------------------------------------------------------
+// The credential slots (#422, epic #419)
+//
+// A CREDENTIAL belongs to a PROVIDER; a CONSUMER selects a provider. Before
+// #422 there was one `supervisor.model.apiKey` paired with one
+// `supervisor.model.provider`, so an operator holding an Anthropic key and an
+// OpenAI key could store only one of them and switching provider destroyed the
+// other. These four functions are what make the slot a function of the vendor
+// instead.
+//
+// They live here, and the registry calls them, so that adding a third adapter
+// creates its credential slot in the Control Center without anyone editing the
+// settings layer — and so that the settings layer still names no vendor, which
+// `test/governing/supervisor-provider-seam.spec.ts` asserts over the source.
+//
+// The BASE URL is per provider for the same reason the key is, and it is worth
+// being explicit about why it is a property of the credential rather than of
+// the consumer: the key is SENT to whatever host is named, so "which host" and
+// "which key" are one fact. A single shared override across two providers
+// would post one vendor's credential to another vendor's proxy — the precise
+// confusion this issue removes from the key, rebuilt one field over.
+// ---------------------------------------------------------------------------
+
+/** The settings key holding one provider's API key. */
+export type ModelApiKeySettingKey = `models.${SupervisorModelProvider}.apiKey`;
+
+/** The settings key holding one provider's base-URL override. */
+export type ModelBaseUrlSettingKey =
+  `models.${SupervisorModelProvider}.baseUrl`;
+
+export function modelApiKeySettingKey(
+  provider: SupervisorModelProvider,
+): ModelApiKeySettingKey {
+  return `models.${provider}.apiKey`;
+}
+
+export function modelBaseUrlSettingKey(
+  provider: SupervisorModelProvider,
+): ModelBaseUrlSettingKey {
+  return `models.${provider}.baseUrl`;
+}
+
+/**
+ * The environment variable for one provider's key.
+ *
+ * `MODEL_` and not `ANTHROPIC_API_KEY`, which is already taken and means
+ * something else entirely: it is one of the two credentials the `claude-code-
+ * local` CLI authenticates with (`child-environment.ts`), billed against the
+ * runner's own quota. ADR-0015's whole point is that the supervisor's metered
+ * key is NOT that one, and reusing the name would merge them back together.
+ */
+export function modelApiKeyEnvVar(provider: SupervisorModelProvider): string {
+  return `MODEL_${provider.toUpperCase()}_API_KEY`;
+}
+
+export function modelBaseUrlEnvVar(provider: SupervisorModelProvider): string {
+  return `MODEL_${provider.toUpperCase()}_BASE_URL`;
+}
+
 /** What the model is recorded as when `SUPERVISOR_MODEL_NAME` is not set. */
 export const UNCONFIGURED_MODEL_NAME = 'unconfigured';
 
@@ -78,11 +154,13 @@ export interface SupervisorModelConfig {
   /** `SUPERVISOR_MODEL_PROVIDER`. Which adapter answers this call. */
   provider: SupervisorModelProvider;
   /**
-   * `SUPERVISOR_MODEL_API_KEY`.
+   * The selected provider's own credential — `models.<provider>.apiKey`.
    *
    * Empty when unset. Since #344 the adapter is built anyway and `ask()`
    * refuses per call, so that a key supplied later is picked up by the next
-   * invocation rather than by the next restart.
+   * invocation rather than by the next restart. Since #422 the slot is chosen
+   * by `provider`, so switching provider selects the OTHER stored key instead
+   * of finding the same one and posting it to a host that will reject it.
    */
   apiKey: string;
   /**
@@ -92,7 +170,7 @@ export interface SupervisorModelConfig {
    */
   model: string;
   /**
-   * `SUPERVISOR_MODEL_BASE_URL`, resolved against the provider and with any
+   * `models.<provider>.baseUrl`, resolved against the provider and with any
    * trailing slash removed. Never empty — see `effectiveBaseUrl`.
    */
   baseUrl: string;
@@ -162,11 +240,15 @@ export function resolveSupervisorModelConfig(
 
   return {
     provider,
-    apiKey: settings.get('supervisor.model.apiKey'),
+    // The credential is looked up BY provider (#422), which is the whole of
+    // the credential/consumer split: the two keys sit side by side in the
+    // settings table and this read picks the one that belongs to the vendor
+    // being called. #423 changes only which `provider` arrives here.
+    apiKey: settings.get(modelApiKeySettingKey(provider)),
     model: settings.get('supervisor.model.name'),
     baseUrl: effectiveBaseUrl(
       provider,
-      settings.get('supervisor.model.baseUrl'),
+      settings.get(modelBaseUrlSettingKey(provider)),
     ),
     timeoutMs: settings.get('supervisor.model.timeoutMs'),
     defaultMaxTokens: settings.get('supervisor.model.defaultMaxTokens'),
@@ -204,30 +286,44 @@ export class SupervisorModelError extends Error {
   }
 }
 
-/** The refusal when no API key is configured. Identical on every provider. */
-export function noApiKeyError(): SupervisorModelError {
+/**
+ * The refusal when the selected provider has no API key configured.
+ *
+ * Names the PROVIDER's slot rather than a single global one (#422). Before the
+ * credential split there was one key and one message; now there are two slots
+ * and the useful sentence is which of them is empty — an operator who switched
+ * to a provider they have never given a key to would otherwise read the same
+ * line as one who has configured nothing at all.
+ */
+export function noApiKeyError(
+  provider: SupervisorModelProvider,
+): SupervisorModelError {
   // The refusal that used to be a missing DI binding (#344). It is per call
   // now, so the key an operator sets in the Control Center takes effect on the
   // next invocation — and until they do, this names the setting to change
   // rather than telling whoever reads the log to bind a provider.
   return new SupervisorModelError(
-    'The supervisor has no model API key, so there is no model to ask. ' +
-      'Set SUPERVISOR_MODEL_API_KEY — the "Supervisor model API key" ' +
-      'setting — to a separately metered credential for the configured ' +
-      'provider, or turn the supervisor off. A key set now takes effect on ' +
-      'the next invocation; no restart is needed.',
+    `No API key is configured for ${PROVIDER_LABELS[provider]}, so there is ` +
+      `no model to ask. Set ${modelApiKeySettingKey(provider)} — the ` +
+      `"${PROVIDER_LABELS[provider]} API key" setting, ` +
+      `${modelApiKeyEnvVar(provider)} in the environment — to a separately ` +
+      `metered credential, select a provider you have given a key to, or ` +
+      `turn the supervisor off. A key set now takes effect on the next ` +
+      `invocation; no restart is needed.`,
   );
 }
 
 /** The refusal when a key is set and no model is named. Every provider. */
-export function noModelNamedError(): SupervisorModelError {
+export function noModelNamedError(
+  provider: SupervisorModelProvider,
+): SupervisorModelError {
   // Refuses per call rather than throwing at construction: a missing model
   // name must not stop the API booting, and a supervisor that is misconfigured
   // should say so once an hour in the decision log, where it is visible,
   // rather than in a container that will not start.
   return new SupervisorModelError(
-    'SUPERVISOR_MODEL_API_KEY is set but SUPERVISOR_MODEL_NAME is not, so ' +
-      'there is no model to ask.',
+    `${modelApiKeySettingKey(provider)} is set but SUPERVISOR_MODEL_NAME is ` +
+      `not, so there is no model to ask.`,
   );
 }
 
