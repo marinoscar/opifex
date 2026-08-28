@@ -223,6 +223,12 @@ import type {
   TrustGrantListItem,
 } from '../types/trust';
 import type { AuditEventsPage } from '../types/audit';
+import type {
+  ApplySteeringInput,
+  ProposeSteeringInput,
+  SteeringApplyResult,
+  SteeringProposal,
+} from '../types/steering';
 import type { ClaudeAuthSession } from '../types/claudeAuth';
 import type { FleetHealth, ReadinessHealth } from '../types/health';
 import type {
@@ -999,6 +1005,46 @@ export async function releaseWorkOrder(
     `/queue/${encodeURIComponent(workOrderId)}/release`,
     {},
   );
+}
+
+/**
+ * `POST /steering/proposals` — an instruction becomes a PROPOSED label diff.
+ *
+ * Writes nothing. The proposal comes back to this client and is handed back on
+ * apply, because the API stores none of it: scope lives in GitHub labels and
+ * nowhere else (`steering.dto.ts`, "What is deliberately not here"). That is
+ * why the two calls take a whole proposal rather than an id.
+ *
+ * `200`, not `202` — nothing has been accepted for later, because nothing has
+ * been asked for yet.
+ */
+export async function proposeSteering(
+  input: ProposeSteeringInput,
+  signal?: AbortSignal,
+): Promise<SteeringProposal> {
+  return api.post<SteeringProposal>('/steering/proposals', input, { signal });
+}
+
+/**
+ * `POST /steering/proposals/apply` — the confirmed diff becomes labels.
+ *
+ * `202 Accepted`, the same status and for the same reason as the queue steer
+ * endpoints: the labels are the request, and a reconciler tick acts on them.
+ * `labelWritten` in the body — never the status — says whether anything
+ * reached GitHub.
+ *
+ * **`observedInputLabels` is passed through untouched.** It is the baseline the
+ * server re-reads each issue against, so a caller that sorted it, filtered it
+ * to the two steerable labels or omitted it would leave drift detection
+ * looking exactly like it works while detecting nothing.
+ *
+ * Throws `ApiError` with `status: 409` when the proposal is older than the
+ * 30-minute TTL. That is a stale proposal rather than a fault: ask again.
+ */
+export async function applySteering(
+  input: ApplySteeringInput,
+): Promise<SteeringApplyResult> {
+  return api.post<SteeringApplyResult>('/steering/proposals/apply', input);
 }
 
 /**
