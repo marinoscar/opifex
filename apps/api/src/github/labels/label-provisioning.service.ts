@@ -127,18 +127,12 @@ export class LabelProvisioningService {
     // yet" never arrives dressed as a rejected credential — two findings with
     // nothing in common but their HTTP status.
     if (!this.github.credentialConfigured) {
-      return this.answer(
-        fullName,
-        apply,
-        'no_credential',
-        [],
-        [
-          'No GitHub credential is configured, so the factory labels could not',
-          'be checked or created. Set `github.token` to a fine-grained personal',
-          'access token with Issues write access to this repository, then repair',
-          'the labels.',
-        ],
-      );
+      return this.answer(fullName, apply, 'no_credential', [], false, [
+        'No GitHub credential is configured, so the factory labels could not',
+        'be checked or created. Set `github.token` to a fine-grained personal',
+        'access token with Issues write access to this repository, then repair',
+        'the labels.',
+      ]);
     }
 
     let existing: Map<string, { color: string; description: string }>;
@@ -165,17 +159,17 @@ export class LabelProvisioningService {
       return this.summarise(fullName, false, states);
     }
 
-    for (const state of states) {
-      if (state.state === 'present') continue;
+    for (const entry of states) {
+      if (entry.stateBefore === 'present') continue;
 
-      const declared = byName(state.name);
+      const declared = byName(entry.name);
       try {
-        if (state.state === 'missing') {
+        if (entry.stateBefore === 'missing') {
           await this.createLabel(repo, declared);
-          state.action = 'created';
+          entry.action = 'created';
         } else {
           await this.updateLabel(repo, declared);
-          state.action = 'updated';
+          entry.action = 'updated';
         }
       } catch (error) {
         // A 4xx GitHub raised about THIS LABEL — an over-long description, a
@@ -184,8 +178,8 @@ export class LabelProvisioningService {
         // half-applied taxonomy in #197, and it leaves the remainder
         // unapplied with nothing but the next drift report to say so.
         if (error instanceof GitHubRequestError) {
-          state.action = 'failed';
-          state.detail = error.message;
+          entry.action = 'failed';
+          entry.detail = error.message;
           continue;
         }
         // Everything else — a refused credential, a repository that is gone,
@@ -196,6 +190,9 @@ export class LabelProvisioningService {
       }
     }
 
+    // Reached only when the label list came back, so the counts are non-null
+    // here by construction — every early return above went through
+    // `describeFailure`.
     const report = this.summarise(fullName, true, states);
     this.logger.log(
       `Provisioned factory labels on ${fullName}: ` +
@@ -281,8 +278,15 @@ export class LabelProvisioningService {
         ? 'The repository labels could not be read'
         : 'The factory labels could not be created';
 
+    // A WRITE-phase failure still knows what is on the repository: the label
+    // list came back, and only the write that followed was refused. So its
+    // counts are real and must not be nulled — "we asked and were refused
+    // while creating" is a different fact from "we never found out what is
+    // there", and it is exactly the distinction the null exists to preserve.
+    const read = phase === 'write';
+
     if (error instanceof GitHubRateLimitError) {
-      return this.answer(fullName, apply, 'rate_limited', states, [
+      return this.answer(fullName, apply, 'rate_limited', states, read, [
         `${doing}: GitHub's rate limit is exhausted until`,
         `${error.resetAt.toISOString()}. The credential is fine — ADR-0001`,
         "notes that Opifex shares the operator's own hourly budget, so this",
@@ -296,14 +300,14 @@ export class LabelProvisioningService {
       // despite the check at the top, because `github.token` is resolved per
       // request and can be cleared between the two.
       if (error.status === null) {
-        return this.answer(fullName, apply, 'no_credential', states, [
+        return this.answer(fullName, apply, 'no_credential', states, read, [
           'No GitHub credential is configured, so the factory labels could',
           'not be checked or created.',
         ]);
       }
 
       if (error.status === 403) {
-        return this.answer(fullName, apply, 'refused', states, [
+        return this.answer(fullName, apply, 'refused', states, read, [
           `${doing}: GitHub accepted the credential and refused the request`,
           `(403). ${message} The token authenticates; it is not permitted to`,
           `do this on ${fullName}. ADR-0001 uses a FINE-GRAINED personal`,
@@ -315,7 +319,7 @@ export class LabelProvisioningService {
         ]);
       }
 
-      return this.answer(fullName, apply, 'invalid_credential', states, [
+      return this.answer(fullName, apply, 'invalid_credential', states, read, [
         `${doing}: GitHub rejected the credential (${error.status}).`,
         `${message} The token is wrong, revoked, or expired — ADR-0001 notes`,
         'that a fine-grained token expires on a fixed date and then fails',
@@ -324,7 +328,7 @@ export class LabelProvisioningService {
     }
 
     if (error instanceof GitHubNotFoundError) {
-      return this.answer(fullName, apply, 'not_found', states, [
+      return this.answer(fullName, apply, 'not_found', states, read, [
         `${doing}: GitHub answered 404 for ${fullName}. It does not exist, it`,
         'was renamed, or the configured token can no longer see it — GitHub',
         'gives the same answer for all three.',
@@ -332,14 +336,14 @@ export class LabelProvisioningService {
     }
 
     if (error instanceof GitHubTransientError) {
-      return this.answer(fullName, apply, 'unreachable', states, [
+      return this.answer(fullName, apply, 'unreachable', states, read, [
         `${doing}: GitHub could not be reached. ${message} The request never`,
         'got a usable answer, so this says nothing about the credential —',
         'check the network, the proxy, and `github.apiBaseUrl`.',
       ]);
     }
 
-    return this.answer(fullName, apply, 'failed', states, [
+    return this.answer(fullName, apply, 'failed', states, read, [
       `${doing}: ${message}`,
     ]);
   }
@@ -356,22 +360,22 @@ export class LabelProvisioningService {
   /** The success and partial-success answers, counted from the states. */
   private summarise(
     fullName: string,
-    applied: boolean,
+    attempted: boolean,
     states: LabelState[],
   ): LabelProvisioningReport {
-    const missing = states.filter((s) => s.state === 'missing');
-    const drifted = states.filter((s) => s.state === 'drifted');
+    const missing = states.filter((s) => s.stateBefore === 'missing');
+    const drifted = states.filter((s) => s.stateBefore === 'drifted');
     const failed = states.filter((s) => s.action === 'failed');
 
     if (missing.length === 0 && drifted.length === 0) {
-      return this.answer(fullName, applied, 'ok', states, [
+      return this.answer(fullName, attempted, 'ok', states, true, [
         `All ${states.length} factory labels are present on ${fullName} and`,
         'match the declared taxonomy.',
       ]);
     }
 
-    if (!applied) {
-      return this.answer(fullName, applied, 'incomplete', states, [
+    if (!attempted) {
+      return this.answer(fullName, attempted, 'incomplete', states, true, [
         `${states.length - missing.length} of ${states.length} factory labels`,
         `exist on ${fullName}: ${missing.length} missing,`,
         `${drifted.length} out of date. An issue cannot be marked ready with a`,
@@ -381,44 +385,85 @@ export class LabelProvisioningService {
     }
 
     if (failed.length === 0) {
-      // Every outstanding label was written. `state` still records what was
-      // found BEFORE the call — that is the observation, and overwriting it
-      // would erase the only record that anything was done — so this branch
-      // reads `action` rather than re-deriving from `state`.
-      return this.answer(fullName, applied, 'ok', states, [
+      // Every outstanding label was written. `stateBefore` still records what
+      // was found BEFORE the call — that is the observation, and overwriting
+      // it would erase the only record that anything was done — so this
+      // branch reads `action` rather than re-deriving from `stateBefore`.
+      return this.answer(fullName, attempted, 'ok', states, true, [
         `All ${states.length} factory labels are present on ${fullName} and`,
         'match the declared taxonomy.',
       ]);
     }
 
-    return this.answer(fullName, applied, 'incomplete', states, [
+    return this.answer(fullName, attempted, 'incomplete', states, true, [
       `${failed.length} of ${states.length} factory labels could not be`,
       `written on ${fullName}: ${failed.map((s) => s.name).join(', ')}.`,
       `First reason: ${failed[0].detail ?? 'unknown'}`,
     ]);
   }
 
+  /**
+   * One report, and the one place that decides whether it can carry counts.
+   *
+   * `read` is passed in rather than inferred from `states.length`, because the
+   * two are not the same question and conflating them is how a zero gets
+   * published as if it were an observation. A write-phase failure has a full
+   * set of states — the labels WERE read, and then a write was refused — while
+   * a read-phase failure has none. Inferring from the array would work today
+   * only because the taxonomy is non-empty, which is a coincidence rather than
+   * a reason.
+   */
   private answer(
     repository: string,
-    applied: boolean,
+    attempted: boolean,
     status: LabelProvisioningStatus,
     states: LabelState[],
+    read: boolean,
     detail: readonly string[],
   ): LabelProvisioningReport {
+    // NULL, not zero, when GitHub's label list was never obtained.
+    //
+    // `present: 0` and `present: null` are different claims: the first says
+    // the repository has none of the declared labels, the second says nobody
+    // found out. A 403 from a token that cannot even READ the labels tells us
+    // nothing whatsoever about what is on that repository, and a consumer
+    // rendering "0 of 15 labels present" from it would be stating a fact
+    // nobody established. Documenting the trap was not enough — the frontend
+    // had to build a gate against it, and the next consumer would not have.
+    // So the unread case is unrepresentable as a count.
+    if (!read) {
+      return {
+        repository,
+        ok: false,
+        status,
+        attempted,
+        detail: detail.join(' '),
+        checkedAt: new Date(this.now()).toISOString(),
+        declared: null,
+        present: null,
+        missing: null,
+        created: null,
+        updated: null,
+        unchanged: null,
+        failed: null,
+        labels: [],
+      };
+    }
+
     const created = states.filter((s) => s.action === 'created').length;
     const updated = states.filter((s) => s.action === 'updated').length;
     const failed = states.filter((s) => s.action === 'failed').length;
     // Present on GitHub right now: everything that was already there, plus
     // everything this call just created.
     const present = states.filter(
-      (s) => s.state !== 'missing' || s.action === 'created',
+      (s) => s.stateBefore !== 'missing' || s.action === 'created',
     ).length;
 
     return {
       repository,
       ok: status === 'ok',
       status,
-      applied,
+      attempted,
       detail: detail.join(' '),
       checkedAt: new Date(this.now()).toISOString(),
       declared: PROVISIONED_LABELS.length,
@@ -426,7 +471,7 @@ export class LabelProvisioningService {
       missing: PROVISIONED_LABELS.length - present,
       created,
       updated,
-      unchanged: states.filter((s) => s.state === 'present').length,
+      unchanged: states.filter((s) => s.stateBefore === 'present').length,
       failed,
       labels: states,
     };
@@ -463,7 +508,7 @@ function compare(
     return {
       name: declared.name,
       kind: declared.kind,
-      state: 'missing',
+      stateBefore: 'missing',
       action: 'none',
       differences: [],
       detail: null,
@@ -484,7 +529,7 @@ function compare(
   return {
     name: declared.name,
     kind: declared.kind,
-    state: differences.length === 0 ? 'present' : 'drifted',
+    stateBefore: differences.length === 0 ? 'present' : 'drifted',
     action: 'none',
     differences,
     detail: null,
@@ -559,8 +604,17 @@ export type LabelActionName = (typeof LABEL_ACTIONS)[number];
 export interface LabelState {
   readonly name: string;
   readonly kind: ProvisionedLabelKind;
-  /** What GitHub had before this call. */
-  state: LabelStateName;
+  /**
+   * What GitHub had BEFORE this call, and deliberately not updated after one.
+   *
+   * Named for the tense it is actually in. A field called `state` is false
+   * about the present the moment a write succeeds — the label IS present now,
+   * and the field still says `missing` — which would oblige every consumer to
+   * know it has to be read together with `action`. It is not updated because
+   * that is the only record that anything happened: a UI needs to say
+   * "created", not "was already fine".
+   */
+  stateBefore: LabelStateName;
   /** `none` for an inspection, and for a label that needed nothing. */
   action: LabelActionName;
   /** For `drifted`: what differs, in the drift report's wording. */
@@ -583,25 +637,51 @@ export interface LabelProvisioningReport {
   /** True only when every declared label is present and matches. */
   readonly ok: boolean;
   readonly status: LabelProvisioningStatus;
-  /** True when this call attempted writes; false for an inspection. */
-  readonly applied: boolean;
+  /**
+   * True when this call TRIED to write — false for an inspection.
+   *
+   * Not "writes landed". A refused repair is `attempted: true` having written
+   * nothing at all, which is why the field is not called `applied`: that name
+   * reads as a claim about the outcome, and the outcome is `status`,
+   * `created` and `failed`.
+   */
+  readonly attempted: boolean;
   /** One human sentence, safe to render. Never contains the token. */
   readonly detail: string;
   readonly checkedAt: string;
+
+  // -------------------------------------------------------------------------
+  // The counts. EVERY ONE OF THEM IS NULL WHEN THE LABELS COULD NOT BE READ.
+  //
+  // Null means NOT READ. It does not mean zero, and the distinction is the
+  // whole reason these are nullable: a token that cannot read a repository's
+  // labels tells us nothing about what is on it, and `present: 0` from such a
+  // call is a claim nobody established. A consumer rendering "N of M" gets
+  // null and cannot print a misleading zero by accident.
+  //
+  // They are null together or populated together — there is no state where
+  // some are known and others are not — so one check (`present === null`, or
+  // `labels.length === 0`) gates all seven.
+  //
+  // A WRITE that was refused still has real counts: the read succeeded and
+  // only the write failed. Do not key off `status` to decide whether the
+  // counts are trustworthy; key off the null.
+  // -------------------------------------------------------------------------
+
   /** How many labels the taxonomy declares — the M in "N of M". */
-  readonly declared: number;
-  /** How many exist on GitHub as of now — the N. */
-  readonly present: number;
-  readonly missing: number;
-  readonly created: number;
-  readonly updated: number;
+  readonly declared: number | null;
+  /** How many exist on GitHub as of `checkedAt` — the N. */
+  readonly present: number | null;
+  readonly missing: number | null;
+  readonly created: number | null;
+  readonly updated: number | null;
   /** Already present and already correct. A no-op, reported as one. */
-  readonly unchanged: number;
-  readonly failed: number;
+  readonly unchanged: number | null;
+  readonly failed: number | null;
   /**
    * Per-label state, so the UI can NAME what is missing rather than showing a
    * count and leaving the operator to work it out. Empty when the repository's
-   * labels could not be read at all.
+   * labels could not be read at all — the same condition that nulls the counts.
    */
   readonly labels: readonly LabelState[];
 }

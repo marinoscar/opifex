@@ -38,7 +38,7 @@ function labelReport(
     repository: 'acme/app',
     ok: true,
     status: 'ok',
-    applied: true,
+    attempted: true,
     detail: 'All 15 factory labels are present on acme/app.',
     checkedAt: '2026-08-01T10:00:00.000Z',
     declared: 15,
@@ -366,9 +366,17 @@ describe('RepositoriesService', () => {
           labelReport({
             ok: false,
             status: 'refused',
-            created: 0,
-            present: 0,
-            missing: 15,
+            // Null, not zero: a token that could not read the labels
+            // established nothing about what is on the repository. This is the
+            // shape the service really returns for a read-phase refusal, and a
+            // double that returned zeros would let a consumer bug through.
+            declared: null,
+            present: null,
+            missing: null,
+            created: null,
+            updated: null,
+            unchanged: null,
+            failed: null,
             detail:
               'GitHub accepted the credential and refused the request (403).',
           }),
@@ -387,7 +395,7 @@ describe('RepositoriesService', () => {
         // "configured is not effective": a repository that looks registered
         // and cannot be labelled must SAY so.
         labels.provision.mockResolvedValue(
-          labelReport({ ok: false, status: 'refused', created: 0 }),
+          labelReport({ ok: false, status: 'refused', created: null }),
         );
 
         const result = await service.register({ owner: 'acme', name: 'app' });

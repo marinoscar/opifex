@@ -122,9 +122,9 @@ describe('LabelProvisioningService', () => {
       const report = await service.inspect(REPO);
 
       expect(report.labels).toHaveLength(PROVISIONED_LABELS.length);
-      expect(report.labels.every((label) => label.state === 'missing')).toBe(
-        true,
-      );
+      expect(
+        report.labels.every((label) => label.stateBefore === 'missing'),
+      ).toBe(true);
       expect(report.labels.map((label) => label.name)).toContain(
         'factory:ready',
       );
@@ -205,7 +205,7 @@ describe('LabelProvisioningService', () => {
       expect(report.declared).toBe(PROVISIONED_LABELS.length);
       expect(report.ok).toBe(false);
       expect(report.status).toBe('incomplete');
-      expect(report.applied).toBe(false);
+      expect(report.attempted).toBe(false);
       expect(http.request).not.toHaveBeenCalled();
       expect(report.detail).toContain(
         `2 of ${PROVISIONED_LABELS.length} factory labels`,
@@ -224,7 +224,7 @@ describe('LabelProvisioningService', () => {
         (label) => label.name === 'factory:ready',
       );
 
-      expect(ready?.state).toBe('drifted');
+      expect(ready?.stateBefore).toBe('drifted');
       expect(ready?.differences).toEqual(['color ededed -> d93f0b']);
       expect(ready?.action).toBe('updated');
       expect(report.updated).toBe(1);
@@ -285,7 +285,7 @@ describe('LabelProvisioningService', () => {
         (label) => label.name === 'factory:ready',
       );
 
-      expect(ready?.state).toBe('drifted');
+      expect(ready?.stateBefore).toBe('drifted');
       expect(ready?.action).toBe('updated');
     });
   });
@@ -439,6 +439,65 @@ describe('LabelProvisioningService', () => {
       expect(http.request).not.toHaveBeenCalled();
     });
 
+    it('NULLS every count when the labels were never read', async () => {
+      // The trap this rule exists to close: `present: 0` reads as "the
+      // repository has none of them" and the truth is "we never found out".
+      // A token that cannot read a repository's labels establishes nothing
+      // about what is on it, so a consumer rendering "0 of 15 present" would
+      // be stating a fact nobody obtained. Null cannot be rendered as a count
+      // by accident; a documented zero can, and was.
+      const report = await failingWith(
+        new GitHubAuthError('refused', 403, 'GET', '/labels'),
+      );
+
+      expect(report.declared).toBeNull();
+      expect(report.present).toBeNull();
+      expect(report.missing).toBeNull();
+      expect(report.created).toBeNull();
+      expect(report.updated).toBeNull();
+      expect(report.unchanged).toBeNull();
+      expect(report.failed).toBeNull();
+      expect(report.labels).toEqual([]);
+    });
+
+    it('nulls the counts for every unread status, not just the refused one', async () => {
+      // All seven arms, so a future arm added without the null is caught here
+      // rather than by whichever screen renders it.
+      const unread = [
+        new GitHubAuthError('rejected', 401, 'GET', '/labels'),
+        new GitHubAuthError('refused', 403, 'GET', '/labels'),
+        new GitHubNotFoundError('gone', 404, 'GET', '/labels'),
+        new GitHubRateLimitError(
+          'spent',
+          403,
+          'GET',
+          '/labels',
+          new Date('2026-08-28T04:00:00Z'),
+          false,
+        ),
+        new GitHubTransientError('down', null, 'GET', '/labels'),
+        new Error('unmodelled'),
+      ];
+
+      for (const error of unread) {
+        const report = await failingWith(error);
+        expect({ status: report.status, present: report.present }).toEqual({
+          status: report.status,
+          present: null,
+        });
+      }
+    });
+
+    it('nulls the counts when no credential is configured either', async () => {
+      github.credentialConfigured = false;
+
+      const report = await service.provision(REPO);
+
+      expect(report.status).toBe('no_credential');
+      expect(report.present).toBeNull();
+      expect(report.declared).toBeNull();
+    });
+
     it('never throws — a registration must survive any of these', async () => {
       for (const error of [
         new GitHubAuthError('nope', 403, 'GET', '/labels'),
@@ -500,6 +559,60 @@ describe('LabelProvisioningService', () => {
       expect(http.request).toHaveBeenCalledTimes(1);
       expect(report.status).toBe('refused');
       expect(report.detail).toContain('could not be created');
+    });
+
+    it('KEEPS its counts when the write is refused but the read succeeded', async () => {
+      // The reason the null is keyed on "were the labels read" rather than on
+      // `status`. Here we know exactly what is on the repository — the list
+      // came back — and only the write that followed was refused. Nulling
+      // these would throw away a real observation to satisfy a rule about a
+      // status, and would leave the ladder unable to say "0 of 15, and here is
+      // why" when that is precisely the situation.
+      http.request.mockRejectedValue(
+        new GitHubAuthError('refused', 403, 'POST', '/labels'),
+      );
+
+      const report = await service.provision(REPO);
+
+      expect(report.status).toBe('refused');
+      expect(report.declared).toBe(PROVISIONED_LABELS.length);
+      expect(report.present).toBe(0);
+      expect(report.missing).toBe(PROVISIONED_LABELS.length);
+      expect(report.labels).toHaveLength(PROVISIONED_LABELS.length);
+    });
+  });
+
+  describe('the field names say what the fields mean', () => {
+    it('reports `attempted` for a POST that wrote nothing because it was refused', async () => {
+      // `applied: true` on a call that applied nothing was the objection.
+      // `attempted` is a claim about what this call TRIED, and the outcome
+      // lives in `status`, `created` and `failed`.
+      http.request.mockRejectedValue(
+        new GitHubAuthError('refused', 403, 'POST', '/labels'),
+      );
+
+      const report = await service.provision(REPO);
+
+      expect(report.attempted).toBe(true);
+      expect(report.created).toBe(0);
+      expect(report.status).toBe('refused');
+    });
+
+    it('reports `attempted: false` for an inspection', async () => {
+      expect((await service.inspect(REPO)).attempted).toBe(false);
+    });
+
+    it('keeps `stateBefore` in the past tense after a successful write', async () => {
+      // The field is deliberately NOT updated: it is the only record that
+      // anything happened, and a UI needs to say "created" rather than "was
+      // already fine". The name carries the tense so no consumer has to
+      // remember that `state` would be false the moment the POST succeeds.
+      const report = await service.provision(REPO);
+      const ready = report.labels.find((l) => l.name === 'factory:ready');
+
+      expect(ready?.stateBefore).toBe('missing');
+      expect(ready?.action).toBe('created');
+      expect(ready).not.toHaveProperty('state');
     });
   });
 
