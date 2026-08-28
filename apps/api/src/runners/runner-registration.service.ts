@@ -442,9 +442,15 @@ export class RunnerRegistrationService implements OnModuleInit {
    * condition the machine is in; they take opposite responses — flip a flag
    * back, or fix what the runner's own reason names — and they are very
    * often BOTH true at once, which is exactly the case the chain used to
-   * hide. The dev deployment defaults the flag off AND has no `claude` on
-   * its PATH, so reporting only the flag would send an operator to fix it
-   * and leave them waiting on a runner that still could not take the work.
+   * hide: a deployment with the flag turned off AND no `claude` on its PATH
+   * gets one investigation per problem if only one is reported, so fixing the
+   * flag buys a second wait rather than a working runner.
+   *
+   * Since ADR-0019 (#439) the flag defaults ON, which changes what the
+   * disabled line MEANS rather than whether it is worth printing: it is no
+   * longer the shipped posture an operator has not got to yet, it is a switch
+   * somebody deliberately turned off. The message says so, because "set it to
+   * true" reads very differently once true is where it started.
    */
   private describeRegistration(
     capabilities: RunnerCapabilities,
@@ -453,7 +459,9 @@ export class RunnerRegistrationService implements OnModuleInit {
     if (!enabled) {
       this.logger.warn(
         `Registered ${capabilities.key}@${capabilities.version} as DISABLED by ` +
-          'configuration; set CLAUDE_CODE_LOCAL_ENABLED=true to let dispatch route to it',
+          'configuration — this runner ships enabled (ADR-0019), so something turned it ' +
+          'off. Dispatch will queue every work order until it is turned back on, from ' +
+          'the Control Center or with CLAUDE_CODE_LOCAL_ENABLED=true.',
       );
     }
 

@@ -1,17 +1,24 @@
 # Runbook: turning Opifex on, and the observation week
 
-VISION §12 requires the reconciler to run **read-only for a week**, recording what
-it _would_ have done, before it is allowed to do anything. This is how you start
-that week, and what to read while it runs.
+VISION §12 recommends the reconciler run **read-only for a week**, recording what
+it _would_ have done, before it is trusted with real writes. This is how you start
+that week — and, since ADR-0019 (#439), starting it is a deliberate act rather
+than the state a fresh install happens to be in: the reconciler is already
+observing and GitHub writes are already permitted by default, so the first real
+step below is turning writes back **off**, not turning the loop on.
 
 It also closes the exit criteria on epics **#16** and **#17** that no amount of
 code can close: _"detection latency is measured, graphed, and in seconds"_ and
 _"a notification reaches a phone."_ Those are observations, not features.
 
-> **Nothing here writes to GitHub.** `GITHUB_WRITES_ENABLED` defaults to `false`
-> and every write adapter returns `performed: false` without issuing a request.
-> The one thing that _does_ leave the building is a push notification to your own
-> phone.
+> **This runbook turns writes off; nothing does it for you.**
+> `github.writesEnabled` ships **on** by default (ADR-0019, #439) — a
+> deployment you have not touched is already permitted to write to any
+> repository whose own `mirrorLabelsEnabled` / `specFeedbackEnabled` is on.
+> §2 below turns writes off deliberately, before you register anything, so
+> every write adapter returns `performed: false` without issuing a request
+> for the whole week. The one thing that _does_ leave the building regardless
+> is a push notification to your own phone.
 
 ---
 
@@ -79,16 +86,19 @@ VAPID_SUBJECT=mailto:you@example.com
 OTEL_ENABLED=true                # optional, see the traces
 ```
 
-**Leave `.env`'s reconciler and GitHub-writes variables at their defaults —
-`RECONCILER_ENABLED=false` (unset), `RECONCILER_INTERVAL_MS=60000` (unset),
-`RECONCILER_LOG_RETENTION_DAYS=14` (unset), `GITHUB_WRITES_ENABLED=false`
-(unset).** All four are now operator-managed keys (`reconciler.enabled`,
-`reconciler.intervalMs`, `reconciler.logRetentionDays`,
+**Leave `.env`'s reconciler variables at their defaults —
+`RECONCILER_INTERVAL_MS=60000` (unset), `RECONCILER_LOG_RETENTION_DAYS=14`
+(unset) — and leave `RECONCILER_ENABLED` unset too.** It now defaults to
+`true` (ADR-0019, #439), so the loop is observing GitHub from the first
+boot with no flag to flip. What you do have to set, deliberately, is
+`github.writesEnabled`: it defaults to `true` as well, and this week is
+read-only only once you turn it off. All four are operator-managed keys
+(`reconciler.enabled`, `reconciler.intervalMs`, `reconciler.logRetentionDays`,
 `github.writesEnabled`), editable live from `/admin/settings` →
-Configuration once the container is up — §2 below turns the control loop on
-that way instead of by baking it into `.env` before the first boot, which
-doubles as proof that the live toggle actually works before you rely on it
-for anything else this week.
+Configuration once the container is up — §2 below turns writes off that way
+rather than by baking `GITHUB_WRITES_ENABLED=false` into `.env` before the
+first boot, which doubles as proof that the live toggle actually works
+before you rely on it for anything else this week.
 
 **Retention is 14 days deliberately.** A one-week window pruned at seven days is
 half-gone on the day you sit down to review it. It stays a code default here
@@ -107,36 +117,52 @@ docker compose -f base.compose.yml -f dev.compose.yml -f otel.compose.yml up -d
 ```
 
 Confirm the loop registered — this line is the whole point, and with
-`RECONCILER_ENABLED` left unset it says so honestly:
+`reconciler.enabled` shipping **on** (ADR-0019, #439) it says so honestly
+from the very first boot, with no flag to flip:
 
 ```
-LOG [ReconcilerTask] Reconciler tick registered every 60000ms; the reconciler is DISABLED, so every tick will skip until it is enabled
+LOG [ReconcilerTask] Reconciler tick registered every 60000ms; the reconciler is ENABLED and will observe GitHub. No repository is written to until it opts in, and no run starts until a hard spend ceiling is set.
 ```
 
-The interval is registered either way now (#343) — a disabled reconciler
-still wakes every `intervalMs` to confirm it has nothing to do, logged at
-`debug` so it costs no attention. What differs with enablement is entirely
-inside that one line.
+The interval is registered either way (#343) — a reconciler you have turned
+off would still wake every `intervalMs` to confirm it has nothing to do,
+logged at `debug` so it costs no attention. On a default install there is
+nothing here to turn on.
 
-Now turn it on, live, from the Control Center: `/admin/settings` →
-**Configuration** → the **Reconciler** group → _Reconciler enabled_ →
-switch it on → Save. `reconciler.enabled` has `live` reload, so this takes
-effect on the very next scheduled tick — up to a minute away, never a
-restart, and **no second log line confirms it**; the boot line above only
-prints once, at startup. Confirm the toggle actually took instead by reading
-the tick log itself once a tick has had time to run:
+**Now turn writes off** — this is the step that actually starts a read-only
+week. From the Control Center: `/admin/settings` → **Configuration** → the
+**GitHub** group → _GitHub writes enabled_ → switch it off → Save.
+`github.writesEnabled` has `live` reload, so it takes effect on the very
+next write attempt, never a restart — and, the same way `reconciler.enabled`
+does, **no second log line confirms it**: `GitHubWriteService` logs the
+posture the process booted into once, in its constructor, and does not log
+again when the value changes live. Confirm the toggle actually took by
+reading the setting back rather than waiting for a log line:
+
+```bash
+curl http://localhost:3535/api/operator-settings \
+  -H "Authorization: Bearer $ACCESS_TOKEN" | \
+  jq '.settings[] | select(.key == "github.writesEnabled")'
+```
+
+`value` should read `false`, with `source: "database"` — the row you just
+wrote outranking whatever `.env` says, per
+[`docs/operator-configuration.md`](operator-configuration.md)'s resolution
+order.
+
+Read the tick log once a tick has had time to run, to see the loop working
+end to end:
 
 ```bash
 curl 'http://localhost:3535/api/reconciler/ticks?pageSize=1' \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
-While disabled, `runOnce()` returns before `ReconcilerService.tick()` is ever
-called, so **no row is written at all** — an empty response here while
-`reconciler.enabled` reads `false` is expected, not a bug. The proof the flip
-landed is a **new row appearing** after the next scheduled tick — its
-`repositoriesObserved` will read `0` until §4 registers one, and that is
-still the tick running, not a failure.
+A row appears on every tick regardless of `github.writesEnabled` — that
+flag governs whether a _write_ is issued, not whether the _tick_ runs — so a
+row here proves the loop is alive, not by itself that writes are off.
+`actionsExecuted: 0` is the field that proves that, and it is worth checking
+on the first tick rather than trusting the setting alone.
 
 You should also see, if you have not set the VAPID keys:
 
@@ -645,12 +671,18 @@ Do it in stages, and let each one sit before the next:
    `factory:clear-quarantine` are inputs and are never touched.
 3. **Dispatch** — not part of this runbook. The executor
    (`apps/api/src/dispatch/run-executor.service.ts`) and the `claude-code-local`
-   runner it calls both exist and are wired into the app, but three switches
-   keep them off: `DISPATCH_ENABLED` (global), `CLAUDE_CODE_LOCAL_ENABLED` (the
-   runner itself), and each repository's own `dispatchEnabled` (§4). All three
-   default `false`, and deliberately stay that way for the whole observation
-   week — turning them on is the step after this runbook, not part of it. See
-   `docs/ARCHITECTURE.md` §3.9 for what each flag gates.
+   runner it calls both exist and are wired into the app, and — since
+   ADR-0019 (#439) — `DISPATCH_ENABLED` (global) and `CLAUDE_CODE_LOCAL_ENABLED`
+   (the runner itself) are both already `true`, the same as they were for the
+   whole week: nothing in this runbook ever touched either. What actually
+   keeps dispatch off is each repository's own `dispatchEnabled` (§4), which
+   still defaults `false` and was deliberately left there — and, until an
+   operator names one, `dispatch.hardSpendCeilingUsd` has no default, so
+   `decideSpendAdmission` refuses every dispatch on every repository
+   regardless of that flag (`docs/adr/0019-fresh-install-ships-ready-not-running.md`).
+   Turning a repository's `dispatchEnabled` on, and setting a spend ceiling,
+   is the step after this runbook, not part of it. See `docs/ARCHITECTURE.md`
+   §3.9 for what each flag gates.
 
 ---
 
@@ -670,12 +702,16 @@ Do it in stages, and let each one sit before the next:
 
 Being explicit, so the gaps do not get quietly assumed away:
 
-- **`dispatch` is computed and not acted on, because the switches that would
-  act on it are off.** `run-executor.service.ts` runs the whole decision for
-  every queued work order and logs what it _would_ have dispatched — the same
-  code path that will actually submit once `DISPATCH_ENABLED`,
-  `CLAUDE_CODE_LOCAL_ENABLED`, and the repository's own `dispatchEnabled` are
-  all `true`. Nothing about this observation week turns them on.
+- **`dispatch` is computed and not acted on, because a repository's own
+  `dispatchEnabled` is off and, on top of that, no hard spend ceiling is
+  set.** `run-executor.service.ts` runs the whole decision for every queued
+  work order and logs what it _would_ have dispatched — the same code path
+  that will actually submit once the repository's `dispatchEnabled` is `true`
+  and `dispatch.hardSpendCeilingUsd` names a figure. `DISPATCH_ENABLED` and
+  `CLAUDE_CODE_LOCAL_ENABLED` are not what is holding this back: both
+  default `true` since ADR-0019 (#439) and this runbook never touches
+  either. Nothing about this observation week turns dispatch on for a
+  repository or names a ceiling.
 - **`kill-and-re-run`, `kill-and-re-plan`, and `park` are computed and
   discarded, and no flag changes that.** These are the watchdog's own
   recovery actions for a run already in flight — abandon-and-restart a silent

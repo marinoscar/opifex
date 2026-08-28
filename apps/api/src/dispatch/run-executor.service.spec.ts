@@ -435,6 +435,88 @@ describe('RunExecutorService', () => {
     });
   });
 
+  describe('the registry default (ADR-0019, #439)', () => {
+    beforeEach(() => {
+      // Called for its side effect: `build()` is what (re)creates the shared
+      // `decide`/`submit`/`runCreate` doubles, and the executors below are
+      // constructed by hand so they can hold `makeOperatorSettings()` with no
+      // overrides at all. Without this they would inherit whatever the last
+      // test in the file left on those mocks.
+      executor = build();
+    });
+
+    it('ACTS on the decision when nothing configures the flag', async () => {
+      // No override and a hermetic environment, so the behaviour under test is
+      // the REGISTRY's declared default rather than a `?? true` here. It used
+      // to assert `observed`; #439 flipped the default, and the thing that now
+      // stops a fresh install spending is the unset hard spend ceiling —
+      // pinned end to end in test/governing/fresh-install-cannot-spend.spec.ts,
+      // and here by the sibling test below.
+      const runner = {
+        submit,
+        capabilities: jest.fn().mockResolvedValue(CAPABILITIES),
+      } as unknown as ClaudeCodeLocalRunner;
+      Object.defineProperty(runner, 'key', { value: 'claude-code-local' });
+
+      const bare = new RunExecutorService(
+        {
+          run: {
+            create: runCreate,
+            delete: runDelete,
+            updateMany: runUpdateMany,
+          },
+          workOrder: { update: workOrderUpdate },
+        } as unknown as PrismaService,
+        makeOperatorSettings(),
+        { decide } as unknown as DispatchService,
+        { write } as unknown as WorkOrderRecordsService,
+        { track } as unknown as RunPollerService,
+        runner,
+        ceilingOf(ceiling),
+        ledgerOf(tally),
+      );
+
+      const result = await bare.dispatchWorkOrder({
+        workOrder: workOrder(),
+        workOrderId: WORK_ORDER_ID,
+      });
+
+      expect(result.outcome).toBe('dispatched');
+      expect(submit).toHaveBeenCalledTimes(1);
+    });
+
+    it('still refuses to spend with nothing configured at all', async () => {
+      // The same bare executor, with the ceiling ALSO left at what a fresh
+      // install has: unset. Default-on dispatch plus an unset ceiling is
+      // "ready", not "running", and this is the pair of assertions that says
+      // which of the two changed in #439 and which did not.
+      const bare = new RunExecutorService(
+        { run: { create: runCreate } } as unknown as PrismaService,
+        makeOperatorSettings(),
+        { decide } as unknown as DispatchService,
+        { write } as unknown as WorkOrderRecordsService,
+        { track } as unknown as RunPollerService,
+        {
+          submit,
+          capabilities: jest.fn().mockResolvedValue(CAPABILITIES),
+        } as unknown as ClaudeCodeLocalRunner,
+        ceilingOf({ limitUsd: null, windowDays: 30, malformed: null }),
+        ledgerOf(tally),
+      );
+
+      const result = await bare.dispatchWorkOrder({
+        workOrder: workOrder(),
+        workOrderId: WORK_ORDER_ID,
+      });
+
+      expect(result.outcome === 'queued' && result.queueReason).toBe(
+        'no-hard-spend-ceiling-configured',
+      );
+      expect(runCreate).not.toHaveBeenCalled();
+      expect(submit).not.toHaveBeenCalled();
+    });
+  });
+
   describe('with dispatch disabled', () => {
     beforeEach(() => {
       executor = build(false);
@@ -467,31 +549,6 @@ describe('RunExecutorService', () => {
       decide.mockResolvedValue(QUEUED);
 
       expect((await dispatch()).outcome).toBe('queued');
-    });
-
-    it('defaults to disabled when the flag is absent', async () => {
-      // No override and a hermetic environment, so the `false` under test is
-      // the REGISTRY's declared default rather than a `?? false` here.
-      const bare = new RunExecutorService(
-        { run: { create: runCreate } } as unknown as PrismaService,
-        makeOperatorSettings(),
-        { decide } as unknown as DispatchService,
-        { write } as unknown as WorkOrderRecordsService,
-        { track } as unknown as RunPollerService,
-        {
-          submit,
-          capabilities: jest.fn().mockResolvedValue(CAPABILITIES),
-        } as unknown as ClaudeCodeLocalRunner,
-        ceilingOf(ceiling),
-        ledgerOf(tally),
-      );
-
-      const result = await bare.dispatchWorkOrder({
-        workOrder: workOrder(),
-        workOrderId: WORK_ORDER_ID,
-      });
-
-      expect(result.outcome).toBe('observed');
     });
 
     it('dispatches for real on the very next call once the flag is turned on, with no restart (#352)', async () => {

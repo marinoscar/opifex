@@ -1186,13 +1186,17 @@ describe('OperatorSettingsService: the database overlay (#339)', () => {
     it('picks up a change another replica made, which is what bounds staleness', async () => {
       const { settings, prisma } = makeService();
       await settings.refresh();
-      expect(settings.get('dispatch.enabled')).toBe(false);
+      // The registry default, which is ON since ADR-0019 (#439). The stored
+      // row below is deliberately the OPPOSITE of it: a row agreeing with the
+      // default would leave this passing even if the overlay were ignored
+      // entirely, which is the one failure this test exists to catch.
+      expect(settings.get('dispatch.enabled')).toBe(true);
 
-      storeValue(prisma, 'dispatch.enabled', true);
+      storeValue(prisma, 'dispatch.enabled', false);
       prisma.revision = 7n;
       await settings.refresh();
 
-      expect(settings.get('dispatch.enabled')).toBe(true);
+      expect(settings.get('dispatch.enabled')).toBe(false);
       expect(settings.overlay().revision).toBe(7);
     });
 

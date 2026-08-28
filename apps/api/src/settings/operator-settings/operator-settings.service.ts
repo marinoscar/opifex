@@ -328,7 +328,7 @@ export class OperatorSettingsService implements OnModuleInit {
       return { key, value: parsed.value, source: supplied.source };
     }
 
-    this.onInvalid(key, supplied.source, parsed.error);
+    this.onInvalid(key, supplied.source, parsed.error, supplied.raw, fallback);
 
     return {
       key,
@@ -747,17 +747,46 @@ export class OperatorSettingsService implements OnModuleInit {
     return process.env;
   }
 
-  /** What to do with a supplied value the registry rejected. */
+  /**
+   * What to do with a supplied value the registry rejected.
+   *
+   * ERROR, not warn, and it names the value in force — both because of
+   * ADR-0019 (#439). While the switches that spend money or act outwardly all
+   * defaulted off, a rejected value failed SAFE: the fallback was the inert
+   * posture, and a warning was proportionate. Now the fallback for those keys
+   * is the ACTIVE posture, so the same event means "you tried to turn
+   * something off, we could not read it, and it is on". An operator who reads
+   * their own `.env` and believes it needs to find that line, which means it
+   * has to be at a level people filter FOR rather than filter out, and it has
+   * to state the resulting value rather than leaving them to infer it.
+   *
+   * The widened boolean spellings (`booleanSetting`) make this rarer, which is
+   * the point: what is left here is genuinely ambiguous input, not a near
+   * miss.
+   */
   protected onInvalid(
     key: OperatorSettingKey,
     source: OperatorSettingSource,
     reason: string,
+    raw?: unknown,
+    inForce?: unknown,
   ): void {
-    const where =
-      source === 'env' ? OPERATOR_SETTINGS[key].envVar : `${source} value`;
-    this.warnOnce(
+    const definition = OPERATOR_SETTINGS[key];
+    const where = source === 'env' ? definition.envVar : `${source} value`;
+    const supplied = raw === undefined ? '' : ` (${JSON.stringify(raw)})`;
+    // The extra sentence only where it is true. For a switch the declared
+    // default may be the OPPOSITE of what was meant, which is the whole of
+    // why this is an error; for a timeout it is merely a different number.
+    const consequence =
+      definition.kind === 'boolean'
+        ? ', which is the opposite of what was probably meant'
+        : '';
+    this.logOnce(
       `invalid:${key}`,
-      `${where} is not a valid value for ${key} (${reason}); using the default instead`,
+      'error',
+      `${where}${supplied} is not a valid value for ${key}: ${reason}. ` +
+        `The declared default ${JSON.stringify(inForce)} is in force ` +
+        `instead${consequence}.`,
     );
   }
 
@@ -810,7 +839,7 @@ export class OperatorSettingsService implements OnModuleInit {
       return { key, value: parsed.value, source: 'database' };
     }
 
-    this.onInvalid(key, 'database', parsed.error);
+    this.onInvalid(key, 'database', parsed.error, resolution.value, fallback);
     return {
       key,
       value: fallback,
@@ -980,9 +1009,18 @@ export class OperatorSettingsService implements OnModuleInit {
    * how a real warning becomes invisible.
    */
   private warnOnce(reason: string, message: string): void {
+    this.logOnce(reason, 'warn', message);
+  }
+
+  /** The same de-duplication, for the one reason that is an error (#439). */
+  private logOnce(
+    reason: string,
+    level: 'warn' | 'error',
+    message: string,
+  ): void {
     if (this.warned.has(reason)) return;
     this.warned.add(reason);
-    this.logger.warn(message);
+    this.logger[level](message);
   }
 }
 

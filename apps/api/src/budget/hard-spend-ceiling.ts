@@ -68,9 +68,12 @@ import { OperatorSettingsService } from '../settings/operator-settings/operator-
  *
  * ## Unset means dispatch is refused, not that spending is unlimited
  *
- * `DISPATCH_ENABLED` already defaults off, so nothing spends money until an
- * operator opts in. Opting in without naming a ceiling is exactly the failure
- * mode #65 exists to prevent — "an unsupervised agent with no spend ceiling is
+ * This is now the ONLY thing that stops a fresh install spending. ADR-0019
+ * (#439) flipped `DISPATCH_ENABLED`, the runner and GitHub writes to on and
+ * deliberately left this unset, moving the protection from four proxies for
+ * the hazard onto the hazard itself — money. A ceiling cannot be satisfied by
+ * accident: it is a number somebody has to choose. Running without naming one
+ * is exactly the failure mode #65 exists to prevent — "an unsupervised agent with no spend ceiling is
  * the failure mode that turns a productivity tool into a bill." So an unset
  * ceiling does not mean "unlimited"; it means the gate has nothing to check
  * against, and an unbounded action that cannot be checked does not proceed
@@ -297,8 +300,12 @@ export class HardSpendCeilingService implements OnModuleInit, OnModuleDestroy {
 
     if (limitUsd === null) {
       this.logger.warn(
-        `${HARD_SPEND_CEILING_ENV} is not set. Dispatch will refuse to spend. Set it to the ` +
-          `most you are willing to spend per ${windowDays} days.`,
+        `No hard spend ceiling is set, so dispatch will refuse every work order. Since ` +
+          `ADR-0019 this is the ONLY thing stopping this deployment: the runner, dispatch ` +
+          `and GitHub writes all ship enabled, so the factory is ready and will start ` +
+          `spending as soon as a ceiling exists. Set the most you are willing to spend ` +
+          `per ${windowDays} days from the Control Center, or with ` +
+          `${HARD_SPEND_CEILING_ENV}.`,
       );
       return;
     }

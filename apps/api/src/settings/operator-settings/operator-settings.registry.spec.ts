@@ -561,33 +561,63 @@ describe('operator settings registry', () => {
   });
 
   describe('parsing rules the whole registry shares', () => {
-    it('reproduces the === true idiom for a switch that defaults off', () => {
-      // `configuration.ts` compares GITHUB_WRITES_ENABLED with === 'true', so
-      // every unrecognised spelling means off today. The registry keeps that
-      // by rejecting the value and falling back to the declared default.
-      for (const raw of ['TRUE', 'yes', '1', 'on', 'enabled']) {
+    it('reads every spelling of yes and no that a person actually types', () => {
+      // This used to assert the OPPOSITE: 'TRUE', 'yes', '1' and 'on' were all
+      // rejected, because the registry was reproducing `configuration.ts`'s
+      // `=== 'true'` idiom exactly so that #340's migration could be proved to
+      // change nothing. ADR-0019 (#439) removed that argument's foundation.
+      //
+      // Under "anything unrecognised falls back to the declared default", the
+      // fallback follows the default — and with the four switches now ON, a
+      // value that cannot be read no longer fails safe. `GITHUB_WRITES_ENABLED=no`
+      // is an operator stating an unambiguous intention to keep writes off;
+      // discarding it and turning writes on, while they read their own .env
+      // and believe otherwise, is the failure this widening exists to remove.
+      for (const raw of ['true', 'TRUE', ' True ', 'yes', '1', 'on', 'ON']) {
+        expect(parseOperatorSetting('github.writesEnabled', raw)).toEqual({
+          ok: true,
+          value: true,
+        });
+      }
+      for (const raw of ['false', 'FALSE', ' False ', 'no', '0', 'off']) {
+        expect(parseOperatorSetting('github.writesEnabled', raw)).toEqual({
+          ok: true,
+          value: false,
+        });
+      }
+    });
+
+    it('still rejects what is genuinely ambiguous, rather than guessing', () => {
+      // The line has to be somewhere, and it is at "a reader could not say
+      // which was meant". `'2'` is not a bigger yes; `'enabled'` is a word
+      // about the setting rather than a value for it; `''` is a variable
+      // somebody left blank. Each falls back to the declared default and is
+      // reported at ERROR by `OperatorSettingsService.onInvalid`.
+      for (const raw of ['enabled', 'disabled', '', '2', '-1', 'maybe', 'y']) {
         expect(parseOperatorSetting('github.writesEnabled', raw).ok).toBe(
           false,
         );
       }
-      expect(parseOperatorSetting('github.writesEnabled', 'true')).toEqual({
-        ok: true,
-        value: true,
-      });
     });
 
-    it('reproduces the !== false idiom for the one switch that defaults on', () => {
-      // SUPERVISOR_STAND_DOWN_WHEN_BLOCKED is compared !== 'false' today, so
-      // 'FALSE' and 'no' mean ON. Same rule as above, opposite default — one
-      // parsing rule reproducing two contradictory call-site idioms.
+    it('says what would have been accepted, since the report is now an error', () => {
+      const result = parseOperatorSetting('github.writesEnabled', 'enabled');
+
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.error).toContain('"enabled"');
+      expect(result.ok === false && result.error).toContain('yes/no');
+    });
+
+    it('applies the same rule to the one switch that always defaulted on', () => {
+      // SUPERVISOR_STAND_DOWN_WHEN_BLOCKED was compared `!== 'false'` in
+      // `configuration.ts`, so 'FALSE' and 'no' used to mean ON. They now mean
+      // what they say — one parsing rule, and no key where a plausible
+      // spelling silently resolves to its opposite.
       for (const raw of ['FALSE', 'no', '0', 'off']) {
         expect(
-          parseOperatorSetting('supervisor.standDownWhenBlocked', raw).ok,
-        ).toBe(false);
+          parseOperatorSetting('supervisor.standDownWhenBlocked', raw),
+        ).toEqual({ ok: true, value: false });
       }
-      expect(
-        parseOperatorSetting('supervisor.standDownWhenBlocked', 'false'),
-      ).toEqual({ ok: true, value: false });
       expect(OPERATOR_SETTINGS['supervisor.standDownWhenBlocked'].default).toBe(
         true,
       );

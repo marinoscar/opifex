@@ -275,33 +275,59 @@ describe('ReconcilerTask', () => {
       expect(tick).toHaveBeenCalledTimes(1);
     });
 
-    it.each([
-      [true, 'ENABLED'],
-      [false, 'DISABLED'],
-    ])(
-      'states the enablement state of the loop in the boot line (%s)',
-      (enabled, expected) => {
-        // The per-tick skip logs at `debug`, so this line is the only place an
-        // operator is told whether the loop that just registered will do
-        // anything — which is what answers the superseded comment's objection
-        // without keeping a second copy of the state.
-        settings = makeOperatorSettings({
-          overrides: { 'reconciler.enabled': enabled },
-        });
-        const built = rebuild();
-        const log = jest
-          .spyOn(Logger.prototype, 'log')
-          .mockImplementation(() => {});
-        try {
-          built.onModuleInit();
+    /**
+     * The boot line, at two levels since ADR-0019 (#439).
+     *
+     * The per-tick skip logs at `debug`, so this line is the only place an
+     * operator is told whether the loop that just registered will do
+     * anything. What changed is which of the two states is worth
+     * interrupting for: the reconciler ships ENABLED, so a disabled one is a
+     * deliberate act whose consequence is that NOTHING happens — no
+     * observation, no work orders, no escalations, no dispatch — and that is
+     * a warning rather than a line in the same colour as the rest of boot.
+     *
+     * Both levels are asserted mutually exclusive (`not.toHaveBeenCalled` on
+     * the other one), because "warns" and "warns as well as logging" are
+     * different claims and only one of them makes the warn mean anything.
+     */
+    function bootWith(enabled: boolean) {
+      settings = makeOperatorSettings({
+        overrides: { 'reconciler.enabled': enabled },
+      });
+      const built = rebuild();
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
 
-          expect(log).toHaveBeenCalledTimes(1);
-          expect(log.mock.calls[0][0]).toContain(expected);
-        } finally {
-          log.mockRestore();
-        }
-      },
-    );
+      built.onModuleInit();
+
+      const lines = {
+        log: log.mock.calls.map((call) => String(call[0])),
+        warn: warn.mock.calls.map((call) => String(call[0])),
+      };
+      log.mockRestore();
+      warn.mockRestore();
+      return lines;
+    }
+
+    it('states an ENABLED loop at log level, and does not warn about it', () => {
+      const lines = bootWith(true);
+
+      expect(lines.warn).toEqual([]);
+      expect(lines.log).toHaveLength(1);
+      expect(lines.log[0]).toContain('ENABLED');
+    });
+
+    it('WARNS about a disabled loop, because it ships enabled', () => {
+      const lines = bootWith(false);
+
+      expect(lines.log).toEqual([]);
+      expect(lines.warn).toHaveLength(1);
+      expect(lines.warn[0]).toContain('DISABLED');
+      // The consequence, not just the state: this loop gates everything, so
+      // an operator reading it needs to know that nothing else being enabled
+      // will help.
+      expect(lines.warn[0]).toContain('NOTHING will happen');
+    });
 
     it('stops listening for changes once the module is destroyed', () => {
       task.onModuleInit();

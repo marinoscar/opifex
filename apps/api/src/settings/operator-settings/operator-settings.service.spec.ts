@@ -187,12 +187,18 @@ describe('OperatorSettingsService', () => {
       // authorization decision. Nothing here is in that class.
       const settings = withEnv({
         CLAUDE_CODE_MAX_CONCURRENCY: 'lots',
-        GITHUB_WRITES_ENABLED: 'yes',
+        // 'yes' is now a VALID spelling of true (#439), so the unreadable
+        // boolean here has to be a genuinely ambiguous one — and it is asserted
+        // on a key that still defaults OFF, so that only a real rejection can
+        // produce the expected value. On a default-on key, a parser that
+        // wrongly accepted 'enabled' would return the same `true` the fallback
+        // does, and this test would pass while proving nothing.
+        PROMOTION_LADDER_ENABLED: 'enabled',
         CLAUDE_CODE_PERMISSION_MODE: 'yolo',
       });
 
       expect(settings.get('runners.claudeCodeLocal.maxConcurrency')).toBe(2);
-      expect(settings.get('github.writesEnabled')).toBe(false);
+      expect(settings.get('promotion.enabled')).toBe(false);
       expect(settings.get('runners.claudeCodeLocal.permissionMode')).toBe(
         'acceptEdits',
       );
@@ -209,7 +215,20 @@ describe('OperatorSettingsService', () => {
       expect(resolved.invalid?.reason).toBeTruthy();
     });
 
-    it('names the environment variable in the warning, and warns once', () => {
+    it('reports it at ERROR, naming the variable, the value and what is in force — once', () => {
+      // ERROR since ADR-0019 (#439), and it used to be a warning. While every
+      // switch that spends money or acts outwardly defaulted off, an
+      // unreadable value fell back to the inert posture and a warning was
+      // proportionate. The fallback now lands on the ACTIVE posture for those
+      // keys, so this event means "you tried to change something, we could not
+      // read it, and it is on" — which an operator has to be able to find.
+      //
+      // Asserted once rather than per read: `get()` is a hot path and
+      // `refresh()` runs every 15 seconds, so a line per read is how a real
+      // error becomes invisible.
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
       const warn = jest
         .spyOn(Logger.prototype, 'warn')
         .mockImplementation(() => undefined);
@@ -219,9 +238,15 @@ describe('OperatorSettingsService', () => {
       settings.get('github.maxRetries');
       settings.get('github.maxRetries');
 
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn.mock.calls[0]?.[0]).toContain('GITHUB_MAX_RETRIES');
-      expect(warn.mock.calls[0]?.[0]).toContain('github.maxRetries');
+      expect(warn).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledTimes(1);
+      const line = String(error.mock.calls[0]?.[0]);
+      expect(line).toContain('GITHUB_MAX_RETRIES');
+      expect(line).toContain('github.maxRetries');
+      // The value that could not be read, and the one an operator is actually
+      // running with — the half that used to be left to inference.
+      expect(line).toContain('"many"');
+      expect(line).toContain('3');
     });
 
     it('refuses a value outside the declared bounds', () => {
@@ -257,7 +282,14 @@ describe('OperatorSettingsService', () => {
         [...OPERATOR_SETTING_KEYS].sort(),
       );
       expect(snapshot['supervisor.enabled']).toBe(true);
-      expect(snapshot['dispatch.enabled']).toBe(false);
+      // A key the environment did NOT set, carrying its registry default, and
+      // deliberately one that still defaults OFF so the assertion has a
+      // contrast to make. It has now been re-picked twice for that reason:
+      // `dispatch.enabled` stood here until ADR-0019 (#439) flipped it, then
+      // `reconciler.enabled` until the same change took the fifth flag too.
+      // If `promotion.enabled` ever ships on, this needs re-picking again —
+      // and it will fail rather than go quiet, which is the point.
+      expect(snapshot['promotion.enabled']).toBe(false);
     });
   });
 

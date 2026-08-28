@@ -27,7 +27,10 @@ export interface ExecutionOutcome {
  *
  * What changed with #48 is narrower than "the reconciler can now write": a
  * separate, small, auditable component can write two kinds of label, behind
- * two flags that both default off.
+ * two flags. Since ADR-0019 (#439) only one of them still defaults off —
+ * `Repository.mirrorLabelsEnabled`, per repository — while
+ * `GITHUB_WRITES_ENABLED` ships on. A repository that has not opted in is
+ * still not written to.
  *
  * ## What it will not do
  *

@@ -195,16 +195,50 @@ export type AnyOperatorSettingDefinition = OperatorSettingDefinition<unknown>;
 // ---------------------------------------------------------------------------
 
 /**
- * `true` | `false` | `'true'` | `'false'`, and nothing else.
+ * The spellings of yes and no that a person actually types.
  *
- * Case-sensitive and exact, which is not fussiness — it REPRODUCES both of
- * today's contradictory idioms exactly, and reconciles them. `configuration.ts`
- * compares `=== 'true'` for the eight switches that default off and
- * `!== 'false'` for `SUPERVISOR_STAND_DOWN_WHEN_BLOCKED`, which defaults on.
- * Under "anything unrecognized falls back to the declared default", `'TRUE'`,
- * `'yes'`, `'1'` and `''` resolve to false for the first group and true for the
- * second — the same values they resolve to today, from one rule instead of two.
+ * `true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off`, case-insensitively and with
+ * surrounding whitespace trimmed. Anything else is not a boolean and falls
+ * back to the declared default, loudly (`OperatorSettingsService.onInvalid`).
+ *
+ * ## Why this got wider, and why the timing is the argument
+ *
+ * It used to be exactly `'true'` | `'false'`, case-sensitive, and that was
+ * defensible while it lasted: it REPRODUCED `configuration.ts`'s two
+ * contradictory idioms — `=== 'true'` for the switches that defaulted off,
+ * `!== 'false'` for the one that defaulted on — from a single rule, so the
+ * migration in #340 could be proved to change nothing.
+ *
+ * ADR-0019 (#439) took that argument away. Under "anything unrecognised falls
+ * back to the default", the direction of the fallback follows the default: a
+ * mistyped value used to mean OFF for every switch that spends money or acts
+ * outwardly, and now means ON. `GITHUB_WRITES_ENABLED=no` is a person stating
+ * an unambiguous intention to keep writes off, and the old rule discarded it
+ * and turned writes on — while they read their own `.env` and believed
+ * otherwise. Fail-safe became fail-dangerous for exactly the four keys where
+ * it matters most.
+ *
+ * The fix is not to narrow the fallback but to stop needing it: a value whose
+ * meaning is unambiguous is honoured. What stays a fallback is what is
+ * genuinely ambiguous — `'enabled'`, `''`, `'2'`, `'maybe'` — and that case is
+ * now reported at ERROR with the value and the value actually in force,
+ * because the cost of getting it wrong went up.
+ *
+ * Deliberately NOT accepted: bare `'y'`/`'n'` (a single letter is as likely a
+ * typo as an intention) and any localisation. The set is the one a shell user
+ * and a docker-compose file already share.
  */
+const BOOLEAN_WORDS = new Map<string, boolean>([
+  ['true', true],
+  ['false', false],
+  ['1', true],
+  ['0', false],
+  ['yes', true],
+  ['no', false],
+  ['on', true],
+  ['off', false],
+]);
+
 function booleanSetting(
   fields: Omit<
     OperatorSettingDefinition<boolean>,
@@ -215,14 +249,25 @@ function booleanSetting(
     ...fields,
     kind: 'boolean',
     nullable: false,
-    schema: z.union([
-      z.boolean(),
-      z
-        .string()
-        .trim()
-        .pipe(z.enum(['true', 'false']))
-        .transform((value) => value === 'true'),
-    ]),
+    // A transform rather than a `z.enum` union, for the message: the union's
+    // own error is the unhelpful "Invalid input", and this value's rejection
+    // is now reported to an operator at ERROR level, so it has to say what
+    // was typed and what would have been accepted.
+    schema: z.union([z.boolean(), z.string()]).transform((value, ctx) => {
+      if (typeof value === 'boolean') return value;
+
+      const parsed = BOOLEAN_WORDS.get(value.trim().toLowerCase());
+      if (parsed === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            `${JSON.stringify(value)} is not a yes/no value; use ` +
+            `true/false, 1/0, yes/no or on/off (case-insensitive)`,
+        });
+        return z.NEVER;
+      }
+      return parsed;
+    }),
   };
 }
 
@@ -469,7 +514,14 @@ export const OPERATOR_SETTINGS = {
 
   'github.writesEnabled': booleanSetting({
     envVar: 'GITHUB_WRITES_ENABLED',
-    default: false,
+    // ON since ADR-0019 (#439). This is the one of the four flipped defaults
+    // with a real cost: VISION §12's observation week stops being what you get
+    // by not opting in and becomes something an operator opts OUT of writing
+    // for. The argument that won is #432 — a release path that never removed
+    // `factory:hold` sat undetected for exactly as long as writes were off,
+    // because an observation week that observes nothing is an absence of
+    // activity mistaken for a safety mechanism.
+    default: true,
     secret: false,
     // #341. Frozen at construction today (github-write.service.ts:79), which
     // is the epic's exit criterion "toggling writes actually changes behaviour
@@ -478,7 +530,7 @@ export const OPERATOR_SETTINGS = {
     group: 'github',
     label: 'GitHub writes enabled',
     dangerous: true,
-    help: 'The global write kill switch. Off records what a write WOULD have done without performing it — VISION §12 requires the reconciler to observe for a week before it may act. Turning it on lets the factory change labels, comments and pull requests on real repositories.',
+    help: 'The global write kill switch, on by default (ADR-0019). On, the factory changes labels, comments and pull requests on the repositories it is pointed at — note that GitHub writes are NOT gated by the spend ceiling, so the reconciler mirrors labels on a fresh install even though no work order can dispatch yet. Turn it off for a VISION §12 observation week: writes are then recorded with what they WOULD have done, and performed by nobody.',
   }),
 
   'github.requestTimeoutMs': integerSetting({
@@ -582,7 +634,14 @@ export const OPERATOR_SETTINGS = {
 
   'runners.claudeCodeLocal.enabled': booleanSetting({
     envVar: 'CLAUDE_CODE_LOCAL_ENABLED',
-    default: false,
+    // ON since ADR-0019 (#439). Enabling this and `dispatch.enabled` one at a
+    // time is still the right way to verify a runner registers HONESTLY before
+    // work is routed to it (RUNBOOK-enable-claude-code-local.md) — what changed
+    // is that it is advice for an operator who wants to check, rather than a
+    // wall every install climbs once and pays for forever. Enabled does not
+    // mean spending: `dispatch.hardSpendCeilingUsd` is unset by default and
+    // refuses every dispatch until somebody names a figure.
+    default: true,
     secret: false,
     // A gate, read at the moment it gates: registration refreshes
     // (runner-registration.service.ts), the dispatch admission path, and the
@@ -595,7 +654,7 @@ export const OPERATOR_SETTINGS = {
     group: 'runner',
     label: 'Local Claude Code runner enabled',
     dangerous: true,
-    help: 'Whether this runner is dispatchable at all. Turning it on lets the control plane spawn Claude Code processes on this machine, which spends real subscription quota. Turning it off stops new dispatches immediately and leaves agents already running alone.',
+    help: 'Whether this runner is dispatchable at all, on by default (ADR-0019). It lets the control plane spawn Claude Code processes on this machine, which spends real subscription quota — though nothing is spawned until a hard spend ceiling is configured. Turning it off stops new dispatches immediately and leaves agents already running alone.',
   }),
 
   'runners.claudeCodeLocal.binary': stringSetting({
@@ -856,7 +915,12 @@ export const OPERATOR_SETTINGS = {
 
   'dispatch.enabled': booleanSetting({
     envVar: 'DISPATCH_ENABLED',
-    default: false,
+    // ON since ADR-0019 (#439). It is no longer the flag that stands between a
+    // fresh install and spending money — `dispatch.hardSpendCeilingUsd` is,
+    // and it is aimed at the hazard itself rather than at a proxy for it. This
+    // one now means what its name says: whether the executor acts on the
+    // decision it just made, or records it.
+    default: true,
     secret: false,
     // A gate evaluated at the moment of the decision
     // (run-executor.service.ts:272, fleet-state.service.ts:496). No copy is
@@ -865,7 +929,7 @@ export const OPERATOR_SETTINGS = {
     group: 'dispatch',
     label: 'Dispatch enabled',
     dangerous: true,
-    help: 'The switch that lets the factory actually spend money. Off, the executor still runs the whole decision and records what it WOULD have dispatched — VISION §12’s observation posture applied to execution. On, the next tick starts real agents against a real subscription, and starting one is not reversible.',
+    help: 'Whether the executor acts on a dispatch decision or only records it, on by default (ADR-0019). Off, the whole decision still runs and the tick reports what it WOULD have dispatched. On, the next tick starts real agents against a real subscription and starting one is not reversible — but only once a hard spend ceiling is set, which on a fresh install it is not.',
   }),
 
   'dispatch.maxConcurrent': nullableIntegerSetting({
@@ -885,7 +949,14 @@ export const OPERATOR_SETTINGS = {
 
   'dispatch.allowPreviewRunner': booleanSetting({
     envVar: 'DISPATCH_ALLOW_PREVIEW_RUNNER',
-    default: false,
+    // ON since ADR-0019 (#439), and the clearest of the four: Opifex ships one
+    // runner, `claude-code-local`, declared `experimental`. ADR-0007's rule
+    // wants a GA fallback that no shipped configuration can provide, so off it
+    // was not a safety rule but a permanent off switch that queued every work
+    // order forever. The rule stays in the code and regains its teeth the
+    // moment a second, GA runner exists — this default is its bypass, not its
+    // deletion.
+    default: true,
     secret: false,
     // Read per dispatch decision (dispatch.service.ts:99); nothing holds a
     // copy.
@@ -893,7 +964,7 @@ export const OPERATOR_SETTINGS = {
     group: 'dispatch',
     label: 'Allow preview-tier runner',
     dangerous: true,
-    help: 'Lets a preview-tier runner be load-bearing when no GA fallback exists (ADR-0007). With a single runner the fallback cannot exist, so without this every work order queues forever. It is a safety rule’s bypass — turn it back off once a GA runner exists.',
+    help: 'Lets a preview-tier runner be load-bearing when no GA fallback exists (ADR-0007). With a single runner the fallback cannot exist, so without this every work order queues forever — which is why it ships on (ADR-0019). It is a safety rule’s bypass, not its removal: turn it back off once a GA runner exists.',
   }),
 
   'dispatch.retryCeiling': integerSetting({
@@ -993,7 +1064,16 @@ export const OPERATOR_SETTINGS = {
 
   'reconciler.enabled': booleanSetting({
     envVar: 'RECONCILER_ENABLED',
-    default: false,
+    // ON since ADR-0019 (#439), and it is the flag that makes the other four
+    // mean anything: `ReconcilerTask.runOnce` gates the WHOLE loop on it —
+    // observation, projection, the liveness sweep, the watchdog, escalations,
+    // notification dispatch, spec feedback AND the dispatch drain. Flipping
+    // dispatch and the runner while this stayed off would have produced a
+    // deployment that still did nothing, with the reason moved rather than
+    // removed. Observation costs GitHub rate-limit budget and nothing else;
+    // what it can lead to is bounded by the hard spend ceiling, which is unset
+    // and refusing, and by each repository's own opt-in flags.
+    default: true,
     secret: false,
     // Read per tick, in two places: `ReconcilerTask.runOnce` gates the whole
     // loop on it, and `reconciler.service.ts` records `skipped-disabled`
@@ -1002,7 +1082,7 @@ export const OPERATOR_SETTINGS = {
     reload: 'live',
     group: 'reconciler',
     label: 'Reconciler enabled',
-    help: 'Whether the reconcile tick observes GitHub and projects desired state. Off, nothing is polled and no rate-limit budget is spent. The next tick honours a change.',
+    help: 'Whether the reconcile tick observes GitHub and projects desired state, on by default (ADR-0019). It gates the entire loop, not just the projection: with it off nothing is polled, no work order is created and the dispatch queue is never drained, so a deployment with this off does nothing at all no matter what else is enabled. On, it costs GitHub rate-limit budget and nothing else — no repository is written to until that repository opts in, and no run starts until a hard spend ceiling is set. The next tick honours a change.',
   }),
 
   'reconciler.intervalMs': integerSetting({
@@ -1130,9 +1210,10 @@ export const OPERATOR_SETTINGS = {
 
   'supervisor.standDownWhenBlocked': booleanSetting({
     envVar: 'SUPERVISOR_STAND_DOWN_WHEN_BLOCKED',
-    // The ONE setting here that defaults on, and therefore the one whose env
-    // form is compared `!== 'false'` today rather than `=== 'true'`. The
-    // registry's single boolean rule reproduces both — see `booleanSetting`.
+    // Defaults on, and was the ONLY setting here that did until ADR-0019
+    // flipped the five posture switches. That is why its env form is compared
+    // `!== 'false'` today rather than `=== 'true'`. The registry's single
+    // boolean rule reproduces both — see `booleanSetting`.
     default: true,
     secret: false,
     // Read per invocation (supervisor.service.ts:299).

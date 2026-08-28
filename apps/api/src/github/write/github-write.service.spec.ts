@@ -1,3 +1,5 @@
+import { Logger } from '@nestjs/common';
+
 import { makeOperatorSettings } from '../../settings/operator-settings/operator-settings.test-double';
 import { GitHubHttpService } from '../github-http.service';
 import { GitHubNotFoundError } from '../github.errors';
@@ -45,16 +47,58 @@ describe('GitHubWriteService', () => {
   });
 
   describe('the kill switch', () => {
-    it('defaults OFF when nothing is configured', () => {
-      // VISION §12's observation week is the default posture, not an opt-in.
-      // No override and no environment, so this asserts the REGISTRY's default
-      // rather than a `?? false` at the call site.
+    it('defaults ON when nothing is configured, since ADR-0019 (#439)', () => {
+      // The reversal this test used to assert the other side of: VISION §12's
+      // observation week is now something an operator turns writes OFF for,
+      // rather than something they get by never turning them on. No override
+      // and no environment, so this is the REGISTRY's default rather than a
+      // `?? true` at the call site.
       const service = new GitHubWriteService(
         http as unknown as GitHubHttpService,
         makeOperatorSettings(),
       );
 
-      expect(service.enabled).toBe(false);
+      expect(service.enabled).toBe(true);
+    });
+
+    it('states the ENABLED posture at boot, so an operator knows writes are live', () => {
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      try {
+        buildLive(http, true);
+
+        expect(warn).not.toHaveBeenCalled();
+        expect(String(log.mock.calls[0]?.[0])).toContain('ENABLED');
+      } finally {
+        log.mockRestore();
+        warn.mockRestore();
+      }
+    });
+
+    it('WARNS about the disabled posture, because it is no longer the default', () => {
+      // The half that flipped with ADR-0019 (#439). While writes were off by
+      // default the only line worth printing was the one saying so; now the
+      // surprising state is a process that records every write and performs
+      // none, and an operator has to be able to find that without turning the
+      // log level up.
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      try {
+        buildLive(http, false);
+
+        expect(log).not.toHaveBeenCalled();
+        const line = String(warn.mock.calls[0]?.[0]);
+        expect(line).toContain('DISABLED');
+        // Names no environment variable: since #348 the value can equally have
+        // come from a Control Center row, and naming GITHUB_WRITES_ENABLED
+        // would send an operator to edit a file that does not decide this.
+        expect(line).not.toContain('GITHUB_WRITES_ENABLED');
+      } finally {
+        log.mockRestore();
+        warn.mockRestore();
+      }
     });
 
     it('issues no HTTP request at all while disabled', async () => {

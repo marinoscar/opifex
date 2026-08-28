@@ -228,7 +228,14 @@ describeIfDb('actionsExecuted, persisted to a real database (#317)', () => {
     const collaborators = noopCollaborators();
 
     const task = new ReconcilerTask(
-      makeOperatorSettings(),
+      // ON, explicitly. `runOnce` gates the whole loop on this, so a task that
+      // resolved it from the registry proves whatever the default happens to
+      // be — and did: while `reconciler.enabled` defaulted off (before
+      // ADR-0019, #439) every test in this file asserted against a tick that
+      // returned at the gate, and the file stayed green only because it is
+      // skipped wherever no database is configured. It is a spec about
+      // actionsExecuted accounting, not about the default.
+      makeOperatorSettings({ overrides: { 'reconciler.enabled': true } }),
       {
         addInterval: jest.fn(),
         doesExist: jest.fn(),
@@ -369,7 +376,8 @@ describeIfDb('actionsExecuted, persisted to a real database (#317)', () => {
     });
 
     const task = new ReconcilerTask(
-      makeOperatorSettings(),
+      // ON, explicitly — see the first `buildTask` above.
+      makeOperatorSettings({ overrides: { 'reconciler.enabled': true } }),
       {
         addInterval: jest.fn(),
         doesExist: jest.fn(),
@@ -500,7 +508,8 @@ describeIfDb('actionsExecuted, persisted to a real database (#317)', () => {
     });
 
     const task = new ReconcilerTask(
-      makeOperatorSettings(),
+      // ON, explicitly — see the first `buildTask` above.
+      makeOperatorSettings({ overrides: { 'reconciler.enabled': true } }),
       {
         addInterval: jest.fn(),
         doesExist: jest.fn(),

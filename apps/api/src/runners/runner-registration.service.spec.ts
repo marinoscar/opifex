@@ -290,10 +290,12 @@ describe('RunnerRegistrationService', () => {
       });
     });
 
-    it('is off when nothing enables it', async () => {
-      // No override and a hermetic environment: the `false` here is the
-      // REGISTRY's declared default, which is where "anything other than true
-      // is off" now lives (see `booleanSetting` in the registry).
+    it('is ON when nothing turns it off, which is what a fresh install registers as', async () => {
+      // No override and a hermetic environment: the `true` here is the
+      // REGISTRY's declared default, flipped by ADR-0019 (#439). A fresh
+      // install therefore registers a DISPATCHABLE runner — and is stopped
+      // from spending by the unset hard spend ceiling instead, which
+      // `test/governing/fresh-install-cannot-spend.spec.ts` pins.
       const runner = {
         capabilities: jest.fn(async () => CAPABILITIES),
       } as unknown as ClaudeCodeLocalRunner;
@@ -305,7 +307,7 @@ describe('RunnerRegistrationService', () => {
         contracts,
       ).onModuleInit();
       expect(runnerUpsert.mock.calls[0][0].update).toMatchObject({
-        enabled: false,
+        enabled: true,
       });
     });
   });
@@ -408,9 +410,9 @@ describe('RunnerRegistrationService', () => {
     });
 
     it('reports both when a disabled runner also has no binary', async () => {
-      // The dev deployment's actual state: the flag defaults off AND `claude`
-      // is not on the container's PATH. An `else if` reported only the flag,
-      // so fixing it bought a second wait and a second investigation.
+      // Both at once: the flag turned off AND no `claude` on the container's
+      // PATH. An `else if` reported only the flag, so fixing it bought a
+      // second wait and a second investigation.
       const warnings = jest
         .spyOn(Logger.prototype, 'warn')
         .mockImplementation();
@@ -426,7 +428,13 @@ describe('RunnerRegistrationService', () => {
 
       const logged = warnings.mock.calls.map((call) => String(call[0]));
       expect(logged).toHaveLength(2);
-      expect(logged.some((line) => line.includes('DISABLED'))).toBe(true);
+      const disabled = logged.find((line) => line.includes('DISABLED'));
+      expect(disabled).toBeDefined();
+      // Since ADR-0019 (#439) the runner ships enabled, so this line is
+      // reporting a decision somebody made rather than a step they have not
+      // taken yet. "Set it to true" reads very differently once true is where
+      // it started, and the message has to say which of the two this is.
+      expect(disabled).toContain('ships enabled');
       expect(logged.some((line) => line.includes('UNAVAILABLE'))).toBe(true);
       warnings.mockRestore();
     });

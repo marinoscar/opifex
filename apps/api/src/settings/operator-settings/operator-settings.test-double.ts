@@ -21,10 +21,16 @@ import {
  * Roughly 200 specs currently stub `ConfigService.get`. When #340 moves a
  * consumer onto `OperatorSettingsService`, every one of those stubs stops
  * being read — and the spec does not fail. It quietly starts exercising the
- * registry's defaults, which for `dispatch.enabled`, `github.writesEnabled`,
- * `reconciler.enabled`, `supervisor.enabled` and the runner are all *off*. A
- * spec written to prove that dispatch happens would then pass by proving that
- * nothing happened.
+ * registry's defaults instead of the ones the spec believed it set.
+ *
+ * Which way that goes wrong changed with ADR-0019 (#439). It used to be that
+ * `dispatch.enabled`, `github.writesEnabled` and the runner were all *off*, so
+ * a spec written to prove that dispatch happens passed by proving nothing
+ * happened. Those three now default *on*, so the mistake inverts: a spec
+ * written to prove that nothing happens — an observation-week posture, a
+ * suppressed write, a runner registered as disabled — is the one that will
+ * pass while the code under test does the opposite. Both directions are the
+ * same defect, and the same fix: state the posture you are testing.
  *
  * Green for the wrong reason is the highest-probability quiet failure in this
  * epic, and it is invisible in review precisely because the diff that causes it
@@ -222,13 +228,15 @@ export class FakeOperatorSettingsService extends OperatorSettingsService {
     key: OperatorSettingKey,
     source: OperatorSettingSource,
     reason: string,
+    raw?: unknown,
+    inForce?: unknown,
   ): void {
     if (source === 'database') {
       throw new Error(
         `makeOperatorSettings: the override for ${key} is invalid (${reason})`,
       );
     }
-    super.onInvalid(key, source, reason);
+    super.onInvalid(key, source, reason, raw, inForce);
   }
 }
 

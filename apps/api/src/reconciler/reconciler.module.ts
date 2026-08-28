@@ -45,8 +45,10 @@ import { TickLeaseService } from './tick-lease.service';
  *    There is no branch in it that could dispatch a run, and
  *    `GitHubWriteService` has no dispatch adapter for it to call.
  *
- * Both flags default off: `GITHUB_WRITES_ENABLED` globally, and
- * `Repository.mirrorLabelsEnabled` per repository. Both must be on.
+ * Two flags, and both must be on: `GITHUB_WRITES_ENABLED` globally, which
+ * ships ON since ADR-0019 (#439), and `Repository.mirrorLabelsEnabled` per
+ * repository, which does not. So the per-repository flag is now the one an
+ * operator opts in with, and no repository is written to until they do.
  */
 @Module({
   imports: [
@@ -77,7 +79,12 @@ import { TickLeaseService } from './tick-lease.service';
     // not by `ReconcilerService` — dispatch is the most consequential action
     // in the system, and the component that decides what should happen must
     // not be able to start a run. Gated twice: `Repository.dispatchEnabled`
-    // per repository and `DISPATCH_ENABLED` globally, both default off.
+    // per repository, which defaults off, and `DISPATCH_ENABLED` globally,
+    // which since ADR-0019 (#439) defaults ON — with the hard spend ceiling,
+    // unset and refusing, as the one thing that keeps a fresh install from
+    // spending. `RECONCILER_ENABLED` defaults on in the same change, so this
+    // drain really does run on a fresh install and really does reach that
+    // refusal, rather than never being called at all.
     DispatchModule,
   ],
   controllers: [ReconcilerController],

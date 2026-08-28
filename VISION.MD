@@ -558,7 +558,22 @@ Validated, versioned, with worked examples.
 
 **Phase 2 — Reconciler, read-only.** Observe and mirror labels. **No dispatch.** Run
 for a week. This is not caution theatre — it surfaces every wrong assumption about
-state transitions before anything can write to a repository.
+state transitions before anything can write to a repository. **Since ADR-0019
+(#439), a fresh install no longer reaches this state by default.** The control
+plane ships ready — the reconciler observing, the runner registered, dispatch
+enabled, GitHub writes permitted — because each of the flags that used to hold
+it back either could never be satisfied (a single-runner fleet can never
+produce the GA fallback its preview-runner rule required) or turned out to
+hide problems rather than catch them (an observation week that never writes
+anything is indistinguishable, from its own log, from one that wrote and
+found nothing wrong). What has not changed is the reasoning above: running a
+repository read-only before trusting it with writes is still the fastest way
+to find a wrong assumption about state transitions, and it is still worth a
+week. What changed is who has to ask for it — an operator who wants this week
+now turns `github.writesEnabled` off deliberately, rather than getting one by
+leaving every switch at its shipped default. The only thing a fresh install
+still refuses on its own is spend: `dispatch.hardSpendCeilingUsd` has no
+default, and no run starts until an operator names one.
 
 **Phase 3 — Liveness and escalation.** Git watcher, event ingestion, watchdog,
 notification path to phone. _This is the phase that solves the original problem._

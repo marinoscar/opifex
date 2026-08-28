@@ -33,7 +33,10 @@ const INTERVAL_NAME = 'runner-registration-tick';
  * real argument for it: a new timer is a new thing to shut down cleanly, and
  * the reconciler is already the loop that recomputes desired state. It is the
  * wrong home anyway, and the reason is mechanical rather than aesthetic: both
- * of those loops SKIP when their own flag is off, and both default off. Since
+ * of those loops SKIP when their own flag is off. That both flags now default
+ * ON (ADR-0019, #439) makes the ordinary case work and changes nothing about
+ * the case this argument is for — an operator who has turned one of them off
+ * is exactly the operator asking why the fleet table is empty. Since
  * #343 they at least still fire — the interval is registered either way and
  * the flag is checked inside the callback — but the body returns immediately,
  * so registration hung off either would still fail to converge on precisely
