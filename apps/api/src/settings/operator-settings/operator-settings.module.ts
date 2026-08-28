@@ -4,8 +4,10 @@ import { ClaudeAuthController } from './claude-auth/claude-auth.controller';
 import { ClaudeAuthService } from './claude-auth/claude-auth.service';
 import { OperatorSettingsController } from './operator-settings.controller';
 import { OperatorSettingsRefreshTask } from './operator-settings-refresh.task';
+import { LegacyModelSettingsMigration } from './legacy-model-settings.migration';
 import { OperatorSettingsEnvDisagreementService } from './operator-settings.env-disagreement';
 import { OperatorSettingsService } from './operator-settings.service';
+import { UnreadableSecretsBootCheck } from './unreadable-secrets.boot';
 import { SupervisorModelCatalogService } from '../../supervisor/invocation/model-catalog.service';
 import { OperatorProbesService } from './probes/operator-probes.service';
 
@@ -64,6 +66,16 @@ import { OperatorProbesService } from './probes/operator-probes.service';
     // module that is loaded. `RetiredSupervisorConfigService` is registered
     // the same way, for the same reason.
     OperatorSettingsEnvDisagreementService,
+    // Both registered after `OperatorSettingsService` and injected by nothing,
+    // like the disagreement reporter above: their whole job happens once, at
+    // startup, and Nest runs their `onModuleInit` after the overlay this
+    // module's own service loads in its (#422).
+    //
+    // The migration first, so that a credential it moves is already in its new
+    // slot by the time the boot check reads every secret and reports what will
+    // not open.
+    LegacyModelSettingsMigration,
+    UnreadableSecretsBootCheck,
   ],
   exports: [OperatorSettingsService],
 })
