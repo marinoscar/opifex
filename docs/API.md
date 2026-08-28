@@ -2023,6 +2023,289 @@ GitHub transaction.
 
 ---
 
+#### `POST /api/steering/proposals`
+
+Turn an operator instruction into a **proposed** diff of GitHub label
+operations (#425, epic #419). Requires `workorders:write` — the same
+permission `POST /api/queue/{workOrderId}/hold` / `/release` enforce, and for
+the same reason `steering.controller.ts` states: this call writes the same
+two labels those two endpoints write, one instruction at a time instead of
+one work order at a time, so a separate `steering:*` permission would let a
+deployment grant one path and not the other while both write to the same
+issues.
+
+**Writes nothing.** It reads the current labels of every issue the
+instruction names (and, for an epic, its children — #424) and returns the
+diff that would express the instruction. Nothing is written until it is
+confirmed with `POST /api/steering/proposals/apply` below.
+
+**Request:**
+
+```json
+{
+  "instruction": "only work on #412 and #418, hold everything else",
+  "repository": "marinoscar/opifex",
+  "maxDepth": 1
+}
+```
+
+| Field         | Type   | Required | Notes                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `instruction` | string | yes      | 1–2000 characters, the operator's sentence verbatim. Echoed into the response and, on apply, into the `audit_events` row.                                                                                                                                                                                                                                                                                    |
+| `repository`  | string | no       | `owner/name`. Resolves a bare `#12`, and bounds which repositories are swept for "everything else" when the instruction is exclusive. Omitted, a bare number resolves against the single registered repository, or is reported `ambiguous-repository` when more than one is registered — guessing which repository a bare number means is exactly the harm `unresolved` exists to report instead of causing. |
+| `maxDepth`    | number | no       | How many levels of an epic to walk, when the instruction names one. Defaults inside `EpicChildrenService` (currently 1) — "everything under this" and "the issues directly listed here" are different instructions, and a transitive walk would silently widen a destructive action beyond what was asked for.                                                                                               |
+
+**The instruction is parsed in code, not by a model, whenever it can be
+(#425).** Explicit issue references (`#412`, `owner/name#412`), epic
+references, the ready/hold verbs and "only"/else-clauses have a grammar, and
+`parseSteeringInstruction` (`steering-instruction.parser.ts`) reads it
+deterministically: no network call, no cost, and — the property that
+actually matters — it cannot hallucinate an issue number the way a model
+asked to extract one occasionally will. VISION §3.1 and §7 put dispatch
+decisions in code for exactly this reason. `interpretation.model` and
+`interpretation.spend` are **`null`** on this path, and that null is itself
+the claim: the chat's model settings were never read for this instruction,
+not merely unreported.
+
+A bare digit run is read as an issue number only when it is **armed** —
+preceded by a scope word (`only`, `work on`, `issues`, `hold`, …) or a filler
+between them and the number. `only do 1, 2 and 3` arms; `fix the 404 handler`
+does not, and `404` comes back in `interpretation.notes` as a number the
+parser declined to read, with the remedy (`#404`) stated, rather than being
+silently treated as `#404`.
+
+**When the parser cannot read the instruction confidently, no model is asked
+either — by design, today, not as an unfinished feature.**
+`interpretation.method` comes back `"none"` and `unresolved` carries one
+entry with `reason: "needs-interpretation"`. `chat-spend-gate.ts` refuses to
+admit a model call unconditionally: a spend ceiling is a _cumulative_ bound
+over a window (the same shape the supervisor's own ceiling takes,
+[ADR-0017](adr/0017-supervisor-spend-ceiling.md)), and the chat has no
+durable tally of what it has already spent to enforce one against —
+`chat.model.defaultMaxTokens` bounds one answer, not a bill run up over a
+thousand instructions. This is a refusal, not a silent no-op:
+`interpretation.model` still reports whether a model _could_ answer
+(`modelReadiness`, #423) and `interpretation.spend` reports that admission
+was refused and why, so an operator who configures `chat.model.name` to fix
+the first does not find nothing changed with no way to tell that the second
+is what is actually stopping them. See
+[`docs/operator-configuration.md`](operator-configuration.md#the-chats-model-a-second-consumer-called-but-not-yet-spending-425).
+
+**"Only" is destructive, and `blastRadius` exists to say so before
+confirmation is asked for.** `only work on 1, 2 and 3` removes
+`factory:ready` from every other open issue in scope that currently carries
+it — intent an operator may have set weeks ago — and `blastRadius.destructive`
+/ `blastRadius.summary` state that in one sentence a UI can render verbatim
+before the operator confirms. Two readings of "only" are parser decisions,
+not defaults: `only work on …` **un-readies** the rest unless the sentence
+also says "hold everything else" (`elseIntent: "hold"` widens the sweep to a
+hold instead of a bare un-ready); `only hold 1, 2` restricts nothing —
+holding the named issues says nothing about the others, so `exclusive` comes
+back `false` even though the sentence contains the word "only".
+
+**Response — `200`, per `SteeringProposalDto`:**
+
+```json
+{
+  "data": {
+    "proposalId": "3f2a1c9e-7b41-4e2a-9c3d-8a1f2b6e9d10",
+    "proposedAt": "2026-08-23T03:00:00.000Z",
+    "expiresAt": "2026-08-23T03:30:00.000Z",
+    "instruction": "only work on #412 and #418, hold everything else",
+    "interpretation": {
+      "method": "deterministic",
+      "modelInvoked": false,
+      "notes": [
+        "Read as: work exclusively on the named issues, and apply factory:hold to every other issue currently marked factory:ready."
+      ],
+      "ambiguity": null,
+      "model": null,
+      "spend": null
+    },
+    "scope": {
+      "intent": "ready",
+      "exclusive": true,
+      "elseIntent": "hold",
+      "repositories": ["marinoscar/opifex"],
+      "candidatesConsidered": 12,
+      "epics": []
+    },
+    "operations": [
+      {
+        "ref": "marinoscar/opifex#412",
+        "owner": "marinoscar",
+        "name": "opifex",
+        "number": 412,
+        "title": "Add a permit search prompt builder",
+        "add": ["factory:ready"],
+        "remove": [],
+        "observedInputLabels": [],
+        "reason": "Named by the instruction as work to do.",
+        "named": true
+      }
+    ],
+    "blastRadius": {
+      "issuesAffected": 10,
+      "named": 2,
+      "collateral": 8,
+      "labelsAdded": 10,
+      "labelsRemoved": 8,
+      "unreadied": 0,
+      "readied": 2,
+      "held": 8,
+      "destructive": true,
+      "summary": "This will mark 2 issues ready. This will hold 8 issues."
+    },
+    "unresolved": []
+  }
+}
+```
+
+| Field                              | Meaning                                                                                                                                                                                                                     |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `expiresAt`                        | `proposedAt` + 30 minutes. `POST /api/steering/proposals/apply` refuses this proposal past this instant — see below.                                                                                                        |
+| `operations[].add` / `.remove`     | Carried separately, never folded together, because removals are the destructive half of the diff and #425 requires they be at least as visible as additions.                                                                |
+| `operations[].observedInputLabels` | The recognised `factory:` labels on the issue at propose time — the baseline apply re-checks against. Carried on the wire, never stored, so nothing server-side becomes a second source of truth for GitHub's own labels.   |
+| `operations[].named`               | `true` for an issue the operator actually named; `false` for one caught by an "only" sweep — the 17 collateral issues an "only" clause touches are not what the operator was thinking about when they typed the sentence.   |
+| `blastRadius.destructive`          | `true` when anything anywhere in the diff is removed. Render the confirmation warning off this field, not off the presence of a non-empty `remove` array.                                                                   |
+| `unresolved[].reason`              | One of `issue-not-found`, `issue-closed`, `is-pull-request`, `repository-not-registered`, `ambiguous-repository`, `unreadable`, `needs-interpretation` — an outcome an operator can read and act on, never a request error. |
+
+**`404`** if `repository` names a repository Opifex does not observe.
+
+---
+
+#### `POST /api/steering/proposals/apply`
+
+Apply a confirmed proposal (#425). Requires `workorders:write` **and an
+interactive session** (`interactive: true`, #346): a personal access token or
+a device-flow token is refused with `403`, exactly as at `PATCH
+/api/operator-settings`
+([`docs/SECURITY-ARCHITECTURE.md`](SECURITY-ARCHITECTURE.md#operator-settings-writes-require-an-interactive-session-346)) —
+this is the one call in the API where a sentence typed by a person becomes an
+unbounded number of label writes, including removals of intent someone set
+deliberately weeks ago, and a confirmation a script can send is not a
+confirmation. `POST /api/steering/proposals` above carries no such
+requirement: proposing and reading stay open to every credential, because
+nothing about seeing a diff writes a label.
+
+**The client sends the proposal back — there is nowhere it was kept.**
+Opifex stores no scope of its own; the proposal is returned to the caller by
+the propose call and handed back on apply rather than referenced by id. The
+request body echoes `proposalId`, `proposedAt` and `instruction` from the
+proposal, and every `operations[]` entry that should be carried out —
+including its `observedInputLabels`, which is the baseline this call
+re-checks against.
+
+**Request:**
+
+```json
+{
+  "proposalId": "3f2a1c9e-7b41-4e2a-9c3d-8a1f2b6e9d10",
+  "proposedAt": "2026-08-23T03:00:00.000Z",
+  "instruction": "only work on #412 and #418, hold everything else",
+  "operations": [
+    {
+      "owner": "marinoscar",
+      "name": "opifex",
+      "number": 412,
+      "add": ["factory:ready"],
+      "remove": [],
+      "observedInputLabels": []
+    }
+  ]
+}
+```
+
+**Every issue is re-read before anything is written.** One conditional GET
+per operation, compared against `observedInputLabels`. An issue whose
+recognised `factory:` labels changed since the proposal was made is
+**skipped and reported, never applied** — the operator confirmed a diff
+against a specific picture of the world, and a stale apply would silently
+reverse a decision somebody made in the meantime, such as a hand-applied
+`factory:hold` on an issue this proposal is about to mark ready. **Drift
+skips that one operation only, never the batch** — aborting the whole apply
+would let one unrelated edit discard nineteen correct operations, and the
+operator's only recourse would be to re-propose and race again. The
+comparison is scoped to the recognised `factory:` input labels and nothing
+else: comparing every label on the issue would report an unrelated `bug`
+label as drift and bury the check in noise; comparing only the labels an
+operation itself touches would miss the case that matters most.
+
+**`409`** if the proposal is more than 30 minutes old
+(`PROPOSAL_TTL_MINUTES`). Nothing has been written; ask for a new proposal —
+re-proposing costs nothing.
+
+**Only `factory:ready` and `factory:hold` may be sent.** `factory:clear-quarantine`
+is rejected by validation before any service sees it, for the same reason
+there is no `POST /api/queue/{workOrderId}/clear-quarantine`: #49 requires a
+human apply that label directly on GitHub, where the applier's identity is
+native and verifiable from the issue timeline. Accepting it here would
+launder the actor through the Opifex token and make VISION §8's rule that an
+agent cannot clear its own quarantine unenforceable.
+
+**Response — `202`, per `SteeringApplyResultDto`, unconditionally, whether or
+not any label reached GitHub:**
+
+```json
+{
+  "data": {
+    "proposalId": "3f2a1c9e-7b41-4e2a-9c3d-8a1f2b6e9d10",
+    "applied": [
+      {
+        "ref": "marinoscar/opifex#412",
+        "add": ["factory:ready"],
+        "remove": [],
+        "writes": [
+          {
+            "label": "factory:ready",
+            "operation": "add",
+            "performed": true,
+            "noop": false
+          }
+        ]
+      }
+    ],
+    "skipped": [
+      {
+        "ref": "marinoscar/opifex#419",
+        "reason": "drift",
+        "detail": "The factory labels on marinoscar/opifex#419 changed after the proposal was made, so this operation was not applied. Ask for a new proposal to see the current picture.",
+        "drift": [
+          { "label": "factory:hold", "wasPresent": false, "isPresent": true }
+        ]
+      }
+    ],
+    "labelWritten": true,
+    "writesEnabled": true,
+    "reconciled": false,
+    "effect": "The labels are the request. They take effect on the next reconciler tick.",
+    "summary": {
+      "operationsRequested": 2,
+      "operationsApplied": 1,
+      "operationsSkipped": 1,
+      "labelWrites": 1,
+      "labelWritesPerformed": 1
+    }
+  }
+}
+```
+
+| Field              | Meaning                                                                                                                                                                                             |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `labelWritten`     | Whether any label actually reached GitHub — `false` when `github.writesEnabled` is off. The same vocabulary `POST /api/queue/{workOrderId}/hold` uses; check this field, not the `202` status code. |
+| `writesEnabled`    | The kill switch as it stood for this call.                                                                                                                                                          |
+| `reconciled`       | Always `false`. Reconciliation is a later tick's job, never this call's.                                                                                                                            |
+| `skipped[].reason` | One of `drift`, `issue-not-found`, `issue-closed`, `is-pull-request`, `repository-not-registered`.                                                                                                  |
+
+**Audited regardless of outcome.** An `audit_events` row (`steering.apply`)
+is written after the writes and before the response, whether or not any
+label reached GitHub, recording the instruction, the summary, and which refs
+were applied or skipped. This is the one piece of state this feature
+persists — a record of an action taken, not something anything reads back:
+the factory behaves identically if every row is deleted.
+
+---
+
 #### `GET /api/runs`
 
 Runs, newest first. Requires `runs:read`.
