@@ -9,6 +9,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -42,6 +43,7 @@ import {
   SupervisorModelCatalogService,
   type SupervisorModelCatalog,
 } from '../../supervisor/invocation/model-catalog.service';
+import { ModelCatalogQueryDto } from './dto/model-catalog-query.dto';
 import { SupervisorModelCatalogDto } from './dto/supervisor-model-catalog.dto';
 import { OperatorProbesService } from './probes/operator-probes.service';
 import {
@@ -226,12 +228,18 @@ export class OperatorSettingsController {
   @ApiOperation({
     summary: 'List the models the configured supervisor key can reach',
     description:
-      'Asks the configured provider (`supervisor.model.provider`) what that provider’s own key ' +
-      '(`models.<provider>.apiKey`) can actually reach, so that `supervisor.model.name` can be ' +
-      'chosen from a list rather than typed from memory. Both settings are read per request, ' +
-      'so a key or a provider saved a moment ago is the one used here — and since #422 the ' +
-      'credential is selected BY the provider, so switching provider lists the models the ' +
-      'other stored key reaches rather than re-testing the same one.\n\n' +
+      'Asks the provider one consumer is set to (`<consumer>.model.provider`) what that ' +
+      'provider’s own key (`models.<provider>.apiKey`) can actually reach, so that ' +
+      '`<consumer>.model.name` can be chosen from a list rather than typed from memory. Both ' +
+      'settings are read per request, so a key or a provider saved a moment ago is the one ' +
+      'used here — and since #422 the credential is selected BY the provider, so switching ' +
+      'provider lists the models the other stored key reaches rather than re-testing the same ' +
+      'one.\n\n' +
+      '**`consumer` says whose selection to read** (#423). The supervisor and the chat choose ' +
+      'a provider and a model independently, so this is asked once per consumer and the answer ' +
+      'echoes the `consumer` it was asked for — two lists held at once must not be able to ' +
+      'land under each other. It defaults to `supervisor`, which is what the route meant ' +
+      'before there was a second consumer.\n\n' +
       '**This spends no tokens.** A model listing bills nothing on either provider, which ' +
       'makes it a credential check that costs nothing — unlike ' +
       '`POST /api/operator-settings/probes/supervisor-model`, which deliberately makes a real, ' +
@@ -255,8 +263,10 @@ export class OperatorSettingsController {
   @ApiDataResponse(SupervisorModelCatalogDto, {
     description: 'What the provider answered, or why it did not',
   })
-  listSupervisorModels(): Promise<SupervisorModelCatalog> {
-    return this.supervisorModels.list();
+  listSupervisorModels(
+    @Query() query: ModelCatalogQueryDto,
+  ): Promise<SupervisorModelCatalog> {
+    return this.supervisorModels.list(query.consumer);
   }
 
   @Post('probes/:probe')

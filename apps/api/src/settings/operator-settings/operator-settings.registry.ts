@@ -120,6 +120,12 @@ export const OPERATOR_SETTING_GROUPS = [
   // make the second consumer #419 adds look like a supervisor setting.
   'models',
   'supervisor',
+  // The chat's own model selection (#423). A group of its own rather than
+  // rows in `supervisor`, for the same reason `models` is not in `supervisor`
+  // either: a second consumer filed under the first one reads as a supervisor
+  // setting, and an operator looking for why the chat answered on the wrong
+  // model would go looking in the wrong section.
+  'chat',
   'promotion',
   'notifications',
 ] as const;
@@ -1173,6 +1179,107 @@ export const OPERATOR_SETTINGS = {
     label: 'Supervisor ceiling window (days)',
     dangerous: true,
     help: 'ONE day by default, where the dispatch ceiling defaults to thirty, because supervisor spend is near-constant per tick and set almost entirely by which model SUPERVISOR_MODEL_NAME names. A month-long window would be slow to catch a switch to a model fifteen times the rate, and slow to recover — leaving the supervisor dark for up to a month is the "absent when things are going wrong" failure this ceiling exists to avoid, self-inflicted.',
+  }),
+
+  // -------------------------------------------------------------------------
+  // The steering chat's model (#423, epic #419)
+  //
+  // The SECOND model consumer, and the four keys below are the supervisor's
+  // four with a different prefix — deliberately, because they are read by the
+  // same `resolveModelConfig(settings, consumer)` and a key it could not
+  // template a name for would need a second read path.
+  //
+  // They are written out here rather than generated from `MODEL_CONSUMERS`,
+  // which is the opposite of the choice `modelCredentialSettings()` makes one
+  // section up, and the reason is not symmetry but audience. A credential slot
+  // says the same thing about every vendor, so generating it loses nothing;
+  // `help` for a consumer has to say what THAT consumer does with the value,
+  // and a generated sentence covering both would say nothing useful about
+  // either. Nothing is left to drift: `supervisor-model.config.ts` derives
+  // every key name and every variable name from the consumer id, `settings
+  // .get` is typed by these declarations so a missing row fails to compile,
+  // and `operator-settings.registry.spec.ts` asserts the derivations against
+  // what is written below, per consumer.
+  //
+  // Note what is NOT here: a chat spend ceiling. The supervisor has one and
+  // refuses to run without it (#261), and the chat will need the same
+  // treatment once #425 gives it a caller that can spend. It has no caller
+  // yet, so a ceiling now would guard nothing and would have to be designed
+  // against a consumer that does not exist.
+  // -------------------------------------------------------------------------
+
+  'chat.model.provider': enumSetting({
+    envVar: 'CHAT_MODEL_PROVIDER',
+    // The same single declaration the supervisor's provider takes its values
+    // from. Two consumers, one vocabulary, still no vendor named here.
+    values: SUPERVISOR_MODEL_PROVIDERS,
+    default: DEFAULT_SUPERVISOR_MODEL_PROVIDER,
+    secret: false,
+    // Resolved per request by `resolveModelConfig`, which caches nothing, so
+    // the next request honours a change. Nothing may hold a copy of this
+    // across requests; a consumer that did would be the bug #344 removed.
+    reload: 'live',
+    group: 'chat',
+    label: 'Chat model provider',
+    dangerous: true,
+    help: 'Which vendor the steering chat asks, chosen independently of the supervisor — instruction parsing is small, frequent and latency-sensitive where a supervisory judgement is occasional and wants the stronger model. It SELECTS a credential rather than being paired with one: the key and the base URL come from the Model credentials section’s slot for the provider named here, so the two consumers can sit on different vendors at the same time and neither switch re-enters a key. Dangerous because it changes which vendor is billed, and because selecting a provider you have not given a key to leaves the chat with nothing to ask.',
+  }),
+
+  'chat.model.name': stringSetting({
+    envVar: 'CHAT_MODEL_NAME',
+    // EMPTY, and empty is the whole of the chat's off switch. A default naming
+    // a real model would make an upgrade start spending on a second metered
+    // consumer in every deployment that already holds a key, silently, which
+    // is exactly what `supervisor.enabled` defaults to false to prevent.
+    default: '',
+    allowEmpty: true,
+    secret: false,
+    reload: 'live',
+    group: 'chat',
+    label: 'Chat model',
+    // Dangerous where `supervisor.model.name` is not, and the asymmetry is the
+    // point: the supervisor has `supervisor.enabled` to turn it on, so naming
+    // its model spends nothing on its own. The chat has no separate switch —
+    // naming a model here IS turning it on — so this is the field that starts
+    // the spending, and the Control Center should ask before moving it.
+    dangerous: true,
+    help: 'Sent verbatim as the request’s `model` field, exactly as the supervisor’s is, and chosen independently of it. EMPTY IS THE CHAT’S OFF SWITCH: with no model named the chat is inert and reports itself unconfigured rather than failing at the first instruction, so a deployment that has not decided to run one never starts spending because a default said yes. A model named here with no key stored for the selected provider is also inert, and says which of the two is missing.',
+  }),
+
+  'chat.model.timeoutMs': integerSetting({
+    envVar: 'CHAT_MODEL_TIMEOUT_MS',
+    // Half the supervisor's, because somebody is waiting on this one.
+    default: 30_000,
+    min: 1_000,
+    // 55s, NOT the supervisor's 600s, and the number is taken from
+    // `infra/nginx/nginx.conf`: `proxy_read_timeout 60s` sits in front of
+    // /api, so a chat request allowed to run longer is answered by the proxy
+    // with a 504 that says nothing about the model. Capping under it keeps
+    // the API's own abort the thing that fires, so the operator reads "no
+    // answer within 30000ms" instead of a gateway error with no cause.
+    max: 55_000,
+    secret: false,
+    reload: 'live',
+    group: 'chat',
+    label: 'Chat model timeout (ms)',
+    help: 'How long one chat turn may wait for the model before it is abandoned. Applies to the next request; a request already in flight keeps its own signal. Deliberately shorter than the supervisor’s: an hourly judgement nobody is watching can afford a generous minute, and an operator staring at a text box cannot. The ceiling is under the 60s `proxy_read_timeout` in front of this API, so a slow answer is reported as a timeout with a number in it rather than as a gateway error.',
+  }),
+
+  'chat.model.defaultMaxTokens': integerSetting({
+    envVar: 'CHAT_MODEL_DEFAULT_MAX_TOKENS',
+    // Twice the supervisor's, for a different answer shape: a supervisory
+    // judgement is a paragraph, and a proposed label diff over a twenty-issue
+    // backlog is a list whose length is the size of the backlog. A ceiling
+    // that truncates the proposal is worse than one that costs a little more,
+    // because a truncated list of operations looks like a complete one.
+    default: 2_048,
+    min: 1,
+    max: 200_000,
+    secret: false,
+    reload: 'live',
+    group: 'chat',
+    label: 'Chat default max tokens',
+    help: 'Both providers require a ceiling on every request, so there is no “unlimited”. Used only when the caller does not set its own. Higher than the supervisor’s because the answers have different shapes: a judgement is a paragraph, a proposed label diff is a list as long as the backlog it covers, and a truncated list of operations reads exactly like a complete one.',
   }),
 
   // -------------------------------------------------------------------------

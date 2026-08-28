@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BASE_URL_PLACEHOLDER,
   admissionPresentation,
-  buildSupervisorModelPatch,
+  buildModelPatch,
   catalogStatusPresentation,
   configuredModelState,
   isModelPanelSetting,
@@ -23,7 +23,7 @@ import {
   modelCredentialSlots,
   modelLabel,
   modelOptions,
-  seedSupervisorModelDraft,
+  seedModelDraft,
   selectedSlot,
   unselectedSlots,
 } from '../../config/supervisorModel';
@@ -68,6 +68,12 @@ describe('supervisorModel', () => {
         'models.openai.baseUrl',
         'supervisor.model.provider',
         'supervisor.model.name',
+        // EVERY consumer's pair, not the supervisor's alone (#423). The chat
+        // choosing its model from a free-text box while the supervisor picks
+        // from a filtered list is the asymmetry this issue removes, and it is
+        // this predicate that decides which of the two a key gets.
+        'chat.model.provider',
+        'chat.model.name',
       ]);
     });
 
@@ -90,6 +96,9 @@ describe('supervisorModel', () => {
       for (const key of [
         'supervisor.hardSpendCeilingUsd',
         'supervisor.hardSpendCeilingWindowDays',
+        // A timeout is not part of choosing a model, so the chat's numeric
+        // knobs stay generated rows in the Chat group (#423).
+        'chat.model.timeoutMs',
         'github.token',
       ]) {
         expect(
@@ -168,9 +177,13 @@ describe('supervisorModel', () => {
 
   describe('What a save sends', () => {
     it('sends nothing when nothing moved', () => {
-      const draft = seedSupervisorModelDraft(OPERATOR_SETTINGS_FIXTURE);
+      const draft = seedModelDraft(
+        OPERATOR_SETTINGS_FIXTURE,
+        'supervisor',
+        true,
+      );
       expect(
-        buildSupervisorModelPatch(OPERATOR_SETTINGS_FIXTURE, draft),
+        buildModelPatch(OPERATOR_SETTINGS_FIXTURE, 'supervisor', draft),
       ).toEqual({});
     });
 
@@ -179,23 +192,23 @@ describe('supervisorModel', () => {
       // string and its MEANING is "follow the provider". A form that submitted
       // every field it rendered would pin it on the first unrelated save.
       const draft = {
-        ...seedSupervisorModelDraft(OPERATOR_SETTINGS_FIXTURE),
+        ...seedModelDraft(OPERATOR_SETTINGS_FIXTURE, 'supervisor', true),
         name: 'claude-opus-4-6',
       };
 
       expect(
-        buildSupervisorModelPatch(OPERATOR_SETTINGS_FIXTURE, draft),
+        buildModelPatch(OPERATOR_SETTINGS_FIXTURE, 'supervisor', draft),
       ).toEqual({ 'supervisor.model.name': 'claude-opus-4-6' });
     });
 
     it('sends the base URL when the operator actually typed one', () => {
       const draft = {
-        ...seedSupervisorModelDraft(OPERATOR_SETTINGS_FIXTURE),
+        ...seedModelDraft(OPERATOR_SETTINGS_FIXTURE, 'supervisor', true),
         baseUrl: 'https://gateway.internal/v1',
       };
 
       expect(
-        buildSupervisorModelPatch(OPERATOR_SETTINGS_FIXTURE, draft),
+        buildModelPatch(OPERATOR_SETTINGS_FIXTURE, 'supervisor', draft),
       ).toEqual({
         'models.anthropic.baseUrl': 'https://gateway.internal/v1',
       });
@@ -207,23 +220,23 @@ describe('supervisorModel', () => {
       // credential to another vendor's proxy — the confusion #422 removed
       // from the key, rebuilt one field over.
       const draft = {
-        ...seedSupervisorModelDraft(OPENAI_SELECTED),
+        ...seedModelDraft(OPENAI_SELECTED, 'supervisor', true),
         baseUrl: 'https://gateway.internal/v1',
       };
 
-      expect(buildSupervisorModelPatch(OPENAI_SELECTED, draft)).toEqual({
+      expect(buildModelPatch(OPENAI_SELECTED, 'supervisor', draft)).toEqual({
         'models.openai.baseUrl': 'https://gateway.internal/v1',
       });
     });
 
     it('sends an empty model as an empty string, which stores "no model"', () => {
       const draft = {
-        ...seedSupervisorModelDraft(OPERATOR_SETTINGS_FIXTURE),
+        ...seedModelDraft(OPERATOR_SETTINGS_FIXTURE, 'supervisor', true),
         name: '',
       };
 
       expect(
-        buildSupervisorModelPatch(OPERATOR_SETTINGS_FIXTURE, draft),
+        buildModelPatch(OPERATOR_SETTINGS_FIXTURE, 'supervisor', draft),
       ).toEqual({ 'supervisor.model.name': '' });
     });
 
@@ -233,12 +246,16 @@ describe('supervisorModel', () => {
       );
 
       expect(
-        buildSupervisorModelPatch(without, { name: 'x', baseUrl: 'y' }),
+        buildModelPatch(without, 'supervisor', { name: 'x', baseUrl: 'y' }),
       ).toEqual({ 'supervisor.model.name': 'x' });
     });
 
     it('never sends the placeholder, whatever else happens', () => {
-      const draft = seedSupervisorModelDraft(OPERATOR_SETTINGS_FIXTURE);
+      const draft = seedModelDraft(
+        OPERATOR_SETTINGS_FIXTURE,
+        'supervisor',
+        true,
+      );
       expect(draft.baseUrl).toBe('');
       expect(draft.baseUrl).not.toBe(BASE_URL_PLACEHOLDER);
     });

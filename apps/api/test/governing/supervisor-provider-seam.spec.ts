@@ -7,11 +7,13 @@ import {
 } from '../../src/settings/operator-settings/operator-settings.registry';
 import {
   DEFAULT_SUPERVISOR_MODEL_PROVIDER,
+  MODEL_CONSUMERS,
   SUPERVISOR_MODEL_PROVIDERS,
   modelApiKeyEnvVar,
   modelApiKeySettingKey,
   modelBaseUrlEnvVar,
   modelBaseUrlSettingKey,
+  modelProviderSettingKey,
 } from '../../src/supervisor/invocation/supervisor-model.config';
 
 /**
@@ -179,24 +181,57 @@ describe('GOVERNING TEST: the supervisor model seam names no vendor (#392)', () 
   });
 
   describe('the settings layer takes the vocabulary from invocation/', () => {
-    it('offers exactly the providers there are adapters for', () => {
+    it('offers exactly the providers there are adapters for, to EVERY consumer', () => {
       // Not a copy that happens to agree today. `values` IS the exported
       // array, so a third adapter appears in the Control Center's dropdown
       // without anyone remembering to widen the registry — and, more to the
       // point, a provider cannot appear there that no adapter implements.
-      expect(OPERATOR_SETTINGS['supervisor.model.provider'].values).toBe(
-        SUPERVISOR_MODEL_PROVIDERS,
-      );
+      //
+      // Asserted per consumer since #423, by IDENTITY rather than by value.
+      // A second consumer is exactly where a hand-written vendor list would
+      // reappear: writing `values: ['anthropic', 'openai']` into the chat's
+      // row would satisfy every regex above — the strings sit inside an array
+      // literal that the rules do scan, but a `toEqual` here would pass on a
+      // copy that agrees today and drifts on the day a third adapter lands.
+      // `toBe` is what makes the registry take the vocabulary rather than
+      // restate it.
+      expect(MODEL_CONSUMERS.length).toBeGreaterThan(1);
+
+      for (const consumer of MODEL_CONSUMERS) {
+        expect(
+          OPERATOR_SETTINGS[modelProviderSettingKey(consumer)].values,
+        ).toBe(SUPERVISOR_MODEL_PROVIDERS);
+      }
     });
 
-    it('defaults to the provider ADR-0015 shipped, so nothing changes for an existing deployment', () => {
+    it('defaults every consumer to the provider ADR-0015 shipped, so nothing changes for an existing deployment', () => {
       // #392's first acceptance criterion. A default that changed which vendor
       // an unchanged deployment calls would be a silent outage at best, and a
-      // call billed to the wrong account at worst.
-      expect(OPERATOR_SETTINGS['supervisor.model.provider'].default).toBe(
-        DEFAULT_SUPERVISOR_MODEL_PROVIDER,
-      );
+      // call billed to the wrong account at worst. The chat inherits the same
+      // default for a weaker but real reason: it is inert until a model is
+      // named, so the provider it starts on decides only which credential
+      // slot an operator is offered first.
+      for (const consumer of MODEL_CONSUMERS) {
+        expect(
+          OPERATOR_SETTINGS[modelProviderSettingKey(consumer)].default,
+        ).toBe(DEFAULT_SUPERVISOR_MODEL_PROVIDER);
+      }
       expect(DEFAULT_SUPERVISOR_MODEL_PROVIDER).toBe('anthropic');
+    });
+
+    it('gives a consumer no credential of its own to name a vendor with', () => {
+      // The credential/consumer split, stated as the absence it is (#422,
+      // #423). A `chat.model.apiKey` would not name a vendor in its KEY, so
+      // the regexes above would not fire — and it would still be the thing
+      // both issues exist to prevent: a credential that belongs to a consumer
+      // instead of to the provider it is sent to.
+      const consumerCredentials = OPERATOR_SETTING_KEYS.filter(
+        (key) =>
+          MODEL_CONSUMERS.some((consumer) => key.startsWith(`${consumer}.`)) &&
+          (key.endsWith('.apiKey') || key.endsWith('.baseUrl')),
+      );
+
+      expect(consumerCredentials).toEqual([]);
     });
 
     it('offers one credential slot per provider, generated from the same list', () => {

@@ -130,7 +130,7 @@ describe('SettingsSection', () => {
       ).toBeInTheDocument();
     });
 
-    it('shows the supervisor model keys as a signpost, not as controls', async () => {
+    it('shows every consumer’s model keys as a signpost, not as controls', async () => {
       // The one deliberate exception to "every key renders here", and the
       // reason it exists: a free-text model box on this tab is precisely the
       // split epic #391 removes. Leaving one behind would recreate it at half
@@ -144,7 +144,11 @@ describe('SettingsSection', () => {
       const promoted = OPERATOR_SETTINGS_FIXTURE.filter(isModelPanelSetting);
       // Not a hard-coded list: the promoted set is derived from the response,
       // so this guards against the filter silently matching nothing.
-      expect(promoted.length).toBe(6);
+      // Eight since #423: the four credential slots, and the provider and
+      // model of each of the two consumers. The chat's pair is promoted for
+      // the same reason the supervisor's is — a model is chosen from what the
+      // provider lists, and there is no list on this tab.
+      expect(promoted.length).toBe(8);
 
       for (const entry of promoted) {
         expect(screen.queryByLabelText(entry.key)).not.toBeInTheDocument();
@@ -159,13 +163,18 @@ describe('SettingsSection', () => {
         screen.getByRole('heading', { name: 'Model credentials' }),
       ).toBeInTheDocument();
 
-      // One signpost per GROUP that lost rows — the credential slots and the
-      // supervisor's own two keys — so an operator finds the pointer in
-      // whichever group they went looking in.
+      // One signpost per GROUP that lost rows — the credential slots, the
+      // supervisor's own two keys and now the chat's (#423) — so an operator
+      // finds the pointer in whichever group they went looking in.
       const signposts = screen.getAllByRole('button', {
         name: 'Go to Credentials',
       });
-      expect(signposts).toHaveLength(2);
+      expect(signposts).toHaveLength(3);
+
+      // The Chat group keeps its own heading and its unpromoted rows: a
+      // timeout is not part of choosing a model, so it stays a control here.
+      expect(screen.getByRole('heading', { name: 'Chat' })).toBeInTheDocument();
+      expect(screen.getByLabelText('chat.model.timeoutMs')).toBeInTheDocument();
 
       await user.click(signposts[0]);
       expect(onNavigateToSection).toHaveBeenCalledWith('credentials');

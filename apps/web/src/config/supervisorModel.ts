@@ -40,6 +40,25 @@
  *    bug this split removes and a screen that stops mentioning it looks
  *    identical to one that did.
  *
+ * ## The consumer is a PARAMETER, not a second copy of this file (#423)
+ *
+ * There are now two things that select a provider and a model — the
+ * supervisor and the chat — and they select independently, because
+ * instruction parsing is small and latency-sensitive where a supervisory
+ * judgement is occasional and wants the stronger model. `supervisor.model.*`
+ * and `chat.model.*` are the same two keys with a different prefix, so every
+ * lookup here takes the consumer as an argument and TEMPLATES the key, the
+ * way `resolveModelConfig` does in the API. A second set of helpers for the
+ * chat would be a second place to change when a field is added, and the one
+ * that gets missed is the one that keeps working with a stale value.
+ *
+ * The consumers themselves are DISCOVERED from the response — any key of the
+ * form `<consumer>.model.provider` is one — for the same reason the credential
+ * slots are: a consumer added to the API arrives with its own panel and its
+ * own dropdown with no edit here, and `apps/web` still declares no list of
+ * them. What is NOT a function of the consumer is the credential: one key per
+ * provider, shared, so nothing here ever builds a `<consumer>.model.apiKey`.
+ *
  * ## The three admission marks, and the tone of the middle one
  *
  * `version_unrecognised` must read as *the filter could not judge this*, never
@@ -76,8 +95,85 @@ import type {
 // The keys this control owns — one of which is a FUNCTION of another (#422)
 // ---------------------------------------------------------------------------
 
-export const SUPERVISOR_PROVIDER_KEY = 'supervisor.model.provider';
-export const SUPERVISOR_MODEL_NAME_KEY = 'supervisor.model.name';
+/**
+ * The consumer that has always been here, named once (#423).
+ *
+ * Used for two things and nothing else: the default argument on every lookup
+ * below, so that code which can only ever mean the supervisor does not have to
+ * say so five times; and the choice of which panel carries the shared
+ * credential cards, which is not derivable from the response — see
+ * `credentialOwner`.
+ */
+export const SUPERVISOR_CONSUMER = 'supervisor';
+
+/** The settings key naming one consumer's provider. Mirrors the API's. */
+export function modelProviderSettingKey(consumer: string): string {
+  return `${consumer}.model.provider`;
+}
+
+/** The settings key naming one consumer's model. Mirrors the API's. */
+export function modelNameSettingKey(consumer: string): string {
+  return `${consumer}.model.name`;
+}
+
+export const SUPERVISOR_PROVIDER_KEY =
+  modelProviderSettingKey(SUPERVISOR_CONSUMER);
+export const SUPERVISOR_MODEL_NAME_KEY =
+  modelNameSettingKey(SUPERVISOR_CONSUMER);
+
+/** `<consumer>.model.<provider|name>`, and nothing else. */
+const MODEL_CONSUMER_KEY = /^([a-z][A-Za-z0-9]*)\.model\.(provider|name)$/;
+
+/** The consumer a model key belongs to, or null if it is not one. */
+export function modelConsumerOf(key: string): string | null {
+  return MODEL_CONSUMER_KEY.exec(key)?.[1] ?? null;
+}
+
+/**
+ * Every consumer the response carries, DISCOVERED rather than listed.
+ *
+ * Read off the `<consumer>.model.provider` keys, in the order the API sent
+ * them — which is registry order, and therefore the order the API considers
+ * these in. A consumer that publishes a provider but no model name still
+ * counts: the panel renders what is there and says what is not, which is
+ * strictly better than dropping a consumer an operator can see is configured.
+ */
+export function modelConsumers(settings: readonly OperatorSetting[]): string[] {
+  const found: string[] = [];
+
+  for (const entry of settings) {
+    const consumer = modelConsumerOf(entry.key);
+    if (consumer === null) continue;
+    if (entry.key !== modelProviderSettingKey(consumer)) continue;
+    if (!found.includes(consumer)) found.push(consumer);
+  }
+
+  return found;
+}
+
+/** How a consumer is written in a heading: `chat` → `Chat`. */
+export function consumerLabel(consumer: string): string {
+  return consumer.charAt(0).toUpperCase() + consumer.slice(1);
+}
+
+/**
+ * Which consumer's panel carries the shared credential cards.
+ *
+ * A key belongs to a PROVIDER, not to a consumer, so every card has to be on
+ * the screen exactly once — twice would be two editors for one secret, and
+ * zero would rebuild #422's bug where a stored key had nowhere to be seen.
+ * The supervisor's panel carries them because that is where the billed Test
+ * button belongs: the `supervisor-model` probe makes a real call through the
+ * supervisor's own adapter, and a Test button on another consumer's panel
+ * would spend money answering a question about a different consumer.
+ *
+ * Falls back to the first consumer the response carries, so a deployment that
+ * somehow published no supervisor still has its keys reachable.
+ */
+export function credentialOwner(consumers: readonly string[]): string | null {
+  if (consumers.includes(SUPERVISOR_CONSUMER)) return SUPERVISOR_CONSUMER;
+  return consumers[0] ?? null;
+}
 
 /**
  * The registry group every model credential slot is filed under.
@@ -119,16 +215,32 @@ export function modelSlotProvider(key: string): string | null {
 }
 
 /**
- * Whether saving this key changes what the model catalogue would answer.
+ * Which consumers' lists a save has just invalidated, if any.
  *
  * The provider decides which slot is read and which vendor is asked; the slot
- * decides which credential and which host. `supervisor.model.name` is
- * deliberately NOT here — it is chosen FROM the list and has no effect on what
+ * decides which credential and which host. `<consumer>.model.name` is
+ * deliberately absent — it is chosen FROM the list and has no effect on what
  * the provider returns, so re-asking after it is saved would be a request made
  * to learn nothing.
+ *
+ * A CREDENTIAL write invalidates every consumer's list, not just the
+ * supervisor's: the key belongs to a provider and any consumer sitting on that
+ * provider was just handed a different set of models. Refreshing the consumers
+ * that happen to name that provider would be tighter, and is deliberately not
+ * done — the list read costs nothing on either vendor (`spendsTokens`), while
+ * getting the narrowing wrong leaves a stale list on screen, which is the one
+ * failure this whole control exists to prevent.
  */
-export function affectsModelCatalog(key: string): boolean {
-  return key === SUPERVISOR_PROVIDER_KEY || modelSlotProvider(key) !== null;
+export function catalogRefreshTargets(
+  keys: readonly string[],
+  consumers: readonly string[],
+): string[] {
+  if (keys.some((key) => modelSlotProvider(key) !== null))
+    return [...consumers];
+
+  return consumers.filter((consumer) =>
+    keys.includes(modelProviderSettingKey(consumer)),
+  );
 }
 
 /**
@@ -144,8 +256,11 @@ export function isModelPanelSetting(entry: OperatorSetting): boolean {
   return (
     entry.group === MODEL_CREDENTIAL_GROUP ||
     modelSlotProvider(entry.key) !== null ||
-    entry.key === SUPERVISOR_PROVIDER_KEY ||
-    entry.key === SUPERVISOR_MODEL_NAME_KEY
+    // Every consumer's provider and model, not the supervisor's alone (#423).
+    // Matched by SHAPE so that a consumer added to the API gets its dropdown
+    // on the Credentials tab rather than a free-text box here — which is the
+    // asymmetry this issue exists to remove, rebuilt one consumer over.
+    modelConsumerOf(entry.key) !== null
   );
 }
 
@@ -238,15 +353,39 @@ export function modelCredentialSlots(
  * panel that read an unsaved selection instead would show one key while the
  * supervisor used the other.
  */
-export function selectedProvider(settings: readonly OperatorSetting[]): string {
-  return stringValue(findPlainSetting(settings, SUPERVISOR_PROVIDER_KEY));
+export function selectedProvider(
+  settings: readonly OperatorSetting[],
+  consumer: string = SUPERVISOR_CONSUMER,
+): string {
+  return stringValue(
+    findPlainSetting(settings, modelProviderSettingKey(consumer)),
+  );
+}
+
+/**
+ * Which consumers currently name this provider (#423).
+ *
+ * The sentence "this key is stored and not in use" stopped being safe to say
+ * the moment there were two consumers: the supervisor's unselected provider
+ * may be exactly the one the chat is asking. So the credential block reads
+ * this rather than inferring idleness from one consumer's selection, and names
+ * the consumers that are in fact using a key.
+ */
+export function consumersSelecting(
+  settings: readonly OperatorSetting[],
+  provider: string,
+): string[] {
+  return modelConsumers(settings).filter(
+    (consumer) => selectedProvider(settings, consumer) === provider,
+  );
 }
 
 /** The slot the selected provider uses, or null when there is no such slot. */
 export function selectedSlot(
   settings: readonly OperatorSetting[],
+  consumer: string = SUPERVISOR_CONSUMER,
 ): ModelCredentialSlot | null {
-  const provider = selectedProvider(settings);
+  const provider = selectedProvider(settings, consumer);
   if (provider === '') return null;
 
   return (
@@ -267,8 +406,9 @@ export function selectedSlot(
  */
 export function unselectedSlots(
   settings: readonly OperatorSetting[],
+  consumer: string = SUPERVISOR_CONSUMER,
 ): ModelCredentialSlot[] {
-  const provider = selectedProvider(settings);
+  const provider = selectedProvider(settings, consumer);
   return modelCredentialSlots(settings).filter(
     (slot) => slot.provider !== provider,
   );
@@ -546,7 +686,7 @@ export function missingModelExplanation(
  * provider's endpoint. Repeating one here would be a copy that goes stale
  * silently.
  *
- * The counterpart rule lives in `buildSupervisorModelPatch`: this string is a
+ * The counterpart rule lives in `buildModelPatch`: this string is a
  * PLACEHOLDER and is never sent. A form that wrote its own placeholder back
  * would pin the base URL to it forever on the first unrelated save.
  */
@@ -556,11 +696,21 @@ export const BASE_URL_PLACEHOLDER = 'Follows the provider selected above';
 // What a save sends
 // ---------------------------------------------------------------------------
 
-export interface SupervisorModelDraft {
+export interface ModelDraft {
   /** The model id to store, or `''` for "no model configured". */
   name: string;
-  /** The base URL to store, or `''` for "follow the provider". */
-  baseUrl: string;
+  /**
+   * The base URL to store, `''` for "follow the provider", or NULL for "this
+   * panel does not own the endpoint" (#423).
+   *
+   * The third case is the chat's, and it is a null rather than an empty string
+   * because the two mean opposite things: `''` is a value an operator can
+   * choose and is written when they change it, while null means the field is
+   * not on this panel at all and must never appear in a patch. A credential's
+   * host belongs to the provider, is shared by every consumer that names it,
+   * and is edited exactly once — beside the key it decides the destination of.
+   */
+  baseUrl: string | null;
 }
 
 /**
@@ -581,24 +731,36 @@ export interface SupervisorModelDraft {
  * The provider has to be STORED before the catalogue can be resolved against
  * it, so it is its own immediate write.
  */
-export function buildSupervisorModelPatch(
+export function buildModelPatch(
   settings: readonly OperatorSetting[],
-  draft: SupervisorModelDraft,
+  consumer: string,
+  draft: ModelDraft,
 ): Record<string, string> {
   const patch: Record<string, string> = {};
 
-  const name = findPlainSetting(settings, SUPERVISOR_MODEL_NAME_KEY);
+  const nameKey = modelNameSettingKey(consumer);
+  const name = findPlainSetting(settings, nameKey);
   if (name !== null && draft.name !== stringValue(name)) {
-    patch[SUPERVISOR_MODEL_NAME_KEY] = draft.name;
+    patch[nameKey] = draft.name;
   }
 
   // The SELECTED provider's base URL, and never another provider's (#422).
   // The host is where the key is sent, so "which host" and "which key" are
   // one fact — writing this field to a slot the operator was not looking at
   // would post one vendor's credential to another vendor's proxy.
-  const slot = selectedSlot(settings);
+  //
+  // A null draft value means this panel never showed the field (#423), and a
+  // panel that does not show a field must not write one: the chat and the
+  // supervisor share a provider's endpoint, so a second editor for it would
+  // be two controls over one value, and a silent write from the one that is
+  // not on screen is worse than that.
+  const slot = selectedSlot(settings, consumer);
   const baseUrl = slot?.baseUrl ?? null;
-  if (baseUrl !== null && draft.baseUrl !== stringValue(baseUrl)) {
+  if (
+    draft.baseUrl !== null &&
+    baseUrl !== null &&
+    draft.baseUrl !== stringValue(baseUrl)
+  ) {
     patch[baseUrl.key] = draft.baseUrl;
   }
 
@@ -612,12 +774,18 @@ export function buildSupervisorModelPatch(
  * panel re-seeds after a provider change rather than carrying the field over:
  * the value belonged to the vendor that was selected when it was typed.
  */
-export function seedSupervisorModelDraft(
+export function seedModelDraft(
   settings: readonly OperatorSetting[],
-): SupervisorModelDraft {
+  consumer: string,
+  ownsCredentials: boolean,
+): ModelDraft {
   return {
-    name: stringValue(findPlainSetting(settings, SUPERVISOR_MODEL_NAME_KEY)),
-    baseUrl: stringValue(selectedSlot(settings)?.baseUrl ?? null),
+    name: stringValue(
+      findPlainSetting(settings, modelNameSettingKey(consumer)),
+    ),
+    baseUrl: ownsCredentials
+      ? stringValue(selectedSlot(settings, consumer)?.baseUrl ?? null)
+      : null,
   };
 }
 
@@ -677,4 +845,112 @@ export function markFor(
   catalog: SupervisorModelCatalog | null,
 ): AdmissionPresentation {
   return admissionPresentation(model.admission, catalog?.minimumVersion ?? '—');
+}
+
+// ---------------------------------------------------------------------------
+// Inert, and saying so (#423, #324)
+// ---------------------------------------------------------------------------
+
+/**
+ * What one consumer would do if it were asked right now, read off the document.
+ *
+ * A deliberate mirror of `modelReadiness` in
+ * `apps/api/src/supervisor/invocation/supervisor-model.config.ts`, down to the
+ * field names: `available` plus `unavailableReason`, in that vocabulary,
+ * because the distinction #324 drew is between ENABLED — somebody decided this
+ * should run — and AVAILABLE — it actually can. This answers only the second,
+ * and inventing a third word for it here would leave the screen and the API
+ * describing the same state in two languages.
+ *
+ * ## Why the frontend computes it rather than reading it
+ *
+ * The API exposes no readiness endpoint for a consumer, and the two facts it
+ * would report are both already in the settings document: whether the selected
+ * provider's key is `configured`, and whether a model is named. Asking for a
+ * second read of things already on screen would let the panel show a key card
+ * that says "configured" beside a sentence that says there is no key.
+ *
+ * ## The order of the two reasons is the API's order, and it matters
+ *
+ * No key is reported before no model, because a deployment with neither has
+ * configured nothing at all, and naming a model first is the second step of a
+ * two-step remedy.
+ */
+export interface ModelConsumerReadiness {
+  readonly consumer: string;
+  /** The provider this consumer names right now. `''` when unset. */
+  readonly provider: string;
+  /** The model it is configured to ask. `''` means none is named. */
+  readonly model: string;
+  /** True when a request would be attempted rather than refused. */
+  readonly available: boolean;
+  /** Null when available; otherwise the sentence naming what to set. */
+  readonly unavailableReason: string | null;
+}
+
+export function modelConsumerReadiness(
+  settings: readonly OperatorSetting[],
+  consumer: string,
+): ModelConsumerReadiness {
+  const provider = selectedProvider(settings, consumer);
+  const model = stringValue(
+    findPlainSetting(settings, modelNameSettingKey(consumer)),
+  );
+  const subject = `the ${consumer}`;
+  const unavailable = (reason: string): ModelConsumerReadiness => ({
+    consumer,
+    provider,
+    model,
+    available: false,
+    unavailableReason: reason,
+  });
+
+  if (provider === '') {
+    return unavailable(
+      `No provider is selected, so there is nothing for ${subject} to ask.`,
+    );
+  }
+
+  // `configured` is the API's own word for "a value is stored or in the
+  // environment", and it is the only thing the response says about a secret —
+  // there is no value here to inspect, by design.
+  const slot = selectedSlot(settings, consumer);
+  if (slot?.apiKey?.configured !== true) {
+    return unavailable(
+      `No API key is stored for ${provider}, so ${subject} has nothing to ` +
+        `ask. The key belongs to the provider and is shared by every ` +
+        `consumer that selects it, so storing it once under the ${provider} ` +
+        `credential serves ${subject} too — or select a provider you have ` +
+        `already given a key to. Nothing is broken; there is simply nothing ` +
+        `to ask yet.`,
+    );
+  }
+
+  if (model === '') {
+    // Whether this consumer has an enabling switch of its own is read from
+    // the response rather than assumed: the supervisor has
+    // `supervisor.enabled`, so naming its model does not start it, while a
+    // consumer with no switch is started by exactly this field. Hard-coding
+    // either sentence would put one consumer's remedy on the other's panel.
+    const hasSwitch = findSetting(settings, `${consumer}.enabled`) !== null;
+
+    return unavailable(
+      hasSwitch
+        ? `A ${provider} key is stored and no model is named, so ${subject} ` +
+            `is inert. Choose one below.`
+        : `A ${provider} key is stored and no model is named, so ${subject} ` +
+            `is inert — which is this deployment's default and an off state ` +
+            `rather than a fault. There is no separate switch: choosing a ` +
+            `model below is what turns ${subject} on, and it starts spending ` +
+            `on ${provider} when you do.`,
+    );
+  }
+
+  return {
+    consumer,
+    provider,
+    model,
+    available: true,
+    unavailableReason: null,
+  };
 }

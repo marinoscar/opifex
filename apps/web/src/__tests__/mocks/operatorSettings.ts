@@ -29,6 +29,14 @@
  * test can make. A fixture with one slot could not distinguish a panel that
  * holds two credentials from one that quietly shows the selected one twice.
  *
+ * #423 added the chat's own `chat.model.*` rows, because there are now TWO
+ * consumers that each select a provider and a model. They are carried in the
+ * default fixture rather than in a variant so that "the supervisor and the
+ * chat are on different providers" is a change of one field in a test rather
+ * than a second document — and so that the unconfigured chat, which is what
+ * every deployment starts with, is the state the section is tested against by
+ * default.
+ *
  * Typed as `OperatorSettingsDocument`, so a change to the API's shape that the
  * frontend types follow fails this file at compile time rather than at the
  * assertion.
@@ -284,6 +292,65 @@ export const OPERATOR_SETTINGS_FIXTURE: OperatorSetting[] = [
     secret: false,
     value: 'claude-sonnet-4-5',
     default: '',
+  },
+  // The second consumer (#423, epic #419), in the state a deployment that has
+  // never configured it is in: the provider at its default and the model name
+  // EMPTY. That pair is the chat's off switch — there is no `chat.enabled` —
+  // so a fixture that named a model here would make the inert default
+  // untestable, which is the one state every deployment starts in.
+  {
+    key: 'chat.model.provider',
+    group: 'chat',
+    label: 'Chat model provider',
+    help: 'Which vendor the steering chat asks, chosen independently of the supervisor. It SELECTS a credential rather than being paired with one.',
+    type: 'enum',
+    reload: 'live',
+    dangerous: true,
+    source: 'default',
+    envVar: 'CHAT_MODEL_PROVIDER',
+    acceptsNull: false,
+    updatedAt: null,
+    constraints: { values: ['anthropic', 'openai'] },
+    secret: false,
+    value: 'anthropic',
+    default: 'anthropic',
+  },
+  {
+    key: 'chat.model.name',
+    group: 'chat',
+    label: 'Chat model',
+    help: 'Sent verbatim as the request’s model field. EMPTY IS THE CHAT’S OFF SWITCH: with no model named the chat is inert and reports itself unconfigured rather than failing at the first instruction.',
+    type: 'string',
+    reload: 'live',
+    dangerous: true,
+    source: 'default',
+    envVar: 'CHAT_MODEL_NAME',
+    acceptsNull: false,
+    updatedAt: null,
+    constraints: {},
+    secret: false,
+    value: '',
+    default: '',
+  },
+  {
+    // Not promoted to the Credentials tab: a timeout is not part of choosing
+    // a model, so it stays a generated row — which is also what gives the
+    // Chat group something to render beneath its signpost.
+    key: 'chat.model.timeoutMs',
+    group: 'chat',
+    label: 'Chat model timeout (ms)',
+    help: 'How long one chat turn may wait for the model before it is abandoned.',
+    type: 'integer',
+    reload: 'live',
+    dangerous: false,
+    source: 'default',
+    envVar: 'CHAT_MODEL_TIMEOUT_MS',
+    acceptsNull: false,
+    updatedAt: null,
+    constraints: { min: 1000, max: 55000 },
+    secret: false,
+    value: 30000,
+    default: 30000,
   },
   {
     key: 'dispatch.hardSpendCeilingUsd',

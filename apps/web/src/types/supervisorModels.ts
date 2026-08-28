@@ -54,7 +54,7 @@ export type SupervisorModelCatalogStatus =
 
 /** One model, as the provider offered it. Never omitted for its version. */
 export interface CatalogModel {
-  /** The exact string written to `supervisor.model.name`. Verbatim. */
+  /** The exact string written to `<consumer>.model.name`. Verbatim. */
   id: string;
   /** The vendor's own label, where it publishes one. */
   displayName: string | null;
@@ -67,7 +67,25 @@ export interface CatalogModel {
 
 /** The whole answer. One object, whatever happened. */
 export interface SupervisorModelCatalog {
-  /** Which provider was asked — `supervisor.model.provider`, as resolved. */
+  /**
+   * Which consumer this answers for, ECHOED from the request (#423).
+   *
+   * A `string` for the same reason `provider` is one: the consumers are
+   * declared once, in `supervisor/invocation/supervisor-model.config.ts`, and
+   * reach this build as the `<consumer>.model.provider` keys the settings
+   * response carries. A union here would be a second, silent declaration of
+   * that list in `apps/web`.
+   *
+   * It exists because there are now two lists on screen at once and they must
+   * not be able to land under each other. Two requests are in flight after
+   * mount, they can settle in either order, and a client that stored each
+   * answer where it expected one would show the chat the supervisor's models
+   * the first time the slower request happened to be the first one asked. So
+   * a response is filed under the consumer it NAMES, never under the one that
+   * was asked for — see `useModelCatalogs`.
+   */
+  consumer: string;
+  /** Which provider was asked — `<consumer>.model.provider`, as resolved. */
   provider: string;
   status: SupervisorModelCatalogStatus;
   /** One human sentence, safe to render. The key is redacted out of it. */

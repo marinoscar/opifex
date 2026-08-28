@@ -1,6 +1,6 @@
 /**
- * The supervisor's model, its provider and its key — one decision, one screen
- * (#394, epic #391).
+ * One model consumer's provider, model and credential — one decision, one
+ * screen (#394, epic #391; parameterised per consumer by #423, epic #419).
  *
  * ## The split this removes
  *
@@ -63,6 +63,43 @@
  * presented as one — and which of them is free is read off `spendsTokens`
  * rather than hard-coded, so the day a vendor starts charging for a catalogue
  * read this sentence changes with the API instead of lying.
+ *
+ * ## One component, one instance per consumer (#423, epic #419)
+ *
+ * The supervisor is no longer the only thing that asks a model a question, and
+ * the second one — the chat — selects its provider and its model
+ * INDEPENDENTLY. So `consumer` is a prop and the section renders this panel
+ * once per consumer the API publishes, rather than a second component being
+ * written for the chat. What would have been duplicated is not a form: it is
+ * #391's whole answer to choosing a model — the admission marks, the
+ * fail-open tone of `version_unrecognised`, the configured-but-unlisted model
+ * that stays selected, the six catalogue statuses and their six remedies. Two
+ * copies of that would be two places to fix the day a vendor renames a model
+ * family, and the copy that gets missed is the one that quietly starts
+ * hiding the model somebody came for. An operator typing a model name for one
+ * consumer and picking it from a list for the other is precisely the
+ * asymmetry this issue removes.
+ *
+ * ## The credential half is NOT per consumer, and this panel says so
+ *
+ * A credential belongs to a PROVIDER; a consumer selects one. So exactly one
+ * instance carries the key cards — `credentialOwner`, the supervisor, where
+ * the billed Test button belongs — and every other instance renders no key
+ * field at all, only a statement of which shared credential it resolves to and
+ * whether that credential is stored. A second key input on the chat's panel
+ * would be two editors over one secret, and the base URL is the same fact:
+ * the host is where the key is sent, so it is edited once, beside the key.
+ *
+ * ## An unconfigured consumer is inert, and reads as an off state (#324)
+ *
+ * The chat has no `chat.enabled`. An empty `chat.model.name` IS its off
+ * switch, and that is the default every deployment starts on — so the panel
+ * for a consumer whose credential lives elsewhere leads with
+ * `modelConsumerReadiness`, in the API's own `available` /
+ * `unavailableReason` vocabulary, at `info` severity. Not a warning and not an
+ * error: nothing is wrong with a deployment that has not decided to run a
+ * chat, and a screen that shouted at it would teach operators to ignore the
+ * one case where something really is misconfigured.
  */
 
 import { useState, type ReactNode } from 'react';
@@ -84,19 +121,22 @@ import {
 
 import {
   BASE_URL_PLACEHOLDER,
-  SUPERVISOR_MODEL_NAME_KEY,
-  SUPERVISOR_PROVIDER_KEY,
-  buildSupervisorModelPatch,
+  buildModelPatch,
   catalogStatusPresentation,
   configuredModelState,
+  consumerLabel,
+  consumersSelecting,
   findPlainSetting,
   listingCostNote,
   markFor,
   missingModelExplanation,
   modelApiKeySettingKey,
+  modelConsumerReadiness,
   modelLabel,
+  modelNameSettingKey,
   modelOptions,
-  seedSupervisorModelDraft,
+  modelProviderSettingKey,
+  seedModelDraft,
   selectedSlot,
   stringValue,
   unselectedSlots,
@@ -108,7 +148,17 @@ import type {
 } from '../../types/operatorSettings';
 import type { SupervisorModelCatalog } from '../../types/supervisorModels';
 
-export interface SupervisorModelPanelProps {
+export interface ModelConsumerPanelProps {
+  /**
+   * Which consumer this instance configures — `supervisor`, `chat`, or one
+   * this build has never heard of.
+   *
+   * A string rather than a union, for the reason `provider` is one: the
+   * consumers are declared once in the API and reach this build as the
+   * `<consumer>.model.provider` keys the settings response carries, so a
+   * union here would be a second, silent declaration of that list.
+   */
+  consumer: string;
   document: OperatorSettingsDocument;
   /** `system_settings:write` — the provider, the model and the base URL. */
   canWrite: boolean;
@@ -123,31 +173,41 @@ export interface SupervisorModelPanelProps {
   /** Sends only the keys given. Rejects with the API's own refusal. */
   onSave: (patch: OperatorSettingsPatch) => Promise<void>;
   /**
-   * The SELECTED provider's `models.<provider>.apiKey` card, rendered by the
-   * section that owns every other secret card.
+   * The credential cards, given to the ONE instance that owns them (#423).
    *
-   * A slot rather than a second implementation: `SecretCredentialCard` holds
-   * the write-only discipline this whole screen rests on — an uncontrolled
-   * field, read once at submit, never bound to state — and re-implementing a
-   * key input inside this panel would be the one place that discipline could
-   * quietly not hold.
-   */
-  keyCard: ReactNode;
-  /**
-   * The same card for every provider that is NOT selected (#422).
+   * Absent for every other consumer, and that absence is the whole of the
+   * credential/consumer split as this screen renders it: a key belongs to a
+   * provider and is shared by whoever selects it, so it is edited once. A
+   * consumer without this prop shows no key field and no endpoint field —
+   * only which shared credential it resolves to, and whether that credential
+   * is stored.
    *
-   * Rendered rather than hidden, and that is this panel's answer to the
-   * question the credential split raises. An operator holds one key per
-   * vendor; if selecting Anthropic made the OpenAI key disappear from the
-   * screen, the fix would look exactly like the bug it replaced — where
-   * switching provider really did leave the other credential unreachable.
-   * They are shown as stored-and-not-in-use, with no billed Test button,
-   * because nothing is currently asking them anything.
+   * The cards are passed in as nodes rather than built here:
+   * `SecretCredentialCard` holds the write-only discipline this whole screen
+   * rests on — an uncontrolled field, read once at submit, never bound to
+   * state — and re-implementing a key input inside this panel would be the
+   * one place that discipline could quietly not hold.
    */
-  otherKeyCards: ReactNode;
+  credentials?: {
+    /** The selected provider's `models.<provider>.apiKey` card. */
+    keyCard: ReactNode;
+    /**
+     * The same card for every provider this consumer has NOT selected (#422).
+     *
+     * Rendered rather than hidden, and that is this panel's answer to the
+     * question the credential split raises. An operator holds one key per
+     * vendor; if selecting Anthropic made the OpenAI key disappear from the
+     * screen, the fix would look exactly like the bug it replaced — where
+     * switching provider really did leave the other credential unreachable.
+     * Whether one of them is nevertheless IN USE is read from the document,
+     * because since #423 another consumer may have selected it.
+     */
+    otherKeyCards: ReactNode;
+  };
 }
 
-export function SupervisorModelPanel({
+export function ModelConsumerPanel({
+  consumer,
   document,
   canWrite,
   isSaving,
@@ -156,11 +216,18 @@ export function SupervisorModelPanel({
   catalogError,
   onRefreshCatalog,
   onSave,
-  keyCard,
-  otherKeyCards,
-}: SupervisorModelPanelProps) {
+  credentials,
+}: ModelConsumerPanelProps) {
+  // Whether this instance edits the shared credential, decided by the section
+  // and expressed as the presence of the cards themselves — so there is no
+  // second boolean that could disagree with what is actually rendered.
+  const ownsCredentials = credentials !== undefined;
+  const label = consumerLabel(consumer);
+  const providerKey = modelProviderSettingKey(consumer);
+  const nameKey = modelNameSettingKey(consumer);
+
   const [draft, setDraft] = useState(() =>
-    seedSupervisorModelDraft(document.settings),
+    seedModelDraft(document.settings, consumer, ownsCredentials),
   );
   /** The provider being written, while it is being written. Not derived state. */
   const [pendingProvider, setPendingProvider] = useState<string | null>(null);
@@ -174,31 +241,41 @@ export function SupervisorModelPanel({
   const [seededFrom, setSeededFrom] = useState(document);
   if (document !== seededFrom) {
     setSeededFrom(document);
-    setDraft(seedSupervisorModelDraft(document.settings));
+    setDraft(seedModelDraft(document.settings, consumer, ownsCredentials));
   }
 
-  const providerEntry = findPlainSetting(
-    document.settings,
-    SUPERVISOR_PROVIDER_KEY,
-  );
-  const nameEntry = findPlainSetting(
-    document.settings,
-    SUPERVISOR_MODEL_NAME_KEY,
-  );
+  const providerEntry = findPlainSetting(document.settings, providerKey);
+  const nameEntry = findPlainSetting(document.settings, nameKey);
 
   // The credential and its endpoint are looked up BY the stored provider
   // (#422). Not by the pending selection: the API resolves the slot from what
   // is stored, so a panel that followed the select would show one key while
   // the supervisor used the other.
-  const slot = selectedSlot(document.settings);
+  const slot = selectedSlot(document.settings, consumer);
   const keyEntry = slot?.apiKey ?? null;
   const baseUrlEntry = slot?.baseUrl ?? null;
   // Only the slots that actually have a key card to show: a provider whose
   // endpoint is published while its credential is not would otherwise get a
   // heading and a paragraph about a card that is not there.
-  const otherSlots = unselectedSlots(document.settings).filter(
+  const otherSlots = unselectedSlots(document.settings, consumer).filter(
     (other) => other.apiKey !== null,
   );
+  // Which of those another consumer is nevertheless asking. "Stored and not in
+  // use" stopped being true the moment a second consumer could select the
+  // provider this one did not (#423), and a screen that kept saying it would
+  // be lying about a key that is currently being billed.
+  const otherSlotsInUse = otherSlots.filter(
+    (other) => consumersSelecting(document.settings, other.provider).length > 0,
+  );
+  const idleSlots = otherSlots.filter(
+    (other) =>
+      consumersSelecting(document.settings, other.provider).length === 0,
+  );
+  // What this consumer would do if asked right now, in the API's own
+  // vocabulary. Rendered only where the credential is NOT on the panel: the
+  // owner's own key card already states whether a key is stored, in place,
+  // and a second sentence saying it would be one more thing to keep in step.
+  const readiness = modelConsumerReadiness(document.settings, consumer);
 
   const storedProvider = stringValue(providerEntry);
   const providerValue = pendingProvider ?? storedProvider;
@@ -210,7 +287,7 @@ export function SupervisorModelPanel({
 
   // Derived on every render, never stored: the button acts on the same patch
   // the tests assert, rather than on a boolean that could drift from it.
-  const patch = buildSupervisorModelPatch(document.settings, draft);
+  const patch = buildModelPatch(document.settings, consumer, draft);
   const changedKeys = Object.keys(patch);
   const mayWrite = canWrite && !isSaving;
 
@@ -225,7 +302,7 @@ export function SupervisorModelPanel({
       // Stored before the catalogue is asked for, because the API resolves the
       // provider itself. The refresh is the caller's, so that saving the key
       // re-lists by the same path saving the provider does.
-      await onSave({ [SUPERVISOR_PROVIDER_KEY]: next });
+      await onSave({ [providerKey]: next });
     } catch (error) {
       setProblem(
         error instanceof Error
@@ -256,17 +333,28 @@ export function SupervisorModelPanel({
   return (
     <Paper
       variant="outlined"
-      aria-label="Supervisor model"
+      // `<label> model settings` rather than `<label> model`, which is the
+      // registry's own label for the model NAME field on the chat's panel —
+      // two nodes with one accessible name is a control a screen reader
+      // cannot tell apart from its container.
+      aria-label={`${label} model settings`}
       sx={{ p: { xs: 2, sm: 3 }, mb: 4 }}
     >
       <Typography variant="h6" component="h3" gutterBottom>
-        Supervisor model
+        {label} model
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Which model answers, and which credential it answers with. These were
-        two settings on two tabs, and the one with no list was the one that had
-        to be typed from memory — so they are one control here. The list below
-        is what the saved key can actually reach right now.
+        {ownsCredentials
+          ? 'Which model answers, and which credential it answers with. These ' +
+            'were two settings on two tabs, and the one with no list was the ' +
+            'one that had to be typed from memory — so they are one control ' +
+            'here. The list below is what the saved key can actually reach ' +
+            'right now.'
+          : `Which model ${consumer} asks, and on which provider — chosen ` +
+            'independently of every other consumer. The credential is not: a ' +
+            'key belongs to a vendor and is shared by whoever selects it, so ' +
+            'it is stored once, above. The list below is what that stored key ' +
+            'can actually reach right now.'}
       </Typography>
 
       {problem && (
@@ -276,13 +364,38 @@ export function SupervisorModelPanel({
       )}
 
       {/* ------------------------------------------------------------- */}
+      {/* 0. Whether this consumer could answer anything at all          */}
+      {/* ------------------------------------------------------------- */}
+      {!ownsCredentials && (
+        <Alert
+          // INFO on both arms, deliberately. An unconfigured consumer is an
+          // off state somebody has not opted into, not a fault — and this is
+          // the state every deployment starts in. Warning severity here would
+          // train an operator to ignore the colour that matters.
+          severity="info"
+          variant="outlined"
+          sx={{ mb: 3 }}
+          aria-label={`${label} model readiness`}
+        >
+          <AlertTitle>
+            {readiness.available
+              ? `The ${consumer} is configured and would ask a model`
+              : `The ${consumer} is unconfigured, so it asks nothing`}
+          </AlertTitle>
+          {readiness.available
+            ? `It asks ${readiness.model} on ${readiness.provider}, with the ` +
+              `${readiness.provider} credential stored above.`
+            : readiness.unavailableReason}
+        </Alert>
+      )}
+
+      {/* ------------------------------------------------------------- */}
       {/* 1. Provider                                                    */}
       {/* ------------------------------------------------------------- */}
       {providerEntry === null ? (
         <Alert severity="info" sx={{ mb: 2 }}>
-          This deployment&apos;s API does not publish{' '}
-          <code>{SUPERVISOR_PROVIDER_KEY}</code>, so there is no provider to
-          choose.
+          This deployment&apos;s API does not publish <code>{providerKey}</code>
+          , so there is no provider to choose.
         </Alert>
       ) : (
         <Box sx={{ mb: 3 }}>
@@ -300,9 +413,13 @@ export function SupervisorModelPanel({
               'dropped rather than left on screen. Each provider keeps its ' +
               'own key and endpoint, so switching selects that provider’s ' +
               'stored credential: nothing is re-entered and nothing is ' +
-              'cleared. Any unsaved model or base URL edit is discarded with ' +
-              'it, because those belong to the provider that was selected ' +
-              'when they were typed.'
+              'cleared. Any unsaved model' +
+              (ownsCredentials ? ' or base URL' : '') +
+              ' edit is discarded with it, because ' +
+              (ownsCredentials ? 'those belong' : 'it belongs') +
+              ' to the provider that was selected when they were typed. ' +
+              'Every consumer chooses its own provider, so this changes ' +
+              `nothing for anything other than the ${consumer}.`
             }
           >
             {providers.map((value) => (
@@ -323,9 +440,18 @@ export function SupervisorModelPanel({
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* 2. The selected provider's key — the card this screen uses     */}
+      {/* 2. The credential — edited here by ONE consumer, named by the  */}
+      {/*    rest. There is one key per provider, never one per consumer */}
       {/* ------------------------------------------------------------- */}
-      {keyEntry === null ? (
+      {!ownsCredentials ? (
+        <Alert severity="info" variant="outlined" sx={{ mb: 3 }}>
+          Asked with the{' '}
+          <code>{modelApiKeySettingKey(storedProvider || 'provider')}</code>{' '}
+          credential above — the provider&apos;s own key, shared by every
+          consumer that selects it. There is deliberately no second key field
+          here: one vendor, one credential, edited in one place.
+        </Alert>
+      ) : keyEntry === null ? (
         <Alert severity="info" sx={{ mb: 3 }}>
           This deployment&apos;s API does not publish{' '}
           <code>{modelApiKeySettingKey(storedProvider || 'provider')}</code>, so
@@ -334,10 +460,11 @@ export function SupervisorModelPanel({
       ) : (
         <Box sx={{ mb: 3 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            The credential for the provider selected above. It is the one the
-            supervisor sends, and the one the list below was asked with.
+            The credential for the provider selected above. It is the one the{' '}
+            {consumer} sends, the one the list below was asked with, and the one
+            every other consumer on this provider uses.
           </Typography>
-          {keyCard}
+          {credentials.keyCard}
         </Box>
       )}
 
@@ -347,6 +474,8 @@ export function SupervisorModelPanel({
       {/* 3. What the key can reach                                      */}
       {/* ------------------------------------------------------------- */}
       <CatalogState
+        consumer={consumer}
+        label={label}
         catalog={catalog}
         isLoading={catalogIsLoading}
         error={catalogError}
@@ -358,8 +487,7 @@ export function SupervisorModelPanel({
       {/* ------------------------------------------------------------- */}
       {nameEntry === null ? (
         <Alert severity="info" sx={{ mt: 3 }}>
-          This deployment&apos;s API does not publish{' '}
-          <code>{SUPERVISOR_MODEL_NAME_KEY}</code>.
+          This deployment&apos;s API does not publish <code>{nameKey}</code>.
         </Alert>
       ) : (
         <Box sx={{ mt: 3 }}>
@@ -495,9 +623,10 @@ export function SupervisorModelPanel({
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* 5. The base URL, whose empty value is an answer                */}
+      {/* 5. The base URL, whose empty value is an answer — and which    */}
+      {/*    belongs to the credential, so only its owner edits it       */}
       {/* ------------------------------------------------------------- */}
-      {baseUrlEntry !== null && (
+      {ownsCredentials && baseUrlEntry !== null && draft.baseUrl !== null && (
         <Box sx={{ mt: 3 }}>
           <TextField
             fullWidth
@@ -542,7 +671,10 @@ export function SupervisorModelPanel({
           onClick={() => void save()}
           disabled={!mayWrite || changedKeys.length === 0}
         >
-          Save model settings
+          {/* Named for its consumer, because there is now more than one of
+              these on the screen and two buttons with the same accessible
+              name are two buttons a screen-reader user cannot tell apart. */}
+          Save {consumer} model settings
         </Button>
         <Box>
           <Typography variant="body2" color="text.secondary">
@@ -562,25 +694,49 @@ export function SupervisorModelPanel({
       {/* ------------------------------------------------------------- */}
       {/* 7. The keys for the providers that are NOT selected            */}
       {/* ------------------------------------------------------------- */}
-      {otherSlots.length > 0 && (
+      {ownsCredentials && otherSlots.length > 0 && (
         <Box sx={{ mt: 4 }} aria-label="Other providers’ credentials">
           <Divider sx={{ mb: 2 }} />
           <Typography variant="subtitle1" component="h4" gutterBottom>
             Other providers’ credentials
           </Typography>
+          {idleSlots.length > 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {idleSlots.map((other) => other.provider).join(', ')} —{' '}
+              {idleSlots.length === 1 ? 'not' : 'neither'} selected by any
+              consumer, so{' '}
+              {idleSlots.length === 1 ? 'this key is' : 'these keys are'} stored
+              and not in use. A key belongs to a vendor, so it is kept whichever
+              provider is selected: choosing one above does not clear{' '}
+              {idleSlots.length === 1 ? 'the other' : 'the others'}, and
+              selecting it again uses the same credential without asking for it
+              twice.
+            </Typography>
+          )}
+          {/* The sentence that stopped being true when a second consumer
+              arrived (#423). One of these keys may be the one the chat is
+              currently billing, and calling it idle would be a claim about
+              spending that is simply false. */}
+          {otherSlotsInUse.map((other) => (
+            <Typography
+              key={other.provider}
+              variant="body2"
+              color="text.secondary"
+              sx={{ mb: 2 }}
+            >
+              {other.provider} — not selected by the {consumer}, but in use by{' '}
+              {consumersSelecting(document.settings, other.provider).join(', ')}
+              . One credential per vendor is shared by every consumer that
+              selects it, so this key is stored here and sent by them.
+            </Typography>
+          ))}
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            {otherSlots.map((other) => other.provider).join(', ')} —{' '}
-            {otherSlots.length === 1 ? 'not' : 'neither'} selected, so{' '}
-            {otherSlots.length === 1 ? 'this key is' : 'these keys are'} stored
-            and not in use. A key belongs to a vendor, so it is kept whichever
-            provider is selected: choosing one above does not clear{' '}
-            {otherSlots.length === 1 ? 'the other' : 'the others'}, and
-            selecting it again uses the same credential without asking for it
-            twice. There is no Test button here because nothing is currently
-            asking these providers anything, and the test makes a real, billed
-            call.
+            There is no Test button on{' '}
+            {otherSlots.length === 1 ? 'this card' : 'these cards'}: the test
+            makes a real, billed call through the {consumer}&apos;s own adapter,
+            which reads the provider selected above.
           </Typography>
-          {otherKeyCards}
+          {credentials.otherKeyCards}
         </Box>
       )}
     </Paper>
@@ -597,11 +753,15 @@ export function SupervisorModelPanel({
  * there is simply nothing to ask yet.
  */
 function CatalogState({
+  consumer,
+  label,
   catalog,
   isLoading,
   error,
   onRefresh,
 }: {
+  consumer: string;
+  label: string;
   catalog: SupervisorModelCatalog | null;
   isLoading: boolean;
   error: string | null;
@@ -613,7 +773,7 @@ function CatalogState({
   const costNote = listingCostNote(catalog);
 
   return (
-    <Box aria-label="Supervisor model list">
+    <Box aria-label={`${label} model list`}>
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
         spacing={2}
@@ -626,7 +786,7 @@ function CatalogState({
           disabled={isLoading}
           startIcon={isLoading ? <CircularProgress size={14} /> : undefined}
         >
-          {isLoading ? 'Asking the provider…' : 'List models'}
+          {isLoading ? 'Asking the provider…' : `List ${consumer} models`}
         </Button>
         {costNote && (
           <Typography variant="caption" color="text.secondary">
@@ -661,4 +821,4 @@ function CatalogState({
   );
 }
 
-export default SupervisorModelPanel;
+export default ModelConsumerPanel;

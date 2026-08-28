@@ -7,11 +7,10 @@ import {
   errorDetail,
   errorMessage,
   isAbort,
-  noApiKeyError,
-  noModelNamedError,
   reportedModelName,
   resolveSupervisorModelConfig,
-  type SupervisorModelConfig,
+  unavailableReason,
+  type ModelConfig,
 } from './supervisor-model.config';
 import type {
   SupervisorModel,
@@ -92,8 +91,12 @@ export class OpenAiSupervisorModel implements SupervisorModel {
     // its own request would be a worse thing to debug than a stale value.
     const config = resolveSupervisorModelConfig(this.settings);
 
-    if (config.apiKey === '') throw noApiKeyError(config.provider);
-    if (config.model === '') throw noModelNamedError(config.provider);
+    // The same predicate a caller can ask BEFORE it gets here (#423): one
+    // function decides whether this consumer is configured, so an endpoint
+    // that reports itself inert and an adapter that refuses a call cannot
+    // disagree, and the operator reads one sentence either way.
+    const unconfigured = unavailableReason(config);
+    if (unconfigured !== null) throw unconfigured;
 
     const body = {
       model: config.model,
@@ -126,10 +129,7 @@ export class OpenAiSupervisorModel implements SupervisorModel {
   }
 
   /** One request. Errors are mapped; nothing is retried. */
-  private async post(
-    body: unknown,
-    config: SupervisorModelConfig,
-  ): Promise<Response> {
+  private async post(body: unknown, config: ModelConfig): Promise<Response> {
     const url = `${config.baseUrl}/v1/chat/completions`;
 
     let response: Response;

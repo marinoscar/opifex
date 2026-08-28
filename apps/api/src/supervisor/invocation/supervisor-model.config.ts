@@ -74,6 +74,135 @@ export const PROVIDER_LABELS: Readonly<
 });
 
 // ---------------------------------------------------------------------------
+// The consumers (#423, epic #419)
+//
+// A CREDENTIAL belongs to a provider; a CONSUMER selects one. #422 built the
+// first half of that sentence. This is the second: there is now more than one
+// thing in the process that asks a model a question, and the two want
+// different models for reasons that are not going to converge — the supervisor
+// makes an occasional judgement and wants the stronger model, while the chat
+// parses an instruction somebody is waiting on and wants the fast one.
+//
+// The consumer is therefore a PARAMETER of the resolution rather than a second
+// copy of it. `supervisor.model.*` and `chat.model.*` are the same four keys
+// with a different prefix, and `resolveModelConfig` is the only place either
+// set is read. Two hand-written resolvers would be two places to change when a
+// fifth field is added, and the one that gets missed is the one that keeps
+// working with a stale value.
+//
+// The key names are TEMPLATED off this list, which is what makes the settings
+// registry and this file impossible to drift apart: `settings.get` is typed by
+// `OperatorSettingKey`, so a consumer added here with no registry rows fails
+// to COMPILE rather than resolving to a default at runtime.
+// ---------------------------------------------------------------------------
+
+/** The things in this process that ask a model a question. */
+export const MODEL_CONSUMERS = ['supervisor', 'chat'] as const;
+
+export type ModelConsumer = (typeof MODEL_CONSUMERS)[number];
+
+/**
+ * How a refusal is worded for one consumer.
+ *
+ * Three fields rather than a per-consumer message, because the SENTENCES are
+ * the same sentence: the same missing key, the same remedy, the same promise
+ * that no restart is needed. Only the thing being talked about and the unit it
+ * runs in differ, and a consumer added with a whole message of its own would
+ * drift from the others in wording nobody diffs.
+ */
+interface ModelConsumerVoice {
+  /** How an operator refers to it: "the supervisor", "the chat". */
+  readonly subject: string;
+  /** The way to stop it asking anything, as an imperative clause. */
+  readonly standDown: string;
+  /** What one piece of its work is called — an invocation, a request. */
+  readonly unit: string;
+}
+
+const CONSUMER_VOICE: Readonly<Record<ModelConsumer, ModelConsumerVoice>> =
+  Object.freeze({
+    supervisor: {
+      subject: 'the supervisor',
+      // `supervisor.enabled` is a real switch, so the supervisor has a real
+      // off. The chat does not have one and deliberately does not need one —
+      // see `chat.model.name` in the registry for why an empty model name IS
+      // the off switch there.
+      standDown: 'turn the supervisor off',
+      unit: 'invocation',
+    },
+    chat: {
+      subject: 'the chat',
+      standDown: 'leave the chat unconfigured',
+      unit: 'request',
+    },
+  });
+
+/** The settings key naming one consumer's provider. */
+export type ModelProviderSettingKey = `${ModelConsumer}.model.provider`;
+
+/** The settings key naming one consumer's model. */
+export type ModelNameSettingKey = `${ModelConsumer}.model.name`;
+
+/** The settings key bounding how long one consumer's call may take. */
+export type ModelTimeoutSettingKey = `${ModelConsumer}.model.timeoutMs`;
+
+/** The settings key bounding one consumer's answer. */
+export type ModelMaxTokensSettingKey =
+  `${ModelConsumer}.model.defaultMaxTokens`;
+
+export function modelProviderSettingKey(
+  consumer: ModelConsumer,
+): ModelProviderSettingKey {
+  return `${consumer}.model.provider`;
+}
+
+export function modelNameSettingKey(
+  consumer: ModelConsumer,
+): ModelNameSettingKey {
+  return `${consumer}.model.name`;
+}
+
+export function modelTimeoutSettingKey(
+  consumer: ModelConsumer,
+): ModelTimeoutSettingKey {
+  return `${consumer}.model.timeoutMs`;
+}
+
+export function modelMaxTokensSettingKey(
+  consumer: ModelConsumer,
+): ModelMaxTokensSettingKey {
+  return `${consumer}.model.defaultMaxTokens`;
+}
+
+/**
+ * The environment variable behind one consumer's provider, and its siblings.
+ *
+ * `SUPERVISOR_MODEL_PROVIDER` and `SUPERVISOR_MODEL_NAME` are what they have
+ * always been — the derivation reproduces the names ADR-0015 shipped rather
+ * than replacing them, which is the whole reason the consumer id is the
+ * lower-cased env prefix and not some prettier word. `operator-settings
+ * .registry.spec.ts` asserts these against the registry's own `envVar`
+ * strings, so the two cannot drift even though the registry writes them out
+ * literally (it has to: `apps/web`'s drift suite reads the key names out of
+ * the registry source as text).
+ */
+export function modelProviderEnvVar(consumer: ModelConsumer): string {
+  return `${consumer.toUpperCase()}_MODEL_PROVIDER`;
+}
+
+export function modelNameEnvVar(consumer: ModelConsumer): string {
+  return `${consumer.toUpperCase()}_MODEL_NAME`;
+}
+
+export function modelTimeoutEnvVar(consumer: ModelConsumer): string {
+  return `${consumer.toUpperCase()}_MODEL_TIMEOUT_MS`;
+}
+
+export function modelMaxTokensEnvVar(consumer: ModelConsumer): string {
+  return `${consumer.toUpperCase()}_MODEL_DEFAULT_MAX_TOKENS`;
+}
+
+// ---------------------------------------------------------------------------
 // The credential slots (#422, epic #419)
 //
 // A CREDENTIAL belongs to a PROVIDER; a CONSUMER selects a provider. Before
@@ -150,8 +279,18 @@ export const UNCONFIGURED_MODEL_NAME = 'unconfigured';
 export const UNAVAILABLE_MODEL_NAME = 'none';
 
 /** Everything an adapter needs, resolved from the settings for ONE call. */
-export interface SupervisorModelConfig {
-  /** `SUPERVISOR_MODEL_PROVIDER`. Which adapter answers this call. */
+export interface ModelConfig {
+  /**
+   * Which consumer this call is for (#423).
+   *
+   * Carried on the config rather than passed alongside it, because everything
+   * downstream that has to SAY something about the call — the refusal when
+   * there is no key, the readiness report, the log line — needs to name the
+   * consumer, and a parameter that travels beside a config is a parameter that
+   * eventually stops matching it.
+   */
+  consumer: ModelConsumer;
+  /** `<CONSUMER>_MODEL_PROVIDER`. Which adapter answers this call. */
   provider: SupervisorModelProvider;
   /**
    * The selected provider's own credential — `models.<provider>.apiKey`.
@@ -164,9 +303,11 @@ export interface SupervisorModelConfig {
    */
   apiKey: string;
   /**
-   * `SUPERVISOR_MODEL_NAME`, sent verbatim and reported verbatim.
+   * `<CONSUMER>_MODEL_NAME`, sent verbatim and reported verbatim.
    *
-   * Empty when unset, which `ask()` refuses rather than guesses at.
+   * Empty when unset, which `ask()` refuses rather than guesses at. For the
+   * chat, empty is also the deployed default and therefore the state a chat
+   * that nobody has configured is IN — see `modelReadiness`.
    */
   model: string;
   /**
@@ -174,9 +315,16 @@ export interface SupervisorModelConfig {
    * trailing slash removed. Never empty — see `effectiveBaseUrl`.
    */
   baseUrl: string;
-  /** `SUPERVISOR_MODEL_TIMEOUT_MS`, handed to `AbortSignal.timeout`. */
+  /**
+   * `<CONSUMER>_MODEL_TIMEOUT_MS`, handed to `AbortSignal.timeout`.
+   *
+   * Per consumer and not shared, which is a decision rather than symmetry for
+   * its own sake: the supervisor's 60s is generous because an hourly judgement
+   * nobody is waiting on can afford to be, and the same number in front of an
+   * operator watching a text box is a minute of nothing happening.
+   */
   timeoutMs: number;
-  /** `SUPERVISOR_MODEL_DEFAULT_MAX_TOKENS`, the ceiling on one answer. */
+  /** `<CONSUMER>_MODEL_DEFAULT_MAX_TOKENS`, the ceiling on one answer. */
   defaultMaxTokens: number;
 }
 
@@ -225,34 +373,69 @@ export function effectiveBaseUrl(
 }
 
 /**
- * Read all six keys, now.
+ * Read all six keys for ONE consumer, now.
  *
  * One function so that `name` and `ask()` cannot resolve differently, and so
  * that the per-call read is a single readable thing rather than six scattered
  * `settings.get` calls. Per call rather than at construction is the whole of
  * #344: a value read per call cannot disagree with a boot-time copy of itself,
  * because there is no boot-time copy.
+ *
+ * ## Why the consumer is an argument and not a second function (#423)
+ *
+ * Four of the six keys are a function of the consumer and two are a function
+ * of the provider it selects, and NOTHING here is a function of both. That is
+ * the shape the credential/consumer split has, so it is the shape this
+ * function has: the supervisor and the chat can name different providers and
+ * different models at the same moment, and each still reaches the one stored
+ * credential for the vendor it named. A second copy of this body for the chat
+ * would be a second place where that pairing is decided, which is the exact
+ * failure epic #332 spent twenty-one issues removing.
+ *
+ * Every key is read through a TEMPLATED key name, so `settings.get`'s own
+ * types are what guarantee the registry declares them. A consumer added to
+ * `MODEL_CONSUMERS` without its four registry rows does not resolve to a
+ * default — it fails to compile.
  */
-export function resolveSupervisorModelConfig(
+export function resolveModelConfig(
   settings: OperatorSettingsService,
-): SupervisorModelConfig {
-  const provider = settings.get('supervisor.model.provider');
+  consumer: ModelConsumer,
+): ModelConfig {
+  const provider = settings.get(modelProviderSettingKey(consumer));
 
   return {
+    consumer,
     provider,
     // The credential is looked up BY provider (#422), which is the whole of
     // the credential/consumer split: the two keys sit side by side in the
     // settings table and this read picks the one that belongs to the vendor
-    // being called. #423 changes only which `provider` arrives here.
+    // being called. Since #423 two consumers can arrive here naming different
+    // vendors on the same tick, and each gets the key for the one it named.
     apiKey: settings.get(modelApiKeySettingKey(provider)),
-    model: settings.get('supervisor.model.name'),
+    model: settings.get(modelNameSettingKey(consumer)),
     baseUrl: effectiveBaseUrl(
       provider,
       settings.get(modelBaseUrlSettingKey(provider)),
     ),
-    timeoutMs: settings.get('supervisor.model.timeoutMs'),
-    defaultMaxTokens: settings.get('supervisor.model.defaultMaxTokens'),
+    timeoutMs: settings.get(modelTimeoutSettingKey(consumer)),
+    defaultMaxTokens: settings.get(modelMaxTokensSettingKey(consumer)),
   };
+}
+
+/**
+ * The supervisor's own configuration. The name every existing caller uses.
+ *
+ * A one-line delegation rather than an alias, and deliberately not deleted in
+ * favour of `resolveModelConfig(settings, 'supervisor')` at each of its five
+ * call sites: the supervisor's adapters, its factory and its probe are not
+ * generic over consumers and should not have to pass a constant that can only
+ * ever be one value. It reads the same keys through the same function, so
+ * there is still exactly one read path per key.
+ */
+export function resolveSupervisorModelConfig(
+  settings: OperatorSettingsService,
+): ModelConfig {
+  return resolveModelConfig(settings, 'supervisor');
 }
 
 /**
@@ -263,7 +446,7 @@ export function resolveSupervisorModelConfig(
  * switch — and two adapters that disagreed about how to say "no key" would
  * make an unconfigured supervisor look like two different states.
  */
-export function reportedModelName(config: SupervisorModelConfig): string {
+export function reportedModelName(config: ModelConfig): string {
   if (config.apiKey === '') return UNAVAILABLE_MODEL_NAME;
   return config.model === '' ? UNCONFIGURED_MODEL_NAME : config.model;
 }
@@ -295,36 +478,113 @@ export class SupervisorModelError extends Error {
  * to a provider they have never given a key to would otherwise read the same
  * line as one who has configured nothing at all.
  */
-export function noApiKeyError(
-  provider: SupervisorModelProvider,
-): SupervisorModelError {
+export function noApiKeyError(config: ModelConfig): SupervisorModelError {
   // The refusal that used to be a missing DI binding (#344). It is per call
   // now, so the key an operator sets in the Control Center takes effect on the
   // next invocation — and until they do, this names the setting to change
   // rather than telling whoever reads the log to bind a provider.
+  //
+  // Takes the whole config rather than a provider (#423) because the remedy
+  // now depends on the CONSUMER as well: "turn the supervisor off" is not
+  // advice a chat can act on, and a message that gave it would send an
+  // operator to a switch that has nothing to do with what they are reading.
+  const { provider } = config;
+
   return new SupervisorModelError(
     `No API key is configured for ${PROVIDER_LABELS[provider]}, so there is ` +
       `no model to ask. Set ${modelApiKeySettingKey(provider)} — the ` +
       `"${PROVIDER_LABELS[provider]} API key" setting, ` +
       `${modelApiKeyEnvVar(provider)} in the environment — to a separately ` +
       `metered credential, select a provider you have given a key to, or ` +
-      `turn the supervisor off. A key set now takes effect on the next ` +
-      `invocation; no restart is needed.`,
+      `${CONSUMER_VOICE[config.consumer].standDown}. A key set now takes ` +
+      `effect on the next ${CONSUMER_VOICE[config.consumer].unit}; no ` +
+      `restart is needed.`,
   );
 }
 
 /** The refusal when a key is set and no model is named. Every provider. */
-export function noModelNamedError(
-  provider: SupervisorModelProvider,
-): SupervisorModelError {
+export function noModelNamedError(config: ModelConfig): SupervisorModelError {
   // Refuses per call rather than throwing at construction: a missing model
   // name must not stop the API booting, and a supervisor that is misconfigured
   // should say so once an hour in the decision log, where it is visible,
   // rather than in a container that will not start.
+  //
+  // The variable is DERIVED from the consumer, so the supervisor's message is
+  // the same sentence naming the same `SUPERVISOR_MODEL_NAME` it has always
+  // named, and the chat's names `CHAT_MODEL_NAME` without a second message
+  // existing to say it.
   return new SupervisorModelError(
-    `${modelApiKeySettingKey(provider)} is set but SUPERVISOR_MODEL_NAME is ` +
-      `not, so there is no model to ask.`,
+    `${modelApiKeySettingKey(config.provider)} is set but ` +
+      `${modelNameEnvVar(config.consumer)} is not, so there is no model to ` +
+      `ask.`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Inert, and saying so (#423, #324)
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether this consumer can ask anything at all, and why not when it cannot.
+ *
+ * ONE predicate, used by both the adapters that refuse and any caller that
+ * wants to know BEFORE it tries. That is the point of it being a function
+ * returning the error rather than two booleans: a caller checking readiness
+ * and an adapter refusing a call cannot come to different conclusions,
+ * because they are the same conclusion, and the sentence an operator reads is
+ * the same sentence either way.
+ *
+ * The order matters and is the order it has always had: no key is reported
+ * before no model, because a deployment with neither is a deployment that has
+ * configured nothing, and telling it to name a model first would send it to
+ * the second step of a two-step remedy.
+ */
+export function unavailableReason(
+  config: ModelConfig,
+): SupervisorModelError | null {
+  if (config.apiKey === '') return noApiKeyError(config);
+  if (config.model === '') return noModelNamedError(config);
+  return null;
+}
+
+/**
+ * What one consumer would do if asked right now.
+ *
+ * `available` plus `unavailableReason` rather than a bare boolean, which is
+ * the shape `FleetRunnerState` already uses for the same distinction and for
+ * the same reason: a thing that is off because nobody configured it is a
+ * REPORT, not an incident, and the report is worthless without the sentence
+ * that says what to set.
+ *
+ * The distinction #324 draws is between "enabled" — somebody decided this
+ * should run — and "available" — it actually can. This answers only the
+ * second. The supervisor keeps its own `supervisor.enabled` for the first; the
+ * chat has no separate switch, because an unnamed model already means it does
+ * nothing, and a second flag would let a deployment be enabled and inert at
+ * the same time with two different places to look for why.
+ */
+export interface ModelReadiness {
+  readonly consumer: ModelConsumer;
+  /** The provider this consumer names right now. */
+  readonly provider: SupervisorModelProvider;
+  /** What the log would record as having answered — see `reportedModelName`. */
+  readonly model: string;
+  /** True when a call would be attempted rather than refused. */
+  readonly available: boolean;
+  /** Null when available; otherwise the sentence naming what to set. */
+  readonly unavailableReason: string | null;
+}
+
+export function modelReadiness(config: ModelConfig): ModelReadiness {
+  const problem = unavailableReason(config);
+
+  return {
+    consumer: config.consumer,
+    provider: config.provider,
+    model: reportedModelName(config),
+    available: problem === null,
+    unavailableReason: problem === null ? null : problem.message,
+  };
 }
 
 /**

@@ -3,7 +3,10 @@ import { z } from 'zod';
 
 import { MODEL_CATALOG_STATUSES } from '../../../supervisor/invocation/model-catalog.service';
 import { MODEL_ADMISSIONS } from '../../../supervisor/invocation/model-version';
-import { SUPERVISOR_MODEL_PROVIDERS } from '../../../supervisor/invocation/supervisor-model.config';
+import {
+  MODEL_CONSUMERS,
+  SUPERVISOR_MODEL_PROVIDERS,
+} from '../../../supervisor/invocation/supervisor-model.config';
 
 /**
  * What `GET /api/operator-settings/supervisor-models` answers (#393, epic
@@ -30,7 +33,7 @@ import { SUPERVISOR_MODEL_PROVIDERS } from '../../../supervisor/invocation/super
  */
 
 export const catalogModelSchema = z.object({
-  /** The exact string to write to `supervisor.model.name`. Verbatim. */
+  /** The exact string to write to `<consumer>.model.name`. Verbatim. */
   id: z.string(),
   /** The vendor's own label, where it publishes one. */
   displayName: z.string().nullable(),
@@ -58,7 +61,16 @@ export const catalogModelSchema = z.object({
 });
 
 export const supervisorModelCatalogSchema = z.object({
-  /** Which provider was asked — `supervisor.model.provider`, as resolved. */
+  /**
+   * Which consumer this answers for (#423), echoed from the request.
+   *
+   * Two consumers now select a provider independently, so the Control Center
+   * asks this endpoint twice and holds both lists at once. Without the echo, a
+   * slow answer for one could be rendered under the other — a dropdown of
+   * models the other key cannot reach, which reads as a correct list.
+   */
+  consumer: z.enum(MODEL_CONSUMERS),
+  /** Which provider was asked — `<consumer>.model.provider`, as resolved. */
   provider: z.enum(SUPERVISOR_MODEL_PROVIDERS),
   /**
    * What happened, in one word the UI can branch on.

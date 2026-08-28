@@ -9,6 +9,17 @@ import {
   SUPERVISOR_SPEND_CEILING_WINDOW_ENV,
 } from '../../supervisor/invocation/supervisor-spend-ceiling';
 import {
+  MODEL_CONSUMERS,
+  modelMaxTokensEnvVar,
+  modelMaxTokensSettingKey,
+  modelNameEnvVar,
+  modelNameSettingKey,
+  modelProviderEnvVar,
+  modelProviderSettingKey,
+  modelTimeoutEnvVar,
+  modelTimeoutSettingKey,
+} from '../../supervisor/invocation/supervisor-model.config';
+import {
   LEGACY_MODEL_API_KEY_ENV,
   OPERATOR_SETTINGS,
   OPERATOR_SETTING_GROUPS,
@@ -251,6 +262,160 @@ describe('operator settings registry', () => {
         ok: true,
         value: '',
       });
+    });
+  });
+
+  describe('one provider and one model per consumer (#423, epic #419)', () => {
+    // -----------------------------------------------------------------------
+    // These four keys are written out literally in the registry, unlike the
+    // credential slots one section up which are generated. The reason is in
+    // the registry's own comment — `help` has to say what THAT consumer does
+    // with the value — and the cost of writing them out is that the key names
+    // and the variable names could drift from the derivations
+    // `supervisor-model.config.ts` uses to READ them. That is what this block
+    // exists to make impossible: a drift would resolve the chat's provider
+    // from a key nobody declared, which `settings.get` would refuse to
+    // compile, or declare a key nothing reads, which nothing else would catch.
+    // -----------------------------------------------------------------------
+
+    it.each([...MODEL_CONSUMERS])(
+      'declares all four of %s’s keys under the names the resolver reads',
+      (consumer) => {
+        const keys = [
+          modelProviderSettingKey(consumer),
+          modelNameSettingKey(consumer),
+          modelTimeoutSettingKey(consumer),
+          modelMaxTokensSettingKey(consumer),
+        ] as const;
+
+        for (const key of keys) expect(OPERATOR_SETTING_KEYS).toContain(key);
+
+        expect(OPERATOR_SETTINGS[keys[0]].envVar).toBe(
+          modelProviderEnvVar(consumer),
+        );
+        expect(OPERATOR_SETTINGS[keys[1]].envVar).toBe(
+          modelNameEnvVar(consumer),
+        );
+        expect(OPERATOR_SETTINGS[keys[2]].envVar).toBe(
+          modelTimeoutEnvVar(consumer),
+        );
+        expect(OPERATOR_SETTINGS[keys[3]].envVar).toBe(
+          modelMaxTokensEnvVar(consumer),
+        );
+      },
+    );
+
+    it('keeps the supervisor’s four variable names exactly as ADR-0015 shipped them', () => {
+      // The derivation has to REPRODUCE the existing names, not replace them.
+      // Every deployment configured before #423 sets these in a `.env` file,
+      // and a rename would silently drop all four to their defaults at the
+      // next restart — the supervisor calling a model nobody chose.
+      expect(modelProviderEnvVar('supervisor')).toBe(
+        'SUPERVISOR_MODEL_PROVIDER',
+      );
+      expect(modelNameEnvVar('supervisor')).toBe('SUPERVISOR_MODEL_NAME');
+      expect(modelTimeoutEnvVar('supervisor')).toBe(
+        'SUPERVISOR_MODEL_TIMEOUT_MS',
+      );
+      expect(modelMaxTokensEnvVar('supervisor')).toBe(
+        'SUPERVISOR_MODEL_DEFAULT_MAX_TOKENS',
+      );
+    });
+
+    it('leaves the chat inert until somebody names a model', () => {
+      // `chat.model.name` empty IS the chat's off switch — there is no
+      // separate enabled flag, deliberately, and this is the assertion that
+      // says so. A default naming a real model would start a second metered
+      // consumer spending in every deployment that already holds a key.
+      const name = OPERATOR_SETTINGS['chat.model.name'];
+
+      expect(name.default).toBe('');
+      expect(parseOperatorSetting('chat.model.name', '')).toEqual({
+        ok: true,
+        value: '',
+      });
+      // And clearing it back to inert must be expressible, not swallowed as
+      // "use the default" — which for an empty default would be the same
+      // value, but only by luck.
+      expect(name.kind).toBe('string');
+      expect(name.secret).toBe(false);
+    });
+
+    it('marks the two keys that decide what gets billed', () => {
+      // `chat.model.name` is dangerous where `supervisor.model.name` is not,
+      // and the asymmetry is load-bearing: the supervisor has
+      // `supervisor.enabled` to turn it on, so naming its model spends
+      // nothing by itself. Naming the chat's model IS turning the chat on.
+      expect(OPERATOR_SETTINGS['chat.model.provider'].dangerous).toBe(true);
+      expect(OPERATOR_SETTINGS['chat.model.name'].dangerous).toBe(true);
+      expect(OPERATOR_SETTINGS['supervisor.model.name'].dangerous).toBe(
+        undefined,
+      );
+    });
+
+    it('gives the chat its own timeout and its own ceiling, with its own numbers', () => {
+      // Split rather than shared, and the numbers are the evidence that the
+      // split was for a reason: half the supervisor's timeout because somebody
+      // is waiting on this one, twice its token ceiling because a proposed
+      // label diff is as long as the backlog it covers.
+      expect(OPERATOR_SETTINGS['chat.model.timeoutMs'].default).toBe(30_000);
+      expect(OPERATOR_SETTINGS['supervisor.model.timeoutMs'].default).toBe(
+        60_000,
+      );
+      expect(OPERATOR_SETTINGS['chat.model.defaultMaxTokens'].default).toBe(
+        2_048,
+      );
+      expect(
+        OPERATOR_SETTINGS['supervisor.model.defaultMaxTokens'].default,
+      ).toBe(1_024);
+    });
+
+    it('caps the chat’s timeout under the proxy that sits in front of it', () => {
+      // `infra/nginx/nginx.conf` sets `proxy_read_timeout 60s` on /api. A
+      // chat turn allowed past that is answered by the proxy with a 504 that
+      // says nothing about the model, so the ceiling keeps the API's own
+      // abort the thing that fires and the operator reads a timeout with a
+      // number in it. The supervisor's 600s is fine because no HTTP request
+      // is waiting on it.
+      expect(OPERATOR_SETTINGS['chat.model.timeoutMs'].max).toBeLessThan(
+        60_000,
+      );
+      expect(parseOperatorSetting('chat.model.timeoutMs', 120_000).ok).toBe(
+        false,
+      );
+      expect(OPERATOR_SETTINGS['supervisor.model.timeoutMs'].max).toBe(600_000);
+    });
+
+    it('files the chat’s keys in their own Control Center group', () => {
+      // Not under `supervisor`, where they would read as supervisor settings,
+      // and not under `models`, which holds credentials rather than choices.
+      for (const key of [
+        'chat.model.provider',
+        'chat.model.name',
+        'chat.model.timeoutMs',
+        'chat.model.defaultMaxTokens',
+      ] as const) {
+        expect(OPERATOR_SETTINGS[key].group).toBe('chat');
+        // Every one of them is resolved per call by `resolveModelConfig`,
+        // which caches nothing. Nothing here may claim a restart.
+        expect(OPERATOR_SETTINGS[key].reload).toBe('live');
+      }
+    });
+
+    it('declares no chat credential of its own', () => {
+      // The rule #422 established, restated for the second consumer: a
+      // credential belongs to a provider. A `chat.model.apiKey` would be the
+      // coupling that issue removed, rebuilt one consumer over.
+      const chatKeys = OPERATOR_SETTING_KEYS.filter((key) =>
+        key.startsWith('chat.'),
+      );
+
+      expect(chatKeys).toEqual([
+        'chat.model.provider',
+        'chat.model.name',
+        'chat.model.timeoutMs',
+        'chat.model.defaultMaxTokens',
+      ]);
     });
   });
 
