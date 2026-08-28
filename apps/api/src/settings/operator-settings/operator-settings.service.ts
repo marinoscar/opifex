@@ -253,11 +253,22 @@ export class OperatorSettingsService implements OnModuleInit {
    *
    * On the service rather than on `OperatorSettingsRefreshTask` deliberately:
    * `OperatorSettingsModule` is `@Global` and initialises early, so a consumer
-   * that reads a managed key in its own `onModuleInit` gets the overlay rather
-   * than the environment. A failure here does NOT abort the boot, for exactly
-   * `PrismaService`'s reason (#161): the process that stays up is the one that
-   * can be asked what went wrong, and the 15s loop recovers it without a
-   * restart.
+   * in ANOTHER module that reads a managed key in its own `onModuleInit` gets
+   * the overlay rather than the environment — Nest runs the module hooks
+   * module by module, awaiting each module's before starting the next.
+   *
+   * It does NOT extend to this module's own providers, and reading it as
+   * though it did is #436: `callModuleInitHook` starts every provider hook
+   * WITHIN a module in one pass and awaits them together with `Promise.all`,
+   * so a sibling's `onModuleInit` runs while this one is still awaiting the
+   * query below and sees `status: 'unavailable'`. The two providers that need
+   * the overlay at startup — `LegacyModelSettingsMigration` and
+   * `UnreadableSecretsBootCheck` — therefore use `onApplicationBootstrap`,
+   * which runs after every module's `onModuleInit` has settled.
+   *
+   * A failure here does NOT abort the boot, for exactly `PrismaService`'s
+   * reason (#161): the process that stays up is the one that can be asked what
+   * went wrong, and the 15s loop recovers it without a restart.
    */
   async onModuleInit(): Promise<void> {
     if (!this.prisma) {
