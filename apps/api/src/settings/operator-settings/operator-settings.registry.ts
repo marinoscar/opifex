@@ -195,16 +195,50 @@ export type AnyOperatorSettingDefinition = OperatorSettingDefinition<unknown>;
 // ---------------------------------------------------------------------------
 
 /**
- * `true` | `false` | `'true'` | `'false'`, and nothing else.
+ * The spellings of yes and no that a person actually types.
  *
- * Case-sensitive and exact, which is not fussiness — it REPRODUCES both of
- * today's contradictory idioms exactly, and reconciles them. `configuration.ts`
- * compares `=== 'true'` for the eight switches that default off and
- * `!== 'false'` for `SUPERVISOR_STAND_DOWN_WHEN_BLOCKED`, which defaults on.
- * Under "anything unrecognized falls back to the declared default", `'TRUE'`,
- * `'yes'`, `'1'` and `''` resolve to false for the first group and true for the
- * second — the same values they resolve to today, from one rule instead of two.
+ * `true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off`, case-insensitively and with
+ * surrounding whitespace trimmed. Anything else is not a boolean and falls
+ * back to the declared default, loudly (`OperatorSettingsService.onInvalid`).
+ *
+ * ## Why this got wider, and why the timing is the argument
+ *
+ * It used to be exactly `'true'` | `'false'`, case-sensitive, and that was
+ * defensible while it lasted: it REPRODUCED `configuration.ts`'s two
+ * contradictory idioms — `=== 'true'` for the switches that defaulted off,
+ * `!== 'false'` for the one that defaulted on — from a single rule, so the
+ * migration in #340 could be proved to change nothing.
+ *
+ * ADR-0019 (#439) took that argument away. Under "anything unrecognised falls
+ * back to the default", the direction of the fallback follows the default: a
+ * mistyped value used to mean OFF for every switch that spends money or acts
+ * outwardly, and now means ON. `GITHUB_WRITES_ENABLED=no` is a person stating
+ * an unambiguous intention to keep writes off, and the old rule discarded it
+ * and turned writes on — while they read their own `.env` and believed
+ * otherwise. Fail-safe became fail-dangerous for exactly the four keys where
+ * it matters most.
+ *
+ * The fix is not to narrow the fallback but to stop needing it: a value whose
+ * meaning is unambiguous is honoured. What stays a fallback is what is
+ * genuinely ambiguous — `'enabled'`, `''`, `'2'`, `'maybe'` — and that case is
+ * now reported at ERROR with the value and the value actually in force,
+ * because the cost of getting it wrong went up.
+ *
+ * Deliberately NOT accepted: bare `'y'`/`'n'` (a single letter is as likely a
+ * typo as an intention) and any localisation. The set is the one a shell user
+ * and a docker-compose file already share.
  */
+const BOOLEAN_WORDS = new Map<string, boolean>([
+  ['true', true],
+  ['false', false],
+  ['1', true],
+  ['0', false],
+  ['yes', true],
+  ['no', false],
+  ['on', true],
+  ['off', false],
+]);
+
 function booleanSetting(
   fields: Omit<
     OperatorSettingDefinition<boolean>,
@@ -215,14 +249,25 @@ function booleanSetting(
     ...fields,
     kind: 'boolean',
     nullable: false,
-    schema: z.union([
-      z.boolean(),
-      z
-        .string()
-        .trim()
-        .pipe(z.enum(['true', 'false']))
-        .transform((value) => value === 'true'),
-    ]),
+    // A transform rather than a `z.enum` union, for the message: the union's
+    // own error is the unhelpful "Invalid input", and this value's rejection
+    // is now reported to an operator at ERROR level, so it has to say what
+    // was typed and what would have been accepted.
+    schema: z.union([z.boolean(), z.string()]).transform((value, ctx) => {
+      if (typeof value === 'boolean') return value;
+
+      const parsed = BOOLEAN_WORDS.get(value.trim().toLowerCase());
+      if (parsed === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            `${JSON.stringify(value)} is not a yes/no value; use ` +
+            `true/false, 1/0, yes/no or on/off (case-insensitive)`,
+        });
+        return z.NEVER;
+      }
+      return parsed;
+    }),
   };
 }
 

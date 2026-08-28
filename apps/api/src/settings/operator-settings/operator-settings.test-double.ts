@@ -228,13 +228,15 @@ export class FakeOperatorSettingsService extends OperatorSettingsService {
     key: OperatorSettingKey,
     source: OperatorSettingSource,
     reason: string,
+    raw?: unknown,
+    inForce?: unknown,
   ): void {
     if (source === 'database') {
       throw new Error(
         `makeOperatorSettings: the override for ${key} is invalid (${reason})`,
       );
     }
-    super.onInvalid(key, source, reason);
+    super.onInvalid(key, source, reason, raw, inForce);
   }
 }
 

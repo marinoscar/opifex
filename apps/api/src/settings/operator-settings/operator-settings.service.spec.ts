@@ -215,7 +215,20 @@ describe('OperatorSettingsService', () => {
       expect(resolved.invalid?.reason).toBeTruthy();
     });
 
-    it('names the environment variable in the warning, and warns once', () => {
+    it('reports it at ERROR, naming the variable, the value and what is in force — once', () => {
+      // ERROR since ADR-0019 (#439), and it used to be a warning. While every
+      // switch that spends money or acts outwardly defaulted off, an
+      // unreadable value fell back to the inert posture and a warning was
+      // proportionate. The fallback now lands on the ACTIVE posture for those
+      // keys, so this event means "you tried to change something, we could not
+      // read it, and it is on" — which an operator has to be able to find.
+      //
+      // Asserted once rather than per read: `get()` is a hot path and
+      // `refresh()` runs every 15 seconds, so a line per read is how a real
+      // error becomes invisible.
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
       const warn = jest
         .spyOn(Logger.prototype, 'warn')
         .mockImplementation(() => undefined);
@@ -225,9 +238,15 @@ describe('OperatorSettingsService', () => {
       settings.get('github.maxRetries');
       settings.get('github.maxRetries');
 
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn.mock.calls[0]?.[0]).toContain('GITHUB_MAX_RETRIES');
-      expect(warn.mock.calls[0]?.[0]).toContain('github.maxRetries');
+      expect(warn).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledTimes(1);
+      const line = String(error.mock.calls[0]?.[0]);
+      expect(line).toContain('GITHUB_MAX_RETRIES');
+      expect(line).toContain('github.maxRetries');
+      // The value that could not be read, and the one an operator is actually
+      // running with — the half that used to be left to inference.
+      expect(line).toContain('"many"');
+      expect(line).toContain('3');
     });
 
     it('refuses a value outside the declared bounds', () => {
