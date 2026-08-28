@@ -134,8 +134,9 @@ export const TAG_GROUPS: OpenApiTagGroup[] = [
         name: 'Reconciler',
         description:
           'The reconciliation log: what each tick observed, what it computed should be true, and ' +
-          'what it would have done. During the observation week nothing is executed, so this is ' +
-          'the record used to validate the control loop before it is allowed to act.',
+          'what it did or would have done. GitHub writes ship enabled (ADR-0019), so a tick ' +
+          'normally executes what it computed; an operator running a read-only observation week ' +
+          'turns writes off, and this becomes the record of what the loop WOULD have done.',
       },
       {
         name: 'Escalations',

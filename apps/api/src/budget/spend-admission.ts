@@ -76,11 +76,16 @@ const WHO_RAISES_IT =
  * 1. **A malformed ceiling is not an absent one.** Checked first, and reported
  *    as its own thing, because it is the case where somebody believed they
  *    had set a limit.
- * 2. **No ceiling refuses rather than permits.** `DISPATCH_ENABLED` already
- *    defaults off, so nothing here surprises an install that has not opted in
- *    to spending. Opting in without naming a ceiling is the failure #65 names
- *    in its first sentence, and VISION §3.5 gates on reversibility — spend is
- *    not reversible, so the unbounded case does not proceed.
+ * 2. **No ceiling refuses rather than permits**, and since ADR-0019 (#439)
+ *    this rule is the whole of what stops a fresh install spending —
+ *    `DISPATCH_ENABLED`, the runner and GitHub writes all ship ON, and this
+ *    ships unset. A control plane that is ready but cannot spend is the
+ *    intended shipped state, so this refusal is not an edge case reached by
+ *    misconfiguration: it is the first thing every new deployment hits, and
+ *    the message has to read that way. Running without naming a ceiling is
+ *    the failure #65 names in its first sentence, and VISION §3.5 gates on
+ *    reversibility — spend is not reversible, so the unbounded case does not
+ *    proceed.
  * 3. **Already at the ceiling refuses**, before anything about this order is
  *    considered. The tally may be a floor (see `unboundedRuns`), and a floor
  *    at or above the limit is still at or above the limit.

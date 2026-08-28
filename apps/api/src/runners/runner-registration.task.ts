@@ -33,7 +33,8 @@ const INTERVAL_NAME = 'runner-registration-tick';
  * real argument for it: a new timer is a new thing to shut down cleanly, and
  * the reconciler is already the loop that recomputes desired state. It is the
  * wrong home anyway, and the reason is mechanical rather than aesthetic: both
- * of those loops SKIP when their own flag is off, and both default off. Since
+ * of those loops SKIP when their own flag is off, and the reconciler's still
+ * defaults off (ADR-0019 flipped dispatch and the runner, not this one). Since
  * #343 they at least still fire — the interval is registered either way and
  * the flag is checked inside the callback — but the body returns immediately,
  * so registration hung off either would still fail to converge on precisely

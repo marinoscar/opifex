@@ -469,7 +469,14 @@ export const OPERATOR_SETTINGS = {
 
   'github.writesEnabled': booleanSetting({
     envVar: 'GITHUB_WRITES_ENABLED',
-    default: false,
+    // ON since ADR-0019 (#439). This is the one of the four flipped defaults
+    // with a real cost: VISION §12's observation week stops being what you get
+    // by not opting in and becomes something an operator opts OUT of writing
+    // for. The argument that won is #432 — a release path that never removed
+    // `factory:hold` sat undetected for exactly as long as writes were off,
+    // because an observation week that observes nothing is an absence of
+    // activity mistaken for a safety mechanism.
+    default: true,
     secret: false,
     // #341. Frozen at construction today (github-write.service.ts:79), which
     // is the epic's exit criterion "toggling writes actually changes behaviour
@@ -478,7 +485,7 @@ export const OPERATOR_SETTINGS = {
     group: 'github',
     label: 'GitHub writes enabled',
     dangerous: true,
-    help: 'The global write kill switch. Off records what a write WOULD have done without performing it — VISION §12 requires the reconciler to observe for a week before it may act. Turning it on lets the factory change labels, comments and pull requests on real repositories.',
+    help: 'The global write kill switch, on by default (ADR-0019). On, the factory changes labels, comments and pull requests on the repositories it is pointed at — note that GitHub writes are NOT gated by the spend ceiling, so the reconciler mirrors labels on a fresh install even though no work order can dispatch yet. Turn it off for a VISION §12 observation week: writes are then recorded with what they WOULD have done, and performed by nobody.',
   }),
 
   'github.requestTimeoutMs': integerSetting({
@@ -582,7 +589,14 @@ export const OPERATOR_SETTINGS = {
 
   'runners.claudeCodeLocal.enabled': booleanSetting({
     envVar: 'CLAUDE_CODE_LOCAL_ENABLED',
-    default: false,
+    // ON since ADR-0019 (#439). Enabling this and `dispatch.enabled` one at a
+    // time is still the right way to verify a runner registers HONESTLY before
+    // work is routed to it (RUNBOOK-enable-claude-code-local.md) — what changed
+    // is that it is advice for an operator who wants to check, rather than a
+    // wall every install climbs once and pays for forever. Enabled does not
+    // mean spending: `dispatch.hardSpendCeilingUsd` is unset by default and
+    // refuses every dispatch until somebody names a figure.
+    default: true,
     secret: false,
     // A gate, read at the moment it gates: registration refreshes
     // (runner-registration.service.ts), the dispatch admission path, and the
@@ -595,7 +609,7 @@ export const OPERATOR_SETTINGS = {
     group: 'runner',
     label: 'Local Claude Code runner enabled',
     dangerous: true,
-    help: 'Whether this runner is dispatchable at all. Turning it on lets the control plane spawn Claude Code processes on this machine, which spends real subscription quota. Turning it off stops new dispatches immediately and leaves agents already running alone.',
+    help: 'Whether this runner is dispatchable at all, on by default (ADR-0019). It lets the control plane spawn Claude Code processes on this machine, which spends real subscription quota — though nothing is spawned until a hard spend ceiling is configured. Turning it off stops new dispatches immediately and leaves agents already running alone.',
   }),
 
   'runners.claudeCodeLocal.binary': stringSetting({
@@ -856,7 +870,12 @@ export const OPERATOR_SETTINGS = {
 
   'dispatch.enabled': booleanSetting({
     envVar: 'DISPATCH_ENABLED',
-    default: false,
+    // ON since ADR-0019 (#439). It is no longer the flag that stands between a
+    // fresh install and spending money — `dispatch.hardSpendCeilingUsd` is,
+    // and it is aimed at the hazard itself rather than at a proxy for it. This
+    // one now means what its name says: whether the executor acts on the
+    // decision it just made, or records it.
+    default: true,
     secret: false,
     // A gate evaluated at the moment of the decision
     // (run-executor.service.ts:272, fleet-state.service.ts:496). No copy is
@@ -865,7 +884,7 @@ export const OPERATOR_SETTINGS = {
     group: 'dispatch',
     label: 'Dispatch enabled',
     dangerous: true,
-    help: 'The switch that lets the factory actually spend money. Off, the executor still runs the whole decision and records what it WOULD have dispatched — VISION §12’s observation posture applied to execution. On, the next tick starts real agents against a real subscription, and starting one is not reversible.',
+    help: 'Whether the executor acts on a dispatch decision or only records it, on by default (ADR-0019). Off, the whole decision still runs and the tick reports what it WOULD have dispatched. On, the next tick starts real agents against a real subscription and starting one is not reversible — but only once a hard spend ceiling is set, which on a fresh install it is not.',
   }),
 
   'dispatch.maxConcurrent': nullableIntegerSetting({
@@ -885,7 +904,14 @@ export const OPERATOR_SETTINGS = {
 
   'dispatch.allowPreviewRunner': booleanSetting({
     envVar: 'DISPATCH_ALLOW_PREVIEW_RUNNER',
-    default: false,
+    // ON since ADR-0019 (#439), and the clearest of the four: Opifex ships one
+    // runner, `claude-code-local`, declared `experimental`. ADR-0007's rule
+    // wants a GA fallback that no shipped configuration can provide, so off it
+    // was not a safety rule but a permanent off switch that queued every work
+    // order forever. The rule stays in the code and regains its teeth the
+    // moment a second, GA runner exists — this default is its bypass, not its
+    // deletion.
+    default: true,
     secret: false,
     // Read per dispatch decision (dispatch.service.ts:99); nothing holds a
     // copy.
@@ -893,7 +919,7 @@ export const OPERATOR_SETTINGS = {
     group: 'dispatch',
     label: 'Allow preview-tier runner',
     dangerous: true,
-    help: 'Lets a preview-tier runner be load-bearing when no GA fallback exists (ADR-0007). With a single runner the fallback cannot exist, so without this every work order queues forever. It is a safety rule’s bypass — turn it back off once a GA runner exists.',
+    help: 'Lets a preview-tier runner be load-bearing when no GA fallback exists (ADR-0007). With a single runner the fallback cannot exist, so without this every work order queues forever — which is why it ships on (ADR-0019). It is a safety rule’s bypass, not its removal: turn it back off once a GA runner exists.',
   }),
 
   'dispatch.retryCeiling': integerSetting({

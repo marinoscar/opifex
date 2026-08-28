@@ -41,9 +41,9 @@ export class ReconcilerController {
       'The reconciliation log. actionsExecuted counts the GitHub writes a tick issued — mirror ' +
       'labels, spec-feedback comments, authorization records, dispatch branches — including ' +
       'writes that changed nothing and writes that failed, since both reached GitHub. It is 0 ' +
-      'whenever GITHUB_WRITES_ENABLED is off, which is the whole of the VISION §12 observation ' +
-      'week: there this log is the record of what the reconciler WOULD have done, and a non-zero ' +
-      'value means something is enabled that should not be. It is not a subset of ' +
+      'whenever GitHub writes are off — which since ADR-0019 is a deliberate observation-week ' +
+      'posture rather than the shipped default, so on a normal deployment a zero here means ' +
+      'there was nothing to do, not that acting was forbidden. It is not a subset of ' +
       "actionsComputed. executionFailures says which of a tick's own acting-phase writes went " +
       'wrong and why — null when no executor ran at all on that tick, [] when one ran and ' +
       'reported nothing, so the two are not interchangeable. settings is the retryCeiling, ' +
