@@ -40,7 +40,7 @@ The single declaration point for every operator-managed key is
 question about a specific key's default, its reload behaviour, its group, or
 whether it is a secret has an answer, that file is where the answer is
 authoritative — this document explains the _shape_ of the system the registry
-describes, not a second copy of its 39 entries. `infra/compose/.env.example`
+describes, not a second copy of its entries. `infra/compose/.env.example`
 carries the same list, one section at a time, annotated at the point each
 variable is now managed.
 
@@ -414,6 +414,58 @@ lowered ceiling cannot retroactively shrink.
 > `dispatch.maxConcurrent` (the fleet-wide ceiling, distinct from this
 > per-runner one) behaves the same way for the identical reason.
 
+> **Worked example: `runners.claudeCodeLocal.model.small` / `.standard` /
+> `.large` (`CLAUDE_CODE_MODEL_SMALL` / `_STANDARD` / `_LARGE`, #420).**
+> `claude-code-local.runner.ts`'s `submit()` calls `resolveModel` once per
+> work order and writes the result into the spawned process's argv
+> (`claude-code-invocation.ts`'s `buildInvocationArgs`) at the same point
+> `permissionMode` is written in — so the same shape applies: an agent
+> already running keeps whichever model (or absence of a `--model` flag) it
+> was launched with, and a change here answers only the next dispatch of
+> that tier.
+>
+> Four outcomes come out of `resolveModel`, not the two a "model or nothing"
+> story would suggest:
+>
+> 1. **A work order labelled `tier:small` (or `standard`/`large`), with this
+>    setting non-empty**, pins that model with `--model <name>`.
+> 2. **A work order with no tier at all** carries **no `--model` flag at
+>    all** — the CLI applies its own default. This is deliberately not the
+>    same case as `tier:standard`, even though the default for
+>    `runners.claudeCodeLocal.model.standard` (`claude-sonnet-5`) happens to
+>    be the CLI's own current default too: `claude-code-invocation.ts`'s own
+>    comment is explicit that this is a coincidence of this release, not a
+>    rule, and must not be simplified away.
+> 3. **The setting cleared to an empty string** — the escape hatch a
+>    string-typed field needs because it cannot hold `null` — behaves like
+>    case 2 for that one tier: no `--model` flag, the CLI's own default
+>    applies. This is how an operator expresses "I do not want a model
+>    pinned for this tier" without a `null` this field structurally cannot
+>    hold.
+> 4. **A tier this build has no key for** — a future schema minor adding a
+>    fourth tier before this runner maps it — logs a warning and runs on the
+>    CLI's own default. It is never a failed run: #297 already settled that a
+>    routing declaration the factory cannot act on is reported, not refused.
+>
+> Whichever of the four applied is recorded as prose in the `run.started`
+> summary (`run_events`, NOT NULL), so a claim about which model a run used
+> is checkable after the fact without a schema change.
+>
+> The defaults — `claude-haiku-4-5`, `claude-sonnet-5`, `claude-opus-5` —
+> are pinned full model names rather than aliases (`haiku`/`sonnet`/`opus`),
+> on purpose: the CLI accepts either, but an alias silently repoints as
+> Anthropic ships new models, and these three keys exist specifically to
+> bound spend — a value that changes what it means without changing what it
+> says is exactly what defeats a cost control. Checked 2026-08-28 against the
+> model table compiled into `claude` 2.1.243 (the CLI version
+> [`RUNBOOK-enable-claude-code-local.md`](RUNBOOK-enable-claude-code-local.md)
+> pins as of this writing is 2.1.246), where these three are each family's
+> current member and price on a strictly increasing ladder in
+> `supervisor/invocation/model-pricing.ts`. Treat that date as the last time
+> the defaults were verified against the CLI's own catalogue, not as a
+> permanent fact — `operator-settings.registry.ts`'s own header is the
+> record of truth if a model has since been retired or superseded.
+
 **`restart`** — there is no read path that would see a change while the
 process is running, either because the value was used to _construct_
 something once (a cache, a client) rather than to answer a query, or because
@@ -469,7 +521,7 @@ anything until then.
       "value": true,
       "default": false,
     },
-    // ...39 entries, secret ones shaped { secret: true, configured, hint, updatedAt } — never "value"
+    // ...one object per registry entry; secret ones shaped { secret: true, configured, hint, updatedAt } — never "value"
   ],
 }
 ```
@@ -682,7 +734,7 @@ For "what does this key actually do, and when does a change take effect":
    authoritative. `label`, `help`, `default`, `reload`, `group`, `secret` and
    `dangerous` for every key, plus the reasoning behind each `reload` value
    in an inline comment.
-2. `infra/compose/.env.example` — the same 39 keys, one per environment
+2. `infra/compose/.env.example` — the same keys, one per environment
    variable, each annotated at the point it is defined with whether it moved
    and what "moved" means for that key specifically.
 3. `GET /api/operator-settings`, or the Configuration section of the Control

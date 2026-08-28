@@ -512,6 +512,95 @@ export const OPERATOR_SETTINGS = {
     help: 'How much the agent may do without asking. `acceptEdits` is the narrow end and the default: a mode broad enough never to ask is only safe behind a sandbox, and sandboxing is #113. Applies to the next agent started.',
   }),
 
+  // ---------------------------------------------------------------------
+  // The tier -> model mapping (#420, epic #419)
+  //
+  // WHY THESE ARE SETTINGS AND NOT A CONSTANT
+  // -----------------------------------------
+  // `tier:small|standard|large` is a POLICY vocabulary — "small work uses the
+  // cheap model" — and which model satisfies that policy moves as models ship,
+  // on Anthropic's schedule rather than this repository's. A constant in the
+  // runner would make adopting a newly released cheap model a code change, a
+  // build and a deploy, for a decision that is entirely the operator's: they
+  // are the ones who know what their subscription includes and what their
+  // spend looks like. Three keys is the whole cost, and `permissionMode` and
+  // `binary` — the two other values that end up in the same argv — are already
+  // keys here for the same reason.
+  //
+  // WHY FULL MODEL NAMES AND NOT `haiku` / `sonnet` / `opus`
+  // -------------------------------------------------------
+  // The CLI accepts either (`claude --help`, 2.1.243). An alias would never rot
+  // into an invalid id, which is a real advantage — but an alias silently
+  // repoints, and these tiers exist to BOUND SPEND. `model-pricing.ts` makes
+  // the same argument for the same reason and refuses to key a rate on a
+  // moving alias: a value that changes what it means without changing what it
+  // says is exactly what makes a cost control stop controlling. A pinned name
+  // that is eventually retired fails LOUDLY, on the first dispatch of that
+  // tier, with the CLI's own error on the run's `run.failed` event — and the
+  // fix is a form field rather than a release, which is the other half of why
+  // these are settings.
+  //
+  // THE DEFAULTS, AND HOW THEY WERE ESTABLISHED
+  // -------------------------------------------
+  // Checked 2026-08-28 against the model table compiled into `claude` 2.1.243
+  // (the pinned CLI is 2.1.246), where these three are the CURRENT member of
+  // each family — Opus 4.8 and Sonnet 4.6 are labelled "Previous version"
+  // beside them — and cross-checked against `supervisor/invocation/model-
+  // pricing.ts`, which prices all three. They form a strictly increasing cost
+  // ladder ($1/$5, $2/$10, $5/$25 per million tokens), which is the property
+  // that makes the tier vocabulary mean what it claims; the spec asserts it,
+  // so a default edited to a model that breaks the ladder fails there.
+  //
+  // `standard` is deliberately NOT the same as declaring no tier. An untiered
+  // work order is invoked with no `--model` at all and floats with whatever
+  // the CLI defaults to; `tier:standard` PINS a model. The two happen to
+  // resolve to the same model today, and that is a coincidence of this
+  // release rather than a thing to simplify away.
+  //
+  // Empty means "this tier gets the CLI's own default", which is how an
+  // operator expresses "I do not want a model pinned for this tier" in a
+  // field that cannot hold null.
+  // ---------------------------------------------------------------------
+
+  'runners.claudeCodeLocal.model.small': stringSetting({
+    envVar: 'CLAUDE_CODE_MODEL_SMALL',
+    default: 'claude-haiku-4-5',
+    allowEmpty: true,
+    secret: false,
+    // Written into argv at spawn (claude-code-local.runner.ts), like
+    // `permissionMode`, so an agent already running keeps the model it was
+    // launched on.
+    reload: 'next-unit',
+    group: 'runner',
+    label: 'Model for tier:small',
+    dangerous: true,
+    help: 'The model a work order labelled `tier:small` runs on. An alias (`haiku`) or a full name (`claude-haiku-4-5`) — a full name by default, so the tier keeps meaning one thing across a release that repoints the alias. Leave it empty to let the CLI choose for this tier. Changing it changes what every small work order costs.',
+  }),
+
+  'runners.claudeCodeLocal.model.standard': stringSetting({
+    envVar: 'CLAUDE_CODE_MODEL_STANDARD',
+    default: 'claude-sonnet-5',
+    allowEmpty: true,
+    secret: false,
+    reload: 'next-unit',
+    group: 'runner',
+    label: 'Model for tier:standard',
+    dangerous: true,
+    help: 'The model a work order labelled `tier:standard` runs on. Note that this is NOT the same as a work order with no tier: an untiered one is invoked with no model flag and follows the CLI’s own default, while `tier:standard` pins this value. Leave it empty to make the two behave alike.',
+  }),
+
+  'runners.claudeCodeLocal.model.large': stringSetting({
+    envVar: 'CLAUDE_CODE_MODEL_LARGE',
+    default: 'claude-opus-5',
+    allowEmpty: true,
+    secret: false,
+    reload: 'next-unit',
+    group: 'runner',
+    label: 'Model for tier:large',
+    dangerous: true,
+    help: 'The model a work order labelled `tier:large` runs on. The most expensive of the three by design — VISION §11 has these runs sharing one subscription quota with your interactive use, so a tier pointed at a bigger model spends that quota faster. Leave it empty to let the CLI choose for this tier.',
+  }),
+
   'runners.claudeCodeLocal.workspaceRoot': stringSetting({
     envVar: 'RUNNER_WORKSPACE_ROOT',
     default: '/var/tmp/opifex/workspaces',

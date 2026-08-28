@@ -496,7 +496,7 @@ Key variables (see `infra/compose/.env.example` for full list):
 dispatch, runner, reconciler, supervisor, promotion or notification
 variables below.** GitHub, dispatch, the `claude-code-local` runner, the
 reconciler, the AI supervisor, the promotion ladder and notifications are
-**no longer env-only**. Each of those 39 keys now resolves
+**no longer env-only**. Each of those keys now resolves
 `default → env → database row`, with a database row (set from
 `/admin/settings` → Configuration) outranking whatever `.env` says — so
 editing one of those variables and restarting can appear to do nothing if an

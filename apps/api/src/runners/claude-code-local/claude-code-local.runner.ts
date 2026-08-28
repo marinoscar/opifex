@@ -24,6 +24,7 @@ import {
   buildInvocationArgs,
   buildInvocationEnv,
   buildPrompt,
+  resolveModel,
   type PermissionMode,
 } from './claude-code-invocation';
 import { RunWorkspaceService } from './run-workspace.service';
@@ -133,6 +134,22 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
       );
     }
 
+    // Ahead of the workspace, so the one case worth a warning is said before
+    // anything else about this run is logged. The answer goes into the argv
+    // and into the `run.started` summary, and neither exists yet.
+    const model = resolveModel(workOrder.modelTier, (key) =>
+      this.settings.get(key),
+    );
+    if (model.kind === 'unmapped-tier') {
+      // Reported, NOT refused. #297's rule for a routing declaration the
+      // factory cannot act on: a label the operator got wrong, or one from a
+      // schema minor this build predates, must not cost a work order its run.
+      this.logger.warn(
+        `${workOrder.identity} asks for model tier '${model.tier}', which this runner maps ` +
+          "to no model; running on the CLI's own default instead of refusing the work",
+      );
+    }
+
     const workspace = await this.workspaces.provision({
       identity: workOrder.identity,
       repository: workOrder.repository,
@@ -170,6 +187,11 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
       args: buildInvocationArgs({
         permissionMode: this.permissionMode,
         sessionId: workOrder.runId,
+        // Spread rather than passed as `undefined`: three of the four
+        // resolutions mean "no flag at all", and the difference between
+        // omitting `--model` and passing it today's default is the whole of
+        // #420's second decision. See `InvocationOptions.model`.
+        ...(model.kind === 'pinned' ? { model: model.model } : {}),
       }),
       cwd: workspace.dir,
       env: buildInvocationEnv(workOrder),
@@ -194,15 +216,24 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
 
     run.pending.push(
       this.event(run, 'run.started', {
+        // The model goes in the summary because that is the run RECORD: #420
+        // requires a tier claim be checkable after the fact, and `summary` is
+        // a NOT NULL column on `run_events` that survives the process, where
+        // a log line does not. It states what was ASKED FOR; what the CLI
+        // actually resolved arrives separately, on the `system/init` line that
+        // `stream-json-mapper.ts` turns into "Agent ready on <model>". Two
+        // events, two facts — and a disagreement between them is exactly the
+        // thing worth being able to see.
         summary:
           `Started ${workOrder.identity} from ${workOrder.baseCommit.slice(0, 7)} ` +
-          `on ${workOrder.branch}` +
+          `on ${workOrder.branch}, running on ${model.statement}` +
           (workspace.reused ? ' (reusing an existing workspace)' : ''),
       }),
     );
 
     this.logger.log(
-      `Dispatched ${workOrder.identity} to pid ${run.process.pid ?? 'unknown'} in ${workspace.dir}`,
+      `Dispatched ${workOrder.identity} to pid ${run.process.pid ?? 'unknown'} in ` +
+        `${workspace.dir} on ${model.statement}`,
     );
 
     return handle;
@@ -340,6 +371,15 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
       // forbids it being load-bearing. The CLI has `--resume`; nothing here
       // uses it, and recovery stays abandon-and-re-run from the pinned base.
       resumable: false,
+
+      // NO `modelTiers`, and that is a claim rather than an omission (#420).
+      // Absent means ANY on this field (`servesTier`), and since #420 this
+      // runner genuinely does serve any tier: each of the three maps to a
+      // model, and a tier it cannot map runs on the CLI's default rather than
+      // being refused. Listing ['small','standard','large'] would say the same
+      // thing in more words AND become false the day the tier vocabulary grows
+      // by a minor bump — dispatch would then refuse this runner work it would
+      // have run perfectly well. The truthful declaration is the empty one.
 
       // The real configured number, in every state. A binary that cannot be
       // probed does not shrink this runner's capacity — the slots are still

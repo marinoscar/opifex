@@ -272,10 +272,26 @@ set deliberately, and read as a set-membership test — the same reasoning
 `needs:` already established, and putting a judgement about model size in the
 hot path is exactly what VISION §3.6 warns against.
 
+**On `claude-code-local`, the tier now pins an actual model, not only a
+routing class (#420).** Until #420, `tier:*` was parsed, recorded on the
+work order, and used to route among runners — but `claude-code-local` never
+turned the tier into a `--model` flag, so every tier ran whatever model the
+CLI defaulted to. That gap is closed: `submit()` now resolves the work
+order's tier against three registry keys —
+`runners.claudeCodeLocal.model.small` / `.standard` / `.large` — and, when
+the resolved setting is non-empty, passes `--model <name>` to the CLI. See
+[`docs/operator-configuration.md`](operator-configuration.md)'s worked
+example under `next-unit` for the full four-case behaviour and the reload
+semantics; the short version is that a tier's model applies to the next
+dispatch of that tier, never to a run already in flight.
+
 How `readModelTier` resolves the label set on an issue:
 
-- **No recognised `tier:` label** — the work order carries no tier and the
-  runner supplies its own default. That is what every issue gets today, since
+- **No recognised `tier:` label** — the work order carries no tier, and the
+  runner supplies its own default. Concretely, for `claude-code-local` this
+  means no `--model` flag is passed at all, not the same thing as
+  `tier:standard`'s pinned model even though the two happen to resolve to
+  the same model in this release. That is what every issue gets today, since
   no repository yet applies these labels.
 - **Exactly one recognised `tier:` label** — that tier is used.
 - **Two or more recognised `tier:` labels on the same issue** (e.g.
