@@ -22,6 +22,7 @@ is the fix for it.
 - [What actually moved, and what did not](#what-actually-moved-and-what-did-not)
 - [The Control Center](#the-control-center)
 - [The supervisor's model: provider, base URL and price](#the-supervisors-model-provider-base-url-and-price)
+- [The chat's model: a second consumer, no caller yet](#the-chats-model-a-second-consumer-no-caller-yet)
 - [Resolution order: `default → env → DB row`](#resolution-order-default--env--db-row)
 - [Reload semantics: three values, and the third is the point](#reload-semantics-three-values-and-the-third-is-the-point)
 - [Reading the API response](#reading-the-api-response)
@@ -183,6 +184,19 @@ adapter gets its own slot with no registry edit. What follows is the
 operator-facing shape of that decision; the code-facing shape is
 `apps/api/src/supervisor/invocation/supervisor-model.config.ts`.
 
+**Since #423 the supervisor is no longer the only thing asking these
+questions.** The chat has its own `chat.model.provider` / `chat.model.name`
+pair, under a separate `chat` group, resolved through the identical function
+with `'chat'` in place of `'supervisor'` — see
+[The chat's model](#the-chats-model-a-second-consumer-no-caller-yet) below.
+Everything in the rest of this section — the provider selection, the base
+URL rule, the per-provider credential slots, the model picker and the
+pricing table — is written from the supervisor's side because the supervisor
+is the consumer that predates #423 and the one the pricing/spend-ceiling
+machinery still exists for exclusively; the provider and credential
+machinery itself is shared by both consumers identically, and none of it is
+a "the supervisor's model" fact anymore, only a "this consumer's model" one.
+
 **Why the credential is a property of the provider and not of the
 supervisor.** Before #422 there was one `supervisor.model.apiKey`, so an
 operator holding both an Anthropic key and an OpenAI key could store only
@@ -238,7 +252,11 @@ about a typo once an hour in the decision log, with nobody watching.
 (`SupervisorModelCatalogService`,
 `apps/api/src/supervisor/invocation/model-catalog.service.ts`) asks the
 configured provider what its configured key can see, and the Credentials
-screen renders the answer as a picker. Provider, key and model are now one
+screen renders the answer as a picker. Since #423 the route also takes a
+`consumer` query parameter (`supervisor`, the default, or `chat`) so it can
+answer the same question for either consumer's own provider selection — see
+[The chat's model](#the-chats-model-a-second-consumer-no-caller-yet) below
+for what that parameter is for and what the response echoes back. Provider, key and model are now one
 screen, one decision, for the reason the Configuration section states to an
 operator who goes looking for `supervisor.model.name` there anyway: choosing
 a model means asking the provider what the key can reach, so the provider,
@@ -415,6 +433,122 @@ a missing rate merely reports itself as unpriced. Anthropic's dateless
 aliases (`claude-sonnet-4-0`, `claude-3-5-haiku-latest`, and similar) are a
 different case and are priced: they resolve within one minor version, at
 one price, so the alias cannot go stale in the same way.
+
+## The chat's model: a second consumer, no caller yet
+
+Until #423 (epic #419), the AI supervisor was the only thing in the API process that
+asked a model a question, so "the supervisor's model" and "the model" were
+the same sentence. They no longer are. `chat.model.provider`,
+`chat.model.name`, `chat.model.timeoutMs` and `chat.model.defaultMaxTokens`
+— a new `chat` group in the registry — describe a **second, independent
+model consumer**, resolved by the same `resolveModelConfig(settings,
+consumer)` in
+`apps/api/src/supervisor/invocation/supervisor-model.config.ts` that the
+supervisor has used since #392, called this time with `'chat'` instead of
+`'supervisor'`.
+
+**Document this as what it is: a consumer with settings and no caller.**
+Nothing in this codebase reads `chat.model.*` yet — the steering endpoint
+that would (#425) and the chat surface that would call it (#426) are both
+unbuilt as of this writing. Configuring these four keys today changes
+nothing observable; it prepares the ground #425 will build on. There is no
+chat feature to describe here, only a model consumer waiting for one.
+
+**No credential keys, and that absence is deliberate, not an oversight.**
+There is no `chat.model.apiKey` or `chat.model.baseUrl`, mirroring the
+supervisor's own shape since #422: a credential belongs to the _provider_,
+not to whichever consumer is asking, and `chat.model.provider` **selects**
+one of the existing `models.<provider>.apiKey` / `models.<provider>.baseUrl`
+slots described in
+[The supervisor's model](#the-supervisors-model-provider-base-url-and-price)
+above rather than pairing with a slot of its own. The practical consequence:
+store an Anthropic key once, on the Credentials screen, and both the
+supervisor and the chat can be pointed at it — switching either consumer's
+provider selects the matching slot, never asks for the key twice, and never
+risks one consumer's request carrying the other's credential.
+
+**Timeout and max-tokens are per consumer, not shared, and that split is a
+decision, not a missed opportunity to reuse a field.** A shared timeout
+would mean raising the supervisor's for a slower reasoning model makes the
+chat hang for the same duration on every turn, and `defaultMaxTokens` bounds
+two answer shapes that cannot share one ceiling: a supervisory judgement is
+a paragraph (`supervisor.model.defaultMaxTokens` defaults to 1,024), where a
+chat answer can run to a list as long as whatever it is enumerating
+(`chat.model.defaultMaxTokens` defaults to 2,048 — double, not equal). A
+truncated list of operations reads exactly like a complete one, which is the
+failure a shared, lower ceiling would produce silently.
+
+**`chat.model.timeoutMs` defaults to 30,000ms and caps at 55,000ms — not the
+supervisor's 600,000ms ceiling — and the cap is not a round number.**
+`infra/nginx/nginx.conf`'s `/api` location block sets `proxy_read_timeout
+60s`. A chat turn allowed to run past that is not reported by the model
+adapter at all: nginx answers the browser with its own 504 first, and that
+response says nothing about which model was asked or why it did not answer.
+Capping the setting at 55,000ms keeps the API's own `AbortSignal.timeout` —
+and the refusal `unavailableReason`/`isAbort` compose from it — the thing
+that actually fires, so an operator reads "no answer within 30000ms" instead
+of a gateway timeout with no cause attached. The supervisor keeps its much
+larger ceiling (60,000ms default, 600,000ms max) because no HTTP request is
+waiting on it — a scheduled invocation nobody is watching can afford to run
+for minutes.
+
+**There is no `chat.enabled`, and an empty `chat.model.name` is the off
+switch — deliberately, and deliberately the default.** The supervisor has
+`supervisor.enabled` as a real switch, so naming its model spends nothing on
+its own. The chat has no equivalent flag: naming a model in
+`chat.model.name` **is** turning it on, because `modelReadiness` reports a
+consumer with no model name as unconfigured and `noModelNamedError` refuses
+the call. Shipping `CHAT_MODEL_NAME` with a default naming a real model
+would make an ordinary upgrade start spending against a second metered
+consumer in every deployment that already holds a provider key, silently —
+precisely what `supervisor.enabled` defaulting to `false` exists to prevent
+on the supervisor's side. A second flag here would not add safety; it would
+add a second place to look for why a configured deployment is not
+answering.
+
+**`reload: 'live'` is declared for all four `chat.model.*` keys, and the
+declaration is a contract for #425 to honour rather than an observation
+about running code — because there is no running code yet to observe.**
+`resolveModelConfig` is called fresh, per call, and caches nothing, which is
+exactly what `live` means by this document's own definition — see
+[Reload semantics](#reload-semantics-three-values-and-the-third-is-the-point)
+above: nothing anywhere holds a copy of the value, so the next read decides.
+That much is true today, mechanically, because the function has behaved this
+way since #344 regardless of which consumer calls it. `chat.model.timeoutMs`
+carries the one wrinkle every other `live` timeout in the registry already
+has — `github.requestTimeoutMs`'s `help` text is worded almost identically:
+a value change "applies to the next request; a request already in flight
+keeps its own signal." A chat turn already waiting on
+`AbortSignal.timeout(oldValue)` does not have that signal rewound by a
+setting changed mid-turn; only the next turn honours the new number.
+
+**The contract's fine print: this holds only as long as #425 reads
+`chat.model.provider` / `chat.model.name` fresh on every turn.** If the
+steering endpoint instead resolves its model configuration once per
+conversation and reuses it across turns — a caching shape
+`resolveModelConfig` does not itself prevent, since nothing about the
+function forces a caller to call it again — then a provider or model changed
+mid-conversation would not take effect until the next conversation starts,
+which is `next-unit`, not `live`, by the same definition this document uses
+everywhere else. Whoever builds #425 must either call `resolveModelConfig`
+fresh on every turn (keeping the declaration true) or change
+`chat.model.provider` and `chat.model.name`'s `reload` values to `next-unit`
+in the same change that makes them stop being read per turn — a registry
+entry claiming `live` for a value a caller actually caches is exactly the
+kind of drift this document exists to catch.
+
+**`GET /api/operator-settings/supervisor-models` gained a `consumer` query
+parameter (#423), and the response echoes it back.** The route predates the
+second consumer and its name still reflects that, but the model catalogue
+behind it (`SupervisorModelCatalogService.list`) was always a function of
+"which provider is the named consumer currently pointed at", never
+hard-wired to the supervisor specifically. `?consumer=supervisor` (the
+default, so the caller that already existed before #423 keeps working
+unchanged) or `?consumer=chat` selects which of `supervisor.model.provider`
+/ `chat.model.provider` to read, and the response's own `consumer` field
+(`supervisorModelCatalogSchema`) reports which one answered — so a client
+holding two lists at once, one per consumer, cannot render one consumer's
+models under the other's control by mistake.
 
 ## Resolution order: `default → env → DB row`
 

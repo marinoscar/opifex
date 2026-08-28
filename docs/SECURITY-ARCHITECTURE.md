@@ -1377,17 +1377,21 @@ builds the spawn environment from that list and nothing else. Concretely:
 | `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY` — what authenticates the CLI | `GITHUB_TOKEN`, `MODEL_ANTHROPIC_API_KEY`, `MODEL_OPENAI_API_KEY`, and the runner's own limits (`CLAUDE_CODE_MAX_CONCURRENCY`) |
 | Whatever a caller passes explicitly on the spawn request                     | Anything else the API process happens to be holding, now or in future                                                          |
 
-**The supervisor's model credential is deliberately not named
-`ANTHROPIC_API_KEY`, and the reason belongs in this table's own row.** That
-name is already taken — it is the runner's own credential, on the allowlist
-above, precisely so `claude-code-local` can authenticate. #422 split the
-single `SUPERVISOR_MODEL_API_KEY` into one slot per provider
-(`MODEL_ANTHROPIC_API_KEY`, `MODEL_OPENAI_API_KEY`); had either been named
-`ANTHROPIC_API_KEY` instead, the supervisor's separately metered credential
-(ADR-0015) would have been carried into every agent subprocess through the
-line above that already exists for the runner's own key — silently, and
-without changing anything else in this table. Neither `MODEL_*` variable is
-on the allowlist, so an agent subprocess cannot read either one regardless.
+**The model credential is deliberately not named `ANTHROPIC_API_KEY`, and the
+reason belongs in this table's own row.** That name is already taken — it is
+the runner's own credential, on the allowlist above, precisely so
+`claude-code-local` can authenticate. #422 split the single
+`SUPERVISOR_MODEL_API_KEY` into one slot per provider
+(`MODEL_ANTHROPIC_API_KEY`, `MODEL_OPENAI_API_KEY`), and the slot belongs to
+the provider, not to a single consumer — since #423 the chat selects a
+provider and reads the same slot the supervisor does, rather than getting a
+credential of its own. Had either variable been named `ANTHROPIC_API_KEY`
+instead, that shared, separately metered credential (ADR-0015) would have
+been carried into every agent subprocess through the line above that already
+exists for the runner's own key — silently, and without changing anything
+else in this table. Neither `MODEL_*` variable is on the allowlist, so an
+agent subprocess cannot read either one regardless, no matter which consumer
+in the API process is currently using it.
 
 This is an **allowlist, and a denylist would not have been acceptable**. A
 denylist has to name every secret that will ever exist: each variable added to
