@@ -1910,7 +1910,116 @@ carried verbatim rather than recomposed from the parts: re-run idempotency rests
 on those strings matching exactly, so nothing downstream may re-derive them.
 
 **Hold and release are not here.** They are a write path with different
-authorization stakes and are tracked separately (#116).
+authorization stakes than this read model and are documented immediately
+below (#116).
+
+---
+
+#### `POST /api/queue/{workOrderId}/hold`
+
+Write `factory:hold` to the work order's GitHub issue. Requires
+`workorders:write`.
+
+#### `POST /api/queue/{workOrderId}/release`
+
+The counterpart: writes `factory:ready`. Same permission, same rules. The two
+are documented together because they share every shape and caveat below.
+
+`{workOrderId}` accepts either the row id or the work-order identity
+(`wo_opifex_312_a3f91c2_a1`) — the identity is what a human recognises and
+what a commit trailer carries, so the URL is usable from outside the cockpit
+too. `404` if neither matches an existing work order.
+
+**This is a UI over the input labels, not a second state machine (#116).**
+Neither endpoint touches the work order's row directly. Each writes exactly
+one label to the GitHub issue and returns; the reconciler's next tick is what
+actually moves the work order between `queued` and `held`. VISION §3.3 makes
+labels "a bidirectional edge, never the state machine" — a work order held
+through this endpoint and one held by editing the label on GitHub by hand are
+the same thing afterward, never two paths that can disagree.
+
+**Response — `202 Accepted`, unconditionally, whether or not the label
+reached GitHub:**
+
+```json
+{
+  "data": {
+    "workOrderId": "wo-uuid",
+    "identity": "wo_opifex_312_a3f91c2_a1",
+    "label": "factory:hold",
+    "labelWritten": true,
+    "reconciled": false,
+    "effect": "The label is the request. It takes effect on the next reconciler tick."
+  }
+}
+```
+
+| Field          | Meaning                                                                                |
+| -------------- | -------------------------------------------------------------------------------------- |
+| `labelWritten` | Whether the label actually reached GitHub. `false` when `github.writesEnabled` is off. |
+| `reconciled`   | Always `false`. Reconciliation is a later tick's job, never this call's.               |
+| `effect`       | One sentence, meant to be rendered verbatim rather than paraphrased.                   |
+
+**Check `labelWritten` in the body, not the status code — both endpoints
+answer `202` either way.** The request having been accepted and audited is a
+separate fact from the label having reached GitHub. With `github.writesEnabled`
+off (the operator-managed kill switch, default `false` — see
+`docs/RUNBOOK-observation-week.md`), `labelWritten` comes back `false` and no
+label was written, so **no reconciler tick will ever act on this request**. A
+client that treats `202` alone as success will report a hold or a release
+that never happened. This is the same distinction `POST
+/repositories/{id}/labels` draws between `attempted` and the write counts
+above: the call succeeding at being received is not the same fact as it
+having changed anything on GitHub, and the second fact is only in the body.
+
+**Audited regardless of `labelWritten`.** An `audit_events` row (`queue.hold`
+/ `queue.release`) is written before the response is returned, whether or not
+the label reached GitHub, with `meta.labelWritten` recording which. "Who
+asked for this and when" is the fact worth keeping, and a request whose write
+failed is exactly the one somebody will later need to find.
+
+**Release does not clear a quarantine.** There is deliberately no endpoint
+for `factory:clear-quarantine`: #49 requires a human apply it directly on
+GitHub, where the applier's identity is native and verifiable from the issue
+timeline. Proxying it through this API would launder the actor — every clear
+would look like it came from the Opifex token, and VISION §8's rule that an
+agent cannot clear its own quarantine would stop being enforceable. Writing
+`factory:ready` to a quarantined work order does not unstick it.
+
+**Releasing re-stamps `queuedAt` — but only for a work order that was
+actually held.** Lifting a hold sets `{ status: 'queued', queuedAt: new
+Date() }`, so the work order rejoins the queue at the **back**, not at the
+position it left from (`work-order-projection.service.ts`'s `reconcileHold`).
+That reconciliation step returns immediately whenever the desired state
+already matches the current one, so releasing a work order that is not
+currently `held` still writes the label and the audit event, but does not
+touch `queuedAt` — there is nothing to re-stamp, and the work order's queue
+position is unaffected. The endpoint's response does not distinguish the two
+cases; both answer identically.
+
+---
+
+**Bulk steering from the queue screen is these same two endpoints, called
+several times (#421).** The queue screen's multi-select "Hold" / "Mark ready"
+controls are not a separate endpoint. Selecting several work orders and
+pressing one button issues this same `hold`/`release` request once per work
+order, **sequentially** — not in parallel, and not inside a database or
+GitHub transaction.
+
+- **Partial success is the ordinary outcome, not an error.** A run of fifteen
+  is sometimes eleven writes and four refusals; nothing rolls the eleven back,
+  and the outcome is reported **per work order**, never as one pass/fail for
+  the whole batch.
+- **Whatever did not land stays selected.** Both refusals (4xx/5xx responses)
+  and suppressed writes (`labelWritten: false`) leave that work order selected
+  after the run, so a retry re-sends only what has not worked yet. A work
+  order whose label already reached GitHub drops out of the selection and
+  cannot be re-sent by the same click.
+- **Select-all is bounded to the current page.** It can only select the work
+  orders the `GET /api/queue` response actually returned. That response is a
+  bare array with no total count, so the UI has no number to offer "select all
+  N" beyond what is rendered, and there is no way for a selection to reach
+  past it.
 
 ---
 
