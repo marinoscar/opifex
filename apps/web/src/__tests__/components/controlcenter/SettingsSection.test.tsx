@@ -24,10 +24,7 @@ import {
   operatorSettingsFixture,
 } from '../../mocks/operatorSettings';
 import { SettingsSectionContainer } from '../../../components/controlcenter/SettingsSectionContainer';
-import {
-  SUPERVISOR_MODEL_KEYS,
-  isSupervisorModelKey,
-} from '../../../config/supervisorModel';
+import { isModelPanelSetting } from '../../../config/supervisorModel';
 import type {
   OperatorSetting,
   OperatorSettingsDocument,
@@ -117,11 +114,12 @@ describe('SettingsSection', () => {
     it('renders every key the response carried, grouped', async () => {
       renderSection();
 
-      // Every key EXCEPT the four the supervisor model control took over
-      // (#394) — those are accounted for by the signpost below rather than by
-      // a row, and the next test is the one that holds that line.
+      // Every key EXCEPT the ones the supervisor model control took over
+      // (#394, widened to the credential slots by #422) — those are accounted
+      // for by the signpost below rather than by a row, and the next test is
+      // the one that holds that line.
       for (const entry of OPERATOR_SETTINGS_FIXTURE) {
-        if (isSupervisorModelKey(entry.key)) continue;
+        if (isModelPanelSetting(entry)) continue;
         expect(await row(entry.key)).toBeInTheDocument();
       }
       expect(
@@ -143,16 +141,33 @@ describe('SettingsSection', () => {
 
       await row('supervisor.hardSpendCeilingUsd');
 
-      for (const key of SUPERVISOR_MODEL_KEYS) {
-        expect(screen.queryByLabelText(key)).not.toBeInTheDocument();
+      const promoted = OPERATOR_SETTINGS_FIXTURE.filter(isModelPanelSetting);
+      // Not a hard-coded list: the promoted set is derived from the response,
+      // so this guards against the filter silently matching nothing.
+      expect(promoted.length).toBe(6);
+
+      for (const entry of promoted) {
+        expect(screen.queryByLabelText(entry.key)).not.toBeInTheDocument();
         // Named, so an operator who came looking for the setting the Test
         // button shouted at them finds the string they were looking for.
-        expect(screen.getByText(key)).toBeInTheDocument();
+        expect(screen.getByText(entry.key)).toBeInTheDocument();
       }
 
-      await user.click(
-        screen.getByRole('button', { name: 'Go to Credentials' }),
-      );
+      // Including under its own heading: a group made ENTIRELY of promoted
+      // keys must still say where its keys went rather than vanishing.
+      expect(
+        screen.getByRole('heading', { name: 'Model credentials' }),
+      ).toBeInTheDocument();
+
+      // One signpost per GROUP that lost rows — the credential slots and the
+      // supervisor's own two keys — so an operator finds the pointer in
+      // whichever group they went looking in.
+      const signposts = screen.getAllByRole('button', {
+        name: 'Go to Credentials',
+      });
+      expect(signposts).toHaveLength(2);
+
+      await user.click(signposts[0]);
       expect(onNavigateToSection).toHaveBeenCalledWith('credentials');
     });
 

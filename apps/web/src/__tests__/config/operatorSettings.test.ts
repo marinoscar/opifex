@@ -92,8 +92,12 @@ describe('groupSettings', () => {
       'github',
       'runner',
       'dispatch',
+      // The credential slots come before the consumer that selects one, as
+      // they do in the registry (#422).
+      'models',
       'supervisor',
     ]);
+    expect(groups[3].label).toBe('Model credentials');
     expect(groups[0].entries.map((setting) => setting.key)).toEqual([
       'github.token',
       'github.requestTimeoutMs',
