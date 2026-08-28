@@ -7,6 +7,10 @@ import {
 
 import { EtagCacheService } from '../github/etag-cache.service';
 import { GitHubAuthError, GitHubNotFoundError } from '../github/github.errors';
+import {
+  LabelProvisioningService,
+  type LabelProvisioningReport,
+} from '../github/labels/label-provisioning.service';
 import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RepositoriesService } from './repositories.service';
@@ -18,6 +22,36 @@ const REACHABLE = {
   private: false,
   archived: false,
 };
+
+/**
+ * A clean label-provisioning report.
+ *
+ * Registration now provisions the factory taxonomy (#415), and these suites
+ * are about the REGISTRY. `label-provisioning.service.spec.ts` owns what
+ * provisioning does; what matters here is only that registration reports it
+ * and that a failure cannot cost a registration.
+ */
+function labelReport(
+  overrides: Partial<LabelProvisioningReport> = {},
+): LabelProvisioningReport {
+  return {
+    repository: 'acme/app',
+    ok: true,
+    status: 'ok',
+    applied: true,
+    detail: 'All 15 factory labels are present on acme/app.',
+    checkedAt: '2026-08-01T10:00:00.000Z',
+    declared: 15,
+    present: 15,
+    missing: 0,
+    created: 15,
+    updated: 0,
+    unchanged: 0,
+    failed: 0,
+    labels: [],
+    ...overrides,
+  };
+}
 
 function repositoryRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -98,6 +132,7 @@ describe('RepositoriesService', () => {
   let touched: Set<string>;
   let github: { getRepository: jest.Mock };
   let etags: { invalidateRepository: jest.Mock };
+  let labels: { provision: jest.Mock; inspect: jest.Mock };
   let service: RepositoriesService;
 
   beforeEach(() => {
@@ -122,11 +157,16 @@ describe('RepositoriesService', () => {
 
     github = { getRepository: jest.fn().mockResolvedValue(REACHABLE) };
     etags = { invalidateRepository: jest.fn() };
+    labels = {
+      provision: jest.fn().mockResolvedValue(labelReport()),
+      inspect: jest.fn().mockResolvedValue(labelReport()),
+    };
 
     service = new RepositoriesService(
       prisma as unknown as PrismaService,
       github as unknown as GitHubReadService,
       etags as unknown as EtagCacheService,
+      labels as unknown as LabelProvisioningService,
     );
   });
 

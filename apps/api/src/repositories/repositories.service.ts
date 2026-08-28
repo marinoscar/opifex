@@ -10,6 +10,10 @@ import type { Prisma, Repository } from '@prisma/client';
 
 import { EtagCacheService } from '../github/etag-cache.service';
 import { GitHubAuthError, GitHubNotFoundError } from '../github/github.errors';
+import {
+  LabelProvisioningService,
+  type LabelProvisioningReport,
+} from '../github/labels/label-provisioning.service';
 import { GitHubReadService } from '../github/read/github-read.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type {
@@ -39,6 +43,7 @@ export class RepositoriesService {
     private readonly prisma: PrismaService,
     private readonly github: GitHubReadService,
     private readonly etags: EtagCacheService,
+    private readonly labels: LabelProvisioningService,
   ) {}
 
   async list(query: ListRepositoriesQueryDto) {
@@ -148,7 +153,103 @@ export class RepositoriesService {
     this.logger.log(
       `Registered ${owner}/${name} (observe=${repository.observeEnabled}, dispatch=${repository.dispatchEnabled})`,
     );
-    return toResponse(repository);
+
+    // AFTER the row exists, and never able to undo it. See `provisionLabels`.
+    const labelProvisioning = await this.provisionLabels(owner, name);
+
+    return { ...toResponse(repository), labelProvisioning };
+  }
+
+  /**
+   * Create the factory labels on a freshly registered repository.
+   *
+   * ## Why this cannot fail the registration
+   *
+   * `factory:ready` is the whole eligibility signal, and GitHub's label picker
+   * only offers labels that EXIST — so a repository registered without the
+   * taxonomy cannot be steered at all except by typing the label name by hand,
+   * spelled exactly right, with no autocomplete. That is #415: `Knecta` was
+   * registered, walked to the top of the ladder, observed every 60 seconds,
+   * and had zero factory labels.
+   *
+   * But provisioning writes, and writing is a different permission from
+   * reading. ADR-0001 authenticates with a FINE-GRAINED personal access token,
+   * granted one repository at a time and one permission at a time, and a
+   * fine-grained token emits no `x-oauth-scopes` header — so whether it can
+   * create a label is genuinely unknowable until it is tried. Refusing the
+   * registration on that basis would leave the operator with nothing
+   * registered, no explanation, and a reachability check that passed.
+   *
+   * So the registration stands and the failure is REPORTED, in the response,
+   * distinctly: `labelProvisioning.status` says `refused` rather than `ok`,
+   * and the repair endpoint exists for the moment the permission is granted.
+   * A repository that looks registered and cannot be labelled is exactly the
+   * "configured is not effective" trap epic #332 exists to stop repeating —
+   * and the way out of that trap is to SAY SO, not to refuse.
+   *
+   * The catch is belt-and-braces on top of a service that already reports
+   * rather than throws: a bug in provisioning must not cost a registration
+   * either. Null then, which the response schema admits.
+   */
+  private async provisionLabels(
+    owner: string,
+    name: string,
+  ): Promise<LabelProvisioningReport | null> {
+    try {
+      const report = await this.labels.provision({ owner, name });
+      if (!report.ok) {
+        this.logger.warn(
+          `${owner}/${name} is registered, but its factory labels are not complete: ${report.detail}`,
+        );
+      }
+      return report;
+    } catch (error) {
+      this.logger.error(
+        `${owner}/${name} is registered, but provisioning its factory labels threw: ` +
+          (error instanceof Error ? error.message : String(error)),
+      );
+      return null;
+    }
+  }
+
+  /**
+   * The label taxonomy on this repository, as an observation with a time.
+   *
+   * A read: it asks GitHub what is there and writes nothing. `repair` is the
+   * write.
+   */
+  async inspectLabels(id: string): Promise<LabelProvisioningReport> {
+    const repository = await this.requireRepository(id);
+    return this.labels.inspect({
+      owner: repository.owner,
+      name: repository.name,
+    });
+  }
+
+  /**
+   * Create the missing labels and update the drifted ones.
+   *
+   * The recovery path for a repository registered while the token lacked
+   * permission — without a de-register and re-register, which would be a
+   * destructive way to retry a write. Idempotent: on a repository that is
+   * already correct this performs no writes and answers `ok`.
+   */
+  async repairLabels(id: string): Promise<LabelProvisioningReport> {
+    const repository = await this.requireRepository(id);
+    return this.labels.provision({
+      owner: repository.owner,
+      name: repository.name,
+    });
+  }
+
+  private async requireRepository(id: string): Promise<Repository> {
+    const repository = await this.prisma.repository.findUnique({
+      where: { id },
+    });
+    if (!repository) {
+      throw new NotFoundException(`Repository ${id} not found`);
+    }
+    return repository;
   }
 
   async update(id: string, dto: UpdateRepositoryDto) {
