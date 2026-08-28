@@ -101,7 +101,13 @@ import { TrustDigestSource } from './brief/trust-digest.source';
       // setting that #344 removed for the API key.
       provide: SUPERVISOR_MODEL,
       inject: [OperatorSettingsService],
-      useFactory: createSupervisorModel,
+      // The consumer is named here rather than defaulted (#425): this binding
+      // is the SUPERVISOR's model, and `chat.model.*` is a different four keys
+      // that a different caller resolves. A factory that defaulted would let a
+      // future binding for the chat spend on the supervisor's model name with
+      // nothing in the diff to show it.
+      useFactory: (settings: OperatorSettingsService) =>
+        createSupervisorModel(settings, 'supervisor'),
     },
     {
       // The proposer list, assembled here so the set is readable in one place

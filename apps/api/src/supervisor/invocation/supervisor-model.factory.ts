@@ -2,7 +2,8 @@ import type { OperatorSettingsService } from '../../settings/operator-settings/o
 import { AnthropicSupervisorModel } from './anthropic-supervisor-model';
 import { OpenAiSupervisorModel } from './openai-supervisor-model';
 import {
-  resolveSupervisorModelConfig,
+  resolveModelConfig,
+  type ModelConsumer,
   type SupervisorModelProvider,
 } from './supervisor-model.config';
 import type {
@@ -47,16 +48,35 @@ export class ProviderRoutingSupervisorModel implements SupervisorModel {
     Record<SupervisorModelProvider, SupervisorModel>
   >;
 
-  constructor(private readonly settings: OperatorSettingsService) {
+  /**
+   * @param consumer Which thing in this process this router answers for (#423).
+   *
+   * #423 built `resolveModelConfig(settings, consumer)` and left this class
+   * hard-wired to the supervisor's four keys, which meant a second consumer
+   * could not be routed at all without either a second router or a second copy
+   * of the resolution. Threading the consumer here is what makes
+   * `chat.model.provider` select an adapter the same way
+   * `supervisor.model.provider` does — one router, two consumers, still one
+   * place where a vendor is chosen.
+   *
+   * Required, not defaulted. See the adapters' constructors for why a default
+   * of `'supervisor'` would be a misconfiguration with no symptom.
+   */
+  constructor(
+    private readonly settings: OperatorSettingsService,
+    private readonly consumer: ModelConsumer,
+  ) {
     this.adapters = Object.freeze({
-      anthropic: new AnthropicSupervisorModel(settings),
-      openai: new OpenAiSupervisorModel(settings),
+      anthropic: new AnthropicSupervisorModel(settings, consumer),
+      openai: new OpenAiSupervisorModel(settings, consumer),
     });
   }
 
-  /** The adapter for whatever the setting says RIGHT NOW. */
+  /** The adapter for whatever THIS consumer's setting says RIGHT NOW. */
   private selected(): SupervisorModel {
-    return this.adapters[resolveSupervisorModelConfig(this.settings).provider];
+    return this.adapters[
+      resolveModelConfig(this.settings, this.consumer).provider
+    ];
   }
 
   /**
@@ -130,6 +150,7 @@ export class ProviderRoutingSupervisorModel implements SupervisorModel {
  */
 export function createSupervisorModel(
   settings: OperatorSettingsService,
+  consumer: ModelConsumer,
 ): SupervisorModel {
-  return new ProviderRoutingSupervisorModel(settings);
+  return new ProviderRoutingSupervisorModel(settings, consumer);
 }
