@@ -1,4 +1,5 @@
-import type { WorkOrderSpec } from '../runner.types';
+import type { OperatorSettingKey } from '../../settings/operator-settings/operator-settings.registry';
+import type { ModelTier, WorkOrderSpec } from '../runner.types';
 
 /**
  * How a work order becomes an argv and a prompt.
@@ -13,6 +14,13 @@ import type { WorkOrderSpec } from '../runner.types';
  * "verified against observed behaviour, not aspirational", and a flag that
  * does not exist produces a runner that fails on its first real dispatch and
  * passes every test that mocked the CLI.
+ *
+ * `--model` (#420) was read the same way, off 2.1.243: *"Model for the current
+ * session. Provide an alias for the latest model (e.g. 'fable', 'opus', or
+ * 'sonnet') or a model's full name (e.g. 'claude-fable-5')."* Both forms are
+ * accepted, and the registry's defaults are full names rather than aliases —
+ * see `operator-settings.registry.ts` for why a moving alias is the wrong
+ * thing to write down for a tier whose purpose is bounding spend.
  */
 
 /**
@@ -34,6 +42,23 @@ export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
 export interface InvocationOptions {
   permissionMode: PermissionMode;
+  /**
+   * The model to pin this run to, or ABSENT for the CLI's own default.
+   *
+   * Absent is not a synonym for "the standard model", and the distinction is
+   * the whole of #420's second decision. Most work orders declare no tier, and
+   * for those the right invocation carries NO `--model` flag at all: the CLI
+   * picks, and it goes on picking correctly across a release that changes
+   * which model that is. Naming today's default explicitly for the untiered
+   * case would freeze it, silently, against exactly that change — a run in six
+   * months would keep asking for a model chosen in August by nobody in
+   * particular, and nothing anywhere would report that it had.
+   *
+   * So this is optional, and {@link buildInvocationArgs} omits the flag rather
+   * than substituting a value. See {@link resolveModel} for which of the four
+   * cases produces a value here.
+   */
+  model?: string;
   /**
    * The control plane's run id, handed to the CLI as its session id.
    *
@@ -59,7 +84,7 @@ export interface InvocationOptions {
  * issue, argv has a length limit, and argv is world-readable through `ps`.
  */
 export function buildInvocationArgs(options: InvocationOptions): string[] {
-  return [
+  const args = [
     '--print',
     '--output-format',
     'stream-json',
@@ -69,6 +94,153 @@ export function buildInvocationArgs(options: InvocationOptions): string[] {
     '--session-id',
     options.sessionId,
   ];
+
+  // OMITTED, not defaulted. `--model` is the one flag here whose absence is
+  // meaningful: it hands the choice back to the CLI, which is what a work
+  // order that declared no tier is owed. An empty string is treated the same
+  // way, because that is how an operator expresses "this tier gets whatever
+  // the CLI would have picked" in a settings field that cannot hold `null`.
+  if (options.model !== undefined && options.model !== '') {
+    args.push('--model', options.model);
+  }
+
+  return args;
+}
+
+// ---------------------------------------------------------------------------
+// tier -> model
+// ---------------------------------------------------------------------------
+
+/**
+ * Which operator setting holds the model for each tier (#420).
+ *
+ * ## Why the mapping is three settings and not a constant here
+ *
+ * A tier is a POLICY statement — "small work uses the cheap model" — and the
+ * model that satisfies a policy moves as models ship, on a schedule that has
+ * nothing to do with this repository's release cadence. A constant would make
+ * "run `tier:small` on Haiku 5 now that it exists" a code change, a build and
+ * a deploy, for a decision that is entirely the operator's and involves no
+ * code at all. Three registry keys make it a form field, and cost three keys.
+ *
+ * That is the trade #420 asked to be weighed rather than defaulted, and the
+ * thing that settles it is that the operator is the only party who KNOWS: what
+ * their subscription includes, what their spend looks like, and whether the
+ * model a tier names is still the right one. `permissionMode` and `binary` —
+ * the other two values that end up in this argv — are already registry keys
+ * for the same reason, and a mapping harder to change than the permission mode
+ * would be an odd place to draw the line.
+ *
+ * The values are checked against the registry at COMPILE time by `satisfies`,
+ * so a key renamed there and not here does not compile. That the key exists is
+ * not the same as it holding a usable model, which is what the spec's cost
+ * ladder assertion is for.
+ */
+export const MODEL_SETTING_KEY_BY_TIER = Object.freeze({
+  small: 'runners.claudeCodeLocal.model.small',
+  standard: 'runners.claudeCodeLocal.model.standard',
+  large: 'runners.claudeCodeLocal.model.large',
+} as const satisfies Record<ModelTier, OperatorSettingKey>);
+
+/** The three registry keys, as a union, so a lookup returns a plain string. */
+export type ModelSettingKey =
+  (typeof MODEL_SETTING_KEY_BY_TIER)[keyof typeof MODEL_SETTING_KEY_BY_TIER];
+
+/**
+ * What the invocation will do about the model, and how to say so.
+ *
+ * Four cases rather than `string | undefined`, because three of them produce
+ * no flag and they are NOT the same fact. An operator reading a run record
+ * needs to tell "nobody asked for a model" from "somebody asked for one this
+ * build could not supply", and a caller needs to know which of those is worth
+ * a warning. Collapsing them is how #420's bug looked fine for as long as it
+ * did: the tier was present, and everything downstream of it was silent.
+ *
+ * `statement` is prose on purpose. It is written into the `run.started`
+ * summary, which is a NOT NULL column on `run_events` and therefore the one
+ * place a tier claim can be checked after the fact without a schema change.
+ */
+export type ModelResolution =
+  /** A tier was declared and maps to a model. The flag is passed. */
+  | {
+      readonly kind: 'pinned';
+      readonly model: string;
+      readonly statement: string;
+    }
+  /** No tier. The CLI's own default applies and the flag is omitted. */
+  | { readonly kind: 'no-tier'; readonly statement: string }
+  /** A tier this build has no key for. Reported, never refused. */
+  | {
+      readonly kind: 'unmapped-tier';
+      readonly tier: string;
+      readonly statement: string;
+    }
+  /** A known tier the operator has deliberately mapped to no model. */
+  | {
+      readonly kind: 'not-configured';
+      readonly tier: string;
+      readonly statement: string;
+    };
+
+/**
+ * Decide which model a work order's tier asks for, if any.
+ *
+ * Pure: the configured value arrives through `configured` rather than through
+ * an injected settings service, so all four branches are assertable without
+ * spawning anything — which matters because three of them are defined by the
+ * ABSENCE of a flag, and an absence is the easiest thing in the world to test
+ * vacuously.
+ *
+ * `tier` is typed `string`, not `ModelTier`, and that is deliberate. The union
+ * is closed today and `work-order-rehydrate.ts` refuses a stored tier outside
+ * it — but the tier vocabulary is a versioned contract (ADR-0010) that a minor
+ * bump may add to, and a runner that THREW on a tier it did not recognise
+ * would turn a forward-compatible schema change into a failed run. #297
+ * already settled how the factory treats a routing declaration it cannot act
+ * on: ignore it, run on the default, and say so. This does that.
+ */
+export function resolveModel(
+  tier: string | undefined,
+  configured: (key: ModelSettingKey) => string,
+): ModelResolution {
+  if (tier === undefined) {
+    return {
+      kind: 'no-tier',
+      statement: "the runner's own default model (no tier declared)",
+    };
+  }
+
+  const key = Object.prototype.hasOwnProperty.call(
+    MODEL_SETTING_KEY_BY_TIER,
+    tier,
+  )
+    ? MODEL_SETTING_KEY_BY_TIER[tier as ModelTier]
+    : undefined;
+
+  if (key === undefined) {
+    return {
+      kind: 'unmapped-tier',
+      tier,
+      statement:
+        `the runner's own default model (tier '${tier}' is not one this runner ` +
+        'maps to a model)',
+    };
+  }
+
+  const model = configured(key).trim();
+  if (model === '') {
+    return {
+      kind: 'not-configured',
+      tier,
+      statement: `the runner's own default model (tier '${tier}' is configured with no model)`,
+    };
+  }
+
+  return {
+    kind: 'pinned',
+    model,
+    statement: `model ${model} (tier '${tier}')`,
+  };
 }
 
 /**
