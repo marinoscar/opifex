@@ -63,6 +63,16 @@ export function BulkSteerToolbar({
   const running = progress !== null;
   const disabled = running || selectedCount === 0;
 
+  // Built as one string rather than interpolated into the JSX so it renders as
+  // a single text node: the count is the sentence an operator checks before
+  // pressing a button that writes to GitHub, and it should be readable — and
+  // assertable — as one sentence.
+  const summary =
+    selectedCount === 0
+      ? 'Nothing selected. Tick the work orders to steer — select-all covers ' +
+        `the ${selectableCount} on this page and no others.`
+      : `${selectedCount} of the ${selectableCount} on this page selected.`;
+
   return (
     <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
       <Stack
@@ -71,9 +81,7 @@ export function BulkSteerToolbar({
         sx={{ alignItems: { sm: 'center' } }}
       >
         <Typography variant="body2" sx={{ flexGrow: 1 }}>
-          {selectedCount === 0
-            ? `Nothing selected. Tick the work orders to steer — select-all covers the ${selectableCount} on this page and no others.`
-            : `${selectedCount} of the ${selectableCount} on this page selected.`}
+          {summary}
         </Typography>
         <Stack direction="row" spacing={1}>
           <Button

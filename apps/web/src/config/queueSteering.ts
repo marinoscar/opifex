@@ -85,6 +85,13 @@ export type SteerOutcome =
  *
  * `labelWritten` is the whole decision, and it is read from the response rather
  * than inferred from the HTTP status — a suppressed write is a 200.
+ *
+ * `workOrderId` is the id that was SENT, not `result.workOrderId`. The queue
+ * gives each row its identity (`queue.service.ts` sets `workOrder.id` from
+ * `row.identity`) and the steer endpoints accept either that or the database
+ * row id, which is what they answer with. The selection is keyed on what the
+ * rows are keyed on, so the sent id is the one that has to come back — taking
+ * the response's would leave every steered row selected forever.
  */
 export function classifyResult(
   workOrderId: string,
