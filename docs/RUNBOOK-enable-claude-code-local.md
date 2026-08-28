@@ -16,18 +16,33 @@ dispatch is turned on and watched.
 
 ---
 
-## The order matters
+## The order matters — as a check now, not a gate
 
-The two enable flags are independent, and flipping both at once throws away the
-only cheap chance to check that the runner registers **honestly** before anything
-is routed to it:
+Both enable flags ship **on** by default (ADR-0019, #439): a freshly booted
+container already has `runners.claudeCodeLocal.enabled` and
+`dispatch.enabled` set to `true`, and nothing here forces you to flip either
+one before the other. Flipping them one at a time used to be the only way
+to avoid queuing every work order behind a runner nobody had checked yet;
+it no longer is, because dispatch stays refused on its own —
+`dispatch.hardSpendCeilingUsd` has no default, and
+`docs/adr/0019-fresh-install-ships-ready-not-running.md` records why that
+one refusal is now what a fresh install relies on instead of these two.
+
+The reason to still do it in order has not gone away, though — it has just
+stopped being mandatory, and is now advice for an operator who wants to
+**verify** the runner registers honestly before trusting it with anything:
 
 | Flag                        | What it governs                            |
 | --------------------------- | ------------------------------------------ |
 | `CLAUDE_CODE_LOCAL_ENABLED` | Whether this runner is _dispatchable_      |
 | `DISPATCH_ENABLED`          | Whether the queue drains to **any** runner |
 
-> **Both are now flipped from the Control Center, not `.env`.** Since epic
+To run the check anyway: turn `runners.claudeCodeLocal.enabled` off from the
+Control Center, confirm the fleet reports `dispatchable: 0`, then turn it
+back on and watch the number move — the same observation step 3 below
+walks through, starting from off instead of from the shipped default.
+
+> **Both are flipped from the Control Center, not `.env`.** Since epic
 > #332, `CLAUDE_CODE_LOCAL_ENABLED` (`runners.claudeCodeLocal.enabled`) and
 > `DISPATCH_ENABLED` (`dispatch.enabled`) are operator-managed keys with
 > `live` reload — an Admin toggles them at `/admin/settings` → Configuration
@@ -38,8 +53,9 @@ is routed to it:
 
 Availability is a third, separate thing, and it is **observed rather than
 configured**: the runner probes `claude --version` and reports what it found.
-That is why step 3 below is worth doing while dispatch is still off — the fleet
-tells you whether the container is capable before you give it anything to do.
+That is why step 3 below is worth reading even though dispatch no longer
+needs to be off for it to be safe — the fleet tells you whether the
+container is capable, independent of either enable flag.
 
 ---
 
@@ -167,17 +183,25 @@ the failure table.
 
 ---
 
-## Step 3 — enable the runner, with dispatch still off
+## Step 3 — confirm the runner, and optionally verify it registers honestly
 
-First, confirm the fleet with nothing flipped yet — no `.env` edit, no restart,
-just the container as it already booted:
+`runners.claudeCodeLocal.enabled` ships **on** (ADR-0019, #439), so a
+container that has completed steps 1 and 2 is already dispatchable — no flag
+to flip, just the container as it already booted:
 
 ```bash
 curl -s https://<your-host>/api/health/ready | jq .data.info.fleet
 ```
 
-**Observed** on the reference deployment, immediately after the epic #324 rebuild
-and _before_ any flag was flipped:
+You should see `enabled: 1` and `dispatchable: 1` already, with `available`
+reflecting whatever step 1 found.
+
+**If you want the honest-registration check described above**, turn
+`runners.claudeCodeLocal.enabled` off first — from the Control Center,
+`/admin/settings` → Configuration → the **Runner** group — and re-run the
+same command. That is what produced the transcript below, captured on the
+reference deployment before this flag defaulted on; it is what you will see
+again if you deliberately flip it off to run this check yourself:
 
 ```json
 {
@@ -222,11 +246,12 @@ Three places now agree — the installed binary, the health payload and the
 persisted manifest. If they disagree, registration has not re-run; it converges on
 a 60-second tick (#276), so wait one before investigating.
 
-Now flip the runner on. From the Control Center: `/admin/settings` →
-**Configuration** → the **Runner** group → _Local Claude Code runner
-enabled_ → switch it on → Save. Or, scripted, with an access token minted by
-an interactive login — this endpoint refuses a personal access token or a
-device-flow token outright, see
+Now flip the runner back on — only needed if you turned it off to run the
+check above; a container you have not touched already has it on. From the
+Control Center: `/admin/settings` → **Configuration** → the **Runner** group
+→ _Local Claude Code runner enabled_ → switch it on → Save. Or, scripted,
+with an access token minted by an interactive login — this endpoint refuses
+a personal access token or a device-flow token outright, see
 [`personal-access-tokens.md`](personal-access-tokens.md):
 
 ```bash
@@ -246,17 +271,21 @@ curl -s https://<your-host>/api/health/ready | jq .data.info.fleet
 
 `enabled` and `dispatchable` should both now read `1`, with `available`
 unchanged from step 1 — enablement and availability are still two different
-facts, only one of which you just changed.
+facts, only one of which you just changed (or confirmed was already set).
 
 ---
 
 ## Step 4 — hand off
 
-Only now flip `dispatch.enabled` — the same way, from Configuration or via
-`PATCH /api/operator-settings` — and go to
-[`RUNBOOK-observation-week.md`](RUNBOOK-observation-week.md). That runbook owns
-what to watch once work is actually moving; this one is finished when the fleet
-says the container is capable.
+`dispatch.enabled` ships on too, so there is usually nothing left to flip
+here — go straight to
+[`RUNBOOK-observation-week.md`](RUNBOOK-observation-week.md), which now
+opens by turning `github.writesEnabled` **off** if you want a read-only
+week, rather than by turning dispatch on. If you turned `dispatch.enabled`
+off as part of the check in step 3, flip it back the same way, from
+Configuration or via `PATCH /api/operator-settings`, before moving on. That
+runbook owns what to watch once work is actually moving; this one is
+finished when the fleet says the container is capable.
 
 ---
 

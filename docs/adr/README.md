@@ -13,26 +13,27 @@ one.
 
 ## The index
 
-| #                                                         | Decision                                                                                  | Status   | Issue                                                   |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------- |
-| [0001](0001-github-authentication.md)                     | Authenticate to GitHub with a fine-grained personal access token                          | Accepted | [#40](https://github.com/marinoscar/opifex/issues/40)   |
-| [0002](0002-github-http-client.md)                        | Call GitHub with the platform `fetch`, not an SDK                                         | Accepted | [#40](https://github.com/marinoscar/opifex/issues/40)   |
-| [0003](0003-observability-backend.md)                     | Uptrace is the observability backend; Grafana is not deployed                             | Accepted | [#59](https://github.com/marinoscar/opifex/issues/59)   |
-| [0004](0004-notification-transport.md)                    | Web Push for notifications, with a configurable webhook as the second path                | Accepted | [#58](https://github.com/marinoscar/opifex/issues/58)   |
-| [0005](0005-execution-record-authorship.md)               | The control plane creates the factory branch and its first commit                         | Accepted | [#63](https://github.com/marinoscar/opifex/issues/63)   |
-| [0006](0006-provenance-in-commit-trailers.md)             | Provenance lives in git commit trailers, and carries identity only                        | Accepted | [#26](https://github.com/marinoscar/opifex/issues/26)   |
-| [0007](0007-preview-runner-acknowledgement.md)            | A single-runner fleet may be load-bearing only by explicit operator acknowledgement       | Accepted | [#147](https://github.com/marinoscar/opifex/issues/147) |
-| [0008](0008-claude-code-local-invocation.md)              | Invoke `claude-code-local` as a subprocess, not through the Agent SDK                     | Accepted | [#61](https://github.com/marinoscar/opifex/issues/61)   |
-| [0009](0009-record-architecture-decisions.md)             | Record architecture decisions in this directory, proposed by anyone and merged by a human | Accepted | [#25](https://github.com/marinoscar/opifex/issues/25)   |
-| [0010](0010-schema-versioning-and-compatibility.md)       | Schemas are versioned per major, strict, and the producer emits what the consumer speaks  | Accepted | [#34](https://github.com/marinoscar/opifex/issues/34)   |
-| [0011](0011-supervisor-action-class-granularity.md)       | Grant autonomy per (capability, effect) pair, from one frozen registry                    | Proposed | [#218](https://github.com/marinoscar/opifex/issues/218) |
-| [0012](0012-one-daily-artifact.md)                        | The trust digest extends the daily brief rather than competing with it                    | Proposed | [#226](https://github.com/marinoscar/opifex/issues/226) |
-| [0013](0013-never-trustable-effects.md)                   | Never-trustable is a list of effects, checked at the execution boundary                   | Proposed | [#233](https://github.com/marinoscar/opifex/issues/233) |
-| [0014](0014-approval-timeout-precedence.md)               | Approval timeouts resolve by a total order, and the grant is what delivers autonomy       | Proposed | [#234](https://github.com/marinoscar/opifex/issues/234) |
-| [0015](0015-supervisor-model-http-client.md)              | Call the supervisor's model with the platform `fetch`, on a budget of its own             | Proposed | [#230](https://github.com/marinoscar/opifex/issues/230) |
-| [0016](0016-supervisor-live-run-ceiling.md)               | The live-run ceiling is removed; the quota gate keeps only the parked-run signal          | Proposed | [#260](https://github.com/marinoscar/opifex/issues/260) |
-| [0017](0017-supervisor-spend-ceiling.md)                  | The supervisor gets its own hard spend ceiling, enforced between model calls              | Proposed | [#261](https://github.com/marinoscar/opifex/issues/261) |
-| [0018](0018-operator-settings-resolution-and-ceilings.md) | Operator settings resolve default → env → DB row, and the hard spend ceilings join them   | Proposed | [#354](https://github.com/marinoscar/opifex/issues/354) |
+| #                                                         | Decision                                                                                           | Status   | Issue                                                   |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------- |
+| [0001](0001-github-authentication.md)                     | Authenticate to GitHub with a fine-grained personal access token                                   | Accepted | [#40](https://github.com/marinoscar/opifex/issues/40)   |
+| [0002](0002-github-http-client.md)                        | Call GitHub with the platform `fetch`, not an SDK                                                  | Accepted | [#40](https://github.com/marinoscar/opifex/issues/40)   |
+| [0003](0003-observability-backend.md)                     | Uptrace is the observability backend; Grafana is not deployed                                      | Accepted | [#59](https://github.com/marinoscar/opifex/issues/59)   |
+| [0004](0004-notification-transport.md)                    | Web Push for notifications, with a configurable webhook as the second path                         | Accepted | [#58](https://github.com/marinoscar/opifex/issues/58)   |
+| [0005](0005-execution-record-authorship.md)               | The control plane creates the factory branch and its first commit                                  | Accepted | [#63](https://github.com/marinoscar/opifex/issues/63)   |
+| [0006](0006-provenance-in-commit-trailers.md)             | Provenance lives in git commit trailers, and carries identity only                                 | Accepted | [#26](https://github.com/marinoscar/opifex/issues/26)   |
+| [0007](0007-preview-runner-acknowledgement.md)            | A single-runner fleet may be load-bearing only by explicit operator acknowledgement                | Accepted | [#147](https://github.com/marinoscar/opifex/issues/147) |
+| [0008](0008-claude-code-local-invocation.md)              | Invoke `claude-code-local` as a subprocess, not through the Agent SDK                              | Accepted | [#61](https://github.com/marinoscar/opifex/issues/61)   |
+| [0009](0009-record-architecture-decisions.md)             | Record architecture decisions in this directory, proposed by anyone and merged by a human          | Accepted | [#25](https://github.com/marinoscar/opifex/issues/25)   |
+| [0010](0010-schema-versioning-and-compatibility.md)       | Schemas are versioned per major, strict, and the producer emits what the consumer speaks           | Accepted | [#34](https://github.com/marinoscar/opifex/issues/34)   |
+| [0011](0011-supervisor-action-class-granularity.md)       | Grant autonomy per (capability, effect) pair, from one frozen registry                             | Proposed | [#218](https://github.com/marinoscar/opifex/issues/218) |
+| [0012](0012-one-daily-artifact.md)                        | The trust digest extends the daily brief rather than competing with it                             | Proposed | [#226](https://github.com/marinoscar/opifex/issues/226) |
+| [0013](0013-never-trustable-effects.md)                   | Never-trustable is a list of effects, checked at the execution boundary                            | Proposed | [#233](https://github.com/marinoscar/opifex/issues/233) |
+| [0014](0014-approval-timeout-precedence.md)               | Approval timeouts resolve by a total order, and the grant is what delivers autonomy                | Proposed | [#234](https://github.com/marinoscar/opifex/issues/234) |
+| [0015](0015-supervisor-model-http-client.md)              | Call the supervisor's model with the platform `fetch`, on a budget of its own                      | Proposed | [#230](https://github.com/marinoscar/opifex/issues/230) |
+| [0016](0016-supervisor-live-run-ceiling.md)               | The live-run ceiling is removed; the quota gate keeps only the parked-run signal                   | Proposed | [#260](https://github.com/marinoscar/opifex/issues/260) |
+| [0017](0017-supervisor-spend-ceiling.md)                  | The supervisor gets its own hard spend ceiling, enforced between model calls                       | Proposed | [#261](https://github.com/marinoscar/opifex/issues/261) |
+| [0018](0018-operator-settings-resolution-and-ceilings.md) | Operator settings resolve default → env → DB row, and the hard spend ceilings join them            | Proposed | [#354](https://github.com/marinoscar/opifex/issues/354) |
+| [0019](0019-fresh-install-ships-ready-not-running.md)     | A fresh install ships ready, not running — five defaults flip on, the hard spend ceiling stays off | Accepted | [#439](https://github.com/marinoscar/opifex/issues/439) |
 
 `0000-template.md` is the template. It is not a decision and never becomes one;
 see [Numbering](#numbering) for what that means for `Decision: ADR-0000`.

@@ -6,6 +6,19 @@
 - Supersedes part of: #64's unconditional preview rule
 - Epic: #18
 
+> **Partially superseded by [ADR-0019](0019-fresh-install-ships-ready-not-running.md).**
+> The rule decided here — a preview-tier runner may be load-bearing only with
+> `DISPATCH_ALLOW_PREVIEW_RUNNER` set — is unchanged and still lives in
+> `dispatch.service.ts`. What ADR-0019 changes is only which side of that
+> switch a fresh install starts on: the acknowledgement now ships **on** by
+> default, on the argument that with exactly one runner the rule as written
+> here is unsatisfiable by any configuration a fresh install could reach, so
+> leaving its bypass off reproduces the paralysis this ADR exists to relieve.
+> The rule regains its original force — an operator choosing, per
+> deployment, whether to accept a preview runner as load-bearing — the moment
+> a second, GA-tier runner exists and `dispatch.allowPreviewRunner` is turned
+> back off.
+
 ## Context
 
 Registering `claude-code-local` (#147) made a collision visible that neither

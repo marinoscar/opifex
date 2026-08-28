@@ -1210,9 +1210,10 @@ export const OPERATOR_SETTINGS = {
 
   'supervisor.standDownWhenBlocked': booleanSetting({
     envVar: 'SUPERVISOR_STAND_DOWN_WHEN_BLOCKED',
-    // The ONE setting here that defaults on, and therefore the one whose env
-    // form is compared `!== 'false'` today rather than `=== 'true'`. The
-    // registry's single boolean rule reproduces both — see `booleanSetting`.
+    // Defaults on, and was the ONLY setting here that did until ADR-0019
+    // flipped the five posture switches. That is why its env form is compared
+    // `!== 'false'` today rather than `=== 'true'`. The registry's single
+    // boolean rule reproduces both — see `booleanSetting`.
     default: true,
     secret: false,
     // Read per invocation (supervisor.service.ts:299).

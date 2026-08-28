@@ -585,13 +585,18 @@ order, in `OperatorSettingsService.resolve()`
 a value.** This is not a minor implementation detail — it is the rule
 `common/schemas/user-settings-namespaces.schema.ts` already fought for the
 user-settings side of the codebase, applied one layer further out (ADR-0018
-§2). Concretely: `reconciler.enabled` defaults to `false`. If neither
-`RECONCILER_ENABLED` nor a database row exists, the key resolves to `false`
-because the _default_ says so — never because "absent" was coerced to
-`false` by a careless `?? false` somewhere on the read path. That distinction
-is not academic for `supervisor.standDownWhenBlocked`, which is the one
-switch in the whole registry that defaults **on**: an absent-coerces-to-false
-bug on that specific key would silently invert it.
+§2). Concretely: `reconciler.enabled` defaults to `true` (ADR-0019, #439). If
+neither `RECONCILER_ENABLED` nor a database row exists, the key resolves to
+`true` because the _default_ says so — never because "absent" was coerced to
+some other value by a careless `?? false` (or `?? true`) somewhere on the
+read path. That distinction is not academic: `reconciler.enabled`,
+`runners.claudeCodeLocal.enabled`, `dispatch.enabled`,
+`dispatch.allowPreviewRunner`, `github.writesEnabled` and
+`supervisor.standDownWhenBlocked` are the switches in the registry that
+default **on** — an absent-coerces-to-false bug on any one of them would
+silently invert it, which is precisely the failure mode #439's own fix to
+`booleanSetting` (see the ADR) was written against for the boolean parser
+one layer further down.
 
 **A stored row always outranks the environment**, which is the part that
 actually produces the "I edited `.env` and nothing happened" confusion this
@@ -762,8 +767,8 @@ anything until then.
       "source": "database", // "default" | "env" | "database"
       "envVar": "DISPATCH_ENABLED",
       "secret": false,
-      "value": true,
-      "default": false,
+      "value": false,
+      "default": true,
     },
     // ...one object per registry entry; secret ones shaped { secret: true, configured, hint, updatedAt } — never "value"
   ],

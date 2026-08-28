@@ -51,15 +51,23 @@ factory action a human takes. §4 onward documents that foundation in the depth
 it has always had. §3 documents the control plane that the rest of this
 document does not cover.
 
-**Read this document knowing that most of the control plane defaults to off.**
-The reconciler, dispatch, GitHub writes, the supervisor, and the promotion
-ladder are each gated behind an environment variable that defaults to `false`
-or unset (`RECONCILER_ENABLED`, `DISPATCH_ENABLED`, `GITHUB_WRITES_ENABLED`,
-`SUPERVISOR_ENABLED`, `PROMOTION_LADDER_ENABLED` — see
-`infra/compose/.env.example`). The code described in §3 exists and is tested;
-whether it is _running_ on a given deployment is a separate, operational
-question answered by that file and by
-[`docs/RUNBOOK-observation-week.md`](RUNBOOK-observation-week.md).
+**Read this document knowing that a fresh install ships ready, not
+running — with the money side still off.** Since ADR-0019 (#439), the
+reconciler, the local runner, dispatch, dispatch's preview-runner bypass and
+GitHub writes (`reconciler.enabled`, `runners.claudeCodeLocal.enabled`,
+`dispatch.enabled`, `dispatch.allowPreviewRunner`, `github.writesEnabled`)
+all default to **true** — the loop observes, the runner registers, the queue
+drains its decisions, and GitHub writes are permitted the moment a
+repository opts in. What still refuses is spend: `dispatch.hardSpendCeilingUsd`
+has no default, and `decideSpendAdmission` refuses every dispatch until an
+operator names a figure. The supervisor and the promotion ladder are
+unrelated to that ADR and still default off (`SUPERVISOR_ENABLED`,
+`PROMOTION_LADDER_ENABLED` — see `infra/compose/.env.example`). The code
+described in §3 exists and is tested; which of it is actually _acting_ on a
+given deployment is a separate, operational question answered by that file
+and by [`docs/RUNBOOK-observation-week.md`](RUNBOOK-observation-week.md),
+and by [ADR-0019](adr/0019-fresh-install-ships-ready-not-running.md) for why
+the defaults are what they are.
 
 ### Key Characteristics
 
@@ -194,8 +202,10 @@ references rather than expecting the reasoning restated here.
 Every module below lives under `apps/api/src/` and is registered in
 `AppModule` (`apps/api/src/app.module.ts`) alongside the foundation modules
 from §6 — there is no separate factory process or deployment. Nearly every
-capability described here is real, tested code that is **off by default**;
-§3.9 is the map from feature to the environment variable that turns it on.
+capability described here is real, tested code that is **on by default**
+since ADR-0019 (#439), with spend the one thing still refused until an
+operator sets a ceiling; §3.9 is the map from feature to the flag that
+governs it.
 
 ### 3.1 The reconciler loop
 
@@ -316,7 +326,7 @@ built to hold more without implying more exist yet.
 capability manifest (schema: `schemas/runner-capability.schema.json`) into
 `fleet-state.service.ts`, which dispatch reads. `run-poller.service.ts` /
 `.task.ts` poll live runs (the runner-reported liveness source, §3.5).
-Enabled by `CLAUDE_CODE_LOCAL_ENABLED` (default `false`).
+Enabled by `CLAUDE_CODE_LOCAL_ENABLED` (default `true` since ADR-0019, #439).
 
 ### 3.5 Run events, liveness, and the watchdog
 
@@ -465,19 +475,28 @@ default:
   gated by `PROMOTION_LADDER_ENABLED`; demotion on regression is automatic,
   promotion is not.
 
-### 3.9 Operating posture: what is on by default
+### 3.9 Operating posture: ready, not running
 
-Every switch below lives in `infra/compose/.env.example`, with the reasoning
-recorded next to each one. All default to **off** or **read-only**:
+Every switch below lives in the operator-settings registry
+(`apps/api/src/settings/operator-settings/operator-settings.registry.ts`),
+with the `.env` fallback of the same name in `infra/compose/.env.example`
+and the reasoning recorded next to each one. Since
+[ADR-0019](adr/0019-fresh-install-ships-ready-not-running.md) (#439) most of
+them default **on** — a fresh install observes, registers and is dispatchable
+from first boot. What stays off by construction is spend, and the supervisor
+and promotion ladder, which are outside ADR-0019's scope:
 
-| Flag                        | Default | What it gates                                                                                                                                                |
-| --------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `RECONCILER_ENABLED`        | `false` | The tick runs at all (§3.1). Read-only even when `true`: the module imports the GitHub read service, not the write one.                                      |
-| `GITHUB_WRITES_ENABLED`     | `false` | Every GitHub write adapter (mirror labels, spec-feedback comments) returns `performed: false` and issues no request.                                         |
-| `DISPATCH_ENABLED`          | `false` | Whether `run-executor.service.ts` actually calls a runner's `submit()`. Off: the whole decision still runs and is logged as what it _would_ have dispatched. |
-| `CLAUDE_CODE_LOCAL_ENABLED` | `false` | Whether the local runner spawns subprocesses at all.                                                                                                         |
-| `SUPERVISOR_ENABLED`        | `false` | Whether the advisory agent runs on its schedule.                                                                                                             |
-| `PROMOTION_LADDER_ENABLED`  | `false` | Whether action classes are promoted or demoted; `false` pauses without revoking existing grants.                                                             |
+| Flag                                                                              | Default                | What it gates                                                                                                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `RECONCILER_ENABLED`                                                              | `true` (ADR-0019)      | The whole reconcile loop, not just observation — `ReconcilerTask.runOnce` gates projection, liveness, the watchdog, escalations, notification dispatch, spec feedback AND the dispatch drain on it. Off, nothing about §3 happens at all.                                            |
+| `GITHUB_WRITES_ENABLED`                                                           | `true` (ADR-0019)      | Every GitHub write adapter (mirror labels, spec-feedback comments). Off: each returns `performed: false` and issues no request — this is the flag an operator turns off for a VISION §12 observation week. Not gated by the spend ceiling; see `dispatch.hardSpendCeilingUsd` below. |
+| `DISPATCH_ENABLED`                                                                | `true` (ADR-0019)      | Whether `run-executor.service.ts` actually calls a runner's `submit()`. Off: the whole decision still runs and is logged as what it _would_ have dispatched.                                                                                                                         |
+| `CLAUDE_CODE_LOCAL_ENABLED`                                                       | `true` (ADR-0019)      | Whether the local runner spawns subprocesses at all.                                                                                                                                                                                                                                 |
+| `DISPATCH_ALLOW_PREVIEW_RUNNER`                                                   | `true` (ADR-0019)      | Whether a preview-tier runner may be load-bearing with no GA fallback ([ADR-0007](adr/0007-preview-runner-acknowledgement.md)). With one `experimental` runner and no GA runner shipped, off would queue every work order forever.                                                   |
+| `OPIFEX_HARD_SPEND_CEILING_USD`                                                   | unset, refuses         | The only thing actually stopping spend on a fresh install: `decideSpendAdmission` refuses every dispatch while this is unset, per repository or globally, regardless of the four flags above.                                                                                        |
+| Each repository's `mirrorLabelsEnabled`, `specFeedbackEnabled`, `dispatchEnabled` | `false` per repository | Whether a _specific, opted-in_ repository is written to or dispatched against at all — independent of the global flags above, and the reason the observation week's protection is now per-repository rather than global.                                                             |
+| `SUPERVISOR_ENABLED`                                                              | `false`                | Whether the advisory agent runs on its schedule. Unrelated to ADR-0019.                                                                                                                                                                                                              |
+| `PROMOTION_LADDER_ENABLED`                                                        | `false`                | Whether action classes are promoted or demoted; `false` pauses without revoking existing grants. Unrelated to ADR-0019.                                                                                                                                                              |
 
 This is why VISION §12's roadmap phases are not a reliable guide to what is
 implemented versus what is running: the code for phases through at least 7
