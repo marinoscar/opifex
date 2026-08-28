@@ -39,6 +39,32 @@
 # kinds use a colon: input labels are warm (you are steering the factory),
 # mirror labels are cool/grey (you are observing it), routing labels are green
 # (you are describing the work itself, and neither of the other two).
+#
+# THIS FILE HAS A TWIN IN CODE, AND CI ASSERTS THEY AGREE (#415).
+#
+#   apps/api/src/github/labels/label-taxonomy.ts
+#
+# The API provisions these labels when a repository is registered, and it runs
+# in a container — it cannot read this file, and shipping the file into the
+# image is how `apps/api/scripts` went missing in #382, silently. So the API
+# declares the fifteen CONTROL-LOOP labels (input, mirror, routing) in
+# TypeScript, with the same name, colour and description, and
+# `label-taxonomy.spec.ts` fails in BOTH directions if the two copies drift.
+#
+# What that means when you edit here:
+#
+#  - Changing a control-loop label's colour or description? Change it in
+#    `label-taxonomy.ts` too, in the same commit.
+#  - Adding a `factory:`, `factory/`, `needs:` or `tier:` label? Same.
+#  - Adding or editing anything ELSE — a type, a phase, a component label — is
+#    this file's business alone. Those are organisational conventions of THIS
+#    repository; the API deliberately does not create them on repositories it
+#    watches, because nothing in the control loop reads them and putting a
+#    `phase:4` label in somebody else's tracker is presumptuous.
+#
+# `scripts/sync-labels.mjs` still applies ALL of these, which is correct: it is
+# run against this repository by a human who wants this repository's
+# conventions.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
