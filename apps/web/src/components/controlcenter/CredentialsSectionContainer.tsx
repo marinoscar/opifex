@@ -35,7 +35,7 @@ import { useCredentialProbes } from '../../hooks/useCredentialProbes';
 import { useOperatorSettings } from '../../hooks/useOperatorSettings';
 import { useSupervisorModels } from '../../hooks/useSupervisorModels';
 import type { ProbeDescriptor } from '../../config/credentialProbes';
-import { SUPERVISOR_MODEL_KEYS } from '../../config/supervisorModel';
+import { affectsModelCatalog } from '../../config/supervisorModel';
 import type { OperatorSettingsPatch } from '../../types/operatorSettings';
 
 export interface CredentialsSectionContainerProps {
@@ -78,7 +78,7 @@ export function CredentialsSectionContainer({
       // A provider or a key change moves what the catalogue answers. The
       // previous list is dropped inside the hook before the new one is asked
       // for, so nothing offers the old provider's models in the meantime.
-      if (keys.some((key) => SUPERVISOR_MODEL_KEYS.includes(key))) {
+      if (keys.some(affectsModelCatalog)) {
         void models.refresh();
       }
 

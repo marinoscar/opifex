@@ -151,6 +151,10 @@ const GROUP_LABELS: Record<string, string> = {
   runner: 'Execution',
   dispatch: 'Dispatch',
   reconciler: 'Observation',
+  // The credential slots, one per model provider (#422). "Model credentials"
+  // rather than "Models", because what is filed here is a key and a host and
+  // not a choice of model — the model itself is a supervisor setting.
+  models: 'Model credentials',
   supervisor: 'Supervisor',
   promotion: 'Autonomy',
   notifications: 'Notifications',
@@ -162,6 +166,7 @@ const GROUP_ORDER: readonly string[] = [
   'runner',
   'dispatch',
   'reconciler',
+  'models',
   'supervisor',
   'promotion',
   'notifications',

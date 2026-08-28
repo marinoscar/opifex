@@ -23,7 +23,25 @@
  * already a hand-written composite over registry keys. The irreducible fact is
  * that this control needs a SECRET, and a secret is only ever rendered here.
  * So the composite goes where the bespoke already is, and the generated
- * section says where these four keys went (see `SettingsSection`).
+ * section says where these keys went (see `SettingsSection`).
+ *
+ * ## One credential is selected; the others are still here (#422, epic #419)
+ *
+ * There is no single model key any more. The API holds one slot per provider
+ * — `models.<provider>.apiKey` and its `baseUrl` — and reads the slot that
+ * `supervisor.model.provider` names, so this panel shows the SELECTED
+ * provider's credential beside the model list it fills, and every other
+ * provider's card underneath it.
+ *
+ * Showing only the selected one was the alternative and it is the wrong
+ * trade. The operator's stated requirement is to HOLD both keys, and the bug
+ * being fixed is that switching provider used to destroy the other one — so a
+ * screen that quietly stopped displaying the unselected credential would be
+ * indistinguishable, at a glance, from the failure it replaced. Showing both
+ * with a hierarchy — one in use, above, next to the list it produces; the
+ * rest stored and idle, below — says the true thing without pretending two
+ * keys are one decision. Only the selected card carries the billed Test
+ * button, because that is the only credential anything is currently asking.
  *
  * ## Three separate writes, on purpose
  *
@@ -66,22 +84,22 @@ import {
 
 import {
   BASE_URL_PLACEHOLDER,
-  SUPERVISOR_API_KEY_KEY,
-  SUPERVISOR_BASE_URL_KEY,
   SUPERVISOR_MODEL_NAME_KEY,
   SUPERVISOR_PROVIDER_KEY,
   buildSupervisorModelPatch,
   catalogStatusPresentation,
   configuredModelState,
   findPlainSetting,
-  findSecretSetting,
   listingCostNote,
   markFor,
   missingModelExplanation,
+  modelApiKeySettingKey,
   modelLabel,
   modelOptions,
   seedSupervisorModelDraft,
+  selectedSlot,
   stringValue,
+  unselectedSlots,
 } from '../../config/supervisorModel';
 import { provenanceOf } from '../../config/operatorSettings';
 import type {
@@ -105,8 +123,8 @@ export interface SupervisorModelPanelProps {
   /** Sends only the keys given. Rejects with the API's own refusal. */
   onSave: (patch: OperatorSettingsPatch) => Promise<void>;
   /**
-   * The `supervisor.model.apiKey` card, rendered by the section that owns
-   * every other secret card.
+   * The SELECTED provider's `models.<provider>.apiKey` card, rendered by the
+   * section that owns every other secret card.
    *
    * A slot rather than a second implementation: `SecretCredentialCard` holds
    * the write-only discipline this whole screen rests on — an uncontrolled
@@ -115,6 +133,18 @@ export interface SupervisorModelPanelProps {
    * quietly not hold.
    */
   keyCard: ReactNode;
+  /**
+   * The same card for every provider that is NOT selected (#422).
+   *
+   * Rendered rather than hidden, and that is this panel's answer to the
+   * question the credential split raises. An operator holds one key per
+   * vendor; if selecting Anthropic made the OpenAI key disappear from the
+   * screen, the fix would look exactly like the bug it replaced — where
+   * switching provider really did leave the other credential unreachable.
+   * They are shown as stored-and-not-in-use, with no billed Test button,
+   * because nothing is currently asking them anything.
+   */
+  otherKeyCards: ReactNode;
 }
 
 export function SupervisorModelPanel({
@@ -127,6 +157,7 @@ export function SupervisorModelPanel({
   onRefreshCatalog,
   onSave,
   keyCard,
+  otherKeyCards,
 }: SupervisorModelPanelProps) {
   const [draft, setDraft] = useState(() =>
     seedSupervisorModelDraft(document.settings),
@@ -150,15 +181,19 @@ export function SupervisorModelPanel({
     document.settings,
     SUPERVISOR_PROVIDER_KEY,
   );
-  const keyEntry = findSecretSetting(document.settings, SUPERVISOR_API_KEY_KEY);
   const nameEntry = findPlainSetting(
     document.settings,
     SUPERVISOR_MODEL_NAME_KEY,
   );
-  const baseUrlEntry = findPlainSetting(
-    document.settings,
-    SUPERVISOR_BASE_URL_KEY,
-  );
+
+  // The credential and its endpoint are looked up BY the stored provider
+  // (#422). Not by the pending selection: the API resolves the slot from what
+  // is stored, so a panel that followed the select would show one key while
+  // the supervisor used the other.
+  const slot = selectedSlot(document.settings);
+  const keyEntry = slot?.apiKey ?? null;
+  const baseUrlEntry = slot?.baseUrl ?? null;
+  const otherSlots = unselectedSlots(document.settings);
 
   const storedProvider = stringValue(providerEntry);
   const providerValue = pendingProvider ?? storedProvider;
@@ -257,9 +292,12 @@ export function SupervisorModelPanel({
             helperText={
               'Saved as soon as you choose it, and the model list is asked ' +
               'again — a list belongs to a provider, so the previous one is ' +
-              'dropped rather than left on screen. Switching without also ' +
-              'replacing the key sends that credential to a host that will ' +
-              'reject it, which the list below will say plainly.'
+              'dropped rather than left on screen. Each provider keeps its ' +
+              'own key and endpoint, so switching selects that provider’s ' +
+              'stored credential: nothing is re-entered and nothing is ' +
+              'cleared. Any unsaved model or base URL edit is discarded with ' +
+              'it, because those belong to the provider that was selected ' +
+              'when they were typed.'
             }
           >
             {providers.map((value) => (
@@ -280,15 +318,22 @@ export function SupervisorModelPanel({
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* 2. The key — the card the rest of this screen already uses     */}
+      {/* 2. The selected provider's key — the card this screen uses     */}
       {/* ------------------------------------------------------------- */}
       {keyEntry === null ? (
         <Alert severity="info" sx={{ mb: 3 }}>
           This deployment&apos;s API does not publish{' '}
-          <code>{SUPERVISOR_API_KEY_KEY}</code>, so there is no key to set here.
+          <code>{modelApiKeySettingKey(storedProvider || 'provider')}</code>, so
+          there is no key to set for the selected provider.
         </Alert>
       ) : (
-        <Box sx={{ mb: 3 }}>{keyCard}</Box>
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            The credential for the provider selected above. It is the one the
+            supervisor sends, and the one the list below was asked with.
+          </Typography>
+          {keyCard}
+        </Box>
       )}
 
       <Divider sx={{ mb: 3 }} />
@@ -470,7 +515,8 @@ export function SupervisorModelPanel({
               draft.baseUrl === ''
                 ? 'Empty, which means it follows the provider selected above. ' +
                   'Set it only for a proxy, a gateway or a test server — the ' +
-                  'key is sent to whatever host is named here.'
+                  'key above is sent to whatever host is named here, and this ' +
+                  'endpoint belongs to that provider alone.'
                 : baseUrlEntry.help
             }
           />
@@ -507,6 +553,31 @@ export function SupervisorModelPanel({
           )}
         </Box>
       </Stack>
+
+      {/* ------------------------------------------------------------- */}
+      {/* 7. The keys for the providers that are NOT selected            */}
+      {/* ------------------------------------------------------------- */}
+      {otherSlots.length > 0 && (
+        <Box sx={{ mt: 4 }} aria-label="Other providers’ credentials">
+          <Divider sx={{ mb: 2 }} />
+          <Typography variant="subtitle1" component="h4" gutterBottom>
+            Other providers’ credentials
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {otherSlots.map((other) => other.provider).join(', ')} —{' '}
+            {otherSlots.length === 1 ? 'not' : 'neither'} selected, so{' '}
+            {otherSlots.length === 1 ? 'this key is' : 'these keys are'} stored
+            and not in use. A key belongs to a vendor, so it is kept whichever
+            provider is selected: choosing one above does not clear{' '}
+            {otherSlots.length === 1 ? 'the other' : 'the others'}, and
+            selecting it again uses the same credential without asking for it
+            twice. There is no Test button here because nothing is currently
+            asking these providers anything, and the test makes a real, billed
+            call.
+          </Typography>
+          {otherKeyCards}
+        </Box>
+      )}
     </Paper>
   );
 }
