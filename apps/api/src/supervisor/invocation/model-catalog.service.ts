@@ -12,8 +12,10 @@ import {
   errorDetail,
   errorMessage,
   isAbort,
-  resolveSupervisorModelConfig,
-  type SupervisorModelConfig,
+  modelApiKeySettingKey,
+  resolveModelConfig,
+  type ModelConfig,
+  type ModelConsumer,
   type SupervisorModelProvider,
 } from './supervisor-model.config';
 
@@ -108,7 +110,16 @@ export interface CatalogModel {
 
 /** The whole answer. One object, whatever happened. */
 export interface SupervisorModelCatalog {
-  /** The provider this was asked of — `supervisor.model.provider`, live. */
+  /**
+   * Which consumer's selection this answers for (#423).
+   *
+   * Echoed rather than left implicit because the Control Center now holds two
+   * of these lists at once — one per consumer — and a response that did not
+   * say which one it was would let a slow answer for the supervisor land in
+   * the chat's dropdown, offering models that the chat's key may not reach.
+   */
+  readonly consumer: ModelConsumer;
+  /** The provider this was asked of — `<consumer>.model.provider`, live. */
   readonly provider: SupervisorModelProvider;
   readonly status: ModelCatalogStatus;
   /** One human sentence. Never contains the key. */
@@ -129,23 +140,29 @@ export class SupervisorModelCatalogService {
   constructor(private readonly settings: OperatorSettingsService) {}
 
   /**
-   * Ask the configured provider, with the configured key, right now.
+   * Ask ONE consumer's configured provider, with its key, right now.
    *
-   * Every setting is resolved per call through
-   * `resolveSupervisorModelConfig`, exactly as the adapters do since #344: a
-   * key or a provider an operator has just saved must be reachable on the next
-   * request rather than the next restart, and a second boot-time copy of
-   * either is the thing that made that untrue before.
+   * Every setting is resolved per call through `resolveModelConfig`, exactly
+   * as the adapters do since #344: a key or a provider an operator has just
+   * saved must be reachable on the next request rather than the next restart,
+   * and a second boot-time copy of either is the thing that made that untrue
+   * before.
+   *
+   * The consumer is a required argument rather than one defaulting to the
+   * supervisor (#423). A default here would be a third place that decides
+   * which consumer is meant — after the query parameter and the settings key
+   * — and the failure it produces is a dropdown quietly listing the wrong
+   * provider's models, which looks exactly like a correct list.
    */
-  async list(): Promise<SupervisorModelCatalog> {
-    const config = resolveSupervisorModelConfig(this.settings);
+  async list(consumer: ModelConsumer): Promise<SupervisorModelCatalog> {
+    const config = resolveModelConfig(this.settings, consumer);
     const listing = LISTINGS[config.provider];
 
     if (config.apiKey === '') {
       return this.answer(config, 'no_key', [
-        'No supervisor model API key is configured, so there is nothing to',
-        'list yet. Save a key for the selected provider and list again —',
-        'listing models spends no tokens.',
+        `No API key is stored for the provider ${consumer} is set to, so`,
+        `there is nothing to list yet. Save ${modelApiKeySettingKey(config.provider)}`,
+        'and list again — listing models spends no tokens.',
       ]);
     }
 
@@ -209,7 +226,7 @@ export class SupervisorModelCatalogService {
    * distinction with its `status === 0` arm, for the same reason.
    */
   private unreachable(
-    config: SupervisorModelConfig,
+    config: ModelConfig,
     listing: ProviderListing,
     error: unknown,
   ): SupervisorModelCatalog {
@@ -242,7 +259,7 @@ export class SupervisorModelCatalogService {
    * would then be refusing a configuration that works.
    */
   private rejected(
-    config: SupervisorModelConfig,
+    config: ModelConfig,
     listing: ProviderListing,
     response: Response,
   ): Promise<SupervisorModelCatalog> {
@@ -308,12 +325,13 @@ export class SupervisorModelCatalogService {
   }
 
   private answer(
-    config: SupervisorModelConfig,
+    config: ModelConfig,
     status: ModelCatalogStatus,
     detail: readonly string[],
     models: readonly CatalogModel[] = [],
   ): SupervisorModelCatalog {
     return {
+      consumer: config.consumer,
       provider: config.provider,
       status,
       detail: detail.join(' '),
@@ -481,7 +499,7 @@ function versionKey(model: CatalogModel): number {
 
 /** The success sentence, which is also the credential finding. */
 function summarise(
-  config: SupervisorModelConfig,
+  config: ModelConfig,
   models: readonly CatalogModel[],
 ): string {
   const label = LISTINGS[config.provider].label;
