@@ -193,7 +193,12 @@ export function SupervisorModelPanel({
   const slot = selectedSlot(document.settings);
   const keyEntry = slot?.apiKey ?? null;
   const baseUrlEntry = slot?.baseUrl ?? null;
-  const otherSlots = unselectedSlots(document.settings);
+  // Only the slots that actually have a key card to show: a provider whose
+  // endpoint is published while its credential is not would otherwise get a
+  // heading and a paragraph about a card that is not there.
+  const otherSlots = unselectedSlots(document.settings).filter(
+    (other) => other.apiKey !== null,
+  );
 
   const storedProvider = stringValue(providerEntry);
   const providerValue = pendingProvider ?? storedProvider;
