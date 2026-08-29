@@ -1,3 +1,4 @@
+import { describeIfDb } from '../helpers/database-guard.helper';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { ReconcileLogService } from '../../src/reconciler/log/reconcile-log.service';
 import type {
@@ -37,19 +38,6 @@ import type {
  * files above use.
  */
 
-function databaseReachable(): boolean {
-  return Boolean(process.env.DATABASE_URL || process.env.POSTGRES_HOST);
-}
-
-const describeIfDb = databaseReachable() ? describe : describe.skip;
-
-if (!databaseReachable()) {
-  console.warn(
-    'Skipping reconciler-tick-settings.integration.spec.ts: no DATABASE_URL/POSTGRES_HOST in ' +
-      'the environment. Point it at opifex_test (infra/compose/test.compose.yml) to run it.',
-  );
-}
-
 function tickRecord(overrides: Partial<TickRecord> = {}): TickRecord {
   const now = new Date();
   return {
@@ -71,6 +59,7 @@ function tickRecord(overrides: Partial<TickRecord> = {}): TickRecord {
 }
 
 describeIfDb(
+  'reconciler-tick-settings.integration.spec.ts',
   'reconcile_ticks.settings, persisted to a real database (#342)',
   () => {
     let prisma: PrismaService;

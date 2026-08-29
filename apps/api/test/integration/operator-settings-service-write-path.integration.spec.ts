@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import { Prisma } from '@prisma/client';
 
+import { describeIfDb } from '../helpers/database-guard.helper';
 import { ENCRYPTION_KEY_ENV_VAR } from '../../src/common/crypto/secret-box';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { OPERATOR_SETTINGS } from '../../src/settings/operator-settings/operator-settings.registry';
@@ -44,21 +45,8 @@ import { OperatorSettingsService } from '../../src/settings/operator-settings/op
  * `operator-settings-constraint.integration.spec.ts` uses.
  */
 
-function databaseReachable(): boolean {
-  return Boolean(process.env.DATABASE_URL || process.env.POSTGRES_HOST);
-}
-
-const describeIfDb = databaseReachable() ? describe : describe.skip;
-
-if (!databaseReachable()) {
-  console.warn(
-    'Skipping operator-settings-service-write-path.integration.spec.ts: no ' +
-      'DATABASE_URL/POSTGRES_HOST in the environment. Point it at opifex_test ' +
-      '(infra/compose/test.compose.yml) to run it.',
-  );
-}
-
 describeIfDb(
+  'operator-settings-service-write-path.integration.spec.ts',
   'OperatorSettingsService write path, against a real database (#339)',
   () => {
     // A non-secret, nullable-integer key: exercises `plainColumns()` and the
