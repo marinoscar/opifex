@@ -34,7 +34,7 @@ export const OBSERVED_LINE_KINDS = [
   'result/success',
 ] as const;
 
-const SESSION = '11111111-2222-3333-4444-555555555555';
+const SESSION = '11111111-2222-4333-8444-555555555555';
 
 export const INIT_LINE = {
   type: 'system',

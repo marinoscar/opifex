@@ -13,7 +13,7 @@ import { RunsService } from './runs.service';
 describe('RunsService', () => {
   function runRow(overrides: Record<string, unknown> = {}) {
     return {
-      id: '11111111-1111-1111-1111-111111111111',
+      id: '11111111-1111-4111-8111-111111111111',
       status: 'running',
       startedAt: new Date('2026-08-23T01:00:00Z'),
       lastEventAt: new Date('2026-08-23T01:30:00Z'),
@@ -44,11 +44,11 @@ describe('RunsService', () => {
 
   function eventRow(overrides: Record<string, unknown> = {}) {
     return {
-      id: '22222222-2222-2222-2222-222222222222',
+      id: '22222222-2222-4222-8222-222222222222',
       type: 'run_progress',
       source: 'runner',
       occurredAt: new Date('2026-08-23T01:30:00Z'),
-      runId: '11111111-1111-1111-1111-111111111111',
+      runId: '11111111-1111-4111-8111-111111111111',
       summary: 'Edited apps/api/src/foo.ts',
       ...overrides,
     };
@@ -277,9 +277,9 @@ describe('RunsService', () => {
   describe('one run', () => {
     it('returns it', async () => {
       const run = await service.findById(
-        '11111111-1111-1111-1111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
       );
-      expect(run.id).toBe('11111111-1111-1111-1111-111111111111');
+      expect(run.id).toBe('11111111-1111-4111-8111-111111111111');
     });
 
     it('404s rather than returning null', async () => {
@@ -292,7 +292,7 @@ describe('RunsService', () => {
   });
 
   describe('which checks are protecting the run (#104)', () => {
-    const ID = '11111111-1111-1111-1111-111111111111';
+    const ID = '11111111-1111-4111-8111-111111111111';
 
     function coverageFor(run: Awaited<ReturnType<RunsService['findById']>>) {
       return Object.fromEntries(
@@ -378,7 +378,7 @@ describe('RunsService', () => {
       // #80: RunEvent is high-volume (#39) and an unpaginated timeline "will
       // not survive a real run" — one run emits a progress event per tool call
       // plus heartbeats.
-      await service.events('11111111-1111-1111-1111-111111111111', {
+      await service.events('11111111-1111-4111-8111-111111111111', {
         page: 2,
         pageSize: 10,
       });
@@ -388,7 +388,7 @@ describe('RunsService', () => {
     });
 
     it('defaults to a bounded page rather than everything', async () => {
-      await service.events('11111111-1111-1111-1111-111111111111', {});
+      await service.events('11111111-1111-4111-8111-111111111111', {});
 
       expect(eventFindMany.mock.calls[0][0].take).toBe(50);
     });
@@ -397,7 +397,7 @@ describe('RunsService', () => {
       // Two events can share a reported timestamp — a runner emitting several
       // in the same millisecond — and an unstable sort would shuffle them
       // between pages.
-      await service.events('11111111-1111-1111-1111-111111111111', {});
+      await service.events('11111111-1111-4111-8111-111111111111', {});
 
       expect(eventFindMany.mock.calls[0][0].orderBy).toEqual([
         { occurredAt: 'desc' },
@@ -413,7 +413,7 @@ describe('RunsService', () => {
       eventFindMany.mockResolvedValue([eventRow({ type: 'run_started' })]);
 
       const { items } = await service.events(
-        '11111111-1111-1111-1111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
         {},
       );
 
@@ -424,7 +424,7 @@ describe('RunsService', () => {
       eventFindMany.mockResolvedValue([eventRow({ source: 'control_plane' })]);
 
       const { items } = await service.events(
-        '11111111-1111-1111-1111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
         {},
       );
 
@@ -434,7 +434,7 @@ describe('RunsService', () => {
     it('shows the work order IDENTITY, not its row id', async () => {
       // Rendered to a human in the mono token. A uuid tells them nothing.
       const { items } = await service.events(
-        '11111111-1111-1111-1111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
         {},
       );
 
@@ -458,7 +458,7 @@ describe('RunsService', () => {
       eventCount.mockResolvedValue(0);
 
       const page = await service.events(
-        '11111111-1111-1111-1111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
         {},
       );
 

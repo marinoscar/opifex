@@ -530,7 +530,7 @@ describe('ClaudeAuthPanel', () => {
       const user = userEvent.setup();
       const message =
         'A Claude sign-in is already in progress (session ' +
-        'c7e2f0a1-1111-2222-3333-444455556666). Finish it or cancel it.';
+        'c7e2f0a1-1111-4222-8333-444455556666). Finish it or cancel it.';
       serveClaudeAuth({ startStatus: 409, startBody: { message } });
       renderSection();
 

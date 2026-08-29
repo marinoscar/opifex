@@ -19,7 +19,7 @@ import { TickLeaseService } from './tick-lease.service';
 
 function repository(overrides: Record<string, unknown> = {}) {
   return {
-    id: '11111111-1111-1111-1111-111111111111',
+    id: '11111111-1111-4111-8111-111111111111',
     owner: 'acme',
     name: 'app',
     defaultBranch: 'main',
@@ -255,7 +255,7 @@ describe('ReconcilerService', () => {
 
       expect(prisma.repository.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: '11111111-1111-1111-1111-111111111111' },
+          where: { id: '11111111-1111-4111-8111-111111111111' },
           data: expect.objectContaining({ lastObservedAt: expect.any(Date) }),
         }),
       );

@@ -10,7 +10,7 @@ import { ProjectsService } from './projects.service';
 
 function projectRow(overrides: Record<string, unknown> = {}) {
   return {
-    id: '11111111-1111-1111-1111-111111111111',
+    id: '11111111-1111-4111-8111-111111111111',
     slug: 'billing-platform',
     name: 'Billing Platform',
     description: null,
@@ -242,7 +242,7 @@ describe('ProjectsService (#404)', () => {
   });
 
   describe('assignment', () => {
-    const repositoryId = '22222222-2222-2222-2222-222222222222';
+    const repositoryId = '22222222-2222-4222-8222-222222222222';
     const projectId = projectRow().id;
 
     it('assigns through the repositories service, not by writing projectId here', async () => {
@@ -295,7 +295,7 @@ describe('ProjectsService (#404)', () => {
       prisma.project.findUnique.mockResolvedValue(projectRow());
       prisma.repository.findUnique.mockResolvedValue({
         id: repositoryId,
-        projectId: '99999999-9999-9999-9999-999999999999',
+        projectId: '99999999-9999-4999-8999-999999999999',
         owner: 'acme',
         name: 'app',
       });

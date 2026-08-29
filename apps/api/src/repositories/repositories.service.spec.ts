@@ -55,7 +55,7 @@ function labelReport(
 
 function repositoryRow(overrides: Record<string, unknown> = {}) {
   return {
-    id: '11111111-1111-1111-1111-111111111111',
+    id: '11111111-1111-4111-8111-111111111111',
     projectId: null,
     owner: 'acme',
     name: 'app',
@@ -77,7 +77,7 @@ function repositoryRow(overrides: Record<string, unknown> = {}) {
 }
 
 const ACTOR = '3f6d9e5a-2b1c-4a7e-9c8d-5e4f3a2b1c0d';
-const REPO_ID = '11111111-1111-1111-1111-111111111111';
+const REPO_ID = '11111111-1111-4111-8111-111111111111';
 
 type Delegates = Record<string, Record<string, jest.Mock>>;
 
@@ -316,7 +316,7 @@ describe('RepositoriesService', () => {
         service.register({
           owner: 'acme',
           name: 'app',
-          projectId: '22222222-2222-2222-2222-222222222222',
+          projectId: '22222222-2222-4222-8222-222222222222',
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
@@ -422,7 +422,7 @@ describe('RepositoriesService', () => {
       prisma.repository.findUnique.mockResolvedValue(repositoryRow());
 
       const report = await service.inspectLabels(
-        '11111111-1111-1111-1111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
       );
 
       expect(labels.inspect).toHaveBeenCalledWith({
@@ -435,7 +435,7 @@ describe('RepositoriesService', () => {
     it('repairs by provisioning, which is the same idempotent call', async () => {
       prisma.repository.findUnique.mockResolvedValue(repositoryRow());
 
-      await service.repairLabels('11111111-1111-1111-1111-111111111111');
+      await service.repairLabels('11111111-1111-4111-8111-111111111111');
 
       expect(labels.provision).toHaveBeenCalledWith({
         owner: 'acme',
@@ -447,10 +447,10 @@ describe('RepositoriesService', () => {
       prisma.repository.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.inspectLabels('11111111-1111-1111-1111-111111111111'),
+        service.inspectLabels('11111111-1111-4111-8111-111111111111'),
       ).rejects.toBeInstanceOf(NotFoundException);
       await expect(
-        service.repairLabels('11111111-1111-1111-1111-111111111111'),
+        service.repairLabels('11111111-1111-4111-8111-111111111111'),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(labels.inspect).not.toHaveBeenCalled();
       expect(labels.provision).not.toHaveBeenCalled();
@@ -470,7 +470,7 @@ describe('RepositoriesService', () => {
       // This is the moment a repository stops being observed and starts being
       // written to. A token whose access was revoked since registration must
       // not have dispatch enabled against it.
-      await service.update('11111111-1111-1111-1111-111111111111', {
+      await service.update('11111111-1111-4111-8111-111111111111', {
         dispatchEnabled: true,
       });
 
@@ -484,7 +484,7 @@ describe('RepositoriesService', () => {
         repositoryRow({ dispatchEnabled: true }),
       );
 
-      await service.update('11111111-1111-1111-1111-111111111111', {
+      await service.update('11111111-1111-4111-8111-111111111111', {
         dispatchEnabled: false,
       });
 
@@ -496,7 +496,7 @@ describe('RepositoriesService', () => {
         repositoryRow({ dispatchEnabled: true }),
       );
 
-      await service.update('11111111-1111-1111-1111-111111111111', {
+      await service.update('11111111-1111-4111-8111-111111111111', {
         dispatchEnabled: true,
       });
 
@@ -504,7 +504,7 @@ describe('RepositoriesService', () => {
     });
 
     it('leaves omitted fields alone instead of writing undefined over them', async () => {
-      await service.update('11111111-1111-1111-1111-111111111111', {
+      await service.update('11111111-1111-4111-8111-111111111111', {
         observeEnabled: false,
       });
 
@@ -517,7 +517,7 @@ describe('RepositoriesService', () => {
     it('allows an explicit null to clear a ceiling', async () => {
       // `null` and "omitted" are different intents and the spread has to keep
       // them apart — the whole reason the fields are `.nullable().optional()`.
-      await service.update('11111111-1111-1111-1111-111111111111', {
+      await service.update('11111111-1111-4111-8111-111111111111', {
         budgetCeilingUsd: null,
       });
 
@@ -531,7 +531,7 @@ describe('RepositoriesService', () => {
       prisma.repository.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.update('11111111-1111-1111-1111-111111111111', {
+        service.update('11111111-1111-4111-8111-111111111111', {
           observeEnabled: false,
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
@@ -933,7 +933,7 @@ describe('RepositoriesService', () => {
       });
 
       const error = await service
-        .remove('11111111-1111-1111-1111-111111111111')
+        .remove('11111111-1111-4111-8111-111111111111')
         .catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(BadRequestException);
@@ -947,7 +947,7 @@ describe('RepositoriesService', () => {
         _count: { workOrders: 0 },
       });
 
-      await service.remove('11111111-1111-1111-1111-111111111111');
+      await service.remove('11111111-1111-4111-8111-111111111111');
 
       expect(prisma.repository.delete).toHaveBeenCalled();
     });
@@ -960,7 +960,7 @@ describe('RepositoriesService', () => {
         _count: { workOrders: 0 },
       });
 
-      await service.remove('11111111-1111-1111-1111-111111111111');
+      await service.remove('11111111-1111-4111-8111-111111111111');
 
       expect(etags.invalidateRepository).toHaveBeenCalledWith('acme', 'app');
     });
@@ -986,7 +986,7 @@ describe('RepositoriesService', () => {
     });
 
     it('filters to one project by id', async () => {
-      const projectId = '33333333-3333-3333-3333-333333333333';
+      const projectId = '33333333-3333-4333-8333-333333333333';
       await service.list({ page: 1, pageSize: 25, projectId } as never);
       expect(whereOf()).toMatchObject({ projectId });
     });
@@ -1055,7 +1055,7 @@ describe('RepositoriesService', () => {
       );
 
       const result = await service.findById(
-        '11111111-1111-1111-1111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
       );
 
       expect(result.budgetCeilingUsd).toBe('12.3456');
@@ -1065,7 +1065,7 @@ describe('RepositoriesService', () => {
       prisma.repository.findUnique.mockResolvedValue(repositoryRow());
 
       expect(
-        (await service.findById('11111111-1111-1111-1111-111111111111'))
+        (await service.findById('11111111-1111-4111-8111-111111111111'))
           .fullName,
       ).toBe('acme/app');
     });

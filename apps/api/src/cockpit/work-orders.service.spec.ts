@@ -50,7 +50,7 @@ describe('WorkOrdersService', () => {
   function row(overrides: Record<string, unknown> = {}) {
     const w = generated();
     return {
-      id: '11111111-1111-1111-1111-111111111111',
+      id: '11111111-1111-4111-8111-111111111111',
       identity: w.identity,
       branch: w.branch,
       issueNumber: w.issueNumber,
@@ -102,7 +102,7 @@ describe('WorkOrdersService', () => {
       // LOOKS right would pass a field-by-field comparison and still make
       // #84's authorization-record view an illustration rather than a check.
       return service
-        .findOne('11111111-1111-1111-1111-111111111111')
+        .findOne('11111111-1111-4111-8111-111111111111')
         .then((detail) => {
           const expected = serializeWorkOrder(generated());
           expect(`${JSON.stringify(detail.document, null, 2)}\n`).toBe(
@@ -113,7 +113,7 @@ describe('WorkOrdersService', () => {
 
     it('carries the schema version, so a reader knows what shape they have', async () => {
       const detail = await service.findOne(
-        '11111111-1111-1111-1111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
       );
       expect(detail.document.schemaVersion).toBeTruthy();
     });
@@ -163,7 +163,7 @@ describe('WorkOrdersService', () => {
 
     it('omits the key entirely when the column is null', async () => {
       const detail = await service.findOne(
-        '11111111-1111-1111-1111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
       );
 
       expect('modelTier' in detail.document).toBe(false);
@@ -191,10 +191,10 @@ describe('WorkOrdersService', () => {
     });
 
     it('accepts a row id too', async () => {
-      await service.findOne('11111111-1111-1111-1111-111111111111');
+      await service.findOne('11111111-1111-4111-8111-111111111111');
 
       expect(findFirst.mock.calls[0][0].where).toEqual({
-        id: '11111111-1111-1111-1111-111111111111',
+        id: '11111111-1111-4111-8111-111111111111',
       });
     });
 
@@ -212,7 +212,7 @@ describe('WorkOrdersService', () => {
       // A 7-character prefix is not a git ref you can rely on resolving in a
       // repository with enough history.
       const detail = await service.findOne(
-        '11111111-1111-1111-1111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
       );
 
       expect(detail.baseCommit).toBe(BASE);
@@ -246,7 +246,7 @@ describe('WorkOrdersService', () => {
 
     it('is null before dispatch has posted it, not an empty string', async () => {
       const detail = await service.findOne(
-        '11111111-1111-1111-1111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
       );
       expect(detail.authorizationCommentUrl).toBeNull();
     });
@@ -313,7 +313,7 @@ describe('WorkOrdersService', () => {
         row({
           runs: [
             {
-              id: '22222222-2222-2222-2222-222222222222',
+              id: '22222222-2222-4222-8222-222222222222',
               status: 'succeeded',
               runnerKey: 'claude-code-local',
               startedAt: new Date('2026-08-23T02:00:00Z'),
@@ -322,7 +322,7 @@ describe('WorkOrdersService', () => {
               pullRequestUrl: 'https://github.com/o/r/pull/9',
             },
             {
-              id: '33333333-3333-3333-3333-333333333333',
+              id: '33333333-3333-4333-8333-333333333333',
               status: 'failed',
               runnerKey: 'claude-code-local',
               startedAt: new Date('2026-08-23T03:00:00Z'),

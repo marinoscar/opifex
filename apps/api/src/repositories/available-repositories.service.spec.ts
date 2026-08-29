@@ -116,7 +116,7 @@ describe('AvailableRepositoriesService (#401)', () => {
     it('marks an already-registered repository and names the existing row', async () => {
       prisma.repository.findMany.mockResolvedValue([
         {
-          id: '11111111-1111-1111-1111-111111111111',
+          id: '11111111-1111-4111-8111-111111111111',
           owner: 'acme',
           name: 'app',
         },
@@ -128,7 +128,7 @@ describe('AvailableRepositoriesService (#401)', () => {
       expect(repositories).toHaveLength(1);
       expect(repositories[0].admission).toBe('registered');
       expect(repositories[0].repositoryId).toBe(
-        '11111111-1111-1111-1111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
       );
     });
 
@@ -141,12 +141,12 @@ describe('AvailableRepositoriesService (#401)', () => {
       // dropping the fold on either the stored key or the lookup fails this.
       prisma.repository.findMany.mockResolvedValue([
         {
-          id: '22222222-2222-2222-2222-222222222222',
+          id: '22222222-2222-4222-8222-222222222222',
           owner: 'Acme',
           name: 'App',
         },
         {
-          id: '77777777-7777-7777-7777-777777777777',
+          id: '77777777-7777-4777-8777-777777777777',
           owner: 'acme',
           name: 'web',
         },
@@ -161,8 +161,8 @@ describe('AvailableRepositoriesService (#401)', () => {
       expect(
         repositories.map((r) => [r.fullName, r.admission, r.repositoryId]),
       ).toEqual([
-        ['acme/app', 'registered', '22222222-2222-2222-2222-222222222222'],
-        ['Acme/Web', 'registered', '77777777-7777-7777-7777-777777777777'],
+        ['acme/app', 'registered', '22222222-2222-4222-8222-222222222222'],
+        ['Acme/Web', 'registered', '77777777-7777-4777-8777-777777777777'],
       ]);
     });
 
@@ -189,7 +189,7 @@ describe('AvailableRepositoriesService (#401)', () => {
       // the operator.
       prisma.repository.findMany.mockResolvedValue([
         {
-          id: '33333333-3333-3333-3333-333333333333',
+          id: '33333333-3333-4333-8333-333333333333',
           owner: 'acme',
           name: 'old',
         },
@@ -200,14 +200,14 @@ describe('AvailableRepositoriesService (#401)', () => {
 
       expect(repositories[0].admission).toBe('registered');
       expect(repositories[0].repositoryId).toBe(
-        '33333333-3333-3333-3333-333333333333',
+        '33333333-3333-4333-8333-333333333333',
       );
     });
 
     it('counts what is addable and what is not in the detail', async () => {
       prisma.repository.findMany.mockResolvedValue([
         {
-          id: '44444444-4444-4444-4444-444444444444',
+          id: '44444444-4444-4444-8444-444444444444',
           owner: 'acme',
           name: 'app',
         },
@@ -235,7 +235,7 @@ describe('AvailableRepositoriesService (#401)', () => {
       // which is what keeps this from passing on a coincidence.
       prisma.repository.findMany.mockResolvedValue([
         {
-          id: '55555555-5555-5555-5555-555555555555',
+          id: '55555555-5555-4555-8555-555555555555',
           owner: 'acme',
           name: 'aaa-known',
         },
