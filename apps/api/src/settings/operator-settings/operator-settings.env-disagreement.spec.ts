@@ -1,5 +1,7 @@
 import { Logger } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 
+import { FakeOperatorSettingsPrisma } from '../../../test/fixtures/operator-settings.fixture';
 import {
   OperatorSettingsEnvDisagreementService,
   operatorEnvDisagreements,
@@ -179,12 +181,152 @@ describe('operator settings env disagreement (#340)', () => {
         .spyOn(Logger.prototype, 'warn')
         .mockImplementation(() => undefined);
 
-      // The real service reads `process.env`, and the real resolver has no
-      // layer above it, so a boot with no database overlay is silent whatever
-      // the host happens to export.
-      new OperatorSettingsEnvDisagreementService(new OperatorSettingsService());
+      // The real service reads `process.env`, and with no database overlay
+      // loaded the resolver has no layer above the environment, so this boot is
+      // silent whatever the host happens to export.
+      new OperatorSettingsEnvDisagreementService(
+        new OperatorSettingsService(),
+      ).onApplicationBootstrap();
 
       expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('at boot, as Nest actually runs it (#437)', () => {
+    /**
+     * THE regression test, and the reason it goes through a container.
+     *
+     * Every assertion above calls `operatorEnvDisagreements` directly with an
+     * overlay that is already in place — the one arrangement in which this code
+     * has always worked. On a real boot it did not, because the whole job ran
+     * in the CONSTRUCTOR: constructors run while Nest is still resolving the
+     * graph, strictly before `OperatorSettingsService.onModuleInit` loads the
+     * overlay, so `resolve()` reported `source: 'env'`, the loop skipped every
+     * key, and the warning never fired once in production (#437).
+     *
+     * So the scenario is the issue's own: `SUPERVISOR_ENABLED=false` in the
+     * environment, `supervisor.enabled: true` in `operator_settings`. If the
+     * disagreement is computed before the overlay loads there is nothing to
+     * disagree WITH, and this fails.
+     */
+    let warnings: string[];
+
+    /**
+     * Every container opened by this block, closed in `afterEach`.
+     *
+     * NOT closed by each test at its end: an assertion that fails throws
+     * before that line, which would leave a live Nest application behind on
+     * exactly the run where the suite is red — and the next failure would then
+     * be reported as a teardown problem rather than as this one.
+     */
+    let opened: Array<() => Promise<void>>;
+
+    async function boot(prisma: FakeOperatorSettingsPrisma): Promise<{
+      settings: OperatorSettingsService;
+      overlayDuringModuleInit: string[];
+    }> {
+      const overlayDuringModuleInit: string[] = [];
+      // The REAL service, not the double: the double's overlay is always
+      // 'loaded', which is exactly the state this test exists to deny itself.
+      // And the real one reads `process.env`, which is the same environment the
+      // reporter compares against.
+      const settings = new OperatorSettingsService(prisma.asPrisma());
+
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          // Registered in the order `OperatorSettingsModule` registers them, so
+          // the ordering this asserts is the deployment's ordering.
+          { provide: OperatorSettingsService, useValue: settings },
+          {
+            // A stand-in for any consumer that reads the overlay in its own
+            // `onModuleInit` beside the service — see #436.
+            provide: 'OVERLAY_STATUS_PROBE',
+            useValue: {
+              onModuleInit: (): void => {
+                overlayDuringModuleInit.push(settings.overlay().status);
+              },
+            },
+          },
+          OperatorSettingsEnvDisagreementService,
+        ],
+      }).compile();
+
+      await moduleRef.init();
+      opened.push(() => moduleRef.close());
+
+      return { settings, overlayDuringModuleInit };
+    }
+
+    /** Only the lines about the key under test; the host exports its own. */
+    function about(key: string): string[] {
+      return warnings.filter((line) => line.includes(key));
+    }
+
+    let previousSupervisorEnabled: string | undefined;
+
+    beforeEach(() => {
+      opened = [];
+      warnings = [];
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation((message) => {
+        warnings.push(String(message));
+      });
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+      previousSupervisorEnabled = process.env.SUPERVISOR_ENABLED;
+    });
+
+    afterEach(async () => {
+      for (const close of opened) await close();
+      if (previousSupervisorEnabled === undefined) {
+        delete process.env.SUPERVISOR_ENABLED;
+      } else {
+        process.env.SUPERVISOR_ENABLED = previousSupervisorEnabled;
+      }
+      jest.restoreAllMocks();
+    });
+
+    it('warns about the stale variable through the container, not only when a spec calls it by hand', async () => {
+      process.env.SUPERVISOR_ENABLED = 'false';
+      const prisma = new FakeOperatorSettingsPrisma();
+      prisma.put('supervisor.enabled', true);
+
+      await boot(prisma);
+
+      const [line, ...rest] = about('SUPERVISOR_ENABLED');
+      expect(rest).toEqual([]);
+      expect(line).toContain('supervisor.enabled');
+      expect(line).toContain('database');
+      expect(line).toContain('Control Center');
+    });
+
+    it('is why the hook moved: the overlay is loaded by the END of the boot and not before', async () => {
+      // The diagnosis, pinned. A constructor cannot see 'loaded' under any
+      // ordering, and neither can a sibling's `onModuleInit` — which is what
+      // makes `onApplicationBootstrap` the earliest hook that can report the
+      // truth. If the probe ever starts reporting 'loaded', Nest changed its
+      // hook semantics and this file's argument should be re-read.
+      process.env.SUPERVISOR_ENABLED = 'false';
+      const prisma = new FakeOperatorSettingsPrisma();
+      prisma.put('supervisor.enabled', true);
+
+      const booted = await boot(prisma);
+
+      expect(booted.overlayDuringModuleInit).toEqual(['unavailable']);
+      expect(booted.settings.overlay().status).toBe('loaded');
+    });
+
+    it('still says nothing when the environment agrees with the row', async () => {
+      // The discipline of this file, asserted through the boot path too: a boot
+      // that warned whenever a managed variable was exported would print a
+      // dozen unactionable lines, which is how the one that matters gets
+      // skimmed with them.
+      process.env.SUPERVISOR_ENABLED = 'true';
+      const prisma = new FakeOperatorSettingsPrisma();
+      prisma.put('supervisor.enabled', true);
+
+      await boot(prisma);
+
+      expect(about('SUPERVISOR_ENABLED')).toEqual([]);
     });
   });
 });
