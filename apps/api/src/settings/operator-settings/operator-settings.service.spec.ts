@@ -172,8 +172,21 @@ describe('OperatorSettingsService', () => {
           'dispatch.maxConcurrent',
         ),
       ).toBeNull();
+      // ...and the string 'undefined' is NOT one of them any more (#441).
+      // It used to resolve to `null`, which satisfied this test's letter
+      // while inverting its point: the hazard named three lines up is "the
+      // fleet ceiling silently disappearing", and falling back to `null` IS
+      // that disappearance. An unreadable value now lands on the maximum a
+      // valid value could have expressed instead.
       expect(
         withEnv({ DISPATCH_MAX_CONCURRENT: 'undefined' }).get(
+          'dispatch.maxConcurrent',
+        ),
+      ).toBe(128);
+      // The one word that DOES express it, so "no ceiling" stays something an
+      // operator states rather than something a typo lands on.
+      expect(
+        withEnv({ DISPATCH_MAX_CONCURRENT: 'unlimited' }).get(
           'dispatch.maxConcurrent',
         ),
       ).toBeNull();

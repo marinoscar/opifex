@@ -145,6 +145,32 @@ describe('operator settings registry', () => {
       expect(parsed).toEqual({ ok: true, value: def.default });
     });
 
+    it('declares an invalidFallback that is itself a legal value, if it declares one', () => {
+      // #441. The rule the field encodes is "never more permissive than any
+      // valid value", and the mechanical half of that is checkable here: a
+      // fallback an operator could not legally have typed cannot be declared.
+      // Parsing it back through its OWN key's schema is what makes a fallback
+      // of `null` on a key whose range is 1..128 impossible to add — which is
+      // the exact shape of the bug this field exists to close.
+      if (def.invalidFallback === undefined) return;
+
+      expect(parseOperatorSetting(key, def.invalidFallback)).toEqual({
+        ok: true,
+        value: def.invalidFallback,
+      });
+    });
+
+    it('does not declare both an invalidFallback and bootCritical', () => {
+      // They are answers to the same question and they contradict: one says
+      // "land here instead", the other says "there is nowhere safe to land,
+      // refuse the boot". A key carrying both would resolve to the fallback
+      // and never reach the refusal, so the stricter declaration would be
+      // silently inert.
+      expect(
+        def.invalidFallback !== undefined && def.bootCritical === true,
+      ).toBe(false);
+    });
+
     // ---------------------------------------------------------------------
     // THE PARITY ASSERTION (#335's acceptance criterion)
     //
