@@ -23,7 +23,11 @@ import { join } from 'node:path';
  * real git plumbing rather than a mock.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+// `require`, not `import`: the module under test is plain CommonJS under
+// `scripts/`, which `jest.config.js` excludes from the TypeScript transform
+// (see its `transformIgnorePatterns`). No eslint-disable is needed — this
+// config does not enable `@typescript-eslint/no-var-requires`, and asserting
+// a rule that is off fails `--max-warnings 0` as an unused directive.
 const {
   resolveComposeEnvPath,
 } = require('../../scripts/lib/resolve-compose-env');
