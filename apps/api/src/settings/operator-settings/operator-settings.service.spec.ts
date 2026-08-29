@@ -161,6 +161,35 @@ describe('OperatorSettingsService', () => {
       },
     );
 
+    it('lands a misspelt permission mode on the narrowest one, not the default (#441)', () => {
+      // The issue's own examples: three spellings of "stricter than the
+      // default", none of them legal, all of which used to resolve to
+      // `acceptEdits` — a mode that lets the agent edit files.
+      for (const typo of ['ask', 'readonly', 'plan-only']) {
+        expect(
+          withEnv({ CLAUDE_CODE_PERMISSION_MODE: typo }).get(
+            'runners.claudeCodeLocal.permissionMode',
+          ),
+        ).toBe('plan');
+      }
+
+      // The control, and it is the assertion that stops this being satisfied
+      // by a resolver that always answers 'plan': a LEGAL broad mode is still
+      // honoured exactly as written, because #441 is about rejected values
+      // and nothing else.
+      expect(
+        withEnv({ CLAUDE_CODE_PERMISSION_MODE: 'bypassPermissions' }).get(
+          'runners.claudeCodeLocal.permissionMode',
+        ),
+      ).toBe('bypassPermissions');
+
+      // And an ABSENT value still resolves to the declared default. Absence
+      // is a state the operator chose; a rejected value is not.
+      expect(withEnv({}).get('runners.claudeCodeLocal.permissionMode')).toBe(
+        'acceptEdits',
+      );
+    });
+
     it('never yields the string "undefined" for a cleared numeric setting', () => {
       // `ConfigService.set(path, undefined)` writes the STRING 'undefined',
       // which survives `?? null` and makes every `liveRuns >= ceiling`
@@ -212,8 +241,14 @@ describe('OperatorSettingsService', () => {
 
       expect(settings.get('runners.claudeCodeLocal.maxConcurrency')).toBe(2);
       expect(settings.get('promotion.enabled')).toBe(false);
+      // NOT `acceptEdits`, the declared default, since #441. `'yolo'` is an
+      // unreadable value, and for this key the declared default is broader
+      // than the narrowest legal mode — so a rejected value lands on `plan`
+      // instead. The other two keys in this arrangement keep falling back to
+      // their declared defaults, which is what makes this a rule about a
+      // named subset rather than a change to every key.
       expect(settings.get('runners.claudeCodeLocal.permissionMode')).toBe(
-        'acceptEdits',
+        'plan',
       );
     });
 
