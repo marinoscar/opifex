@@ -8,7 +8,9 @@ import {
   buildPrompt,
   MODEL_SETTING_KEY_BY_TIER,
   resolveModel,
+  NARROWEST_PERMISSION_MODE,
   PERMISSION_MODES,
+  PERMISSION_MODES_BY_BREADTH,
   type ModelSettingKey,
 } from './claude-code-invocation';
 
@@ -111,6 +113,43 @@ describe('claude-code invocation', () => {
           'plan',
         ].sort(),
       );
+    });
+
+    it('ranks every mode by breadth, so a seventh cannot be adopted unranked', () => {
+      // `PERMISSION_MODES_BY_BREADTH` decides where a REJECTED value lands
+      // (#441). A mode the CLI adds later that nobody placed in that list
+      // would be a mode with no stated relationship to the safe end — so this
+      // asserts the two lists are permutations of each other rather than
+      // merely overlapping.
+      expect([...PERMISSION_MODES_BY_BREADTH].sort()).toEqual(
+        [...PERMISSION_MODES].sort(),
+      );
+      expect(PERMISSION_MODES_BY_BREADTH).toHaveLength(PERMISSION_MODES.length);
+      expect(new Set(PERMISSION_MODES_BY_BREADTH).size).toBe(
+        PERMISSION_MODES.length,
+      );
+    });
+
+    it('puts plan at the narrow end and bypassPermissions at the broad end', () => {
+      // The two positions anything actually reads. `plan` is the only mode
+      // that cannot change the working tree, and `bypassPermissions` is the
+      // one `claude --help` describes as fit only for a sandbox with no
+      // internet access — so these two ends are the claim, and the middle
+      // ordering is a judgement nothing depends on today.
+      expect(NARROWEST_PERMISSION_MODE).toBe('plan');
+      expect(PERMISSION_MODES_BY_BREADTH[0]).toBe('plan');
+      expect(
+        PERMISSION_MODES_BY_BREADTH[PERMISSION_MODES_BY_BREADTH.length - 1],
+      ).toBe('bypassPermissions');
+    });
+
+    it('does not rank the default as the narrowest', () => {
+      // The claim this replaces. Several comments said `acceptEdits` was "the
+      // narrow end"; it is the narrowest mode that can still DO work, and
+      // `plan` is narrower. Pinned because the fallback depends on the
+      // distinction: if these were the same value, #441's permissionMode
+      // hazard would be unfixable by declaration.
+      expect(NARROWEST_PERMISSION_MODE).not.toBe('acceptEdits');
     });
   });
 

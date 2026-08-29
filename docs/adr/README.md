@@ -25,14 +25,14 @@ one.
 | [0008](0008-claude-code-local-invocation.md)              | Invoke `claude-code-local` as a subprocess, not through the Agent SDK                              | Accepted | [#61](https://github.com/marinoscar/opifex/issues/61)   |
 | [0009](0009-record-architecture-decisions.md)             | Record architecture decisions in this directory, proposed by anyone and merged by a human          | Accepted | [#25](https://github.com/marinoscar/opifex/issues/25)   |
 | [0010](0010-schema-versioning-and-compatibility.md)       | Schemas are versioned per major, strict, and the producer emits what the consumer speaks           | Accepted | [#34](https://github.com/marinoscar/opifex/issues/34)   |
-| [0011](0011-supervisor-action-class-granularity.md)       | Grant autonomy per (capability, effect) pair, from one frozen registry                             | Proposed | [#218](https://github.com/marinoscar/opifex/issues/218) |
-| [0012](0012-one-daily-artifact.md)                        | The trust digest extends the daily brief rather than competing with it                             | Proposed | [#226](https://github.com/marinoscar/opifex/issues/226) |
-| [0013](0013-never-trustable-effects.md)                   | Never-trustable is a list of effects, checked at the execution boundary                            | Proposed | [#233](https://github.com/marinoscar/opifex/issues/233) |
-| [0014](0014-approval-timeout-precedence.md)               | Approval timeouts resolve by a total order, and the grant is what delivers autonomy                | Proposed | [#234](https://github.com/marinoscar/opifex/issues/234) |
-| [0015](0015-supervisor-model-http-client.md)              | Call the supervisor's model with the platform `fetch`, on a budget of its own                      | Proposed | [#230](https://github.com/marinoscar/opifex/issues/230) |
-| [0016](0016-supervisor-live-run-ceiling.md)               | The live-run ceiling is removed; the quota gate keeps only the parked-run signal                   | Proposed | [#260](https://github.com/marinoscar/opifex/issues/260) |
-| [0017](0017-supervisor-spend-ceiling.md)                  | The supervisor gets its own hard spend ceiling, enforced between model calls                       | Proposed | [#261](https://github.com/marinoscar/opifex/issues/261) |
-| [0018](0018-operator-settings-resolution-and-ceilings.md) | Operator settings resolve default → env → DB row, and the hard spend ceilings join them            | Proposed | [#354](https://github.com/marinoscar/opifex/issues/354) |
+| [0011](0011-supervisor-action-class-granularity.md)       | Grant autonomy per (capability, effect) pair, from one frozen registry                             | Accepted | [#218](https://github.com/marinoscar/opifex/issues/218) |
+| [0012](0012-one-daily-artifact.md)                        | The trust digest extends the daily brief rather than competing with it                             | Accepted | [#226](https://github.com/marinoscar/opifex/issues/226) |
+| [0013](0013-never-trustable-effects.md)                   | Never-trustable is a list of effects, checked at the execution boundary                            | Accepted | [#233](https://github.com/marinoscar/opifex/issues/233) |
+| [0014](0014-approval-timeout-precedence.md)               | Approval timeouts resolve by a total order, and the grant is what delivers autonomy                | Accepted | [#234](https://github.com/marinoscar/opifex/issues/234) |
+| [0015](0015-supervisor-model-http-client.md)              | Call the supervisor's model with the platform `fetch`, on a budget of its own                      | Accepted | [#230](https://github.com/marinoscar/opifex/issues/230) |
+| [0016](0016-supervisor-live-run-ceiling.md)               | The live-run ceiling is removed; the quota gate keeps only the parked-run signal                   | Accepted | [#260](https://github.com/marinoscar/opifex/issues/260) |
+| [0017](0017-supervisor-spend-ceiling.md)                  | The supervisor gets its own hard spend ceiling, enforced between model calls                       | Accepted | [#261](https://github.com/marinoscar/opifex/issues/261) |
+| [0018](0018-operator-settings-resolution-and-ceilings.md) | Operator settings resolve default → env → DB row, and the hard spend ceilings join them            | Accepted | [#354](https://github.com/marinoscar/opifex/issues/354) |
 | [0019](0019-fresh-install-ships-ready-not-running.md)     | A fresh install ships ready, not running — five defaults flip on, the hard spend ceiling stays off | Accepted | [#439](https://github.com/marinoscar/opifex/issues/439) |
 
 `0000-template.md` is the template. It is not a decision and never becomes one;
@@ -70,6 +70,17 @@ real decision reference.
 | `Proposed`               | The ADR's pull request is open. The decision is not in force. |
 | `Accepted`               | Merged. This is the current answer.                           |
 | `Superseded by ADR-NNNN` | A later decision replaced it. The file stays.                 |
+
+**`Status:` does not update itself when a pull request merges.** It is a line
+in the file, and flipping it from `Proposed` to `Accepted` is something the
+merging PR has to do — see step 5 under [Adding one](#adding-one) below,
+which is where "once the discussion has settled" is defined as the trigger.
+An ADR already on `main` that still reads `Proposed` is not a decision still
+under discussion; it is that edit having been skipped, and the file
+disagreeing with its own merge state is a bug to fix on sight, not a signal
+about whether the decision is in force. That gap — nothing said what to do
+when the flip was missed — is how eight ADRs (#400) sat merged, built on, and
+`Proposed` at once, discovered only by rereading every file by hand.
 
 **A reversed decision is superseded, not deleted or rewritten.** Editing an
 accepted ADR to say the opposite destroys the record of what was believed and

@@ -801,4 +801,88 @@ describe('UsersService', () => {
       });
     });
   });
+  /**
+   * #361: the audit sink must not echo the caller's payload verbatim.
+   *
+   * `updateUser` writes `{ changes: dto }`, and `UpdateUserDto` is
+   * `displayName` and `isActive` today — so these tests deliberately push a
+   * field the DTO does not declare yet. That is the point: the bug is not a
+   * leak that exists now, it is the one that arrives the day somebody adds a
+   * credential-bearing user field, by which time the plaintext already on
+   * disk cannot be taken back.
+   */
+  describe('audit redaction (#361)', () => {
+    // Token-SHAPED, and deliberately not token-LENGTH: the repo's
+    // pre-commit scanner matches `ghp_` followed by 36 characters, and a
+    // fixture that trips it would make this file uncommittable without
+    // `--no-verify`. The redaction under test keys on the field NAME, so
+    // the length of the value is irrelevant to what is being asserted.
+    const SECRET = 'ghp_Qw3Er7Ty1Ui5Op9As2Df6Gh';
+
+    beforeEach(() => {
+      mockPrisma.user.findUnique.mockResolvedValue(mockOtherUser as any);
+      mockPrisma.user.update.mockResolvedValue(mockOtherUser as any);
+      mockPrisma.auditEvent.create.mockResolvedValue({} as any);
+    });
+
+    function metaOfLastAuditEvent(): Record<string, unknown> {
+      const calls = mockPrisma.auditEvent.create.mock.calls;
+      expect(calls.length).toBe(1);
+      return (calls[0][0] as { data: { meta: Record<string, unknown> } }).data
+        .meta;
+    }
+
+    it('does not write a secret-shaped value into audit_events.meta', async () => {
+      const dto = {
+        displayName: 'Renamed',
+        apiToken: SECRET,
+      } as unknown as UpdateUserDto;
+
+      await service.updateUser(mockOtherUser.id, dto, mockAdminUser.id);
+
+      // The assertion that matters: the value never reaches the row, however
+      // it is nested. Serialising the whole call is what makes this hold for
+      // shapes nobody thought to assert on individually.
+      expect(
+        JSON.stringify(mockPrisma.auditEvent.create.mock.calls),
+      ).not.toContain(SECRET);
+    });
+
+    it('still records that the field changed, rather than masking the row', async () => {
+      const dto = {
+        displayName: 'Renamed',
+        isActive: false,
+        apiToken: SECRET,
+      } as unknown as UpdateUserDto;
+
+      await service.updateUser(mockOtherUser.id, dto, mockAdminUser.id);
+
+      // An audit log that says "something changed" is not an audit log. The
+      // field names survive, the non-secret values survive verbatim, and only
+      // the secret-named value is masked.
+      expect(metaOfLastAuditEvent()).toEqual({
+        changes: {
+          displayName: 'Renamed',
+          isActive: false,
+          // Eight stars and the last four characters, spelled out from the
+          // fixture rather than hardcoded, so changing the fixture cannot
+          // silently weaken the assertion into a tautology.
+          apiToken: `********${SECRET.slice(-4)}`,
+        },
+      });
+    });
+
+    it('leaves an ordinary update untouched', async () => {
+      // The over-masking direction. `redactSettingsMeta` has its own coverage
+      // for this (`common/crypto/redact.spec.ts`); this checks the wiring here
+      // did not accidentally mask a whole object on the way past.
+      const dto: UpdateUserDto = { displayName: 'Renamed', isActive: true };
+
+      await service.updateUser(mockOtherUser.id, dto, mockAdminUser.id);
+
+      expect(metaOfLastAuditEvent()).toEqual({
+        changes: { displayName: 'Renamed', isActive: true },
+      });
+    });
+  });
 });
