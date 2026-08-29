@@ -1,6 +1,6 @@
 # 15. Call the supervisor's model with the platform `fetch`, on a budget of its own
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-25
 - Issue: #230
 - Epic: #21

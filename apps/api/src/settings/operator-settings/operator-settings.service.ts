@@ -18,6 +18,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   OPERATOR_SETTINGS,
   OPERATOR_SETTING_KEYS,
+  invalidFallbackValue,
   isOperatorSettingKey,
   parseOperatorSetting,
   type OperatorSettingKey,
@@ -261,10 +262,14 @@ export class OperatorSettingsService implements OnModuleInit {
    * though it did is #436: `callModuleInitHook` starts every provider hook
    * WITHIN a module in one pass and awaits them together with `Promise.all`,
    * so a sibling's `onModuleInit` runs while this one is still awaiting the
-   * query below and sees `status: 'unavailable'`. The two providers that need
-   * the overlay at startup — `LegacyModelSettingsMigration` and
-   * `UnreadableSecretsBootCheck` — therefore use `onApplicationBootstrap`,
-   * which runs after every module's `onModuleInit` has settled.
+   * query below and sees `status: 'unavailable'`. A sibling's CONSTRUCTOR is
+   * worse again: it runs before any hook at all, so it never sees an overlay
+   * under any ordering (#437). The three providers that need the overlay at
+   * startup — `LegacyModelSettingsMigration`, `UnreadableSecretsBootCheck` and
+   * `OperatorSettingsEnvDisagreementService` — therefore use
+   * `onApplicationBootstrap`, which runs after every module's `onModuleInit`
+   * has settled, and `operator-settings.boot-order.spec.ts` asserts that no
+   * fourth one is added reading it any earlier.
    *
    * A failure here does NOT abort the boot, for exactly `PrismaService`'s
    * reason (#161): the process that stays up is the one that can be asked what
@@ -328,11 +333,21 @@ export class OperatorSettingsService implements OnModuleInit {
       return { key, value: parsed.value, source: supplied.source };
     }
 
-    this.onInvalid(key, supplied.source, parsed.error, supplied.raw, fallback);
+    // NOT `fallback`. For a key that declares `invalidFallback`, the declared
+    // default is more permissive than any value an operator could have written
+    // — `dispatch.maxConcurrent`'s is `null`, meaning no fleet ceiling at all —
+    // so a rejected value must not be able to arrive at it (#441).
+    const inForce = invalidFallbackValue(key);
+
+    this.onInvalid(key, supplied.source, parsed.error, supplied.raw, inForce);
 
     return {
       key,
-      value: fallback,
+      // `source` stays 'default' rather than gaining a fourth value: it names
+      // the LAYER the value came from, and this one came from the registry
+      // like every other unsupplied value. `invalid` beside it is what says
+      // the supplied value was refused, and the Control Center renders it.
+      value: inForce,
       source: 'default',
       invalid: { source: supplied.source, reason: parsed.error },
     };
@@ -815,12 +830,25 @@ export class OperatorSettingsService implements OnModuleInit {
       definition.kind === 'boolean'
         ? ', which is the opposite of what was probably meant'
         : '';
+    // Which value this IS depends on the key, and saying "the declared
+    // default" for a key that deliberately does not fall back to its default
+    // would be a lie in the one message an operator has to act on (#441).
+    const which =
+      definition.invalidFallback === undefined
+        ? 'The declared default'
+        : 'The safe fallback';
+    const why =
+      definition.invalidFallback === undefined
+        ? ''
+        : ` The declared default (${JSON.stringify(definition.default)}) is ` +
+          `more permissive than any value that would have been accepted, so a ` +
+          `rejected value does not reach it.`;
     this.logOnce(
       `invalid:${key}`,
       'error',
       `${where}${supplied} is not a valid value for ${key}: ${reason}. ` +
-        `The declared default ${JSON.stringify(inForce)} is in force ` +
-        `instead${consequence}.`,
+        `${which} ${JSON.stringify(inForce)} is in force ` +
+        `instead${consequence}.${why}`,
     );
   }
 
@@ -873,10 +901,11 @@ export class OperatorSettingsService implements OnModuleInit {
       return { key, value: parsed.value, source: 'database' };
     }
 
-    this.onInvalid(key, 'database', parsed.error, resolution.value, fallback);
+    const inForce = invalidFallbackValue(key);
+    this.onInvalid(key, 'database', parsed.error, resolution.value, inForce);
     return {
       key,
-      value: fallback,
+      value: inForce,
       source: 'default',
       invalid: { source: 'database', reason: parsed.error },
     };

@@ -13,6 +13,10 @@
  * goes through a confirmation that states what moves and what that does —
  * not "are you sure", which is a question nobody has ever answered no to.
  *
+ * That confirmation now lives in `DangerousChangeDialog` and is shared with
+ * the Configuration section (#381), which rendered these same four keys as
+ * plain fields and saved them unasked. The dialog moved; the wording did not.
+ *
  * ## The USD field is a text field, deliberately
  *
  * Not `type="number"`. The registry declares these keys as strings so that
@@ -36,12 +40,7 @@ import {
   AlertTitle,
   Box,
   Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
   DialogContentText,
-  DialogTitle,
-  Divider,
   LinearProgress,
   Link,
   Paper,
@@ -51,6 +50,7 @@ import {
   Typography,
 } from '@mui/material';
 
+import { DangerousChangeDialog } from './DangerousChangeDialog';
 import { ceilingUsedPercent, floorCaveat, money } from '../cost/costFormat';
 import {
   CEILING_ADR,
@@ -320,44 +320,41 @@ export function SpendCeilingsPanel({
         </Alert>
       )}
 
-      <Dialog
+      <DangerousChangeDialog
         open={confirming !== null}
-        onClose={() => setConfirming(null)}
-        aria-labelledby="confirm-ceiling-change"
+        title={`Change the ${confirming?.definition.title.toLowerCase()} ceiling?`}
+        changes={confirming?.changes ?? []}
+        confirmLabel="Change the ceiling"
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => void commit(confirming?.changes ?? [])}
       >
-        <DialogTitle id="confirm-ceiling-change">
-          Change the {confirming?.definition.title.toLowerCase()} ceiling?
-        </DialogTitle>
-        <DialogContent>
-          {(confirming?.changes ?? []).map((change) => (
-            <Box key={change.key} sx={{ mb: 2 }}>
-              <DialogContentText sx={{ fontFamily: 'monospace' }}>
-                {change.label}: {change.from} → {change.to}
-              </DialogContentText>
-              <DialogContentText variant="body2">
-                {change.consequence}
-              </DialogContentText>
-            </Box>
-          ))}
-          <Divider sx={{ my: 1 }} />
-          <DialogContentText variant="body2">
-            This is written to the database and takes effect without a restart.
-            It is recorded in <code>audit_events</code> against this account.
-            See {CEILING_ADR.id} for why a figure that used to require host
-            access is editable here.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirming(null)}>Go back</Button>
-          <Button
-            variant="contained"
-            color="warning"
-            onClick={() => void commit(confirming?.changes ?? [])}
-          >
-            Change the ceiling
-          </Button>
-        </DialogActions>
-      </Dialog>
+        {/*
+          Deliberately does NOT restate that a run already under way is not
+          recalled. `usdConsequence` says that, per change, immediately above
+          — and a dialog that says the same sentence twice teaches the reader
+          that the second half is padding, which is the half carrying the
+          spend figure below. What is left here is what is true of every
+          ceiling change and of no particular one.
+        */}
+        <DialogContentText variant="body2">
+          This is written to the database and takes effect without a restart. It
+          is recorded in <code>audit_events</code> against this account. See{' '}
+          {CEILING_ADR.id} for why a figure that used to require host access is
+          editable here.
+        </DialogContentText>
+        {confirming?.definition.spendSource.kind === 'cost-summary' &&
+          spend && (
+            <DialogContentText variant="body2">
+              {money(spend.ceiling.spend.totalUsd)} has been spent over the last{' '}
+              {spend.ceiling.windowDays} days, against a ceiling the API reports
+              as{' '}
+              {spend.ceiling.limitUsd === null
+                ? 'not set'
+                : money(spend.ceiling.limitUsd)}
+              .
+            </DialogContentText>
+          )}
+      </DangerousChangeDialog>
     </Box>
   );
 }

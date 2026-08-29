@@ -40,6 +40,78 @@ export const PERMISSION_MODES = [
 
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
+/**
+ * The same six modes, ordered NARROWEST FIRST (#441).
+ *
+ * ## What this is for
+ *
+ * `runners.claudeCodeLocal.permissionMode` needs somewhere safe to land when
+ * an operator supplies a value the registry refuses. The declared default is
+ * `acceptEdits`, and #441's point is that an operator typing `ask`,
+ * `readonly` or `plan-only` — all of them reaching for something STRICTER —
+ * used to get a mode that lets the agent edit files. A fallback must never be
+ * broader than what was asked for, and "never broader" needs an order.
+ *
+ * `NARROWEST_PERMISSION_MODE` below is what the registry declares as its
+ * `invalidFallback`, derived from this list rather than written twice.
+ *
+ * ## How the order was established, and what is asserted vs. judged
+ *
+ * The SET is verified, not recalled: `claude --help` on 2.1.251 lists exactly
+ * `acceptEdits`, `auto`, `bypassPermissions`, `manual`, `dontAsk`, `plan` as
+ * the choices for `--permission-mode`. `claude-code-invocation.spec.ts` pins
+ * that, and this array is asserted to be a permutation of `PERMISSION_MODES`,
+ * so a seventh mode added to the CLI cannot be adopted here without being
+ * placed deliberately.
+ *
+ * The ORDER is a judgement and is not claimed to be otherwise — `--help`
+ * states the choices and does not rank them. It reads:
+ *
+ *  1. `plan`      — proposes, does not act. The only mode that cannot change
+ *                   the working tree at all, so it is the floor.
+ *  2. `manual`    — asks before everything. Narrow, but in a non-interactive
+ *                   `-p` run there is nobody to ask, so it stalls rather than
+ *                   refusing; see the note below on why it is not the floor.
+ *  3. `acceptEdits` — edits without asking, still asks for the rest. The
+ *                   declared default.
+ *  4. `auto`      — broader still.
+ *  5. `dontAsk`   — stops asking.
+ *  6. `bypassPermissions` — every check off. `claude --help` calls the
+ *                   equivalent flag "Recommended only for sandboxes with no
+ *                   internet access", which is the CLI's own words for how
+ *                   far this end is from the other.
+ *
+ * Only positions 1 and 6 are load-bearing: everything else is used for the
+ * "never broader" comparison and nothing reads the middle today.
+ *
+ * ## Why `plan` is the floor and `manual` is not
+ *
+ * `manual` is arguably the stricter INTENT, but Opifex runs the CLI
+ * non-interactively, so a mode that asks has nobody to answer it: the run
+ * hangs until the watchdog (#54) kills it. That converts one operator's typo
+ * into a stalled queue, which is the shape `DEFAULT_CEILING_WINDOW_DAYS`
+ * argues against — a safety response severe enough to look like an outage
+ * becomes pressure to remove the safety mechanism. `plan` terminates on its
+ * own and changes nothing.
+ */
+export const PERMISSION_MODES_BY_BREADTH = [
+  'plan',
+  'manual',
+  'acceptEdits',
+  'auto',
+  'dontAsk',
+  'bypassPermissions',
+] as const satisfies readonly PermissionMode[];
+
+/**
+ * The mode a REJECTED `permissionMode` resolves to (#441).
+ *
+ * Derived, so the registry and this file cannot disagree about which end of
+ * the list is the safe one.
+ */
+export const NARROWEST_PERMISSION_MODE: PermissionMode =
+  PERMISSION_MODES_BY_BREADTH[0];
+
 export interface InvocationOptions {
   permissionMode: PermissionMode;
   /**

@@ -1,6 +1,6 @@
 # 14. Approval timeouts resolve by a total order, and the grant is what delivers autonomy
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-24
 - Issue: #234
 - Epic: #22

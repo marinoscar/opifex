@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { redactSettingsMeta } from '../common/crypto/redact';
 import { UserListQueryDto } from './dto/user-list-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserRolesDto } from './dto/update-user-roles.dto';
@@ -232,7 +233,24 @@ export class UsersService {
   }
 
   /**
-   * Create audit event
+   * Create audit event.
+   *
+   * REDACTED HERE, at this service's single choke point, rather than at the
+   * two callers (#361).
+   *
+   * `updateUser` hands over `{ changes: dto }` — the raw `UpdateUserDto`,
+   * straight off the wire. That is harmless while the DTO is `displayName`
+   * and `isActive`, and stops being harmless the first time a credential-
+   * bearing user field is added: this line would write it to
+   * `audit_events.meta` in plaintext, and an audit log is the one table
+   * nobody is allowed to go back and rewrite. A redaction added after that
+   * point protects the next write and none of the ones already on disk.
+   *
+   * The masking is by field NAME, so the row still records *that* a field
+   * changed and what its non-secret siblings became — `{ changes: {
+   * displayName: 'x', apiToken: '********6789' } }`, not a masked blob. See
+   * `common/crypto/redact.ts`, and `common/audit/audit-sinks.spec.ts` for
+   * why this lives here and not in a shared audit-write helper.
    */
   private async createAuditEvent(
     actorUserId: string,
@@ -252,7 +270,7 @@ export class UsersService {
         // `InputJsonValue`, and the callers pass DTO instances that have no
         // implicit index signature. The assertion still constrains the target
         // to a JSON object — unlike the `as any` it replaces (#186).
-        meta: meta as Prisma.InputJsonObject,
+        meta: redactSettingsMeta(meta) as Prisma.InputJsonObject,
       },
     });
   }

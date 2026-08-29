@@ -1,6 +1,6 @@
 # 12. The trust digest extends the daily brief rather than competing with it
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-24
 - Issue: #226
 - Epic: #21

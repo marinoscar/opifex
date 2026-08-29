@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { describeIfDb } from '../helpers/database-guard.helper';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { ProjectsService } from '../../src/projects/projects.service';
 import { RepositoriesService } from '../../src/repositories/repositories.service';
@@ -43,19 +44,6 @@ import { RepositoriesService } from '../../src/repositories/repositories.service
  * specs in this directory use.
  */
 
-function databaseReachable(): boolean {
-  return Boolean(process.env.DATABASE_URL || process.env.POSTGRES_HOST);
-}
-
-const describeIfDb = databaseReachable() ? describe : describe.skip;
-
-if (!databaseReachable()) {
-  console.warn(
-    'Skipping project-delete-non-cascade.integration.spec.ts: no DATABASE_URL/POSTGRES_HOST ' +
-      'in the environment. Point it at opifex_test (infra/compose/test.compose.yml) to run it.',
-  );
-}
-
 interface RepositoryRow {
   id: string;
   project_id: string | null;
@@ -65,6 +53,7 @@ interface RepositoryRow {
 }
 
 describeIfDb(
+  'project-delete-non-cascade.integration.spec.ts',
   'Deleting a project does not delete its repositories (#404)',
   () => {
     let prisma: PrismaService;
