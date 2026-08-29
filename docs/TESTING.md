@@ -7,6 +7,7 @@ This document describes the testing strategy, frameworks, and conventions used i
 1. [Testing Framework Overview](#testing-framework-overview)
 2. [Test Structure](#test-structure)
 3. [Running Tests](#running-tests)
+   - [What `typecheck` covers](#what-typecheck-covers)
 4. [Test Patterns & Conventions](#test-patterns--conventions)
 5. [Mocking Strategies](#mocking-strategies)
 6. [Writing New Tests](#writing-new-tests)
@@ -135,6 +136,38 @@ npm run test:debug
 # CI mode (coverage + junit reporter)
 npm run test:ci
 ```
+
+### What `typecheck` covers
+
+`npm -w apps/api run typecheck` runs `tsc --noEmit` over the program described
+by `apps/api/tsconfig.json`, and **that program now includes `test/`** (#372).
+A type error in a spec, fixture, helper or mock fails the fast gate, like a
+type error anywhere else.
+
+It did not always. `tsconfig.json` used to `exclude` `test/`, and the gap was
+narrower — and stranger — than that sounds:
+
+- Specs under `src/` were **already covered**, because `include: ["src/**/*"]`
+  matches `src/**/*.spec.ts`.
+- Anything those specs import was **also covered**, which is most of
+  `test/mocks/` and `test/helpers/` — a file enters the program by being
+  imported, whatever `exclude` says.
+- What was **not** covered was any file reachable only from `apps/api/test/`:
+  the `test/**/*.integration.spec.ts` suites, and helpers nothing else imports.
+
+So the gate reported clean while a test-only spec was type-broken, and the
+failure surfaced minutes later when jest loaded it — usually for whoever ran
+the suite next rather than whoever broke it. Turning the gate on immediately
+found one real error that had never compiled, in `test/helpers/fixtures.helper.ts`,
+a helper no suite imports today.
+
+**The build is unaffected.** `tsconfig.build.json` still excludes `test/` and
+every `*spec.ts`, so nothing test-only reaches `dist/` — verified by building
+and checking the output.
+
+**Still not covered by this gate:** `apps/web` (Vitest type-checks its own
+files at run time), and `apps/api/scripts/`, which has its own program and its
+own `npm -w apps/api run openapi:typecheck`.
 
 ### Frontend Tests
 
