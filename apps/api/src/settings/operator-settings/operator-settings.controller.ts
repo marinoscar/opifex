@@ -6,6 +6,8 @@ import {
   ForbiddenException,
   Get,
   Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -270,6 +272,16 @@ export class OperatorSettingsController {
   }
 
   @Post('probes/:probe')
+  // 200, not the POST default of 201 (#387). A probe creates nothing: it runs
+  // a check and reports what it found, and the identifier in the path names a
+  // check that already existed rather than a resource this call brought into
+  // being. It was answering 201 while `@ApiDataResponse` below documented 200
+  // — a drift `openapi:lint` cannot see, because both are valid documents, and
+  // one an SDK generated from `/api/docs` would treat as an unexpected status.
+  // POST rather than GET is still right: `claude-credential` and
+  // `supervisor-model` make a real, billed call, which is not something a
+  // cache or a prefetcher may repeat on its own.
+  @HttpCode(HttpStatus.OK)
   @Auth({ permissions: [PERMISSIONS.SYSTEM_SETTINGS_WRITE] })
   @ApiOperation({
     summary: 'Test a credential or a binary for real',
