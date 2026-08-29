@@ -1,6 +1,10 @@
 import {
   buildChildEnvironment,
   INHERITED_ENV_ALLOWLIST,
+  PROXY_EXEMPTION_ENV_NAMES,
+  PROXY_URL_ENV_NAMES,
+  proxyUrlCarriesUserinfo,
+  refusedProxyVariables,
 } from './child-environment';
 
 /**
@@ -146,6 +150,163 @@ describe('buildChildEnvironment', () => {
     });
   });
 
+  describe('the proxy escape hatch (#358)', () => {
+    // The bug this closes: an operator behind a corporate egress proxy got an
+    // agent that could reach nothing, and NOTHING said so — `claude --version`
+    // needs no network, so the runner registered healthy and every dispatch
+    // died at its first fetch. These tests are the two halves of the answer:
+    // a clean proxy arrives, a credentialed one is refused by name.
+
+    it('carries a clean proxy through to the agent', () => {
+      const env = buildChildEnvironment(
+        {},
+        {
+          ...apiEnvironment,
+          HTTP_PROXY: 'http://proxy.corp.example:3128',
+          HTTPS_PROXY: 'http://proxy.corp.example:3128',
+        },
+      );
+
+      expect(env.HTTP_PROXY).toBe('http://proxy.corp.example:3128');
+      expect(env.HTTPS_PROXY).toBe('http://proxy.corp.example:3128');
+    });
+
+    it('carries the lowercase spellings, which are the ones curl reads', () => {
+      // Not a stylistic duplicate of the case above. libcurl and several Node
+      // agents read `https_proxy` and ignore `HTTPS_PROXY` — an operator who
+      // set only the lowercase names would otherwise hit the exact silent
+      // failure #358 reports, with the fix apparently already applied.
+      const env = buildChildEnvironment(
+        {},
+        {
+          ...apiEnvironment,
+          http_proxy: 'http://proxy.corp.example:3128',
+          https_proxy: 'http://proxy.corp.example:3128',
+        },
+      );
+
+      expect(env.http_proxy).toBe('http://proxy.corp.example:3128');
+      expect(env.https_proxy).toBe('http://proxy.corp.example:3128');
+    });
+
+    it('does not synthesise the case the operator did not set', () => {
+      // Deliberate, and the header says why: writing `HTTP_PROXY` from
+      // `http_proxy` would be this process inventing a variable nobody set,
+      // and libcurl ignores the uppercase form ON PURPOSE because CGI puts
+      // request headers in the `HTTP_*` namespace. What was set is what
+      // travels.
+      const env = buildChildEnvironment(
+        {},
+        { ...apiEnvironment, https_proxy: 'http://proxy.corp.example:3128' },
+      );
+
+      expect(env.https_proxy).toBe('http://proxy.corp.example:3128');
+      expect('HTTPS_PROXY' in env).toBe(false);
+    });
+
+    it('refuses a proxy whose URL embeds credentials', () => {
+      // The case that motivated leaving these off the allowlist in the first
+      // place (#334): the proxy URL IS a credential, and handing it to an
+      // autonomous agent is the thing this whole module exists to prevent.
+      const env = buildChildEnvironment(
+        {},
+        {
+          ...apiEnvironment,
+          HTTPS_PROXY: 'http://svc-account:hunter2@proxy.corp.example:3128',
+        },
+      );
+
+      expect('HTTPS_PROXY' in env).toBe(false);
+    });
+
+    it('refuses a credentialed proxy in either case, and by name', () => {
+      const refused = refusedProxyVariables({
+        http_proxy: 'http://svc:hunter2@proxy.corp.example:3128',
+        HTTPS_PROXY: 'http://svc:hunter2@proxy.corp.example:3128',
+        NO_PROXY: 'localhost',
+      });
+
+      expect(refused.map((variable) => variable.name).sort()).toEqual([
+        'HTTPS_PROXY',
+        'http_proxy',
+      ]);
+    });
+
+    it('never puts the refused value in the reason it reports', () => {
+      // The reason reaches a log line and an `unavailableReason` published on
+      // /api/health/ready. A refusal that printed the password it was
+      // protecting would leak it into the one file an operator pastes into a
+      // bug report — which would be worse than the leak being refused.
+      const refused = refusedProxyVariables({
+        HTTPS_PROXY: 'http://svc-account:hunter2@proxy.corp.example:3128',
+      });
+
+      expect(refused).toHaveLength(1);
+      expect(refused[0].reason).toContain('HTTPS_PROXY');
+      expect(refused[0].reason).not.toContain('hunter2');
+      expect(refused[0].reason).not.toContain('svc-account');
+    });
+
+    it('refuses one credentialed variable without dropping a clean sibling', () => {
+      // The refusal is per-value, not per-deployment. An operator who got one
+      // of the pair wrong keeps the egress the other one gives them.
+      const env = buildChildEnvironment(
+        {},
+        {
+          ...apiEnvironment,
+          HTTP_PROXY: 'http://proxy.corp.example:3128',
+          HTTPS_PROXY: 'http://svc:hunter2@proxy.corp.example:3128',
+        },
+      );
+
+      expect(env.HTTP_PROXY).toBe('http://proxy.corp.example:3128');
+      expect('HTTPS_PROXY' in env).toBe(false);
+    });
+
+    it('passes NO_PROXY through untouched, and never parses it as a URL', () => {
+      // It is a comma-separated suffix list, not a URL. Parsing it would
+      // either throw on a legal value or read a hostname pattern as userinfo,
+      // and it carries no credential to refuse.
+      const exemptions = 'localhost,127.0.0.1,.svc.cluster.local,10.0.0.0/8';
+      const env = buildChildEnvironment(
+        {},
+        { ...apiEnvironment, NO_PROXY: exemptions, no_proxy: exemptions },
+      );
+
+      expect(env.NO_PROXY).toBe(exemptions);
+      expect(env.no_proxy).toBe(exemptions);
+      expect(
+        refusedProxyVariables({ NO_PROXY: 'user@host,localhost' }),
+      ).toEqual([]);
+    });
+
+    describe('proxyUrlCarriesUserinfo', () => {
+      it.each([
+        ['http://user:pass@proxy.corp.example:3128', true],
+        ['https://user:pass@proxy.corp.example:3128', true],
+        // Bare username, no password. Still userinfo, still a credential.
+        ['http://user@proxy.corp.example:3128', true],
+        // Schemeless, which curl accepts and `new URL()` rejects — the reason
+        // this is not a URL parse.
+        ['user:pass@proxy.corp.example:3128', true],
+        ['proxy.corp.example:3128', false],
+        ['http://proxy.corp.example:3128', false],
+        ['http://proxy.corp.example:3128/', false],
+        // An `@` outside the authority is not userinfo. Cutting the authority
+        // out rather than searching the whole string is what gets this right.
+        ['http://proxy.corp.example:3128/pac@v1.js', false],
+        ['http://proxy.corp.example:3128/?via=a@b', false],
+        // A percent-encoded `@` inside the username leaves the real delimiter
+        // in place.
+        ['http://user%40corp:pass@proxy.corp.example:3128', true],
+        ['  http://user:pass@proxy.corp.example:3128  ', true],
+        ['', false],
+      ])('%s -> %s', (value, expected) => {
+        expect(proxyUrlCarriesUserinfo(value)).toBe(expected);
+      });
+    });
+  });
+
   describe('the allowlist itself', () => {
     it('names no control-plane configuration', () => {
       // A `CLAUDE_CODE_*` prefix rule would be tidier and would carry the
@@ -160,6 +321,26 @@ describe('buildChildEnvironment', () => {
       );
       expect(INHERITED_ENV_ALLOWLIST).not.toContain('DISPATCH_ENABLED');
       expect(INHERITED_ENV_ALLOWLIST).not.toContain('NODE_ENV');
+    });
+
+    it('names every proxy variable the refusal logic groups (#358)', () => {
+      // The six names are stated twice — once as entries here, once split by
+      // whether they are URLs — and the two statements have to agree. A proxy
+      // name in one list and not the other is the silent half of #358 back
+      // again: a value that is never inherited, or one that is inherited
+      // without ever being checked for a credential.
+      for (const name of [
+        ...PROXY_URL_ENV_NAMES,
+        ...PROXY_EXEMPTION_ENV_NAMES,
+      ]) {
+        expect(INHERITED_ENV_ALLOWLIST).toContain(name);
+      }
+
+      expect(
+        INHERITED_ENV_ALLOWLIST.filter((name) =>
+          name.toUpperCase().includes('PROXY'),
+        ).sort(),
+      ).toEqual([...PROXY_URL_ENV_NAMES, ...PROXY_EXEMPTION_ENV_NAMES].sort());
     });
   });
 });
