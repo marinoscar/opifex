@@ -77,12 +77,7 @@ function resolveComposeEnvPath(scriptDir) {
     // worktree-specific subdirectory *inside* it differs, so its parent is
     // always the real repository root.
     const repoRoot = path.dirname(commonDir);
-    const commonDirEnvPath = path.resolve(
-      repoRoot,
-      'infra',
-      'compose',
-      '.env',
-    );
+    const commonDirEnvPath = path.resolve(repoRoot, 'infra', 'compose', '.env');
 
     if (fs.existsSync(commonDirEnvPath)) {
       return {
