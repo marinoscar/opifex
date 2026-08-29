@@ -5,6 +5,11 @@ import { ENCRYPTION_KEY_ENV_VAR, seal } from '../../common/crypto/secret-box';
 import { MASK } from '../../common/crypto/redact';
 import type { PrismaService } from '../../prisma/prisma.service';
 import {
+  mockPrismaTransaction,
+  prismaMock,
+  resetPrismaMock,
+} from '../../../test/mocks/prisma.mock';
+import {
   OPERATOR_SETTINGS_OVERLAY_UNAVAILABLE,
   OperatorSettingsService,
   type OperatorSettingsChange,
@@ -520,6 +525,52 @@ describe('OperatorSettingsService: the database overlay (#339)', () => {
       await expect(
         settings.set('dispatch.enabled', false, null),
       ).rejects.toThrow(/wiring bug/);
+    });
+
+    it('reports unavailable rather than rejecting when the transaction returns something it cannot use (#379)', async () => {
+      // The issue's exact trigger, and it is not hypothetical -- it is how the
+      // shared Prisma double behaves whenever `mockPrismaTransaction()` is
+      // configured and the two inner calls have no return values set:
+      // `$transaction` resolves CLEANLY to `[undefined, undefined]`. Nothing
+      // rejects, so nothing reaches the `catch`, and the loop that consumes
+      // `rows` used to throw straight out of `refresh()` and reject
+      // `onModuleInit()` -- defeating the degradation this method exists for.
+      resetPrismaMock();
+      mockPrismaTransaction();
+
+      const settings = new TestOperatorSettingsService(
+        prismaMock as PrismaService,
+        { DISPATCH_MAX_CONCURRENT: '3' },
+      );
+
+      // `resolves`, not `rejects`. This is the assertion the previous
+      // arrangement could not make, and it is the whole point of the test.
+      await expect(settings.onModuleInit()).resolves.toBeUndefined();
+
+      // Degraded exactly like an unreachable database: env in force, status
+      // says so, nothing was ever loaded.
+      const state = settings.overlay();
+      expect(state.status).toBe('unavailable');
+      expect(state.loadedAt).toBeNull();
+      expect(state.stale).toBe(false);
+      expect(settings.get('dispatch.maxConcurrent')).toBe(3);
+
+      // ...but SAID to be a different thing from a database that said no, so
+      // the boot warning distinguishes "the read failed" from a result nothing
+      // here can act on.
+      expect(state.problem).toContain('cannot use');
+      expect(state.problem).not.toContain('the read failed');
+      expect(warn.mock.calls.flat().join(' ')).toContain(
+        OPERATOR_SETTINGS_OVERLAY_UNAVAILABLE,
+      );
+
+      // And the next tick recovers, which is the other half of the promise.
+      prismaMock.$transaction.mockResolvedValue([[], { revision: 2n }]);
+
+      await expect(settings.refresh()).resolves.toMatchObject({
+        status: 'loaded',
+        revision: 2,
+      });
     });
   });
 
