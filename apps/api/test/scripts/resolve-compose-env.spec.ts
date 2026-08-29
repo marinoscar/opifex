@@ -135,9 +135,7 @@ describe('resolveComposeEnvPath', () => {
     expect(result.path).toBeNull();
     expect(result.source).toBeNull();
     expect(result.gitError).toBeNull();
-    expect(result.fixedOffsetPath).toBe(
-      join(repo, 'infra', 'compose', '.env'),
-    );
+    expect(result.fixedOffsetPath).toBe(join(repo, 'infra', 'compose', '.env'));
   });
 
   it('reports a gitError rather than crashing when the directory is not a git repository at all', () => {
