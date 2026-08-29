@@ -57,6 +57,7 @@ import {
   type ObservedFact,
 } from '../../config/operatorSettings';
 import {
+  allowsEmpty,
   baselineFieldValue,
   isChanged,
   type DraftEntry,
@@ -153,7 +154,7 @@ export function SettingRow({
             />
           </Tooltip>
           {entry.dangerous && (
-            <Tooltip title="Changing this can spend money, act outwardly, or widen a boundary.">
+            <Tooltip title="Changing this can spend money, act outwardly, or widen a boundary. Saving it asks you to confirm what moves first (#381).">
               <Chip size="small" color="warning" label="dangerous" />
             </Tooltip>
           )}
@@ -301,7 +302,9 @@ function PlainControl({
     problem ??
     (entry.acceptsNull
       ? 'Leave empty to store "no limit". That is a stored value, not a revert.'
-      : undefined);
+      : allowsEmpty(entry)
+        ? 'Leave empty to store "not configured". That is a stored value, not a revert.'
+        : undefined);
 
   if (entry.type === 'boolean') {
     return (

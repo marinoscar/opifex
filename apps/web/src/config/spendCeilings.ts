@@ -110,6 +110,31 @@ export const CEILING_DEFINITIONS: readonly CeilingDefinition[] = [
   },
 ];
 
+/** A ceiling key, and which half of the pair it is. */
+export interface CeilingField {
+  definition: CeilingDefinition;
+  field: 'usd' | 'window';
+}
+
+/**
+ * Is this key one of the four, and which one?
+ *
+ * The lookup #381 needs: the Configuration section renders every registry key
+ * generically and has to notice, at confirmation time, that the key it is
+ * about to send happens to be a ceiling — so that the raise/lower and
+ * shorter/longer sentences above are what an operator reads there too, rather
+ * than a second wording of the same fact. A key that is not one of the four
+ * simply answers null and gets the generic description
+ * (`config/dangerousChanges.ts`).
+ */
+export function ceilingFieldOf(key: string): CeilingField | null {
+  for (const definition of CEILING_DEFINITIONS) {
+    if (definition.usdKey === key) return { definition, field: 'usd' };
+    if (definition.windowKey === key) return { definition, field: 'window' };
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // The three states a ceiling figure can be in
 // ---------------------------------------------------------------------------

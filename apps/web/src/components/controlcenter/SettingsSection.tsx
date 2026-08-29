@@ -43,6 +43,25 @@
  * changed underneath the operator, and re-applying an edit to a value nobody
  * has looked at is how two administrators overwrite each other.
  *
+ * ## A `dangerous` key is confirmed here too (#381)
+ *
+ * The registry's `dangerous` flag used to draw a chip on this screen and gate
+ * nothing, while the Credentials section put the same four ceiling keys behind
+ * a confirmation that says what moves. That was one flag meaning two different
+ * things on two screens, and it took the argument out from under ADR-0018 §6:
+ * the ceilings are editable at all because the write is a DELIBERATE ACT, and
+ * a field that saves on blur beside `github.maxRetries` is not obviously one.
+ *
+ * The gate is keyed off the flag the response carries and nothing else, so it
+ * costs this section no list of keys and the generic rendering promise above
+ * survives intact — a key the backend marks `dangerous` tomorrow is confirmed
+ * here with no frontend change, the same way it is rendered with none. The
+ * DESCRIPTION is the part that varies: `config/dangerousChanges.ts` reuses the
+ * ceiling panel's own raise/lower sentences for the four keys that have them
+ * and builds a generic one from `help`, `reload` and the two values for every
+ * other key, so a `dangerous` key with no bespoke wording still gets a
+ * confirmation that says something rather than an empty dialog.
+ *
  * ## `hasChanges` is derived on every render
  *
  * Never stored. The patch is rebuilt from `(response, draft)` each time, which
@@ -58,6 +77,7 @@ import {
   Box,
   Button,
   Chip,
+  DialogContentText,
   Divider,
   Paper,
   Stack,
@@ -65,8 +85,14 @@ import {
 } from '@mui/material';
 
 import { SettingRow } from './SettingRow';
+import { DangerousChangeDialog } from './DangerousChangeDialog';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { groupSettings, observedFor } from '../../config/operatorSettings';
+import {
+  dangerousChanges,
+  type DangerousChange,
+} from '../../config/dangerousChanges';
+import { ceilingFieldOf } from '../../config/spendCeilings';
 import { isModelPanelSetting } from '../../config/supervisorModel';
 import {
   buildPatch,
@@ -106,13 +132,18 @@ export function SettingsSection({
   onNavigateToSection,
 }: SettingsSectionProps) {
   const [draft, setDraft] = useState<SettingsDraft>({});
+  /** The dangerous rows awaiting confirmation. Null means nothing is asked. */
+  const [confirming, setConfirming] = useState<DangerousChange[] | null>(null);
 
   // Re-seed on a fresh document — a save landing, or a 409's refetch. During
-  // render, not in an effect; see this file's header.
+  // render, not in an effect; see this file's header. The pending confirmation
+  // goes with the draft it was describing: a dialog left open across a 409
+  // would be asking about values nobody is looking at any more.
   const [seededFrom, setSeededFrom] = useState(document);
   if (document !== seededFrom) {
     setSeededFrom(document);
     setDraft({});
+    setConfirming(null);
   }
 
   const change = useCallback((key: string, value: DraftFieldValue) => {
@@ -152,11 +183,27 @@ export function SettingsSection({
   // gets its heading and its signpost rather than vanishing.
   const groups = groupSettings(document.settings);
 
-  const save = () => {
+  // Every `dangerous` key this draft would send, described. Derived on each
+  // render from (response, draft), like the patch itself, so the dialog can
+  // never be asking about a different set of keys than the one that travels.
+  const dangerous = dangerousChanges(document.settings, draft);
+
+  const send = () => {
     // The patch, and nothing else. `buildPatch` iterates the response and
     // keeps only rows that actually differ — see its header for why sending
     // an untouched key would be a correctness bug rather than waste.
+    setConfirming(null);
     void onSave(changes);
+  };
+
+  const save = () => {
+    // Nothing is sent until a dangerous change is confirmed. The flag comes
+    // off the response; this section knows no keys.
+    if (dangerous.length > 0) {
+      setConfirming(dangerous);
+      return;
+    }
+    send();
   };
 
   return (
@@ -292,6 +339,42 @@ export function SettingsSection({
           </Button>
         </Stack>
       </Paper>
+
+      <DangerousChangeDialog
+        open={confirming !== null}
+        title={
+          (confirming?.length ?? 0) === 1
+            ? `Change ${confirming?.[0].label}?`
+            : `Change ${confirming?.length ?? 0} settings marked dangerous?`
+        }
+        changes={confirming ?? []}
+        confirmLabel="Save these changes"
+        disabled={isSaving}
+        onCancel={() => setConfirming(null)}
+        onConfirm={send}
+      >
+        {changedKeys.length > (confirming?.length ?? 0) && (
+          <DialogContentText variant="body2">
+            {changedKeys.length - (confirming?.length ?? 0)} other key
+            {changedKeys.length - (confirming?.length ?? 0) === 1
+              ? ' is'
+              : 's are'}{' '}
+            sent in the same write:{' '}
+            {changedKeys
+              .filter((key) => !(confirming ?? []).some((c) => c.key === key))
+              .join(', ')}
+            .
+          </DialogContentText>
+        )}
+        {(confirming ?? []).some((change) => ceilingFieldOf(change.key)) && (
+          <DialogContentText variant="body2">
+            What has been spent against a ceiling&apos;s window is not read on
+            this screen. The Credentials tab&apos;s Spend ceilings panel shows
+            it from <code>GET /api/cost/summary</code>, beside these same
+            figures.
+          </DialogContentText>
+        )}
+      </DangerousChangeDialog>
     </Box>
   );
 }

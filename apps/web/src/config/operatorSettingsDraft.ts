@@ -29,6 +29,24 @@
  * Collapsing the two would make "no ceiling" indistinguishable from "stop
  * overriding this", which are opposite intentions with opposite consequences.
  *
+ * ## And an EMPTY STRING is a third thing, for the keys that allow it
+ *
+ * `dispatch.hardSpendCeilingUsd` is a string setting whose empty value MEANS
+ * "no ceiling is configured" — a stored value, not an absence, and not a
+ * revert. Clearing it from the Configuration section used to be refused here
+ * with "This needs a value" while the Credentials section sent `''` happily,
+ * because that section knows which keys allow empty and this module did not
+ * (#381).
+ *
+ * `allowsEmpty` closes that without enumerating keys. It prefers `allowEmpty`
+ * off the response, which the API does not publish yet, and otherwise DERIVES
+ * it: a string setting whose declared default is `''` must accept `''`,
+ * because `operator-settings.registry.spec.ts` asserts of every key that its
+ * declared default is itself a legal value. That derivation is sound but not
+ * complete — an `allowEmpty` key with a non-empty default (the three model
+ * tiers) is still refused here — so it is a conservative floor rather than a
+ * replacement for publishing the flag.
+ *
  * ## An edit back to the current value is not a change
  *
  * Typing `5` over a `5` that came from the environment leaves the key out of
@@ -67,6 +85,18 @@ export function baselineFieldValue(
   return entry.value === null ? '' : String(entry.value);
 }
 
+/**
+ * Is the empty string a value this key can hold?
+ *
+ * The response's own answer when it has one, and a sound derivation when it
+ * does not — see this module's header for why `default === ''` implies it and
+ * why the converse is not assumed.
+ */
+export function allowsEmpty(entry: PlainOperatorSetting): boolean {
+  if (entry.allowEmpty !== undefined) return entry.allowEmpty;
+  return entry.type === 'string' && entry.default === '';
+}
+
 export interface WireValueOk {
   ok: true;
   value: OperatorSettingsPatch[string];
@@ -102,6 +132,12 @@ export function toWireValue(
     if (entry.acceptsNull) {
       // The string, not JSON null. See this module's header.
       return { ok: true, value: 'null' };
+    }
+    if (allowsEmpty(entry)) {
+      // The empty string is the stored value here — "no ceiling is
+      // configured", which refuses to spend rather than permitting anything.
+      // JSON null would delete the row and fall back to the environment.
+      return { ok: true, value: '' };
     }
     return {
       ok: false,

@@ -10,6 +10,12 @@
  * The two tests that carry the issue's acceptance criteria are
  * "renders a key this build has never heard of" and "sends only the keys that
  * changed". The rest are the states the section has to get right around them.
+ *
+ * #381 added the confirmation gate for `dangerous` keys, which is why several
+ * saves below now go through `save(user)` rather than one click: a test that
+ * confirmed unconditionally would pass against a section that confirmed
+ * nothing, so the CONTROL — "a key that is not dangerous still saves with no
+ * dialog at all" — is what gives the gated tests their meaning.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -107,6 +113,28 @@ function recordPatch() {
 /** The row for a key, by the `aria-label` every row carries. */
 async function row(key: string) {
   return screen.findByLabelText(key);
+}
+
+/** The Save button, which is not the confirmation's own button. */
+function saveButton() {
+  return screen.getByRole('button', { name: /save changes/i });
+}
+
+/**
+ * Save, confirming if the section asks.
+ *
+ * Deliberately NOT "always confirm": it asserts nothing about whether the
+ * dialog appeared, so the tests that DO assert that keep their teeth.
+ */
+async function save(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(saveButton());
+
+  const dialog = screen.queryByRole('dialog');
+  if (dialog) {
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Save these changes' }),
+    );
+  }
 }
 
 describe('SettingsSection', () => {
@@ -294,7 +322,8 @@ describe('SettingsSection', () => {
 
       const card = await row('runners.claudeCodeLocal.enabled');
       await user.click(within(card).getByRole('switch'));
-      await user.click(screen.getByRole('button', { name: /save changes/i }));
+      // Dangerous, so it goes through the confirmation (#381).
+      await save(user);
 
       await waitFor(() => expect(seen.body).not.toBeNull());
       expect(seen.ifMatch).toBe('7');
@@ -351,7 +380,7 @@ describe('SettingsSection', () => {
       await user.click(within(card).getByRole('switch'));
       expect(screen.getByText(/1 key will be sent/i)).toBeInTheDocument();
 
-      await user.click(screen.getByRole('button', { name: /save changes/i }));
+      await save(user);
 
       // The response is the registry re-resolved, so every draft against the
       // previous document is spent. Re-seeded during render, not in an effect.
@@ -473,11 +502,166 @@ describe('SettingsSection', () => {
 
       const card = await row('runners.claudeCodeLocal.enabled');
       await user.click(within(card).getByRole('switch'));
-      await user.click(screen.getByRole('button', { name: /save changes/i }));
+      await save(user);
 
       await waitFor(() => expect(onSaveError).toHaveBeenCalled());
       expect(onSaveError.mock.calls[0][0]).toContain('nothing');
       expect(onSaveError.mock.calls[0][0]).toMatch(/re-read/i);
+    });
+  });
+
+  /**
+   * #381: the four ceilings were editable from two screens and only one of
+   * them asked. The gate is keyed off the response's `dangerous` flag, so
+   * these tests are about the flag and not about the four keys.
+   */
+  describe('Confirming a dangerous change', () => {
+    it('asks first, and sends nothing when the operator goes back', async () => {
+      const seen = recordPatch();
+      const user = userEvent.setup();
+      renderSection();
+
+      const card = await row('dispatch.hardSpendCeilingUsd');
+      const field = within(card).getByLabelText('Hard spend ceiling (USD)');
+      await user.clear(field);
+      await user.type(field, '5');
+      await user.click(saveButton());
+
+      const dialog = await screen.findByRole('dialog');
+      // Not "are you sure": what moves, and what moving it does — the
+      // sentences the Credentials tab shows, from the same module.
+      expect(within(dialog).getByText(/25 → 5/)).toBeInTheDocument();
+      expect(
+        within(dialog).getByText(/LOWERS the limit from \$25 to \$5/),
+      ).toBeInTheDocument();
+      expect(within(dialog).getByText(/not recalled/)).toBeInTheDocument();
+
+      await user.click(within(dialog).getByRole('button', { name: 'Go back' }));
+
+      expect(seen.body).toBeNull();
+      // The draft survives the refusal: going back is not a discard.
+      expect(screen.getByText(/1 key will be sent/i)).toBeInTheDocument();
+    });
+
+    it('sends the change once it is confirmed', async () => {
+      const seen = recordPatch();
+      const user = userEvent.setup();
+      renderSection();
+
+      const card = await row('dispatch.hardSpendCeilingUsd');
+      const field = within(card).getByLabelText('Hard spend ceiling (USD)');
+      await user.clear(field);
+      await user.type(field, '5');
+      await user.click(saveButton());
+
+      const dialog = await screen.findByRole('dialog');
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Save these changes' }),
+      );
+
+      await waitFor(() => expect(seen.body).not.toBeNull());
+      // A STRING, as the registry declares this key, so a malformed figure
+      // stays distinguishable from an unset one.
+      expect(seen.body).toEqual({ 'dispatch.hardSpendCeilingUsd': '5' });
+    });
+
+    it('saves a key that is NOT dangerous with no dialog at all', async () => {
+      // The control. Without it, every test above would pass against a
+      // section that confirmed everything — including the rows where a
+      // confirmation is just friction.
+      const seen = recordPatch();
+      const user = userEvent.setup();
+      renderSection();
+
+      const card = await row('github.requestTimeoutMs');
+      const field = within(card).getByLabelText('GitHub request timeout');
+      await user.clear(field);
+      await user.type(field, '20000');
+      await user.click(saveButton());
+
+      await waitFor(() => expect(seen.body).not.toBeNull());
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(seen.body).toEqual({ 'github.requestTimeoutMs': 20000 });
+    });
+
+    it('describes a dangerous key this build has never heard of', async () => {
+      // The generic arm, and the reason #381 was not fixed by deferring
+      // dangerous keys to their owning section: this key has no owning
+      // section, so under that option it would render nowhere.
+      const invented: OperatorSetting = {
+        key: 'weather.launchProbes',
+        group: 'weather_service',
+        label: 'Launch probes',
+        help: 'Each probe launched is billed on release.',
+        type: 'boolean',
+        reload: 'live',
+        dangerous: true,
+        source: 'env',
+        envVar: 'WEATHER_LAUNCH_PROBES',
+        acceptsNull: false,
+        updatedAt: null,
+        constraints: {},
+        secret: false,
+        value: false,
+        default: false,
+      };
+
+      serve(
+        operatorSettingsFixture({
+          settings: [...OPERATOR_SETTINGS_FIXTURE, invented],
+        }),
+      );
+      const seen = recordPatch();
+      const user = userEvent.setup();
+      renderSection();
+
+      const card = await row('weather.launchProbes');
+      await user.click(within(card).getByRole('switch'));
+      await user.click(saveButton());
+
+      const dialog = await screen.findByRole('dialog');
+      expect(within(dialog).getByText(/false → true/)).toBeInTheDocument();
+      // The registry's own help, quoted rather than paraphrased.
+      expect(within(dialog).getByText(/billed on release/)).toBeInTheDocument();
+      expect(
+        within(dialog).getByText(/marked dangerous by the registry/),
+      ).toBeInTheDocument();
+
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Save these changes' }),
+      );
+      await waitFor(() => expect(seen.body).not.toBeNull());
+      expect(seen.body).toEqual({ 'weather.launchProbes': true });
+    });
+
+    it('clears a ceiling to the empty string, which is not a revert', async () => {
+      // The second half of #381: the API publishes `acceptsNull` but not
+      // `allowEmpty`, so clearing this field used to be refused here with
+      // "This needs a value" while the Credentials tab sent '' happily.
+      const seen = recordPatch();
+      const user = userEvent.setup();
+      renderSection();
+
+      const card = await row('dispatch.hardSpendCeilingUsd');
+      await user.clear(within(card).getByLabelText('Hard spend ceiling (USD)'));
+
+      expect(
+        within(card).queryByText(/This needs a value/),
+      ).not.toBeInTheDocument();
+
+      await user.click(saveButton());
+      const dialog = await screen.findByRole('dialog');
+      expect(
+        within(dialog).getByText(/Removing the ceiling does not lift it/),
+      ).toBeInTheDocument();
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Save these changes' }),
+      );
+
+      await waitFor(() => expect(seen.body).not.toBeNull());
+      // JSON null would DELETE the row and fall back to the environment
+      // variable, which is a different instruction from "no ceiling".
+      expect(seen.body).toEqual({ 'dispatch.hardSpendCeilingUsd': '' });
     });
   });
 
