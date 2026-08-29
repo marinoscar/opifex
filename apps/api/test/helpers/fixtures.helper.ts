@@ -1,3 +1,5 @@
+import type { Prisma } from '@prisma/client';
+
 import { PrismaService } from '../../src/prisma/prisma.service';
 
 /**
@@ -57,7 +59,18 @@ export async function createUserWithSettings(
       },
       userSettings: {
         create: {
-          value: settings,
+          // Asserted, not converted, and the same assertion
+          // `allowlist.service.ts` makes for the same reason (#186):
+          // `Record<string, unknown>` cannot be PROVEN assignable to Prisma's
+          // `InputJsonObject`, because `unknown` is not `InputJsonValue`. The
+          // assertion still constrains the target to a JSON object rather
+          // than widening to `any`.
+          //
+          // This never compiled. It went unnoticed because `tsconfig.json`
+          // excluded `test/` from the typecheck program, and ts-jest only
+          // reports a file it actually loads — nothing imports this helper
+          // today (#372).
+          value: settings as Prisma.InputJsonObject,
         },
       },
     },
