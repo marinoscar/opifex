@@ -8,6 +8,7 @@ import { LegacyModelSettingsMigration } from './legacy-model-settings.migration'
 import { OperatorSettingsEnvDisagreementService } from './operator-settings.env-disagreement';
 import { OperatorSettingsService } from './operator-settings.service';
 import { UnreadableSecretsBootCheck } from './unreadable-secrets.boot';
+import { BootCriticalSettingsCheck } from './boot-critical-settings.boot';
 import { SupervisorModelCatalogService } from '../../supervisor/invocation/model-catalog.service';
 import { OperatorProbesService } from './probes/operator-probes.service';
 
@@ -83,6 +84,18 @@ import { OperatorProbesService } from './probes/operator-probes.service';
     OperatorSettingsEnvDisagreementService,
     LegacyModelSettingsMigration,
     UnreadableSecretsBootCheck,
+    // Injected by nothing and exported to nobody, like the two above, and on
+    // `onApplicationBootstrap` for the same reason: it reads the overlay this
+    // module's own service loads in ITS `onModuleInit` (#436).
+    //
+    // Unlike the two above, this one can THROW, and a throw here refuses the
+    // boot. That is deliberate and is the whole of #441's third hazard: a
+    // rejected `github.apiBaseUrl` has no safe value to fall back to, because
+    // the fallback names a host a credential is sent to. Its order relative to
+    // the others does not matter — a boot that is going to be refused should
+    // still print everything the other two found, and Nest has already
+    // started all three by the time this one throws.
+    BootCriticalSettingsCheck,
   ],
   exports: [OperatorSettingsService],
 })

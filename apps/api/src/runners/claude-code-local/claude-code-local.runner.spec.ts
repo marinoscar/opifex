@@ -287,6 +287,12 @@ describe('ClaudeCodeLocalRunner', () => {
         'event',
         'liveRunCount',
         'probeVersion',
+        // #358. A private helper `capabilities()` calls, not a fifth seam
+        // function: nothing routes through it and no caller of `Runner`
+        // can reach it. Named here because `private` is erased at runtime,
+        // which is exactly the deliberate, reviewable act this list exists
+        // to require.
+        'unavailableReasons',
       ];
 
       // Listed apart from the internals on purpose. `onModuleDestroy` is a
@@ -918,6 +924,59 @@ describe('ClaudeCodeLocalRunner', () => {
         available: false,
         maxConcurrency: 2,
       });
+    }, 30_000);
+
+    it('declares itself unavailable when a proxy variable was refused (#358)', async () => {
+      // The failure shape #358 exists to end: with a credentialed proxy set,
+      // the agent gets no proxy and so has no egress at all — but `claude
+      // --version` needs no network, so before this the runner registered
+      // healthy and every dispatched run died at its first fetch, naming
+      // nothing. Now the runner says the cause itself, before anything is
+      // routed to it, and /api/health/ready carries the sentence.
+      const binary = await fakeClaude(
+        'proxied',
+        'echo "2.1.240 (Claude Code)"; exit 0',
+      );
+      process.env.HTTPS_PROXY = 'http://svc:hunter2@proxy.corp.example:3128';
+      try {
+        const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+        const capabilities = await runner.capabilities();
+
+        expect(capabilities.available).toBe(false);
+        expect(capabilities.unavailableReason).toContain('HTTPS_PROXY');
+        // The reason is published, and it must not publish the password it is
+        // refusing to hand over.
+        expect(capabilities.unavailableReason).not.toContain('hunter2');
+        // The CLI is fine, so the version is real and the slots are intact —
+        // availability is the only thing this changes.
+        expect(capabilities.version).toBe('2.1.240');
+        expect(capabilities.maxConcurrency).toBe(2);
+        expect(capabilities.manifest).toMatchObject({ available: false });
+      } finally {
+        delete process.env.HTTPS_PROXY;
+      }
+    }, 30_000);
+
+    it('stays available with a clean proxy configured (#358)', async () => {
+      // The other half, and the one that keeps this from being a regression
+      // dressed as a fix: an ordinary corporate proxy is now passed to the
+      // agent, so there is nothing to declare and the runner is healthy.
+      const binary = await fakeClaude(
+        'clean-proxy',
+        'echo "2.1.240 (Claude Code)"; exit 0',
+      );
+      process.env.HTTPS_PROXY = 'http://proxy.corp.example:3128';
+      try {
+        const runner = build({ 'runners.claudeCodeLocal.binary': binary });
+
+        const capabilities = await runner.capabilities();
+
+        expect(capabilities.available).toBeUndefined();
+        expect('unavailableReason' in capabilities.manifest).toBe(false);
+      } finally {
+        delete process.env.HTTPS_PROXY;
+      }
     }, 30_000);
 
     it('says nothing about availability when the binary is fine', async () => {

@@ -1,6 +1,6 @@
 # 16. The live-run ceiling is removed; the quota gate keeps only the parked-run signal
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-25
 - Issue: #260
 - Epic: #21

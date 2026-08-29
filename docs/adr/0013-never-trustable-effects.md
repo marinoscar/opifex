@@ -1,6 +1,6 @@
 # 13. Never-trustable is a list of effects, checked at the execution boundary
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-24
 - Issue: #233
 - Epic: #22
