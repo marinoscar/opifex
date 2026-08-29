@@ -24,6 +24,7 @@ is the fix for it.
 - [The supervisor's model: provider, base URL and price](#the-supervisors-model-provider-base-url-and-price)
 - [The chat's model: a second consumer, called but not yet spending](#the-chats-model-a-second-consumer-called-but-not-yet-spending-425)
 - [Resolution order: `default → env → DB row`](#resolution-order-default--env--db-row)
+- [A value that cannot be read: where it lands, and the three keys that are special](#a-value-that-cannot-be-read-where-it-lands-and-the-three-keys-that-are-special-441)
 - [Reload semantics: three values, and the third is the point](#reload-semantics-three-values-and-the-third-is-the-point)
 - [Reading the API response](#reading-the-api-response)
 - [Who can change what](#who-can-change-what)
@@ -617,6 +618,78 @@ Control Center, then reverted it from the Control Center, gets back **5**,
 not the registry's own default of `3`. The environment layer is a real,
 deliberate choice an operator already made outside the running system, and a
 revert must not erase it.
+
+## A value that cannot be read: where it lands, and the three keys that are special (#441)
+
+Layer 2 and layer 3 above both supply a _raw_ value that still has to parse.
+When it does not — `DISPATCH_MAX_CONCURRENT=200`, `RECONCILER_INTERVAL_MS=soon`
+— the key resolves to a fallback and the rejection is logged at `error` naming
+the variable, the value that could not be read, and the value actually in
+force. `resolve()` also reports it as `invalid` so the Control Center shows a
+rejected value rather than presenting it as if it had taken effect.
+
+**For most keys the fallback is the registry's declared `default`, and that is
+right.** A mistyped timeout lands on a different number with no safety
+direction, and taking the API down over it would be worse than the typo.
+
+**For four keys it was wrong**, because the declared default was _more
+permissive than any value the operator could have written_ — so a typo widened
+a boundary it was written to narrow. Those four now behave differently, and
+this is the full list:
+
+| key                                        | a rejected value resolves to           | why not the default                                                                                                                                                                                                                                              |
+| ------------------------------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dispatch.maxConcurrent`                   | **128**, the maximum                   | The default is `null` — _no fleet ceiling at all_. `DISPATCH_MAX_CONCURRENT=200` is out of range and a plausible thing to type when reaching for a **high** ceiling, not for none.                                                                               |
+| `runners.claudeCodeLocal.permissionMode`   | **`plan`**, the narrowest mode         | The default `acceptEdits` lets the agent edit files. `ask`, `readonly` and `plan-only` are all plausible spellings of _stricter_, and all three used to land on a mode broader than what was asked for.                                                          |
+| `github.apiBaseUrl`                        | **nothing — the API refuses to start** | The default names a host a credential is sent to. `GITHUB_API_BASE_URL=github.corp.example` (no scheme) would put a GitHub Enterprise deployment's fine-grained token on public GitHub, and every substitute is a guess about where somebody's secret should go. |
+| `runners.claudeCodeLocal.gitRemoteBaseUrl` | **nothing — the API refuses to start** | The same hazard on the write path, and #441's own table missed it. Its help says the quiet part: _"The GitHub token is sent to whatever host is named here."_ A rejected `GIT_REMOTE_BASE_URL` would push an Enterprise deployment's token to public github.com. |
+
+Three properties hold across all of them:
+
+- **An ABSENT value still resolves to the declared `default`.** Absence is a
+  state the operator chose; a rejected value is not. Nothing about a correct —
+  or an empty — configuration changes.
+- **A legal value is still honoured exactly as written**, including a broad
+  one. `CLAUDE_CODE_PERMISSION_MODE=bypassPermissions` resolves to
+  `bypassPermissions`. This rule is about values the registry _refused_.
+- **The fallback is itself a legal value** for its key. The registry spec
+  parses every declared fallback back through that key's own schema, so a
+  fallback nobody could legally have typed cannot be declared.
+
+**Two of the four cost something, and it is deliberate.** A rejected
+`maxConcurrent` caps the fleet at 128 rather than leaving it uncapped, and a
+rejected `permissionMode` produces runs that **propose and change nothing**.
+Doing less than was asked, loudly, is the intended direction; doing more than
+was asked, silently, is the bug. Neither is silent — both are `error` lines
+naming the variable — and the two base-URL cases do not fall back at
+all, because for a key that decides where a credential goes there is no
+"less".
+
+Where "no ceiling" is a legitimate thing to want, it is now something an
+operator **states** rather than something a typo lands on:
+`DISPATCH_MAX_CONCURRENT=unlimited` (or `null`, or leaving it unset) is the
+only route there.
+
+### Why the default-**on** switches are not in that list
+
+`github.writesEnabled`, `dispatch.enabled`, `dispatch.allowPreviewRunner` and
+`runners.claudeCodeLocal.enabled` all default `true` since ADR-0019, so an
+unreadable value there does land on the permissive posture — which looks like
+the same hazard and is deliberately handled somewhere else.
+
+It is fixed **at the parser** rather than by a fallback (#439).
+`booleanSetting` reads `true/false`, `1/0`, `yes/no` and `on/off`,
+case-insensitively and trimmed, so an operator writing
+`GITHUB_WRITES_ENABLED=no` gets what they asked for instead of having it
+discarded. Only genuinely ambiguous input — `enabled`, `2`, a bare `y` — falls
+back, and that is logged at `error` with the clause _"which is the opposite of
+what was probably meant"_.
+
+Declaring `invalidFallback: false` on those four instead would let a single
+typo return a deployment to the inert posture ADR-0019 exists to end, which
+inverts a decision rather than protecting one. The four keys above have no
+such tension: nobody chooses an uncapped fleet, a file-editing agent, or a
+credential's destination by leaving a value unreadable.
 
 ## Reload semantics: three values, and the third is the point
 

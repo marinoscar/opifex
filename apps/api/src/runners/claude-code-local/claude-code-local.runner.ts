@@ -877,11 +877,18 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
   /**
    * The permission mode the CLI runs under.
    *
-   * Defaults to the narrow end. A mode broad enough to never ask is coupled to
-   * a sandbox that makes never asking safe, and sandboxing is #113 — so until
-   * then a run that needs a permission it does not have goes silent and is
-   * caught by the watchdog (#54), which is the failure this system is built to
-   * notice. Widening it is a deliberate act by an operator who has read that.
+   * Defaults to the narrowest mode that can still DO work. A mode broad enough
+   * to never ask is coupled to a sandbox that makes never asking safe, and
+   * sandboxing is #113 — so until then a run that needs a permission it does
+   * not have goes silent and is caught by the watchdog (#54), which is the
+   * failure this system is built to notice. Widening it is a deliberate act by
+   * an operator who has read that.
+   *
+   * This used to say "the narrow end", which was not right: `plan` is
+   * narrower, and only proposes. The distinction is load-bearing since #441 —
+   * a REJECTED value resolves to `plan` rather than to this default, because a
+   * typo reaching for something stricter must not widen the boundary. See
+   * `PERMISSION_MODES_BY_BREADTH` in `claude-code-invocation.ts`.
    */
   private get permissionMode(): PermissionMode {
     // The validate-or-fall-back-to-acceptEdits dance that used to live here is
