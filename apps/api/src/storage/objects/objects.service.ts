@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { redactSettingsMeta } from '../../common/crypto/redact';
 import { Prisma } from '@prisma/client';
 import type { StorageObject } from '@prisma/client';
 import { STORAGE_PROVIDER } from '../providers/storage-provider.interface';
@@ -566,7 +567,25 @@ export class ObjectsService {
   }
 
   /**
-   * Create audit event for storage operations
+   * Create audit event for storage operations.
+   *
+   * REDACTED HERE, at this service's single choke point, rather than at the
+   * five callers (#361).
+   *
+   * `updateMetadata` hands over `{ metadataChanges: dto.metadata }`, and a
+   * storage object's `metadata` is arbitrary caller-supplied JSON — a client
+   * that puts an access token in it writes that token to `audit_events.meta`
+   * in the clear, permanently. Lower likelihood than the users sink next
+   * door, identical permanence: nothing added later removes a plaintext
+   * credential from an audit log's history.
+   *
+   * The masking is by field NAME, so the row still records *that* metadata
+   * changed and which keys it changed — `{ metadataChanges: { caption: 'hi',
+   * accessToken: '********cdef' } }`, not a masked blob. The four
+   * server-derived callers (`name`, `size`, `mimeType`, `partsCount`, …) are
+   * unaffected, since none of those field names is secret-shaped. See
+   * `common/crypto/redact.ts`, and `common/audit/audit-sinks.spec.ts` for why
+   * this lives here and not in a shared audit-write helper.
    */
   private async createAuditEvent(
     userId: string,
@@ -580,7 +599,8 @@ export class ObjectsService {
         action,
         targetType: 'storage_object',
         targetId: objectId,
-        meta: (meta ?? undefined) as Prisma.InputJsonValue | undefined,
+        meta: (meta ? redactSettingsMeta(meta) : undefined) as
+          Prisma.InputJsonValue | undefined,
       },
     });
   }

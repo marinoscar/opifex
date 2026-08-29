@@ -1,6 +1,6 @@
 # 11. Grant autonomy per (capability, effect) pair, from one frozen registry
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-24
 - Issue: #218
 - Epic: #21
