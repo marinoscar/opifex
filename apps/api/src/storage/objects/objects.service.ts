@@ -600,8 +600,7 @@ export class ObjectsService {
         targetType: 'storage_object',
         targetId: objectId,
         meta: (meta ? redactSettingsMeta(meta) : undefined) as
-          | Prisma.InputJsonValue
-          | undefined,
+          Prisma.InputJsonValue | undefined,
       },
     });
   }
