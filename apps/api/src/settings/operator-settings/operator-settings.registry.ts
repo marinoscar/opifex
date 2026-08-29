@@ -1008,6 +1008,15 @@ export const OPERATOR_SETTINGS = {
     group: 'runner',
     label: 'Git remote base URL',
     dangerous: true,
+    // The second `bootCritical` key, and it is `github.apiBaseUrl`'s hazard
+    // exactly (#441). #441's table listed three keys and missed this one; the
+    // help text below has always said the quiet part — "The GitHub token is
+    // sent to whatever host is named here" — so `GIT_REMOTE_BASE_URL=
+    // github.corp.example` (no scheme, so refused) would fall back to public
+    // github.com and push an Enterprise deployment's token there. Same
+    // reasoning, same remedy: there is no safer host to substitute, so the
+    // process refuses to start and lets somebody who knows decide.
+    bootCritical: true,
     help: 'Where workspaces clone from and push to — for GitHub Enterprise, or a local fixture in tests. The GitHub token is sent to whatever host is named here. Workspaces already cloned keep the remote they were created with.',
   }),
 
