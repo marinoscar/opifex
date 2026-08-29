@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
-import { PERMISSION_MODES } from '../../runners/claude-code-local/claude-code-invocation';
+import {
+  NARROWEST_PERMISSION_MODE,
+  PERMISSION_MODES,
+} from '../../runners/claude-code-local/claude-code-invocation';
 import {
   DEFAULT_SUPERVISOR_MODEL_PROVIDER,
   PROVIDER_LABELS,
@@ -779,6 +782,21 @@ export const OPERATOR_SETTINGS = {
     // exists to argue against.
     values: PERMISSION_MODES,
     default: 'acceptEdits',
+    // The narrowest mode, and NOT the declared default (#441). An operator
+    // typing `ask`, `readonly` or `plan-only` is reaching for something
+    // STRICTER than `acceptEdits`, and used to get a mode that lets the agent
+    // edit files — a rejected value widening the boundary it was written to
+    // narrow. Derived from `PERMISSION_MODES_BY_BREADTH` rather than spelled
+    // here, so this file and the one that owns the modes cannot disagree
+    // about which end is safe.
+    //
+    // The cost is stated rather than hidden: a run under `plan` proposes and
+    // changes nothing, so a typo here makes runs that do no work. That is the
+    // intended direction — doing less than asked, loudly (the rejection is
+    // logged at ERROR naming the variable and the mode in force, and a run
+    // that changed nothing is visible on the work order) rather than doing
+    // MORE than asked, silently.
+    invalidFallback: NARROWEST_PERMISSION_MODE,
     secret: false,
     // Read per spawn to build argv (claude-code-local.runner.ts:172, 810), so
     // a running agent keeps the mode it was launched under.
@@ -786,7 +804,7 @@ export const OPERATOR_SETTINGS = {
     group: 'runner',
     label: 'Permission mode',
     dangerous: true,
-    help: 'How much the agent may do without asking. `acceptEdits` is the narrow end and the default: a mode broad enough never to ask is only safe behind a sandbox, and sandboxing is #113. Applies to the next agent started.',
+    help: 'How much the agent may do without asking. `acceptEdits` is the default — the narrowest mode that can still do work; `plan` is narrower and only proposes. A mode broad enough never to ask is only safe behind a sandbox, and sandboxing is #113. A value that cannot be read does NOT fall back to the default: it resolves to `plan`, because a typo must never widen this. Applies to the next agent started.',
   }),
 
   // ---------------------------------------------------------------------
