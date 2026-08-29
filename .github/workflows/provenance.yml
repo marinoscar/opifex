@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # The check walks base..head, so the shallow default clone is not enough.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
