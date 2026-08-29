@@ -422,7 +422,41 @@ export class OperatorSettingsService implements OnModuleInit {
         }),
       ]);
     } catch (error) {
-      return this.markUnavailable(attemptedAt, asMessage(error));
+      return this.markUnavailable(
+        attemptedAt,
+        `the read failed: ${asMessage(error)}`,
+      );
+    }
+
+    // A CLEAN resolution this method cannot consume (#379).
+    //
+    // The `catch` above covers a database that said no. It does not cover a
+    // `$transaction` that RESOLVES to something of the wrong shape — which is
+    // not hypothetical: it is exactly what the shared Prisma double does
+    // whenever the two inner calls have no return values configured, resolving
+    // to `[undefined, undefined]`. Nothing rejects, so nothing reaches the
+    // `catch`, and the `for (const row of rows)` below used to throw straight
+    // out of `refresh()`.
+    //
+    // That throw defeats the whole point of this method. `refresh()` promises
+    // never to throw — a database that is away is a state this service REPORTS
+    // — and it is awaited by `onModuleInit`, so the throw rejected the module
+    // hook and took the boot down, and inside the 15s `setInterval` it would
+    // take the PROCESS down under Node's default unhandled-rejection policy.
+    // A resolver whose failure mode is "keep serving the environment" must not
+    // have a path that kills the process instead.
+    //
+    // Reported as a DIFFERENT problem from the read failing, because the
+    // remedy is different: a failed read is an operator's database, a result
+    // of the wrong shape is this build's own wiring.
+    if (!Array.isArray(rows) || !isRevisionRow(revisionRow)) {
+      return this.markUnavailable(
+        attemptedAt,
+        'the database returned a result this build cannot use ' +
+          `(rows: ${describeShape(rows)}, revision: ${describeShape(revisionRow)}). ` +
+          'This is a wiring bug rather than an unreachable database, and the ' +
+          'next refresh will retry it.',
+      );
     }
 
     const next = new Map<OperatorSettingKey, OverlayEntry>();
@@ -1162,4 +1196,33 @@ function trimmedEnv(env: NodeJS.ProcessEnv, name: string): string | undefined {
 
 function asMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The revision half of the transaction, in a shape `refresh()` can consume.
+ *
+ * `null` is LEGAL and means "no revision row yet" — the resolver reports
+ * `revision: null` for it — so this accepts null and rejects only a value
+ * that is neither that nor a row carrying a bigint (#379).
+ */
+function isRevisionRow(value: unknown): value is { revision: bigint } | null {
+  if (value === null) return true;
+  return (
+    typeof value === 'object' &&
+    typeof (value as { revision?: unknown }).revision === 'bigint'
+  );
+}
+
+/**
+ * A short, safe description of a value's SHAPE for a diagnostic.
+ *
+ * Never the value itself: a settings row carries sealed credentials, and the
+ * one message an operator is most likely to paste into a bug report is a boot
+ * warning.
+ */
+function describeShape(value: unknown): string {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (Array.isArray(value)) return `array(${value.length})`;
+  return typeof value;
 }
