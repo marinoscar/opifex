@@ -61,24 +61,26 @@ import { OperatorProbesService } from './probes/operator-probes.service';
     // spawns a process that mints a credential. The only thing that should be
     // able to reach it is the endpoint an operator clicks (#386).
     ClaudeAuthService,
-    // Not exported and injected by nothing: its whole job happens in its
-    // constructor, and Nest instantiates it because it is a provider of a
-    // module that is loaded. `RetiredSupervisorConfigService` is registered
-    // the same way, for the same reason.
-    OperatorSettingsEnvDisagreementService,
-    // Both injected by nothing, like the disagreement reporter above: their
-    // whole job happens once, at startup (#422). Both hang off
-    // `onApplicationBootstrap` and NOT `onModuleInit`, because both read the
-    // overlay that this module's own service loads in ITS `onModuleInit` — and
-    // Nest starts every provider hook in a module together and awaits them
-    // with `Promise.all`, so a sibling's `onModuleInit` sees an overlay that
-    // has not loaded yet. Registration order does not fix that; only a later
-    // hook does. That mistake is #436, and it silently stranded a credential.
+    // All three are injected by nothing and exported to nobody: their whole
+    // job happens once, at startup, and Nest runs them because they are
+    // providers of a module that is loaded (#340, #422).
     //
-    // Their order relative to EACH OTHER is not guaranteed either, and does
-    // not need to be: the boot check reports stored rows that will not open,
-    // and a row the migration writes was sealed moments earlier by the same
-    // process, so it can never be one of them.
+    // All three hang off `onApplicationBootstrap`, and NOT off `onModuleInit`
+    // or a constructor, because all three read the overlay that this module's
+    // own service loads in ITS `onModuleInit`. Nest starts every provider hook
+    // within a module together and awaits them with `Promise.all`, so a
+    // sibling's `onModuleInit` sees an overlay that has not loaded yet — and a
+    // constructor runs earlier still, before any hook at all, so it can never
+    // see one. Registration order does not fix either; only a later hook does.
+    // That mistake silently stranded a credential (#436) and silenced the
+    // env-disagreement warning for its whole life (#437).
+    // `operator-settings.boot-order.spec.ts` now asserts this over the source.
+    //
+    // Their order relative to EACH OTHER is not guaranteed, and does not need
+    // to be: the boot check reports stored rows that will not open, and a row
+    // the migration writes was sealed moments earlier by the same process, so
+    // it can never be one of them.
+    OperatorSettingsEnvDisagreementService,
     LegacyModelSettingsMigration,
     UnreadableSecretsBootCheck,
   ],
