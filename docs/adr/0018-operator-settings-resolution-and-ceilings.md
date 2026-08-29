@@ -1,6 +1,6 @@
 # 18. Operator settings resolve default → env → DB row, and the hard spend ceilings join them
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-26
 - Issue: #354
 - Epic: #332

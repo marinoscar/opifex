@@ -17,6 +17,13 @@ module.exports = {
       },
     ],
   },
+  // scripts/ is plain, already-valid CommonJS (no TS, no ESM syntax) that
+  // test/scripts/resolve-compose-env.spec.ts requires directly (#322). Left
+  // to the default transform, ts-jest warns on every run because `allowJs`
+  // is unset for the app's own tsconfig; skipping the transform here lets
+  // Jest's module loader require it as plain CJS instead, with no warning
+  // and no behaviour change.
+  transformIgnorePatterns: ['/node_modules/', '<rootDir>/scripts/'],
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.module.ts',

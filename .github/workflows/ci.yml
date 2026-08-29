@@ -143,6 +143,53 @@ jobs:
   test-api:
     name: Test API
     runs-on: ubuntu-latest
+    # #440 / #321: `npm run api:test` runs `apps/api`'s default `test` script
+    # — every `*.spec.ts` under src/ and test/ EXCEPT paths matching "e2e"
+    # (see apps/api/package.json). Most of those resolve PrismaService
+    # through the mock in apps/api/test/mocks/prisma.mock.ts via
+    # apps/api/test/helpers/test-app.helper.ts (`useMockDatabase` defaults to
+    # `true`) and never touch this service at all — verified, not assumed;
+    # see the PR that added this block. But a handful of
+    # `test/integration/*.integration.spec.ts` files talk to a REAL
+    # database directly (`new PrismaService()`, no mock) and guard themselves
+    # with `describeIfDb` (apps/api/test/helpers/database-guard.helper.ts):
+    # `describe` when DATABASE_URL/POSTGRES_HOST is reachable, `describe.skip`
+    # on a developer machine when it is not, and — since GitHub Actions sets
+    # `CI=true` on every job unconditionally — a single FAILING test here
+    # instead of a skip, because a CI run that silently skipped a
+    # database-backed suite is exactly the bug both issues describe: a green
+    # check reporting on a strictly smaller set of tests than it appears to.
+    #
+    # So this job provisions the same test database those specs already know
+    # how to find, matching infra/compose/test.compose.yml's `db-test`
+    # service exactly (POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB =
+    # postgres/postgres/opifex_test) — do not invent different values here
+    # without re-verifying against that file. Migrations only, no
+    # `prisma:seed`: every currently-guarded integration spec either builds
+    # its own fixtures or asserts against a row a MIGRATION seeds (the
+    # `operator_settings_revision` singleton, #336), not the RBAC rows
+    # `prisma/seed.ts` creates.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: opifex_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: opifex_test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/opifex_test
     steps:
       - uses: actions/checkout@v4
 
@@ -157,23 +204,13 @@ jobs:
       - name: Generate Prisma client
         run: npm -w apps/api run prisma:generate
 
-      # `npm run api:test` runs `apps/api`'s default `test` script, which is
-      # every `*.spec.ts` under src/ and test/ EXCEPT paths matching "e2e"
-      # (see apps/api/package.json). As of this workflow, every one of those
-      # specs — including the ones named `*.integration.spec.ts` — resolves
-      # PrismaService through the mock in apps/api/test/mocks/prisma.mock.ts
-      # via apps/api/test/helpers/test-app.helper.ts (`useMockDatabase`
-      # defaults to `true`), and no `*.e2e.spec.ts` files exist in the repo
-      # yet. So this job does not need a database service today.
-      #
-      # apps/api/docs/TESTING.md and docs/TESTING.md both document a real,
-      # non-mocked E2E path (`npm run test:e2e`, `*.e2e.spec.ts`) backed by
-      # infra/compose/test.compose.yml's `db-test` Postgres service. If real
-      # E2E specs are added and wired into `test-api`, this job will need a
-      # `services: postgres:` block matching that compose file's
-      # POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB (postgres/postgres/
-      # opifex_test) plus a DATABASE_URL / apps/api/.env.test for the job —
-      # do not invent one here without re-verifying against that file.
+      # `prisma:migrate` is `migrate deploy` (scripts/prisma-env.js), which
+      # applies every committed migration and nothing else — no db push, no
+      # implicit schema sync, so a migration missing from the repo fails here
+      # the same way it would in a real deployment.
+      - name: Apply database migrations
+        run: npm -w apps/api run prisma:migrate
+
       - name: Run API tests
         run: npm run api:test
 
