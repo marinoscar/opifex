@@ -74,6 +74,18 @@ export interface OperatorSettingCommon {
   envVar: string;
   /** Whether `null` is a real value here, distinct from "use the default". */
   acceptsNull: boolean;
+  /**
+   * Whether the EMPTY STRING is a real stored value (#381).
+   *
+   * Optional because the API does not publish it yet. The registry knows —
+   * `stringSetting({ allowEmpty: true })` is what makes `''` legal for the two
+   * spend ceilings, the credentials and the fallback webhook — but the field
+   * is consumed by the schema builder and never reaches the response DTO. Read
+   * it if it arrives, and fall back to the derivation in
+   * `config/operatorSettingsDraft.ts` meanwhile. Publishing it is the general
+   * fix, and it is a backend change.
+   */
+  allowEmpty?: boolean;
   /** When the stored override was last written. Null when there is no row. */
   updatedAt: string | null;
   constraints: OperatorSettingConstraints;
