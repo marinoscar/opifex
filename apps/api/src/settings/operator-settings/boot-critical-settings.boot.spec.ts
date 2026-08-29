@@ -114,8 +114,42 @@ describe('the boot-critical settings check (#441)', () => {
   it('is driven off the registry rather than a hardcoded list', () => {
     // So a key marked `bootCritical` tomorrow is covered without anyone
     // remembering this file exists.
-    expect(BOOT_CRITICAL_SETTING_KEYS).toEqual(['github.apiBaseUrl']);
+    expect([...BOOT_CRITICAL_SETTING_KEYS].sort()).toEqual([
+      'github.apiBaseUrl',
+      'runners.claudeCodeLocal.gitRemoteBaseUrl',
+    ]);
     expect(OPERATOR_SETTINGS['github.apiBaseUrl'].bootCritical).toBe(true);
+    expect(
+      OPERATOR_SETTINGS['runners.claudeCodeLocal.gitRemoteBaseUrl']
+        .bootCritical,
+    ).toBe(true);
+  });
+
+  it('refuses a git remote base URL that is not a URL, for the same reason', async () => {
+    // #441's table named three keys and missed this one. Its own help text
+    // has always said the quiet part: "The GitHub token is sent to whatever
+    // host is named here." So the fallback to public github.com pushes an
+    // Enterprise deployment's token somewhere its operator never named —
+    // `github.apiBaseUrl`'s hazard exactly, on the write path instead of the
+    // read one.
+    const { settings } = await makeOperatorSettings({
+      env: { GIT_REMOTE_BASE_URL: 'github.corp.example' },
+    });
+
+    expect(() =>
+      new BootCriticalSettingsCheck(settings).onApplicationBootstrap(),
+    ).toThrow(/GIT_REMOTE_BASE_URL/);
+  });
+
+  it('starts normally when the git remote base URL is legal', async () => {
+    // The control, again.
+    const { settings } = await makeOperatorSettings({
+      env: { GIT_REMOTE_BASE_URL: 'https://github.corp.example' },
+    });
+
+    expect(() =>
+      new BootCriticalSettingsCheck(settings).onApplicationBootstrap(),
+    ).not.toThrow();
   });
 
   it('names every offending key at once', async () => {
