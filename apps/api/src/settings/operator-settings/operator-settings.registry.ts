@@ -169,6 +169,55 @@ export interface OperatorSettingDefinition<T> {
   /** Accepts the env-string form AND the JSON form; outputs one typed value. */
   readonly schema: z.ZodType<T>;
   readonly default: T;
+  /**
+   * The value a REJECTED value resolves to, when that must not be `default`.
+   *
+   * ## The hazard this closes (#441)
+   *
+   * A supplied value the schema refuses falls back to `default` and is logged
+   * at ERROR (`OperatorSettingsService.onInvalid`). For most keys that is
+   * right: a mistyped timeout lands on a different number with no safety
+   * direction, and taking the API down over it would be worse. For a few, the
+   * declared default is MORE PERMISSIVE THAN ANY VALUE THE OPERATOR COULD HAVE
+   * WRITTEN, and then the fallback silently widens a boundary:
+   * `DISPATCH_MAX_CONCURRENT=200` is out of range, plausible to type, and used
+   * to resolve to `null` — no fleet ceiling at all — rather than to the
+   * maximum the operator was reaching for.
+   *
+   * Where this is declared, a rejected value lands HERE instead, and the value
+   * declared must be one an operator could legally have written: the rule is
+   * "never more permissive than any valid value", not "some other number".
+   * `operator-settings.registry.spec.ts` parses every declared fallback back
+   * through its own key's schema so a fallback that could not be typed cannot
+   * be declared.
+   *
+   * It does NOT change what a correct configuration does, and it does not
+   * change what an ABSENT one does: an unset variable still resolves to
+   * `default`, because absence is a state the operator chose and a rejected
+   * value is not.
+   */
+  readonly invalidFallback?: T;
+  /**
+   * A rejected value here REFUSES THE BOOT rather than falling back (#441).
+   *
+   * The `env.validation.ts` test, applied one layer out: not importance, but
+   * whether the rest of the service is still telling the truth without the
+   * thing that failed. It is reserved for keys where NO fallback is defensible
+   * because the fallback itself is the hazard — `github.apiBaseUrl` is the
+   * whole of the set, and the reason is that its default names a HOST A
+   * CREDENTIAL IS SENT TO. `GITHUB_API_BASE_URL=github.corp.example` (no
+   * scheme) is a GitHub Enterprise operator naming their own host and getting
+   * `https://api.github.com`, which sends their fine-grained token to public
+   * GitHub. There is no safer host to substitute — every candidate is a
+   * guess about where a secret should go — so the process refuses to start,
+   * names the variable and the value, and lets somebody who knows decide.
+   *
+   * Enforced by `boot-critical-settings.boot.ts`, which reads through the
+   * resolver and therefore covers a stored row as well as an environment
+   * variable, and which names EVERY offending key at once rather than the
+   * first — `validateEnv`'s property, for `validateEnv`'s reason.
+   */
+  readonly bootCritical?: boolean;
   readonly secret: boolean;
   readonly reload: ReloadSemantics;
   readonly group: OperatorSettingGroup;
@@ -308,14 +357,34 @@ function integerSetting(
 }
 
 /**
+ * The two spellings of "no ceiling" an environment variable can carry.
+ *
+ * `'null'` is the ORIGINAL one and stays, because it is what a deployment may
+ * already have written and what a UI round trip produces: an operator who sets
+ * `dispatch.maxConcurrent` and then clears it must land back on `null`, and
+ * the epic's exit criteria say that must yield "a number, then absent — never
+ * the string `'undefined'`". Absent env is not that expression, because absent
+ * means "use the default", and for `defaultTimeoutMinutes` the default is 60.
+ *
+ * `'unlimited'` is the SENTINEL #441 adds, and it is the word a person would
+ * actually write. It exists so that "no ceiling" is something an operator
+ * states rather than something they land on: paired with `invalidFallback`
+ * below, the only two routes to an unlimited fleet are leaving the variable
+ * unset (a state the operator chose) and typing one of these two words. A
+ * typo — `DISPATCH_MAX_CONCURRENT=200`, out of range and entirely plausible —
+ * can no longer reach it.
+ *
+ * Matched case-insensitively and trimmed, for `booleanSetting`'s reason: the
+ * value is typed by a person into a shell or a compose file, and rejecting
+ * `Unlimited` would be rejecting an unambiguous intention.
+ */
+const NO_CEILING_WORDS = new Set(['null', 'unlimited']);
+
+/**
  * An integer, or `null` meaning "no ceiling".
  *
- * The env form of `null` is the literal string `'null'`. It has to have one:
- * an operator who sets `dispatch.maxConcurrent` in the UI and then clears it
- * must land back on `null`, and the epic's exit criteria say that must yield
- * "a number, then absent — never the string `'undefined'`". Absent env is not
- * that expression, because absent means "use the default" and for
- * `defaultTimeoutMinutes` the default is 60.
+ * See {@link NO_CEILING_WORDS} for how `null` is spelled in an environment
+ * variable and why there are two spellings.
  */
 function nullableIntegerSetting(
   fields: Omit<
@@ -329,7 +398,14 @@ function nullableIntegerSetting(
     nullable: true,
     schema: z.union([
       z.null(),
-      z.literal('null').transform(() => null),
+      z
+        .string()
+        .trim()
+        .toLowerCase()
+        .refine((value) => NO_CEILING_WORDS.has(value), {
+          error: 'expected `unlimited` (or `null`) for no ceiling',
+        })
+        .transform(() => null),
       integerBody(fields.min, fields.max),
     ]),
   };
@@ -591,6 +667,14 @@ export const OPERATOR_SETTINGS = {
     default: 'https://api.github.com',
     format: 'url',
     secret: false,
+    // The whole of the `bootCritical` set, and the argument is in that
+    // field's own documentation: this default names A HOST A CREDENTIAL IS
+    // SENT TO, so there is no substitute a rejected value could safely land
+    // on. `GITHUB_API_BASE_URL=github.corp.example` (no scheme, so refused)
+    // is an Enterprise operator naming their own host, and falling back would
+    // put their fine-grained token on public GitHub. Enforced by
+    // `boot-critical-settings.boot.ts` (#441).
+    bootCritical: true,
     // The ETag cache is keyed by PATH, not by host. Swapping hosts inside a
     // live process would replay one host's ETags against another and receive
     // 304s for resources it has never read — a cache returning another
@@ -934,9 +1018,31 @@ export const OPERATOR_SETTINGS = {
 
   'dispatch.maxConcurrent': nullableIntegerSetting({
     envVar: 'DISPATCH_MAX_CONCURRENT',
+    // Unchanged: an UNSET variable still means no global ceiling, which is
+    // what every existing deployment resolves to and what `.env.example`
+    // ships. #441 changes only what a REJECTED value does.
     default: null,
     min: 1,
     max: 128,
+    // The maximum, and the argument for it is the whole of #441 in one key.
+    //
+    // `DISPATCH_MAX_CONCURRENT=200` is out of range and a plausible thing to
+    // type — the operator was reaching for a high ceiling, not for none — and
+    // it used to resolve to `null`, an UNLIMITED fleet. That is strictly more
+    // permissive than any value they could have written, so the typo widened a
+    // boundary in the one direction nothing else in the system would catch.
+    //
+    // Why `max` and not `min`. The rule this whole field encodes is "never
+    // more permissive than any valid value", and 128 satisfies it exactly: it
+    // is the most permissive configuration an operator could legally have
+    // asked for. Falling back to 1 would satisfy it too, and more strictly —
+    // but it converts a mistyped ceiling into a fleet-wide stall, which is the
+    // shape `DEFAULT_CEILING_WINDOW_DAYS` argues against for the spend
+    // ceiling: a safety response severe enough to look like an outage becomes
+    // pressure to remove the safety mechanism. 128 is bounded, loud (the
+    // rejection is logged at ERROR naming the variable and the value in
+    // force), and nothing beyond it is reachable.
+    invalidFallback: 128,
     secret: false,
     // Read per dispatch decision (dispatch.service.ts:96) and compared against
     // runs already live — so a lowered ceiling is immediately BINDING on new
@@ -944,7 +1050,14 @@ export const OPERATOR_SETTINGS = {
     reload: 'next-unit',
     group: 'dispatch',
     label: 'Fleet concurrency ceiling',
-    help: 'A ceiling across the whole fleet, on top of each runner’s own limit. `null` means no global ceiling. Lowering it below the number of runs already live does not stop them; it stops the next dispatch until the count falls back under it.',
+    // Marked since #441. It was not before, which is defensible on the reading
+    // that raising a ceiling is not itself an outward act — but it caps a
+    // fleet that dispatches by default (ADR-0019), so moving it changes how
+    // much real subscription quota can be spent at once. That is the
+    // definition this field carries, and the flag is also what makes the
+    // governing spec's rule about permissive fallbacks apply here.
+    dangerous: true,
+    help: 'A ceiling across the whole fleet, on top of each runner’s own limit. Say `unlimited` (or leave it unset) for no global ceiling — a value that cannot be read does NOT mean unlimited, it means 128, because a typo must never be able to remove a ceiling. Lowering it below the number of runs already live does not stop them; it stops the next dispatch until the count falls back under it.',
   }),
 
   'dispatch.allowPreviewRunner': booleanSetting({
@@ -1476,6 +1589,36 @@ export function operatorSettingEntries(): Array<
     [OperatorSettingKey, AnyOperatorSettingDefinition]
   >;
 }
+
+/**
+ * The value a REJECTED value resolves to for one key (#441).
+ *
+ * `invalidFallback` where the key declares one, `default` everywhere else.
+ * A single function rather than a `??` at each of the resolver's two invalid
+ * arms, so "which value is in force after a rejection" has one answer that the
+ * log line, the returned value and the governing spec all read from.
+ */
+export function invalidFallbackValue<K extends OperatorSettingKey>(
+  key: K,
+): OperatorSettingValue<K> {
+  const definition = OPERATOR_SETTINGS[key];
+  return (
+    definition.invalidFallback === undefined
+      ? definition.default
+      : definition.invalidFallback
+  ) as OperatorSettingValue<K>;
+}
+
+/**
+ * Every key whose rejected value refuses the boot instead of falling back.
+ *
+ * Derived from the registry rather than listed, so a key marked `bootCritical`
+ * tomorrow is covered by `boot-critical-settings.boot.ts` and by the governing
+ * spec without either of them being edited.
+ */
+export const BOOT_CRITICAL_SETTING_KEYS = OPERATOR_SETTING_KEYS.filter(
+  (key) => OPERATOR_SETTINGS[key].bootCritical === true,
+);
 
 /** The outcome of parsing one raw value. */
 export type ParseResult<T> =
