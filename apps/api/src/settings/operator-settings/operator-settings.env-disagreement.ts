@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  type OnApplicationBootstrap,
+} from '@nestjs/common';
 
 import {
   OPERATOR_SETTINGS,
@@ -126,24 +130,62 @@ export function operatorEnvDisagreements(
 /**
  * Says the above once, at boot.
  *
- * The constructor is the whole of it, exactly as
- * `RetiredSupervisorConfigService`'s is: Nest instantiates the provider once
- * per process, so an operator gets one line per disagreeing variable rather
- * than one per read.
+ * ## Not the constructor, and not `onModuleInit` either
  *
- * It reports the state at BOOT and does not follow later changes. An operator
- * who edits a setting in the Control Center while the process is running just
- * made that change deliberately, and knows it took effect — the confusion this
- * exists to catch is the one that starts with a restart.
+ * `onApplicationBootstrap`, which is the only hook from which this can see the
+ * thing it is reporting on.
+ *
+ * The first cut did the whole job in the CONSTRUCTOR, copying
+ * `RetiredSupervisorConfigService` — which can answer from a constructor
+ * because it reads `process.env` and nothing else. This reads the database
+ * OVERLAY as well, through `settings.resolve`, and the overlay is loaded by
+ * `OperatorSettingsService.onModuleInit`. Every constructor in the container
+ * runs while Nest is still resolving the dependency graph, strictly before any
+ * lifecycle hook, so `resolve()` here always saw an empty overlay, `source`
+ * was always `'env'`, the loop below always took its `continue`, and the
+ * warning this file exists to emit has never once fired on a real boot. It is
+ * warning-only, so nothing broke — which is precisely why it went unnoticed
+ * (#437).
+ *
+ * `onModuleInit` would not have fixed it either, and that is the part worth
+ * remembering: Nest's `callModuleInitHook` STARTS every provider hook within a
+ * module in one pass and awaits them together with `Promise.all`, so a
+ * provider registered beside `OperatorSettingsService` runs its hook while
+ * that service is still awaiting the overlay query, reads
+ * `status: 'unavailable'` before its own first `await`, and loses
+ * deterministically rather than racing. `LegacyModelSettingsMigration` and
+ * `UnreadableSecretsBootCheck` were silenced by exactly that (#436); this
+ * service was the same mistake one hook earlier, which is strictly worse — a
+ * hook might at least in principle win a race, a constructor cannot.
+ *
+ * `onApplicationBootstrap` runs only after EVERY module's `onModuleInit` has
+ * settled, which is exactly the precondition this needs. It stays a hook and
+ * not a live subscription: it reports the state at BOOT and does not follow
+ * later changes. An operator who edits a setting in the Control Center while
+ * the process is running just made that change deliberately, and knows it took
+ * effect — the confusion this exists to catch is the one that starts with a
+ * restart.
+ *
+ * ## Once per process
+ *
+ * Nest instantiates the provider once and calls the hook once, so an operator
+ * gets one line per disagreeing variable rather than one per read. Nothing
+ * injects this class; it runs because it is a provider of a module that is
+ * loaded.
  */
 @Injectable()
-export class OperatorSettingsEnvDisagreementService {
+export class OperatorSettingsEnvDisagreementService implements OnApplicationBootstrap {
   private readonly logger = new Logger(
     OperatorSettingsEnvDisagreementService.name,
   );
 
-  constructor(settings: OperatorSettingsService) {
-    for (const warning of operatorEnvDisagreements(process.env, settings)) {
+  constructor(private readonly settings: OperatorSettingsService) {}
+
+  onApplicationBootstrap(): void {
+    for (const warning of operatorEnvDisagreements(
+      process.env,
+      this.settings,
+    )) {
       this.logger.warn(warning);
     }
   }

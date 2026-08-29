@@ -262,10 +262,14 @@ export class OperatorSettingsService implements OnModuleInit {
    * though it did is #436: `callModuleInitHook` starts every provider hook
    * WITHIN a module in one pass and awaits them together with `Promise.all`,
    * so a sibling's `onModuleInit` runs while this one is still awaiting the
-   * query below and sees `status: 'unavailable'`. The two providers that need
-   * the overlay at startup — `LegacyModelSettingsMigration` and
-   * `UnreadableSecretsBootCheck` — therefore use `onApplicationBootstrap`,
-   * which runs after every module's `onModuleInit` has settled.
+   * query below and sees `status: 'unavailable'`. A sibling's CONSTRUCTOR is
+   * worse again: it runs before any hook at all, so it never sees an overlay
+   * under any ordering (#437). The three providers that need the overlay at
+   * startup — `LegacyModelSettingsMigration`, `UnreadableSecretsBootCheck` and
+   * `OperatorSettingsEnvDisagreementService` — therefore use
+   * `onApplicationBootstrap`, which runs after every module's `onModuleInit`
+   * has settled, and `operator-settings.boot-order.spec.ts` asserts that no
+   * fourth one is added reading it any earlier.
    *
    * A failure here does NOT abort the boot, for exactly `PrismaService`'s
    * reason (#161): the process that stays up is the one that can be asked what
