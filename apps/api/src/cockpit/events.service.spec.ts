@@ -14,11 +14,11 @@ import { EventsService } from './events.service';
 describe('EventsService', () => {
   function row(overrides: Record<string, unknown> = {}) {
     return {
-      id: '22222222-2222-2222-2222-222222222222',
+      id: '22222222-2222-4222-8222-222222222222',
       type: 'run_progress',
       source: 'runner',
       occurredAt: new Date('2026-08-23T01:30:00Z'),
-      runId: '11111111-1111-1111-1111-111111111111',
+      runId: '11111111-1111-4111-8111-111111111111',
       summary: 'Edited apps/api/src/foo.ts',
       run: { workOrder: { identity: 'wo_opifex_312_a3f91c2_a1' } },
       ...overrides,
@@ -44,7 +44,7 @@ describe('EventsService', () => {
       const { items } = await service.feed({});
 
       expect(items[0].workOrderId).toBe('wo_opifex_312_a3f91c2_a1');
-      expect(items[0].runId).toBe('11111111-1111-1111-1111-111111111111');
+      expect(items[0].runId).toBe('11111111-1111-4111-8111-111111111111');
     });
 
     it('joins through the run to get it', async () => {

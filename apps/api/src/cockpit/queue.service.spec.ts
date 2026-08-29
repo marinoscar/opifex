@@ -16,7 +16,7 @@ describe('QueueService', () => {
 
   function row(overrides: Record<string, unknown> = {}) {
     return {
-      id: '11111111-1111-1111-1111-111111111111',
+      id: '11111111-1111-4111-8111-111111111111',
       identity: 'wo_opifex_312_a3f91c2_a1',
       branch: 'factory/312-a3f91c2-a1',
       issueNumber: 312,

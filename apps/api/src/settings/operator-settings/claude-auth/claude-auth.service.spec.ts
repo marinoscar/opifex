@@ -438,7 +438,7 @@ describe('ClaudeAuthService (#386)', () => {
       await service.start('user-1');
 
       await expect(
-        service.submitCode('11111111-2222-3333-4444-555555555555', 'c', null),
+        service.submitCode('11111111-2222-4333-8444-555555555555', 'c', null),
       ).rejects.toThrow(/No Claude sign-in/);
     });
   });
@@ -541,7 +541,7 @@ describe('ClaudeAuthService (#386)', () => {
       await given('success');
       await service.start('user-1');
 
-      expect(() => service.get('11111111-2222-3333-4444-555555555555')).toThrow(
+      expect(() => service.get('11111111-2222-4333-8444-555555555555')).toThrow(
         /No Claude sign-in/,
       );
     });
