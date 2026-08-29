@@ -852,4 +852,91 @@ describe('ObjectsService', () => {
       });
     });
   });
+  /**
+   * #361: storage object metadata is arbitrary caller-supplied JSON, and
+   * `updateMetadata` wrote it straight into `audit_events.meta`. Unlike the
+   * users sink, nothing here needs a future schema change to leak — a client
+   * can put a token in object metadata today.
+   */
+  describe('audit redaction (#361)', () => {
+    const SECRET = 'sk-ant-api03-0123456789abcdefghij';
+
+    beforeEach(() => {
+      mockPrisma.storageObject.findUnique.mockResolvedValue(
+        mockStorageObject as any,
+      );
+      mockPrisma.storageObject.update.mockResolvedValue(
+        mockStorageObject as any,
+      );
+      mockPrisma.auditEvent.create.mockResolvedValue({} as any);
+    });
+
+    function metaOfLastAuditEvent(): Record<string, unknown> {
+      const calls = mockPrisma.auditEvent.create.mock.calls;
+      expect(calls.length).toBe(1);
+      return (calls[0][0] as { data: { meta: Record<string, unknown> } }).data
+        .meta;
+    }
+
+    it('does not write a secret-shaped metadata value into audit_events.meta', async () => {
+      await service.updateMetadata(
+        mockStorageObject.id,
+        { metadata: { caption: 'holiday', accessToken: SECRET } },
+        testUserId,
+      );
+
+      expect(
+        JSON.stringify(mockPrisma.auditEvent.create.mock.calls),
+      ).not.toContain(SECRET);
+    });
+
+    it('still records which metadata keys changed', async () => {
+      await service.updateMetadata(
+        mockStorageObject.id,
+        { metadata: { caption: 'holiday', accessToken: SECRET } },
+        testUserId,
+      );
+
+      // The key survives and the sibling value survives; only the secret-named
+      // value is masked. Masking `metadataChanges` wholesale would satisfy the
+      // test above and destroy the row's usefulness.
+      expect(metaOfLastAuditEvent()).toEqual({
+        name: mockStorageObject.name,
+        metadataChanges: {
+          caption: 'holiday',
+          accessToken: '********ghij',
+        },
+      });
+    });
+
+    it('masks a secret nested inside metadata', async () => {
+      // Object metadata is free-form, so the secret need not be top level. A
+      // top-level-only sweep would pass the assertions above and leak here.
+      await service.updateMetadata(
+        mockStorageObject.id,
+        { metadata: { source: { kind: 's3', credentials: SECRET } } },
+        testUserId,
+      );
+
+      expect(metaOfLastAuditEvent()).toEqual({
+        name: mockStorageObject.name,
+        metadataChanges: {
+          source: { kind: 's3', credentials: '********ghij' },
+        },
+      });
+    });
+
+    it('leaves ordinary metadata untouched', async () => {
+      await service.updateMetadata(
+        mockStorageObject.id,
+        { metadata: { caption: 'holiday', pages: 12 } },
+        testUserId,
+      );
+
+      expect(metaOfLastAuditEvent()).toEqual({
+        name: mockStorageObject.name,
+        metadataChanges: { caption: 'holiday', pages: 12 },
+      });
+    });
+  });
 });

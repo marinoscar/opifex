@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { describeIfDb } from '../helpers/database-guard.helper';
 import { PrismaService } from '../../src/prisma/prisma.service';
 
 /**
@@ -23,20 +24,8 @@ import { PrismaService } from '../../src/prisma/prisma.service';
  * `reconciler-actions-executed.integration.spec.ts` uses.
  */
 
-function databaseReachable(): boolean {
-  return Boolean(process.env.DATABASE_URL || process.env.POSTGRES_HOST);
-}
-
-const describeIfDb = databaseReachable() ? describe : describe.skip;
-
-if (!databaseReachable()) {
-  console.warn(
-    'Skipping operator-settings-constraint.integration.spec.ts: no DATABASE_URL/POSTGRES_HOST ' +
-      'in the environment. Point it at opifex_test (infra/compose/test.compose.yml) to run it.',
-  );
-}
-
 describeIfDb(
+  'operator-settings-constraint.integration.spec.ts',
   'operator_settings CHECK constraints, against a real database (#336)',
   () => {
     let prisma: PrismaService;

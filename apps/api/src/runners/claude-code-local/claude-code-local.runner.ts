@@ -10,6 +10,7 @@ import {
   ChildProcessSupervisor,
   type SupervisedProcess,
 } from '../process/child-process-supervisor';
+import { refusedProxyVariables } from '../process/child-environment';
 import { probeBinaryVersion } from '../process/probe-version';
 import type {
   RunHandle,
@@ -90,7 +91,18 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
   constructor(
     private readonly settings: OperatorSettingsService,
     private readonly workspaces: RunWorkspaceService,
-  ) {}
+  ) {
+    // Said once, at boot, at ERROR (#358). `capabilities()` puts the same fact
+    // in the manifest every tick, which is where a screen reads it; this line
+    // is for the operator who has just edited `.env`, recreated the container
+    // and is watching the log — the moment at which the variable they mistyped
+    // is still the thing they are thinking about. Logging it from
+    // `capabilities()` instead would repeat it every 60 seconds forever, which
+    // is how a log teaches its reader to skip it.
+    for (const variable of refusedProxyVariables()) {
+      this.logger.error(variable.reason);
+    }
+  }
 
   get key(): string {
     return ClaudeCodeLocalRunner.KEY;
@@ -319,6 +331,7 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
    */
   async capabilities(): Promise<RunnerCapabilities> {
     const version = await this.probeVersion();
+    const unavailableReasons = this.unavailableReasons(version);
 
     const capabilities: RunnerCapabilities = {
       key: this.key,
@@ -392,13 +405,10 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
       // Spread conditionally so the key is ABSENT when the runner is fine:
       // absent means available, and a manifest that mentions its health only
       // when its health is worth mentioning is the one an operator can skim.
-      ...(version === null
+      ...(unavailableReasons.length > 0
         ? {
             available: false,
-            unavailableReason:
-              `\`${this.binary} --version\` could not be probed, so the CLI is not ` +
-              'reachable from this process. Install it or put it on this PATH; ' +
-              'dispatch will queue rather than route here until it is.',
+            unavailableReason: unavailableReasons.join(' '),
           }
         : {}),
 
@@ -776,6 +786,44 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
   }
 
   /**
+   * Every reason this runner cannot take work right now, in the order they
+   * would bite.
+   *
+   * A list rather than a single string because there are now two independent
+   * ways to be unavailable and they can hold at the same time — a deployment
+   * behind a credentialed proxy that ALSO has no CLI installed should be told
+   * both, not whichever one this method happened to check first. Availability
+   * is a conjunction; the reason is the union.
+   *
+   * The proxy entry is #358. A refused proxy variable means the agent has no
+   * egress, and an agent with no egress cannot reach the Anthropic API or
+   * GitHub — so every dispatched run would fail at its first fetch, which is
+   * exactly the bug that issue reports. Declaring it here instead makes the
+   * cause arrive BEFORE the dispatch, by name, on `/api/health/ready` and in
+   * the Control Center's readiness chain, which renders `unavailableReason`
+   * verbatim. Note this does not make a working deployment unavailable: with a
+   * credentialed proxy set, the agent had no proxy before this change either.
+   * All that is new is that the runner now says so.
+   */
+  private unavailableReasons(version: string | null): string[] {
+    const reasons: string[] = [];
+
+    if (version === null) {
+      reasons.push(
+        `\`${this.binary} --version\` could not be probed, so the CLI is not ` +
+          'reachable from this process. Install it or put it on this PATH; ' +
+          'dispatch will queue rather than route here until it is.',
+      );
+    }
+
+    for (const variable of refusedProxyVariables()) {
+      reasons.push(variable.reason);
+    }
+
+    return reasons;
+  }
+
+  /**
    * `claude --version`, once, cached.
    *
    * Cached because `capabilities()` is called on the dispatch path and #60
@@ -829,11 +877,18 @@ export class ClaudeCodeLocalRunner implements Runner, OnModuleDestroy {
   /**
    * The permission mode the CLI runs under.
    *
-   * Defaults to the narrow end. A mode broad enough to never ask is coupled to
-   * a sandbox that makes never asking safe, and sandboxing is #113 — so until
-   * then a run that needs a permission it does not have goes silent and is
-   * caught by the watchdog (#54), which is the failure this system is built to
-   * notice. Widening it is a deliberate act by an operator who has read that.
+   * Defaults to the narrowest mode that can still DO work. A mode broad enough
+   * to never ask is coupled to a sandbox that makes never asking safe, and
+   * sandboxing is #113 — so until then a run that needs a permission it does
+   * not have goes silent and is caught by the watchdog (#54), which is the
+   * failure this system is built to notice. Widening it is a deliberate act by
+   * an operator who has read that.
+   *
+   * This used to say "the narrow end", which was not right: `plan` is
+   * narrower, and only proposes. The distinction is load-bearing since #441 —
+   * a REJECTED value resolves to `plan` rather than to this default, because a
+   * typo reaching for something stricter must not widen the boundary. See
+   * `PERMISSION_MODES_BY_BREADTH` in `claude-code-invocation.ts`.
    */
   private get permissionMode(): PermissionMode {
     // The validate-or-fall-back-to-acceptEdits dance that used to live here is

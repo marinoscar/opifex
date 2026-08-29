@@ -23,23 +23,45 @@ const { spawn } = require('child_process');
 // Load .env files - try multiple locations
 if (process.env.NODE_ENV !== 'production') {
   try {
-    const path = require('path');
     const dotenv = require('dotenv');
+    const { resolveComposeEnvPath } = require('./lib/resolve-compose-env');
 
     // Try local .env first (apps/api/.env)
     dotenv.config();
 
-    // Also load from infra/compose/.env (canonical env location)
-    const composeEnv = path.resolve(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      'infra',
-      'compose',
-      '.env',
-    );
-    dotenv.config({ path: composeEnv });
+    // Also load from infra/compose/.env (canonical env location). Resolved
+    // via resolveComposeEnvPath so it is found from a git worktree too, not
+    // just the main checkout — see lib/resolve-compose-env.js (fixes #322).
+    // Never proceed silently: log exactly which file was loaded, or say
+    // loudly that none was found.
+    const resolved = resolveComposeEnvPath(__dirname);
+
+    if (resolved.path) {
+      dotenv.config({ path: resolved.path });
+      const how =
+        resolved.source === 'relative-to-script'
+          ? 'relative to this script'
+          : 'via the git common directory (worktree-aware)';
+      console.error(
+        `[prisma-env] Loaded environment from ${resolved.path} (${how}).`,
+      );
+    } else if (resolved.gitError) {
+      console.error(
+        `[prisma-env] WARNING: no infra/compose/.env found at ${resolved.fixedOffsetPath}, ` +
+          'and could not check the git common directory as a fallback ' +
+          `(${resolved.gitError.message.split('\n')[0]}). git may not be on ` +
+          'PATH, or this is not a git checkout (e.g. inside a container). ' +
+          'Proceeding with only the ambient environment and apps/api/.env, ' +
+          'if any — DATABASE_URL will likely fall back to defaults.',
+      );
+    } else {
+      console.error(
+        `[prisma-env] WARNING: no infra/compose/.env found (checked ${resolved.fixedOffsetPath} ` +
+          'and the git common directory). Proceeding with only the ambient ' +
+          'environment and apps/api/.env, if any — DATABASE_URL will likely ' +
+          'fall back to defaults.',
+      );
+    }
   } catch {
     // dotenv might not be available in production builds, that's OK
   }
