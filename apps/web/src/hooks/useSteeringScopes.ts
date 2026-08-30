@@ -37,7 +37,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { getProjects, getRepositories } from '../services/api';
+import { ApiError, getProjects, getRepositories } from '../services/api';
 import {
   buildScopeCatalogue,
   type ScopeCatalogue,
@@ -117,11 +117,7 @@ export function useSteeringScopes(): UseSteeringScopesResult {
       setTruncated(registered.truncated || groups.truncated);
     } catch (cause) {
       if (!isMounted()) return;
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'The repositories and projects steering can reach could not be read.',
-      );
+      setError(describe(cause));
       // Dropped rather than left standing: a half-read list under a failed
       // refresh is an answer about a different moment presented as this one,
       // and here it would be a picker missing exactly the scope somebody
@@ -146,6 +142,30 @@ export function useSteeringScopes(): UseSteeringScopesResult {
   );
 
   return { catalogue, isLoading, error, truncated, refresh };
+}
+
+/**
+ * Why the lists could not be read, in the operator's terms.
+ *
+ * The 403 is called out because it is not a fault and it is REACHABLE: both
+ * `GET /repositories` and `GET /projects` are gated on `projects:read`, while
+ * steering is gated on `workorders:write` — deliberately, since it is the one
+ * Operate destination on a write permission (`destinations.ts`). A role
+ * holding one and not the other can therefore steer perfectly well and still
+ * be refused this list, and reporting that as a broken screen would send an
+ * operator looking for a fault that is not there.
+ */
+function describe(error: unknown): string {
+  if (error instanceof ApiError && error.status === 403) {
+    return (
+      'This account may steer but may not list the repositories and projects ' +
+      'to scope by, which needs projects:read.'
+    );
+  }
+
+  return error instanceof ApiError
+    ? `The repositories and projects steering can reach could not be read: ${error.message}`
+    : 'The repositories and projects steering can reach could not be read.';
 }
 
 export default useSteeringScopes;

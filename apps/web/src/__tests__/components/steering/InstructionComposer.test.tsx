@@ -411,6 +411,12 @@ describe('InstructionComposer scope picker', () => {
     expect(screen.queryByRole('combobox', { name: /Scope/ })).toBeNull();
   });
 
+  /**
+   * Reachable, and not a fault. Both list endpoints are gated on
+   * `projects:read` while steering is gated on `workorders:write` — the
+   * asymmetry epic #457 flags — so an account can steer perfectly well and
+   * still be refused the scopes to steer BY.
+   */
   it('falls back to naming issues in full when the lists cannot be read', async () => {
     server.use(
       http.get(`${API_BASE}/repositories`, () =>
@@ -420,7 +426,10 @@ describe('InstructionComposer scope picker', () => {
     renderComposer();
 
     expect(
-      await screen.findByText(/Every issue has to be written out as/),
+      await screen.findByText(/may steer but may not list the repositories/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Every issue has to be written out as/),
     ).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: /Scope/ })).toBeNull();
     // The instruction box still works: a scope that cannot be read is not a
