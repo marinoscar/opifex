@@ -563,10 +563,16 @@ export function proposeRefusal(
 ): ApplyRefusal {
   if (status === 404) {
     return {
-      title: 'That repository is not registered with Opifex',
+      // A repository OR a project since ADR-0020: `requireRegistered` and the
+      // project lookup answer the same status for the same kind of mistake —
+      // a request naming something Opifex does not know about. The API's own
+      // sentence below says which one, so this title stops at the shape.
+      title: 'That scope is not something Opifex knows about',
       remedy:
-        'Steering only reaches repositories Opifex observes. Register it on ' +
-        `the Projects screen first. The API's own answer: ${detail}`,
+        'Steering only reaches repositories Opifex observes, and only ' +
+        'projects that exist. If the scope picker offered it a moment ago, ' +
+        'it has been retired or deleted since — reload the screen to see ' +
+        `what is really there. The API's own answer: ${detail}`,
       stale: false,
     };
   }

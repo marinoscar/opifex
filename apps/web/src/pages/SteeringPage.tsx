@@ -47,7 +47,10 @@ import { InstructionComposer } from '../components/steering/InstructionComposer'
 import { ProposalReview } from '../components/steering/ProposalReview';
 import { applyRefusal, proposeRefusal } from '../config/steeringChat';
 import { useSteering, type SteeringTurn } from '../hooks/useSteering';
-import type { SteeringOperation } from '../types/steering';
+import type {
+  SteeringOperation,
+  SteeringScopeRequest,
+} from '../types/steering';
 
 export default function SteeringPage() {
   const { turns, pending, isProposing, isApplying, propose, apply, discard } =
@@ -90,7 +93,13 @@ export default function SteeringPage() {
               if (turn.kind === 'proposal') apply(turn.proposal, operations);
             }}
             onDiscard={discard}
-            onRetryInstruction={(instruction) => propose(instruction)}
+            onRetryInstruction={(instruction, scope) =>
+              // The SAME scope, not a fresh unscoped one. Asking a stale
+              // instruction again with a wider scope than the operator chose
+              // would be the mis-scoping #460 removed from the input, put back
+              // by the retry button.
+              propose(instruction, scope)
+            }
           />
         ))}
 
@@ -123,7 +132,10 @@ function TurnView({
   isApplying: boolean;
   onApply: (operations: SteeringOperation[]) => void;
   onDiscard: () => void;
-  onRetryInstruction: (instruction: string) => void;
+  onRetryInstruction: (
+    instruction: string,
+    scope: SteeringScopeRequest,
+  ) => void;
 }) {
   if (turn.kind === 'instruction') {
     return (
@@ -177,7 +189,7 @@ function TurnView({
           size="small"
           variant="outlined"
           sx={{ mt: 1 }}
-          onClick={() => onRetryInstruction(turn.instruction)}
+          onClick={() => onRetryInstruction(turn.instruction, turn.scope)}
           aria-label="Propose this instruction again"
         >
           Propose again

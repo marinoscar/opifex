@@ -433,7 +433,21 @@ describe('applyRefusal', () => {
 
   it('never calls a propose refusal stale, whatever the status', () => {
     expect(proposeRefusal(404, 'Not found').stale).toBe(false);
-    expect(proposeRefusal(404, 'Not found').title).toContain('not registered');
     expect(proposeRefusal(500, 'Boom').remedy).toContain('Nothing was written');
+  });
+
+  // The 404 covers a repository AND a project since ADR-0020: both are a
+  // request naming something Opifex does not know about, and both come back
+  // with the same status. The title says the shape; the API's own sentence,
+  // rendered verbatim in the remedy, says which one it was.
+  it('reads a 404 as a scope that does not exist, and quotes the API', () => {
+    const refusal = proposeRefusal(
+      404,
+      'No project 22222222-2222-4222-8222-222222222222 is registered with Opifex.',
+    );
+
+    expect(refusal.stale).toBe(false);
+    expect(refusal.title).toContain('scope');
+    expect(refusal.remedy).toContain('No project 22222222');
   });
 });

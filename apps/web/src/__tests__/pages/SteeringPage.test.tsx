@@ -28,6 +28,11 @@ import {
   proposalResponse,
   staleProposalResponse,
 } from '../mocks/steering';
+import {
+  PROJECT_ID,
+  projectFixture,
+  repositoryFixture,
+} from '../mocks/repositories';
 import SteeringPage from '../../pages/SteeringPage';
 import type {
   ApplySteeringInput,
@@ -72,6 +77,80 @@ function serveApply(
 }
 
 const applyOk = (result: SteeringApplyResult) => () => applyResponse(result);
+
+/** Capture every propose body, so what the scope picker really sent is read
+ *  off the wire rather than off a spy. */
+function captureProposals(proposal: SteeringProposal) {
+  const bodies: Record<string, unknown>[] = [];
+  server.use(
+    http.post('*/api/steering/proposals', async ({ request }) => {
+      bodies.push((await request.json()) as Record<string, unknown>);
+      return proposalResponse(proposal);
+    }),
+  );
+  return bodies;
+}
+
+/**
+ * The registered set and the projects the scope picker reads.
+ *
+ * Two repositories, one filed and one not, because that is the shape every
+ * interesting case here needs: a project to expand, and the unassigned bucket
+ * that a project-only picker would leave unreachable.
+ */
+function serveScopes() {
+  server.use(
+    http.get('*/api/repositories', () =>
+      HttpResponse.json({
+        data: {
+          items: [
+            repositoryFixture({
+              id: 'repo-widgets',
+              owner: 'opifex',
+              name: 'opifex',
+              fullName: 'opifex/opifex',
+              projectId: PROJECT_ID,
+              observeEnabled: true,
+            }),
+            repositoryFixture({
+              id: 'repo-legacy',
+              owner: 'acme',
+              name: 'legacy',
+              fullName: 'acme/legacy',
+              projectId: null,
+              observeEnabled: true,
+            }),
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 100,
+        },
+      }),
+    ),
+    http.get('*/api/projects', () =>
+      HttpResponse.json({
+        data: {
+          items: [projectFixture({ id: PROJECT_ID, name: 'Billing Platform' })],
+          total: 1,
+          page: 1,
+          pageSize: 100,
+          totalPages: 1,
+        },
+      }),
+    ),
+  );
+}
+
+/** Pick a scope by its visible label in the select. */
+async function chooseScope(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+) {
+  await user.click(await screen.findByRole('combobox', { name: /Scope/ }));
+  const listbox = await screen.findByRole('listbox');
+  await user.click(within(listbox).getByText(label));
+  await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+}
 
 function renderPage() {
   return render(<SteeringPage />, { wrapperOptions: { user: steerer } });
@@ -598,6 +677,148 @@ describe('SteeringPage', () => {
     expect(statuses).toContain(APPLY_ACCEPTED);
   });
 
+  /**
+   * The scope on the WIRE, which is the only place the exclusivity matters:
+   * the API answers 400 to two of `repository`, `project` and
+   * `allRepositories`, and this asserts the browser cannot produce that body
+   * however the picker is driven.
+   */
+  it('sends exactly one scope field, chosen from what exists', async () => {
+    const user = userEvent.setup();
+    serveScopes();
+    const bodies = captureProposals(proposalFixture());
+    renderPage();
+
+    await chooseScope(user, 'Project: Billing Platform');
+    await propose(user);
+    await screen.findByTestId('proposal-review');
+
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toEqual({
+      instruction: INSTRUCTION,
+      project: PROJECT_ID,
+    });
+    // No `repository`, no `allRepositories`, and no `project: undefined`
+    // either: an undefined key still serialises out of the body, but a reader
+    // of this assertion should be able to see the whole request.
+    expect(Object.keys(bodies[0]).sort()).toEqual(['instruction', 'project']);
+  });
+
+  it('reaches a repository in no project, which a project-only picker could not', async () => {
+    const user = userEvent.setup();
+    serveScopes();
+    const bodies = captureProposals(proposalFixture());
+    renderPage();
+
+    await chooseScope(user, 'No project (1)');
+    await propose(user);
+    await screen.findByTestId('proposal-review');
+
+    expect(bodies[0]).toEqual({ instruction: INSTRUCTION, project: 'none' });
+  });
+
+  it('makes the deployment-wide sweep something typed, not the default', async () => {
+    const user = userEvent.setup();
+    serveScopes();
+    const bodies = captureProposals(proposalFixture());
+    renderPage();
+
+    // Untouched: no scope field at all. ADR-0020 turned the absent field from
+    // "sweep everything" into "ambiguous-scope", so this is the narrow answer.
+    await propose(user);
+    await screen.findByTestId('proposal-review');
+    expect(bodies[0]).toEqual({ instruction: INSTRUCTION });
+
+    await chooseScope(user, 'Every observed repository');
+    await propose(user, 'hold #14');
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toEqual({
+      instruction: 'hold #14',
+      allRepositories: true,
+    });
+  });
+
+  /**
+   * `ambiguous-scope` and `empty-scope` are ADR-0020's two new reasons and get
+   * the SAME treatment as the five before them: an outcome in the unresolved
+   * list, never a failed send, with the API's own sentence rendered verbatim.
+   */
+  it('renders the two new unresolved reasons like every other one', async () => {
+    const user = userEvent.setup();
+    serveScopes();
+    serveProposal(
+      proposalFixture({
+        unresolved: [
+          {
+            reference: INSTRUCTION,
+            reason: 'ambiguous-scope',
+            detail:
+              '2 repositories are registered, so "everything else" could mean an issue in any of them.',
+          },
+          {
+            reference: INSTRUCTION,
+            reason: 'empty-scope',
+            detail:
+              'Billing Platform contains no observed repository, so there is nothing for "everything else" to reach.',
+          },
+        ],
+      }),
+    );
+    renderPage();
+
+    await propose(user);
+    await screen.findByTestId('proposal-review');
+
+    expect(
+      screen.getByText('2 references produced no operation'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`${INSTRUCTION} — ambiguous-scope`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`${INSTRUCTION} — empty-scope`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/could mean an issue in any of them/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/contains no observed repository/),
+    ).toBeInTheDocument();
+    // Still applicable. An unresolved reference is an observation, not a
+    // reason to refuse the operations that DID resolve.
+    expect(applyButton()).toBeEnabled();
+  });
+
+  /**
+   * "Propose again" has to ask the SAME question. Re-proposing a stale
+   * instruction unscoped would put the mis-scoping this issue removed from the
+   * input back through the retry button, where nobody would be looking for it.
+   */
+  it('keeps the scope when a stale proposal is proposed again', async () => {
+    const user = userEvent.setup();
+    serveScopes();
+    const bodies = captureProposals(proposalFixture());
+    serveApply(() => staleProposalResponse());
+    renderPage();
+
+    await chooseScope(user, 'acme/legacy');
+    await propose(user);
+    await screen.findByTestId('proposal-review');
+    await user.click(applyButton());
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: 'Propose this instruction again',
+      }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toEqual({
+      instruction: INSTRUCTION,
+      repository: 'acme/legacy',
+    });
+  });
+
   it('reports a refused propose without pretending anything was written', async () => {
     const user = userEvent.setup();
     server.use(
@@ -616,7 +837,7 @@ describe('SteeringPage', () => {
     await propose(user);
 
     expect(
-      await screen.findByText('That repository is not registered with Opifex'),
+      await screen.findByText('That scope is not something Opifex knows about'),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/opifex\/other is not registered with Opifex\./),
