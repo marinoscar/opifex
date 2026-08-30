@@ -22,7 +22,17 @@
 /** The only two labels steering may write. `STEERABLE_LABELS` in the API DTO. */
 export type SteerableLabel = 'factory:ready' | 'factory:hold';
 
-/** `unresolvedReasonSchema`. Every one is an outcome, never an error. */
+/**
+ * `unresolvedReasonSchema`. Every one is an outcome, never an error.
+ *
+ * `ambiguous-scope` and `empty-scope` are ADR-0020's (#459): the first is
+ * `ambiguous-repository` one field wider — an exclusive `ready` instruction
+ * with no scope over more than one registered repository is refused rather
+ * than swept across all of them — and the second is a scope that was stated
+ * and expands to no observed repository, reported apart from "nothing needed
+ * changing" because the two look identical in a proposal and call for
+ * completely different responses.
+ */
 export type UnresolvedReason =
   | 'issue-not-found'
   | 'issue-closed'
@@ -134,12 +144,34 @@ export interface SteeringProposal {
   unresolved: UnresolvedReference[];
 }
 
-export interface ProposeSteeringInput {
+/**
+ * Which repositories an instruction reaches, on the wire (ADR-0020, #459).
+ *
+ * Three fields and AT MOST ONE of them, because they are three answers to one
+ * question rather than three independent filters — the API answers 400 to two
+ * of them rather than inventing a precedence rule nobody would remember under
+ * an instruction whose destructive half touches issues they never named.
+ *
+ * The exclusivity is kept here as a UNION rather than as three optional
+ * fields, so a caller that has one cannot be holding two: `config/steeringScope.ts`
+ * turns an operator's choice into exactly one member, and there is no shape in
+ * between for a bug to live in.
+ */
+export type SteeringScopeRequest =
+  /** Nothing stated. A bare `#12` and an exclusive sweep both go unresolved
+   * when more than one repository is registered. */
+  | { repository?: never; project?: never; allRepositories?: never }
+  /** `owner/name`. Which repository a bare `#12` means, and the only one swept. */
+  | { repository: string; project?: never; allRepositories?: never }
+  /** A project uuid, or `'none'` for the repositories in no project at all. */
+  | { project: string; repository?: never; allRepositories?: never }
+  /** Every observed repository. `true` or absent — never `false`. */
+  | { allRepositories: true; repository?: never; project?: never };
+
+export type ProposeSteeringInput = {
   instruction: string;
-  /** `owner/name`. Which repository a bare `#12` means. */
-  repository?: string;
   maxDepth?: number;
-}
+} & SteeringScopeRequest;
 
 /**
  * One operation as apply takes it back.

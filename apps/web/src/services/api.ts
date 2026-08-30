@@ -1017,6 +1017,12 @@ export async function releaseWorkOrder(
  *
  * `200`, not `202` — nothing has been accepted for later, because nothing has
  * been asked for yet.
+ *
+ * **At most one of `repository`, `project` and `allRepositories`** (ADR-0020).
+ * They are three answers to one question — which repositories this instruction
+ * reaches — so the API answers 400 to two of them rather than carrying a
+ * precedence rule. `ProposeSteeringInput` makes that a union rather than three
+ * optional fields, so a caller here cannot compose the refused request at all.
  */
 export async function proposeSteering(
   input: ProposeSteeringInput,
