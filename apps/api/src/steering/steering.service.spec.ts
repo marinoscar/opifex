@@ -8,7 +8,7 @@ import type { NormalizedIssue } from '../github/read/github-read.types';
 import type { GitHubWriteService } from '../github/write/github-write.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
-import { applySteeringSchema } from './dto/steering.dto';
+import { applySteeringSchema, proposeSteeringSchema } from './dto/steering.dto';
 import { SteeringService } from './steering.service';
 
 /**
@@ -109,18 +109,35 @@ const CHAT_SETTINGS: Record<string, unknown> = {
 
 function harness(
   options: {
-    repositories?: { owner: string; name: string }[];
+    repositories?: {
+      owner: string;
+      name: string;
+      projectId?: string | null;
+    }[];
     settings?: Record<string, unknown>;
     writesEnabled?: boolean;
+    /**
+     * Whether `project.findUnique` finds a row for whatever id a test's
+     * `project` scope names. Defaults to true so a project-scope test does
+     * not have to configure it just to reach the interesting part of
+     * `resolveScope`; set false to exercise the 404 (`requireProject`).
+     */
+    projectExists?: boolean;
   } = {},
 ) {
   const auditCreate = jest.fn().mockResolvedValue({});
   const repositoryFindMany = jest
     .fn()
     .mockResolvedValue(options.repositories ?? REPOS);
+  const projectFindUnique = jest.fn();
+  projectFindUnique.mockImplementation(
+    async ({ where }: { where: { id: string } }) =>
+      options.projectExists === false ? null : { id: where.id },
+  );
 
   const { prisma, touched } = recordingPrisma({
     'repository.findMany': repositoryFindMany,
+    'project.findUnique': projectFindUnique,
     'auditEvent.create': auditCreate,
   });
 
@@ -164,6 +181,7 @@ function harness(
     service,
     touched,
     auditCreate,
+    projectFindUnique,
     getIssue,
     listIssues,
     resolveEpicChildren,
@@ -345,6 +363,218 @@ describe('SteeringService', () => {
       await h.service.propose({ instruction: 'work on #1' });
 
       expect(h.listIssues).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a stated scope (#459, ADR-0020)', () => {
+    it('sweeps the single registered repository when no scope is stated, unaffected by this change', async () => {
+      // The shortcut ADR-0020 deliberately preserves: with nothing for
+      // "everything else" to be ambiguous ABOUT, the sweep runs exactly as it
+      // always has, with no scope required.
+      const h = harness(); // default REPOS: exactly one repository
+      h.getIssue.mockImplementation(async (_repo, number: number) =>
+        issue(number),
+      );
+      h.listIssues.mockResolvedValue({
+        issues: [issue(9, { inputLabels: [INPUT_LABELS.READY] })],
+        truncated: false,
+        allFromCache: false,
+      });
+
+      const proposal = await h.service.propose({
+        instruction: 'only work on #1',
+      });
+
+      expect(proposal.unresolved).toEqual([]);
+      expect(proposal.scope.repositories).toEqual(['acme/app']);
+      expect(proposal.scope.candidatesConsidered).toBe(1);
+    });
+
+    it('reports ambiguous-scope and sweeps nothing over more than one registered repository', async () => {
+      // The bug ADR-0020 fixes: an exclusive `ready` instruction naming no
+      // scope used to take `registered.map(toRef)` silently. Now it is
+      // unresolved, the same refusal `repositoryFor` already gives a bare
+      // `#12` in this situation, one field wider.
+      const h = harness({
+        repositories: [
+          { owner: 'acme', name: 'app' },
+          { owner: 'acme', name: 'other' },
+        ],
+      });
+      h.getIssue.mockImplementation(async (_repo, number: number) =>
+        issue(number),
+      );
+
+      const proposal = await h.service.propose({
+        instruction: 'only work on acme/app#1',
+      });
+
+      expect(proposal.unresolved).toContainEqual(
+        expect.objectContaining({ reason: 'ambiguous-scope' }),
+      );
+      // Reported as swept: nothing, not "ten repositories were considered".
+      expect(proposal.scope.repositories).toEqual([]);
+      expect(proposal.scope.candidatesConsidered).toBe(0);
+      expect(h.listIssues).not.toHaveBeenCalled();
+      // The issue the operator named outright still resolves — the
+      // ambiguity is about "everything else", not about a named issue.
+      expect(proposal.operations.map((o) => o.ref)).toEqual(['acme/app#1']);
+    });
+
+    it('rejects a project id that names no project, as a 404 rather than an unresolved entry', async () => {
+      // The same line `requireRegistered` draws for `repository`: a request
+      // PARAMETER naming something Opifex does not know about is a caller
+      // mistake, not an observation about the backlog.
+      const h = harness({ projectExists: false });
+
+      await expect(
+        h.service.propose({
+          instruction: 'work on #1',
+          project: '11111111-2222-4333-8444-555555555555',
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('project "none" selects only the repositories in no project, and looks nothing up', async () => {
+      const h = harness({
+        repositories: [
+          { owner: 'acme', name: 'app', projectId: 'proj-1' },
+          { owner: 'acme', name: 'lib', projectId: null },
+        ],
+      });
+      h.listIssues.mockResolvedValue({
+        issues: [],
+        truncated: false,
+        allFromCache: false,
+      });
+
+      const proposal = await h.service.propose({
+        instruction: 'release everything else',
+        project: 'none',
+      });
+
+      expect(proposal.scope.repositories).toEqual(['acme/lib']);
+      expect(h.listIssues).toHaveBeenCalledTimes(1);
+      expect(h.listIssues).toHaveBeenCalledWith(
+        { owner: 'acme', name: 'lib' },
+        { state: 'open', labels: [INPUT_LABELS.READY] },
+      );
+      // 'none' names a state of `Repository`, not a row in `projects` — there
+      // is nothing to look up.
+      expect(h.touched).not.toContain('project.findUnique');
+    });
+
+    it("a real project id selects that project's repositories and none other", async () => {
+      // Specifically NOT `registered.map(toRef)` — the whole point of naming
+      // a project instead of `allRepositories: true`.
+      const h = harness({
+        repositories: [
+          { owner: 'acme', name: 'app', projectId: 'proj-1' },
+          { owner: 'acme', name: 'lib', projectId: null },
+        ],
+      });
+      h.listIssues.mockResolvedValue({
+        issues: [],
+        truncated: false,
+        allFromCache: false,
+      });
+
+      const proposal = await h.service.propose({
+        instruction: 'release everything else',
+        project: 'proj-1',
+      });
+
+      expect(proposal.scope.repositories).toEqual(['acme/app']);
+      expect(h.listIssues).toHaveBeenCalledTimes(1);
+      expect(h.listIssues).toHaveBeenCalledWith(
+        { owner: 'acme', name: 'app' },
+        { state: 'open', labels: [INPUT_LABELS.READY] },
+      );
+    });
+
+    it('reports empty-scope, not an empty sweep, when a project matches no observed repository', async () => {
+      const h = harness({
+        repositories: [{ owner: 'acme', name: 'app', projectId: 'proj-1' }],
+      });
+
+      const proposal = await h.service.propose({
+        instruction: 'release everything else',
+        project: 'proj-2',
+      });
+
+      expect(proposal.unresolved).toContainEqual(
+        expect.objectContaining({ reason: 'empty-scope' }),
+      );
+      expect(proposal.scope.repositories).toEqual([]);
+      expect(proposal.scope.candidatesConsidered).toBe(0);
+      expect(h.listIssues).not.toHaveBeenCalled();
+    });
+
+    it('reports empty-scope for a bare issue number when the scope resolves to nothing', async () => {
+      // The same `repositoryFor` refusal a no-repository deployment gives a
+      // bare number, but naming WHY there is nothing to resolve against: the
+      // stated scope, not an empty registry.
+      const h = harness({
+        repositories: [{ owner: 'acme', name: 'app', projectId: 'proj-1' }],
+      });
+
+      const proposal = await h.service.propose({
+        instruction: 'work on #1',
+        project: 'proj-2',
+      });
+
+      expect(proposal.unresolved[0]).toMatchObject({ reason: 'empty-scope' });
+      expect(h.getIssue).not.toHaveBeenCalled();
+    });
+
+    it('names the stated scope, not the whole registry, in an ambiguous-repository detail', async () => {
+      // #459's point 8: the reason is unchanged, but the wording now says
+      // what the operator actually stated when they stated something.
+      const h = harness({
+        repositories: [
+          { owner: 'acme', name: 'app', projectId: 'proj-1' },
+          { owner: 'acme', name: 'lib', projectId: 'proj-1' },
+          { owner: 'acme', name: 'unrelated', projectId: null },
+        ],
+      });
+
+      const proposal = await h.service.propose({
+        instruction: 'work on #1',
+        project: 'proj-1',
+      });
+
+      expect(proposal.unresolved[0]).toMatchObject({
+        reason: 'ambiguous-repository',
+      });
+      expect(proposal.unresolved[0].detail).toContain(
+        'Project `proj-1` covers 2 repositories',
+      );
+      expect(proposal.unresolved[0].detail).not.toContain(
+        '3 repositories are registered',
+      );
+      expect(h.getIssue).not.toHaveBeenCalled();
+    });
+
+    it('resolves a fully-qualified owner/name#12 against every registered repository, not the stated scope', async () => {
+      // #459's point 9: a scope constrains what an instruction reaches
+      // without being told. An issue written out in full was told.
+      const h = harness({
+        repositories: [
+          { owner: 'acme', name: 'app', projectId: 'proj-1' },
+          { owner: 'acme', name: 'other', projectId: null },
+        ],
+      });
+      h.getIssue.mockImplementation(async (_repo, number: number) =>
+        issue(number),
+      );
+
+      const proposal = await h.service.propose({
+        instruction: 'work on acme/other#5',
+        project: 'proj-1', // names only acme/app
+      });
+
+      expect(proposal.unresolved).toEqual([]);
+      expect(proposal.operations.map((o) => o.ref)).toEqual(['acme/other#5']);
     });
   });
 
@@ -649,6 +879,29 @@ describe('SteeringService', () => {
       // And specifically: no work order, no repository, no scope of any kind.
       expect(h.touched.join(',')).not.toContain('workOrder');
     });
+
+    it('grows the read side by exactly one entry when propose resolves a project scope', async () => {
+      // ADR-0020 Consequences: resolving a `project` scope adds a `Project`
+      // read, so the exact array above gains ONE entry. Loosening this to
+      // "no writes" would also pass if propose queried every table in the
+      // schema — the property worth pinning is that the read side is fully
+      // accounted for too, not merely that nothing was written.
+      const h = harness({
+        repositories: [{ owner: 'acme', name: 'app', projectId: 'proj-1' }],
+      });
+      h.listIssues.mockResolvedValue({
+        issues: [],
+        truncated: false,
+        allFromCache: false,
+      });
+
+      await h.service.propose({
+        instruction: 'release everything else',
+        project: 'proj-1',
+      });
+
+      expect(h.touched).toEqual(['repository.findMany', 'project.findUnique']);
+    });
   });
 
   describe('apply re-checks the labels it was proposed against', () => {
@@ -925,6 +1178,67 @@ describe('SteeringService', () => {
         writesEnabled: false,
         labelWritten: false,
       });
+    });
+  });
+
+  describe('proposeSteeringSchema accepts at most one scope (ADR-0020)', () => {
+    it('accepts an instruction with no scope field at all', () => {
+      const parsed = proposeSteeringSchema.safeParse({
+        instruction: 'work on #1',
+      });
+
+      expect(parsed.success).toBe(true);
+    });
+
+    it.each([
+      ['repository', { repository: 'acme/app' }],
+      ['project: none', { project: 'none' }],
+      ['project: uuid', { project: '11111111-2222-4333-8444-555555555555' }],
+      ['allRepositories', { allRepositories: true }],
+    ])('accepts exactly one scope (%s)', (_label, scope) => {
+      const parsed = proposeSteeringSchema.safeParse({
+        instruction: 'work on #1',
+        ...scope,
+      });
+
+      expect(parsed.success).toBe(true);
+    });
+
+    it.each([
+      ['repository + project', { repository: 'acme/app', project: 'none' }],
+      [
+        'repository + allRepositories',
+        { repository: 'acme/app', allRepositories: true },
+      ],
+      ['project + allRepositories', { project: 'none', allRepositories: true }],
+    ])(
+      'rejects two scopes sent together (%s), rather than inventing a precedence rule',
+      (_label, scope) => {
+        const parsed = proposeSteeringSchema.safeParse({
+          instruction: 'work on #1',
+          ...scope,
+        });
+
+        expect(parsed.success).toBe(false);
+      },
+    );
+
+    it('rejects allRepositories: false, so there is no falsy-but-present state', () => {
+      const parsed = proposeSteeringSchema.safeParse({
+        instruction: 'work on #1',
+        allRepositories: false,
+      });
+
+      expect(parsed.success).toBe(false);
+    });
+
+    it('rejects a project value that is neither a uuid nor "none"', () => {
+      const parsed = proposeSteeringSchema.safeParse({
+        instruction: 'work on #1',
+        project: 'acme-repos',
+      });
+
+      expect(parsed.success).toBe(false);
     });
   });
 

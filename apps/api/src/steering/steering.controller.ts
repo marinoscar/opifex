@@ -71,6 +71,12 @@ export class SteeringController {
       'An instruction naming explicit issue numbers is parsed in code and invokes no model at ' +
       'all; when the parser cannot read the instruction the response says so under ' +
       '`interpretation`, including whether a model could have answered and why none was asked. ' +
+      'Scope the instruction with AT MOST ONE of `repository`, `project` (a project id, or ' +
+      '`none` for the repositories in no project) and `allRepositories: true`; sending two is a ' +
+      '400, because they are three answers to one question rather than three filters. An ' +
+      'exclusive instruction — "only work on these, hold everything else" — needs one of them ' +
+      'when more than one repository is registered, or its destructive half is reported as ' +
+      '`ambiguous-scope` and nothing is swept. A scope is expanded here and stored nowhere. ' +
       'Apply the result with POST /api/steering/proposals/apply, which carries the proposal ' +
       'back: nothing about it is stored, because scope lives in GitHub labels and nowhere else.',
   })
@@ -79,7 +85,11 @@ export class SteeringController {
   })
   @ApiResponse({
     status: 404,
-    description: 'The named repository is not registered with Opifex',
+    description:
+      'The `repository` is not registered with Opifex, or the `project` does not exist. ' +
+      'A request parameter naming something Opifex does not know about is a caller mistake; ' +
+      'a reference INSIDE the instruction that cannot be resolved is reported under ' +
+      '`unresolved` with a reason instead.',
   })
   async propose(@Body() dto: ProposeSteeringDto) {
     return this.steering.propose(dto);

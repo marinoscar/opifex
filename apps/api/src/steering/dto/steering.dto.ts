@@ -61,35 +61,86 @@ export const repositorySlugSchema = z
 // Propose
 // ---------------------------------------------------------------------------
 
-export const proposeSteeringSchema = z.object({
-  /**
-   * What the operator said, verbatim.
-   *
-   * Bounded at 2000 characters because it is echoed into the proposal, into
-   * the audit row and — when one is eventually asked — into a model prompt.
-   * An unbounded instruction is an unbounded audit row.
-   */
-  instruction: z.string().trim().min(1).max(2000),
-  /**
-   * Which repository a bare `#12` means, and the only one swept for
-   * "everything else".
-   *
-   * Optional. Omitted, a bare number resolves against the single registered
-   * repository when there is exactly one, and is reported as
-   * `ambiguous-repository` when there is more than one — guessing would write
-   * labels to an issue in a repository the operator was not thinking about.
-   */
-  repository: repositorySlugSchema.optional(),
-  /**
-   * How many levels of an epic to walk. Defaults to 1 in `EpicChildrenService`.
-   *
-   * That default is argued there and is not restated: "everything under this"
-   * and "the issues directly listed here" are different instructions, and a
-   * transitive walk that silently pulled in a nested epic's children would
-   * widen a destructive action beyond what was asked for.
-   */
-  maxDepth: z.coerce.number().int().min(1).max(MAX_EPIC_DEPTH).optional(),
-});
+/**
+ * The three ways to name a scope, and why sending two is a 400.
+ *
+ * `repository`, `project` and `allRepositories` are three answers to one
+ * question — which repositories this instruction reaches — so accepting two at
+ * once would mean inventing a precedence rule, documenting it, and hoping the
+ * operator remembers it under an instruction whose destructive half touches
+ * issues they never named (ADR-0020). Refusing the combination outright costs
+ * a caller one retry and removes the rule entirely.
+ */
+export const proposeSteeringSchema = z
+  .object({
+    /**
+     * What the operator said, verbatim.
+     *
+     * Bounded at 2000 characters because it is echoed into the proposal, into
+     * the audit row and — when one is eventually asked — into a model prompt.
+     * An unbounded instruction is an unbounded audit row.
+     */
+    instruction: z.string().trim().min(1).max(2000),
+    /**
+     * Which repository a bare `#12` means, and the only one swept for
+     * "everything else".
+     *
+     * Optional. Omitted, a bare number resolves against the single registered
+     * repository when there is exactly one, and is reported as
+     * `ambiguous-repository` when there is more than one — guessing would write
+     * labels to an issue in a repository the operator was not thinking about.
+     */
+    repository: repositorySlugSchema.optional(),
+    /**
+     * Which project's observed repositories the instruction reaches — or
+     * `none` for the ones in no project at all.
+     *
+     * `none` is a member of this field rather than a separate `unassigned`
+     * flag because unassigned is an ANSWER to "which project", not a different
+     * question, matching `listRepositoriesQuerySchema`'s idiom for the same
+     * concept. It is not an edge case either: `Project` is "an organisational
+     * convenience, not a tenancy boundary" (`schema.prisma`), so every
+     * repository registered before #404 is unassigned, and a scope model
+     * offering only real projects would reach nothing on such a deployment.
+     *
+     * It EXPANDS to a concrete repository set inside `propose`, at request
+     * time, and is stored nowhere. A stored scope would be a second expression
+     * of an intent the `factory:` labels already carry, and `apply` would have
+     * two answers to arbitrate between the first time somebody edited GitHub
+     * directly — the two-sources-of-truth bug this file's header refuses.
+     */
+    project: z.union([z.uuid(), z.literal('none')]).optional(),
+    /**
+     * Sweep every observed repository. The deployment-wide scope, stated.
+     *
+     * `true` or absent, never `false`, so there is no falsy-but-present state
+     * for a caller or a reader to reason about. It exists because "everything
+     * we observe" is a legitimate thing to want and, since ADR-0020, no longer
+     * the meaning of an absent field: an exclusive `ready` instruction with no
+     * scope over more than one registered repository is reported as
+     * `ambiguous-scope` rather than swept.
+     */
+    allRepositories: z.literal(true).optional(),
+    /**
+     * How many levels of an epic to walk. Defaults to 1 in `EpicChildrenService`.
+     *
+     * That default is argued there and is not restated: "everything under this"
+     * and "the issues directly listed here" are different instructions, and a
+     * transitive walk that silently pulled in a nested epic's children would
+     * widen a destructive action beyond what was asked for.
+     */
+    maxDepth: z.coerce.number().int().min(1).max(MAX_EPIC_DEPTH).optional(),
+  })
+  .refine(
+    (value) =>
+      [value.repository, value.project, value.allRepositories].filter(
+        (supplied) => supplied !== undefined,
+      ).length <= 1,
+    {
+      message:
+        'Send at most one of `repository`, `project` and `allRepositories`: they are three ways of answering which repositories this instruction reaches, not three independent filters.',
+    },
+  );
 
 export class ProposeSteeringDto extends createZodDto(proposeSteeringSchema) {}
 
@@ -113,6 +164,27 @@ export const unresolvedReasonSchema = z.enum([
   'repository-not-registered',
   /** A bare `#12` with more than one registered repository to mean. */
   'ambiguous-repository',
+  /**
+   * An exclusive `ready` instruction with no scope, over more than one
+   * registered repository.
+   *
+   * The same refusal as `ambiguous-repository`, one field wider: "hold
+   * everything else" with nothing said about where would apply its
+   * destructive half across every repository Opifex observes, on a single
+   * missing field (ADR-0020). A deployment with exactly one registered
+   * repository never sees this — there is nothing for "everything else" to be
+   * ambiguous about.
+   */
+  'ambiguous-scope',
+  /**
+   * The scope was stated and expands to no observed repository.
+   *
+   * Reported distinctly rather than sweeping nothing and returning an empty
+   * diff, because "the project you named has no observed repositories" and
+   * "nothing in scope needed changing" look identical in a proposal and call
+   * for completely different responses.
+   */
+  'empty-scope',
   /** The epic resolved, but this child could not be read. */
   'unreadable',
   /** The parser did not understand, and no model was asked. See `interpretation`. */
