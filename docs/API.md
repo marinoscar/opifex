@@ -2049,11 +2049,67 @@ confirmed with `POST /api/steering/proposals/apply` below.
 }
 ```
 
-| Field         | Type   | Required | Notes                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `instruction` | string | yes      | 1–2000 characters, the operator's sentence verbatim. Echoed into the response and, on apply, into the `audit_events` row.                                                                                                                                                                                                                                                                                    |
-| `repository`  | string | no       | `owner/name`. Resolves a bare `#12`, and bounds which repositories are swept for "everything else" when the instruction is exclusive. Omitted, a bare number resolves against the single registered repository, or is reported `ambiguous-repository` when more than one is registered — guessing which repository a bare number means is exactly the harm `unresolved` exists to report instead of causing. |
-| `maxDepth`    | number | no       | How many levels of an epic to walk, when the instruction names one. Defaults inside `EpicChildrenService` (currently 1) — "everything under this" and "the issues directly listed here" are different instructions, and a transitive walk would silently widen a destructive action beyond what was asked for.                                                                                               |
+| Field             | Type    | Required | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `instruction`     | string  | yes      | 1–2000 characters, the operator's sentence verbatim. Echoed into the response and, on apply, into the `audit_events` row.                                                                                                                                                                                                                                                                                                                                                                   |
+| `repository`      | string  | no       | `owner/name`. Resolves a bare `#12`, and bounds which repositories are swept for "everything else" when the instruction is exclusive. Omitted, a bare number resolves against the single registered repository, or is reported `ambiguous-repository` when more than one is registered — guessing which repository a bare number means is exactly the harm `unresolved` exists to report instead of causing. Mutually exclusive with `project` and `allRepositories` — see **Scope** below. |
+| `project`         | string  | no       | A project uuid, or the literal `'none'` for the repositories in no project. Mutually exclusive with `repository` and `allRepositories`. See **Scope** below.                                                                                                                                                                                                                                                                                                                                |
+| `allRepositories` | boolean | no       | `true` to scope the instruction to every repository Opifex observes. `true` or absent — never `false`. Mutually exclusive with `repository` and `project`. See **Scope** below.                                                                                                                                                                                                                                                                                                             |
+| `maxDepth`        | number  | no       | How many levels of an epic to walk, when the instruction names one. Defaults inside `EpicChildrenService` (currently 1) — "everything under this" and "the issues directly listed here" are different instructions, and a transitive walk would silently widen a destructive action beyond what was asked for.                                                                                                                                                                              |
+
+**Scope: one answer to one question, not three filters
+([ADR-0020](adr/0020-exclusive-instruction-names-what-it-sweeps.md)).**
+`repository`, `project`, and `allRepositories` are three ways of answering
+"which repositories does this instruction apply to" — sending more than one
+is a `400`, not a precedence rule to learn:
+
+| Scope             | Expands to                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repository`      | That one repository. An `owner/name` Opifex does not observe is a `404` — unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `project`         | Every observed repository in that project, or, for the literal `'none'`, every observed repository in **no** project. `'none'` is a member of this field rather than a separate `unassigned` flag, the same idiom `listRepositoriesQuerySchema` already uses for the identical concept (`apps/api/src/repositories/dto/repository.dto.ts:144-167`) — unassigned is an **answer** to "which project," not a different question. A uuid naming no existing project is a `404`, the same shape an unregistered `repository` already gets: a request parameter naming something Opifex does not know about is a caller mistake, not an observation about the backlog. |
+| `allRepositories` | Every repository Opifex observes. The explicit, deployment-wide choice — it reproduces exactly what an absent scope used to do by default.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| _(none supplied)_ | Unaffected on a deployment with exactly one registered repository — the sweep resolves against it with no scope required, the same shortcut a bare `#12` already gets. On more than one registered repository, an exclusive `ready` instruction ("only work on these, hold everything else") with no scope is reported `ambiguous-scope` and sweeps nothing — see `unresolved` below. **This is a behaviour change**: the identical instruction used to silently sweep every registered repository.                                                                                                                                                               |
+
+Whichever scope was named — or none — the concrete repository set it
+resolved to is always reported back, never left implicit: `scope.repositories`
+in the response below.
+
+**Nothing about the chosen scope is persisted.** It is expanded to a concrete
+repository set inside `propose`, at request time, and carried on the wire in
+the returned proposal exactly the way `scope.repositories` already was —
+never written to a table `apply` or the dispatcher would later consult. This
+is the same commitment the DTO's own header states for the rest of the
+proposal (`apps/api/src/steering/dto/steering.dto.ts:10-26`: "There is no
+scope object... epic #419's [commitment is] that the chat is a translator and
+not a controller. A `scope` table the dispatcher consulted would make labels
+and that table two expressions of the same intent, leaving the reconciler to
+arbitrate between them"), and the general argument
+[ADR-0018 §1](adr/0018-operator-settings-resolution-and-ceilings.md) makes
+about a managed setting read from two places: two things that can answer the
+same question independently eventually answer it differently. A stored scope
+would leave `apply` arbitrating between it and whatever labels are actually
+on the issue by the time apply runs — exactly what `observedInputLabels`
+(below) exists so `apply` never has to do.
+
+**A project is an organisational convenience, not a tenancy boundary**
+(`schema.prisma:341-344` — VISION §11's single-operator premise is why).
+`Repository.projectId` is nullable, and every repository registered before
+projects existed (#404) is unassigned. A scope model that accepted only a
+project as a unit would reach nothing on such a deployment, so the unassigned
+bucket (`project: 'none'`) is one of the four accepted scopes, not an edge
+case of the project scope.
+
+**This endpoint reads `Project` and `Repository` rows under `workorders:write`
+alone, without also requiring `projects:read` — deliberately.** The project
+screen (`GET/POST /api/projects`) is gated on `projects:read`
+(`projects.controller.ts:48`), so a role can legitimately hold one permission
+and not the other. Tightening this route to also require `PROJECTS_READ`
+would be an all-of change that could break a role already trusted with
+`workorders:write` alone; the `project` scope is a filter over rows the
+operator already steers by name, not a new read surface into project data
+that role could not otherwise reach. See
+[ADR-0020's Consequences](adr/0020-exclusive-instruction-names-what-it-sweeps.md#consequences)
+for the full argument.
 
 **The instruction is parsed in code, not by a model, whenever it can be
 (#425).** Explicit issue references (`#412`, `owner/name#412`), epic
@@ -2161,16 +2217,29 @@ back `false` even though the sentence contains the word "only".
 }
 ```
 
-| Field                              | Meaning                                                                                                                                                                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `expiresAt`                        | `proposedAt` + 30 minutes. `POST /api/steering/proposals/apply` refuses this proposal past this instant — see below.                                                                                                        |
-| `operations[].add` / `.remove`     | Carried separately, never folded together, because removals are the destructive half of the diff and #425 requires they be at least as visible as additions.                                                                |
-| `operations[].observedInputLabels` | The recognised `factory:` labels on the issue at propose time — the baseline apply re-checks against. Carried on the wire, never stored, so nothing server-side becomes a second source of truth for GitHub's own labels.   |
-| `operations[].named`               | `true` for an issue the operator actually named; `false` for one caught by an "only" sweep — the 17 collateral issues an "only" clause touches are not what the operator was thinking about when they typed the sentence.   |
-| `blastRadius.destructive`          | `true` when anything anywhere in the diff is removed. Render the confirmation warning off this field, not off the presence of a non-empty `remove` array.                                                                   |
-| `unresolved[].reason`              | One of `issue-not-found`, `issue-closed`, `is-pull-request`, `repository-not-registered`, `ambiguous-repository`, `unreadable`, `needs-interpretation` — an outcome an operator can read and act on, never a request error. |
+| Field                              | Meaning                                                                                                                                                                                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `expiresAt`                        | `proposedAt` + 30 minutes. `POST /api/steering/proposals/apply` refuses this proposal past this instant — see below.                                                                                                                                          |
+| `operations[].add` / `.remove`     | Carried separately, never folded together, because removals are the destructive half of the diff and #425 requires they be at least as visible as additions.                                                                                                  |
+| `operations[].observedInputLabels` | The recognised `factory:` labels on the issue at propose time — the baseline apply re-checks against. Carried on the wire, never stored, so nothing server-side becomes a second source of truth for GitHub's own labels.                                     |
+| `operations[].named`               | `true` for an issue the operator actually named; `false` for one caught by an "only" sweep — the 17 collateral issues an "only" clause touches are not what the operator was thinking about when they typed the sentence.                                     |
+| `blastRadius.destructive`          | `true` when anything anywhere in the diff is removed. Render the confirmation warning off this field, not off the presence of a non-empty `remove` array.                                                                                                     |
+| `unresolved[].reason`              | One of `issue-not-found`, `issue-closed`, `is-pull-request`, `repository-not-registered`, `ambiguous-repository`, `ambiguous-scope`, `empty-scope`, `unreadable`, `needs-interpretation` — an outcome an operator can read and act on, never a request error. |
 
-**`404`** if `repository` names a repository Opifex does not observe.
+`ambiguous-scope` and `empty-scope` are the two reasons the **Scope** section
+above introduces:
+
+- **`ambiguous-scope`** — an exclusive `ready` instruction, more than one
+  registered repository, and no `repository`/`project`/`allRepositories`
+  supplied. `scope.repositories` comes back empty; nothing is swept.
+- **`empty-scope`** — a scope was stated (typically `project`) and expanded
+  to zero observed repositories. Reported distinctly from a sweep that simply
+  found nothing to change, because "the project you named has no observed
+  repositories" and "nothing in scope needed changing" look identical in a
+  proposal otherwise, and call for opposite responses from the operator.
+
+**`404`** if `repository` names a repository Opifex does not observe, or
+`project` names a project that does not exist.
 
 ---
 

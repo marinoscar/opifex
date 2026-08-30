@@ -427,6 +427,19 @@ proposal is returned to the caller and handed back on apply, never persisted
 server-side. See [`docs/API.md`](API.md) for the full request/response
 shapes.
 
+**An exclusive `ready` instruction states what it sweeps
+([ADR-0020](adr/0020-exclusive-instruction-names-what-it-sweeps.md)).**
+`propose` accepts at most one of `repository`, `project` (a project uuid, or
+`'none'` for repositories in no project) and `allRepositories: true` — three
+fields naming four scopes, one answer to "which repositories," never stored,
+always expanded to a concrete set inside the request and reported back on the
+proposal as `scope.repositories`. On more than one registered repository, an exclusive
+`ready` instruction with none of the three stated is reported
+`ambiguous-scope` and sweeps nothing, in place of the silent
+every-registered-repository sweep this endpoint shipped with at #425; a
+single-repository deployment is unaffected, for the same reason a bare `#12`
+already resolves against it with no scope at all.
+
 The frontend cockpit consuming these lives at `apps/web/src/pages/`:
 `DashboardPage`, `ProjectsPage`, `QueuePage`, `RunsPage`, `RunDetailPage`,
 `WorkOrderDetailPage`, `CostPage`, `ApprovalsPage`/`ApprovalDetailPage`,
