@@ -29,6 +29,8 @@ export type UnresolvedReason =
   | 'is-pull-request'
   | 'repository-not-registered'
   | 'ambiguous-repository'
+  | 'ambiguous-scope'
+  | 'empty-scope'
   | 'unreadable'
   | 'needs-interpretation';
 
