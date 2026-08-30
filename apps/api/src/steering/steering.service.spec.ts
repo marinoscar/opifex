@@ -464,7 +464,7 @@ describe('SteeringService', () => {
       expect(h.touched).not.toContain('project.findUnique');
     });
 
-    it('a real project id selects that project\'s repositories and none other', async () => {
+    it("a real project id selects that project's repositories and none other", async () => {
       // Specifically NOT `registered.map(toRef)` — the whole point of naming
       // a project instead of `allRepositories: true`.
       const h = harness({
