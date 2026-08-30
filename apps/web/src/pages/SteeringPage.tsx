@@ -22,6 +22,14 @@
  * purpose, because a stored scope and the labels would be two expressions of
  * the same intent for the reconciler to arbitrate between.
  *
+ * ## It can be opened already scoped, and the URL is what carries that (#461)
+ *
+ * `/steering?scope=project:<uuid>` opens with that project chosen in the
+ * picker. The project screen builds those links; nothing is shared between the
+ * two screens except the address, so there is no second copy of "which
+ * project" for either of them to be wrong about. A bare `/steering` opens with
+ * nothing chosen, exactly as it always has.
+ *
  * ## The transcript keeps what failed
  *
  * Turns are appended, never replaced. A stale proposal, a refused apply and a
@@ -41,11 +49,13 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
+import { useSearchParams } from 'react-router-dom';
 
 import { ApplyReport } from '../components/steering/ApplyReport';
 import { InstructionComposer } from '../components/steering/InstructionComposer';
 import { ProposalReview } from '../components/steering/ProposalReview';
 import { applyRefusal, proposeRefusal } from '../config/steeringChat';
+import { scopeIdFromParams } from '../config/steeringLink';
 import { useSteering, type SteeringTurn } from '../hooks/useSteering';
 import type {
   SteeringOperation,
@@ -55,6 +65,10 @@ import type {
 export default function SteeringPage() {
   const { turns, pending, isProposing, isApplying, propose, apply, discard } =
     useSteering();
+  const [searchParams] = useSearchParams();
+  // Read here and handed down as a seed. The composer holds the selection from
+  // then on — see its header for why the URL is not rewritten as it changes.
+  const initialScopeId = scopeIdFromParams(searchParams);
 
   return (
     <Container maxWidth="md" sx={{ py: 3 }}>
@@ -114,7 +128,11 @@ export default function SteeringPage() {
         )}
       </Stack>
 
-      <InstructionComposer disabled={isProposing} onPropose={propose} />
+      <InstructionComposer
+        disabled={isProposing}
+        initialScopeId={initialScopeId}
+        onPropose={propose}
+      />
     </Container>
   );
 }
