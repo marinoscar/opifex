@@ -73,8 +73,10 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
+import ForumIcon from '@mui/icons-material/Forum';
 import HelpIcon from '@mui/icons-material/HelpOutlineOutlined';
 import LabelIcon from '@mui/icons-material/LabelOutlined';
 import ScienceIcon from '@mui/icons-material/Science';
@@ -169,6 +171,19 @@ export interface RepositoryLadderCardProps {
   onUnretire?: () => Promise<void>;
   /** Open the move dialog. Absent when this build offers no move here. */
   onMove?: () => void;
+  /**
+   * Where to steer THIS repository (#461), or absent to offer nothing.
+   *
+   * A link and not a callback, so it can be opened in a new tab and read
+   * before it is followed — the address states the scope, which is the one
+   * thing worth checking before writing labels to somebody else's backlog.
+   *
+   * Absent covers two different refusals and deliberately looks the same for
+   * both: an account without `workorders:write`, and a repository steering
+   * cannot reach because it is retired or unobserved. The panel decides; a
+   * card that worked either out itself would be a second copy of both rules.
+   */
+  steerHref?: string;
 }
 
 function stateOf(repository: RepositorySummary): LadderState {
@@ -198,6 +213,7 @@ export function RepositoryLadderCard({
   onRemove,
   onUnretire,
   onMove,
+  steerHref,
 }: RepositoryLadderCardProps) {
   const stored = stateOf(repository);
   const storedCeiling = repository.budgetCeilingUsd;
@@ -559,6 +575,20 @@ export function RepositoryLadderCard({
           Reset
         </Button>
         <Box sx={{ flexGrow: 1 }} />
+        {/* Not `disabled`-gated with the rest: steering needs
+            `workorders:write` and nothing on this card, so an account that may
+            steer but not edit the ladder still gets a working link — and a
+            save in flight is no reason to withhold a navigation. */}
+        {steerHref !== undefined && (
+          <Button
+            size="small"
+            startIcon={<ForumIcon />}
+            component={RouterLink}
+            to={steerHref}
+          >
+            Steer…
+          </Button>
+        )}
         {onMove !== undefined && (
           <Button size="small" onClick={onMove} disabled={disabled}>
             Move…
