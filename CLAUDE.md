@@ -342,6 +342,14 @@ cd apps/api && npm run prisma:migrate
 - **API Reference (Scalar)**: http://localhost:3535/api/docs
 - **Uptrace**: http://localhost:14318 (when otel stack running)
 
+3535 is the default nginx host port, not a fixed one — it comes from
+`NGINX_PORT` in `infra/compose/.env` (see `infra/compose/.env.example`), so a
+given deployment can publish it elsewhere (the dev.marin.cr VPS sets
+`NGINX_PORT=8328`, its slot in that host's nginx `map $host $backend_port`
+block). If `localhost:3535` doesn't respond, check `NGINX_PORT` before
+assuming something is broken. See `docs/ssl-nginx-setup.md` for the full
+picture.
+
 ## API Endpoints (MVP)
 
 ### Authentication
