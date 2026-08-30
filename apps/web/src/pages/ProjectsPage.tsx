@@ -30,6 +30,23 @@
  * view rather than a disabled one, and the API refuses the writes regardless
  * of what is on screen.
  *
+ * ## Which group is open lives in the URL (#461)
+ *
+ * `/projects?project=<uuid>`, or a bare `/projects` for the unassigned bucket.
+ * It used to be `useState` here, which meant the selection did not survive a
+ * reload, could not be linked to, and could not be handed to another screen —
+ * and handing it to `/steering` is exactly what this page now has to do. The
+ * parameter takes the same values `GET /repositories?projectId=` takes, so
+ * there is no third spelling of "unassigned" between the address bar, the
+ * screen and the request.
+ *
+ * The alternative was a `/projects/:id` route. It was rejected because the
+ * unassigned bucket has no id: the route would have needed a sentinel segment
+ * for the one selection every deployment lands on, and `?project=none` already
+ * has a meaning here that the API itself defines. A query parameter also keeps
+ * `/projects` as the single owned prefix in `config/destinations.ts`, so the
+ * rail highlights the same row whatever is selected.
+ *
  * ## The project row and the repository panel share one truth about counts
  *
  * A repository moving in or out changes a project's `repositoryCount`, and the
@@ -47,16 +64,21 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import TuneIcon from '@mui/icons-material/Tune';
 
 import { DeleteProjectDialog } from '../components/projects/DeleteProjectDialog';
 import { ProjectFormDialog } from '../components/projects/ProjectFormDialog';
 import { ProjectList } from '../components/projects/ProjectList';
 import { ProjectRepositoriesPanel } from '../components/projects/ProjectRepositoriesPanel';
+import { STEERING_PERMISSION } from '../config/steeringLink';
 import { usePermissions } from '../hooks/usePermissions';
 import { useProjects } from '../hooks/useProjects';
-import type { Project, ProjectScope } from '../types/projects';
+import {
+  scopeFromQueryValue,
+  type Project,
+  type ProjectScope,
+} from '../types/projects';
 
 /** The permission `ProjectsController` and `RepositoriesController` enforce. */
 const WRITE_PERMISSION = 'projects:write';
@@ -74,19 +96,22 @@ const CONTROL_CENTER_PERMISSION = 'system_settings:read';
 const CONTROL_CENTER_PATH = '/admin/settings';
 
 /**
- * Which group is open.
+ * The query parameter carrying which group is open. See the header.
  *
- * A project is held as the OBJECT rather than as an id, so the header keeps
- * its name and slug when a search filters the row out of the list beside it.
- * Re-seeded during render from a freshly loaded row — the same render-time
- * reseed `RepositoryLadderCard` uses — so a rename shows up in the header
- * without an effect that would paint the stale name for a frame first.
+ * Absent, or `none`, is the unassigned bucket. Anything else is a project id.
  */
-type Selection = { kind: 'unassigned' } | { kind: 'project'; project: Project };
+const PROJECT_PARAM = 'project';
 
 export default function ProjectsPage() {
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission(WRITE_PERMISSION);
+  // `workorders:write`, read off the destination registry — NOT `projects:read`
+  // and not `projects:write`. Steering is a different right from managing
+  // repositories, and an account can legitimately reach this page holding
+  // neither. Where it is false the steering entry points are not rendered at
+  // all: a disabled button, or one that 403s when pressed, would advertise a
+  // capability this account does not have.
+  const canSteer = hasPermission(STEERING_PERMISSION);
   const projectsResult = useProjects();
   const {
     projects,
@@ -103,39 +128,45 @@ export default function ProjectsPage() {
     adjustRepositoryCount,
   } = projectsResult;
 
-  const [selection, setSelection] = useState<Selection>({ kind: 'unassigned' });
+  const [searchParams, setSearchParams] = useSearchParams();
+  const scope = scopeFromQueryValue(searchParams.get(PROJECT_PARAM));
+
   const [searchDraft, setSearchDraft] = useState(search);
   /** Open with a project to edit it, with null to create one, closed when undefined. */
   const [form, setForm] = useState<{ project: Project | null } | null>(null);
   const [deleting, setDeleting] = useState<Project | null>(null);
 
-  // Re-seed the held project from the freshly loaded list. Identity, not deep
-  // equality: `useProjects` replaces the row object on every read and on every
-  // update, so a changed object IS a changed row, and an unchanged one costs
-  // nothing.
-  if (selection.kind === 'project') {
-    const fresh = projects.find(
-      (candidate) => candidate.id === selection.project.id,
-    );
-    if (fresh !== undefined && fresh !== selection.project) {
-      setSelection({ kind: 'project', project: fresh });
-    }
+  // The URL says WHICH project; the list is where its name and slug come from.
+  // The last row seen for the open id is kept so a search that filters that row
+  // out of the list beside the panel does not blank the header over it — and
+  // it is dropped the moment the open id changes, so a name never outlives the
+  // selection it described. This is a cache of a loaded row, not a second
+  // record of the selection: nothing outside this page reads it.
+  const [named, setNamed] = useState<Project | null>(null);
+  const openProjectId = scope.kind === 'project' ? scope.id : null;
+  const loaded =
+    openProjectId === null
+      ? null
+      : (projects.find((candidate) => candidate.id === openProjectId) ?? null);
+  const selectedProject =
+    loaded ?? (named !== null && named.id === openProjectId ? named : null);
+  // Identity, not deep equality: `useProjects` replaces the row object on every
+  // read and on every update, so a changed object IS a changed row, and a
+  // rename reaches the header without an effect that would paint the stale
+  // name for a frame first.
+  if (selectedProject !== named) {
+    setNamed(selectedProject);
   }
 
-  const scope: ProjectScope =
-    selection.kind === 'unassigned'
-      ? { kind: 'unassigned' }
-      : { kind: 'project', id: selection.project.id };
-  const selectedProject =
-    selection.kind === 'project' ? selection.project : null;
-
   const select = (next: ProjectScope) => {
-    if (next.kind === 'unassigned') {
-      setSelection({ kind: 'unassigned' });
-      return;
-    }
-    const project = projects.find((candidate) => candidate.id === next.id);
-    if (project !== undefined) setSelection({ kind: 'project', project });
+    setSearchParams((previous) => {
+      const params = new URLSearchParams(previous);
+      // Cleared rather than written as `none`: a bare `/projects` is the
+      // canonical unassigned view and the address the rail already points at.
+      if (next.kind === 'unassigned') params.delete(PROJECT_PARAM);
+      else params.set(PROJECT_PARAM, next.id);
+      return params;
+    });
   };
 
   return (
@@ -203,7 +234,9 @@ export default function ProjectsPage() {
             key={scope.kind === 'unassigned' ? 'unassigned' : scope.id}
             scope={scope}
             project={selectedProject}
+            isProjectLoading={loaded === null && isLoading}
             canWrite={canWrite}
+            canSteer={canSteer}
             onEditProject={() =>
               selectedProject !== null && setForm({ project: selectedProject })
             }
@@ -224,10 +257,11 @@ export default function ProjectsPage() {
               const created = await create(input);
               // Open what was just made. Creating a project and being left on
               // the previous selection would make the operator hunt for it.
-              setSelection({ kind: 'project', project: created });
+              select({ kind: 'project', id: created.id });
             } else {
-              const updated = await update(form.project.id, input);
-              setSelection({ kind: 'project', project: updated });
+              // No navigation: the id has not changed, and the renamed row
+              // arrives through the list the header reads its name from.
+              await update(form.project.id, input);
             }
           }}
         />
@@ -242,7 +276,7 @@ export default function ProjectsPage() {
             // Its repositories are now unassigned, which is exactly where the
             // operator should be looking — and the project they were in no
             // longer exists to be selected.
-            setSelection({ kind: 'unassigned' });
+            select({ kind: 'unassigned' });
           }}
         />
       )}

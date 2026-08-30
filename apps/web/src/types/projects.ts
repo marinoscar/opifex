@@ -80,3 +80,24 @@ export type ProjectScope =
 export function scopeQueryValue(scope: ProjectScope): string {
   return scope.kind === 'unassigned' ? 'none' : scope.id;
 }
+
+/**
+ * The scope a `?project=` query value names — the inverse of the above (#461).
+ *
+ * Deliberately the SAME vocabulary the API's filter takes, so `/projects` and
+ * `GET /repositories?projectId=` are read the same way and there is no third
+ * spelling of "unassigned" to keep in step. An ABSENT parameter is unassigned
+ * too, because the bare `/projects` the navigation rail points at is the
+ * bucket every repository registered before #404 is in, and that has been the
+ * screen's landing state since it shipped.
+ *
+ * Anything else is taken as a project id and passed to the API rather than
+ * checked against the loaded list first: the list is paginated and searchable,
+ * so "not on this page" and "does not exist" are different facts and only the
+ * API can tell them apart.
+ */
+export function scopeFromQueryValue(value: string | null): ProjectScope {
+  return value === null || value === 'none'
+    ? { kind: 'unassigned' }
+    : { kind: 'project', id: value };
+}

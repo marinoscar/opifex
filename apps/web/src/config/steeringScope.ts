@@ -81,6 +81,32 @@ export interface ScopeCatalogue {
 /** The option an unset picker holds. Selected on mount, and re-selectable. */
 export const UNSCOPED_ID = 'unscoped';
 
+/**
+ * The ids below are a CONTRACT, not an implementation detail (#461).
+ *
+ * Since the project screen links to `/steering?scope=<id>`, an option id is
+ * something a browser address bar holds and an operator can bookmark. The two
+ * builders exist so the catalogue and every link into it are formatted in one
+ * place: an id spelled one way here and another way at the link site resolves
+ * to `UNSCOPED` through `findScope`, which is the worst available failure —
+ * the picker would open on "No scope chosen" and look like it had simply not
+ * been told anything.
+ */
+export const ALL_REPOSITORIES_ID = 'all-repositories';
+
+/** `projectId: null`. Only ever an id; the option exists when it is occupied. */
+export const UNASSIGNED_ID = 'unassigned';
+
+/** The id of the option scoping to one project, by its uuid. */
+export function projectScopeId(projectId: string): string {
+  return `project:${projectId}`;
+}
+
+/** The id of the option scoping to one repository, by its `owner/name`. */
+export function repositoryScopeId(fullName: string): string {
+  return `repository:${fullName}`;
+}
+
 /** The scope a bare `<ScopePicker/>` starts on — nothing stated. */
 export const UNSCOPED: ScopeOption = {
   id: UNSCOPED_ID,
@@ -147,7 +173,7 @@ export function buildScopeCatalogue(
   const options: ScopeOption[] = [
     UNSCOPED,
     {
-      id: 'all-repositories',
+      id: ALL_REPOSITORIES_ID,
       kind: 'all-repositories',
       label: 'Every observed repository',
       description:
@@ -166,7 +192,7 @@ export function buildScopeCatalogue(
       .map((repository) => repository.fullName);
 
     options.push({
-      id: `project:${project.id}`,
+      id: projectScopeId(project.id),
       kind: 'project',
       label: `Project: ${project.name}`,
       description:
@@ -186,7 +212,7 @@ export function buildScopeCatalogue(
   // rather than a thing, and an empty one is a guaranteed `empty-scope`.
   if (unassigned.length > 0) {
     options.push({
-      id: 'unassigned',
+      id: UNASSIGNED_ID,
       kind: 'unassigned',
       label: `No project (${unassigned.length})`,
       description:
@@ -202,7 +228,7 @@ export function buildScopeCatalogue(
 
   for (const repository of repositories) {
     options.push({
-      id: `repository:${repository.fullName}`,
+      id: repositoryScopeId(repository.fullName),
       kind: 'repository',
       label: repository.fullName,
       description:

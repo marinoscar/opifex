@@ -29,6 +29,22 @@
  * just created, and a per-card hook would have nowhere to put it — the new row
  * would ask GitHub again for something asked a second earlier.
  *
+ * ## Steering is offered from here, and only to somebody who may steer (#461)
+ *
+ * The project header carries a link to `/steering?scope=project:<uuid>` and
+ * each ladder card one to its own repository, because those are the two places
+ * on this screen where what an instruction would reach is unambiguous. Both
+ * are absent — not disabled — without `workorders:write`, which is a different
+ * right from the `projects:read` that opens this page and the `projects:write`
+ * that unlocks it. The API enforces it either way; what a rendered-and-refused
+ * button would add is a promise this screen cannot keep.
+ *
+ * A card offers the link only while its repository is one steering can
+ * actually reach: `useSteeringScopes` builds its options from
+ * `observeEnabled=true&retired=false`, steering's own definition of
+ * registered, so a link from a retired or unobserved repository would open the
+ * picker on nothing chosen and look like the selection had been dropped.
+ *
  * ## One dialog of each kind, mounted by this panel
  *
  * The stand-down dialog asks how many work orders a repository has before it
@@ -38,7 +54,17 @@
  */
 
 import { useState } from 'react';
-import { Alert, Box, Button, Chip, Stack, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  Skeleton,
+  Stack,
+  Typography,
+} from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
+import ForumIcon from '@mui/icons-material/Forum';
 
 import { AddRepositoryDialog } from './AddRepositoryDialog';
 import { MoveRepositoryDialog } from './MoveRepositoryDialog';
@@ -46,6 +72,10 @@ import { RepositoryLadderCard } from './RepositoryLadderCard';
 import { RetireRepositoryDialog } from './RetireRepositoryDialog';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { LADDER_RUNGS } from '../../config/repositoryLadder';
+import {
+  steerProjectHref,
+  steerRepositoryHref,
+} from '../../config/steeringLink';
 import { useRepositoryLadder } from '../../hooks/useRepositoryLadder';
 import {
   assignRepositoryToProject,
@@ -57,10 +87,27 @@ import type { Project, ProjectScope } from '../../types/projects';
 
 export interface ProjectRepositoriesPanelProps {
   scope: ProjectScope;
-  /** The selected project, or null when the scope is the unassigned bucket. */
+  /**
+   * The selected project, or null.
+   *
+   * Null for the unassigned bucket, and ALSO null for a project whose row has
+   * not arrived — the id lives in the URL and the name lives in the list, so a
+   * reload onto `/projects?project=<uuid>` knows which project before it knows
+   * what it is called. `isProjectLoading` tells the two apart.
+   */
   project: Project | null;
+  /** The projects list is still being read, so a missing row is not an answer. */
+  isProjectLoading?: boolean;
   /** `projects:write` — the string `RepositoriesController` enforces. */
   canWrite: boolean;
+  /**
+   * `workorders:write` — what `SteeringController` enforces.
+   *
+   * Defaults to FALSE so a caller that does not ask the question offers
+   * nothing. Every steering link on this screen is withheld when it is false;
+   * see the header for why absent rather than disabled.
+   */
+  canSteer?: boolean;
   onEditProject: () => void;
   onDeleteProject: () => void;
   /**
@@ -74,7 +121,9 @@ export interface ProjectRepositoriesPanelProps {
 export function ProjectRepositoriesPanel({
   scope,
   project,
+  isProjectLoading = false,
   canWrite,
+  canSteer = false,
   onEditProject,
   onDeleteProject,
   onRepositoryCountChanged,
@@ -234,6 +283,14 @@ export function ProjectRepositoriesPanel({
             onCheckLabels={() => void checkLabels(repository.id)}
             onRepairLabels={() => void repairLabels(repository.id)}
             isRevealed={revealedId === repository.id}
+            steerHref={
+              // Only what steering can actually reach — see the header.
+              canSteer &&
+              repository.observeEnabled &&
+              repository.retiredAt === null
+                ? steerRepositoryHref(repository.fullName)
+                : undefined
+            }
             onRemove={() => setRetiring(repository)}
             onUnretire={() => unretire(repository.id)}
             onMove={() => setMoving(repository)}
@@ -248,7 +305,9 @@ export function ProjectRepositoriesPanel({
       <ScopeHeader
         scope={scope}
         project={project}
+        isProjectLoading={isProjectLoading}
         canWrite={canWrite}
+        canSteer={canSteer}
         onEditProject={onEditProject}
         onDeleteProject={onDeleteProject}
       />
@@ -292,27 +351,38 @@ export function ProjectRepositoriesPanel({
 }
 
 /**
- * Which group is open, and — for a project — the two things only its owner can
- * do to it.
+ * Which group is open, what may be done to it, and where it may be steered.
  *
  * The unassigned header explains rather than apologises. `projectId: null` is
  * not a broken state and the sentence says so, because an operator who reads
  * it as "these need filing" would file them for no reason.
+ *
+ * A project scope whose row has not arrived is NOT rendered as the unassigned
+ * bucket. That was harmless while the selection was local state — nothing
+ * could be selected that had not been clicked — and became a lie the moment
+ * the selection moved into the URL (#461): a reload onto
+ * `/projects?project=<uuid>` knows the id before it knows the name, and a
+ * heading reading "Unassigned" over that project's repositories would be
+ * wrong about the one thing this header exists to say.
  */
 function ScopeHeader({
   scope,
   project,
+  isProjectLoading,
   canWrite,
+  canSteer,
   onEditProject,
   onDeleteProject,
 }: {
   scope: ProjectScope;
   project: Project | null;
+  isProjectLoading: boolean;
   canWrite: boolean;
+  canSteer: boolean;
   onEditProject: () => void;
   onDeleteProject: () => void;
 }) {
-  if (scope.kind === 'unassigned' || project === null) {
+  if (scope.kind === 'unassigned') {
     return (
       <Box sx={{ mb: 2 }}>
         <Typography variant="h5" component="h2">
@@ -323,6 +393,34 @@ function ScopeHeader({
           backlog: they are observed, dispatchable and walked up the ladder
           exactly like any other. Every repository registered before projects
           existed is here, and none of them has to be filed anywhere to be used.
+        </Typography>
+      </Box>
+    );
+  }
+
+  // The id is known and the row is not, yet. A skeleton rather than a guess.
+  if (project === null && isProjectLoading) {
+    return (
+      <Box sx={{ mb: 2 }}>
+        <Skeleton variant="text" width={240} height={40} />
+      </Box>
+    );
+  }
+
+  // The row is not coming: the project is on another page of the list, hidden
+  // by the search, or gone. Said plainly, because the repositories below are
+  // whatever the API returned for this id and the operator is entitled to know
+  // the heading could not be filled in.
+  if (project === null) {
+    return (
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="h5" component="h2">
+          Project
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          This project is not in the list beside the panel — it may be on
+          another page of it, filtered out by the search, or no longer exist.
+          The repositories below are whatever the API returned for it.
         </Typography>
       </Box>
     );
@@ -345,16 +443,29 @@ function ScopeHeader({
           </Typography>
           <Chip size="small" variant="outlined" label={project.slug} />
         </Stack>
-        {canWrite && (
-          <Stack direction="row" spacing={1}>
-            <Button size="small" onClick={onEditProject}>
-              Edit
+        <Stack direction="row" spacing={1}>
+          {/* The whole project, scoped. Absent without `workorders:write`. */}
+          {canSteer && (
+            <Button
+              size="small"
+              startIcon={<ForumIcon />}
+              component={RouterLink}
+              to={steerProjectHref(project.id)}
+            >
+              Steer this project
             </Button>
-            <Button size="small" color="error" onClick={onDeleteProject}>
-              Delete project
-            </Button>
-          </Stack>
-        )}
+          )}
+          {canWrite && (
+            <>
+              <Button size="small" onClick={onEditProject}>
+                Edit
+              </Button>
+              <Button size="small" color="error" onClick={onDeleteProject}>
+                Delete project
+              </Button>
+            </>
+          )}
+        </Stack>
       </Stack>
       {project.description !== null && (
         <Typography variant="body2" color="text.secondary">

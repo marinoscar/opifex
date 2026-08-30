@@ -19,6 +19,17 @@
  * looking wrong, and it was the thing an operator had to scroll back to in
  * order to check.
  *
+ * ## The scope may arrive from another screen (#461)
+ *
+ * `initialScopeId` SEEDS the picker; it does not own it. An operator who
+ * arrives from a project with `/steering?scope=project:<uuid>` starts on that
+ * project and is free to change it, and the URL is not rewritten as they do —
+ * the selection here is a draft belonging to this form, and pushing every
+ * change of mind into history would make Back walk through abandoned scopes.
+ * An id naming something this deployment does not have resolves through
+ * `findScope` to unscoped, so a stale bookmark opens the screen it always
+ * opened rather than an option that no longer exists.
+ *
  * ## What an unset scope now means, said before the round trip
  *
  * Since ADR-0020 an exclusive `ready` instruction — "only work on #1 and #2",
@@ -48,9 +59,17 @@ import { ScopePicker } from './ScopePicker';
 
 export function InstructionComposer({
   disabled,
+  initialScopeId = UNSCOPED_ID,
   onPropose,
 }: {
   disabled: boolean;
+  /**
+   * The scope this screen was opened on, from `?scope=` (#461).
+   *
+   * Read once, as the initial value of the selection. Defaults to unscoped,
+   * which is what a direct visit to `/steering` has always been.
+   */
+  initialScopeId?: string;
   /**
    * Proposes. It never applies — there is no path from this box to a write.
    *
@@ -61,7 +80,7 @@ export function InstructionComposer({
   onPropose: (instruction: string, scope: SteeringScopeRequest) => void;
 }) {
   const [instruction, setInstruction] = useState('');
-  const [scopeId, setScopeId] = useState<string>(UNSCOPED_ID);
+  const [scopeId, setScopeId] = useState<string>(initialScopeId);
   const { catalogue, isLoading, error, truncated } = useSteeringScopes();
 
   // The chosen option, re-derived from the catalogue rather than stored: a

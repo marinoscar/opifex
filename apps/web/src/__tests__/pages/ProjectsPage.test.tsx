@@ -22,11 +22,17 @@
 import { describe, it, expect } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
+import { useLocation } from 'react-router-dom';
 
 import { render, mockAdminUser, mockUser } from '../utils/test-utils';
+import type { MockUser } from '../utils/test-utils';
 import { server } from '../mocks/server';
 import ProjectsPage from '../../pages/ProjectsPage';
+import {
+  steerProjectHref,
+  steerRepositoryHref,
+} from '../../config/steeringLink';
 import {
   OTHER_PROJECT_ID,
   PROJECT_ID,
@@ -81,17 +87,48 @@ function serveRepositories(byScope: Record<string, RepositorySummary[]>) {
 }
 
 /**
+ * Where the router thinks it is.
+ *
+ * Rendered beside the page because the selection is now a query parameter
+ * (#461): "the project is selected" and "the URL says so" are two different
+ * claims, and only the second one survives a reload or can be linked to.
+ */
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <span data-testid="location">{`${location.pathname}${location.search}`}</span>
+  );
+}
+
+const locationNow = () => screen.getByTestId('location').textContent;
+
+/**
  * The page, as an account that may actually change things.
  *
  * The default fixture user is the seeded VIEWER, who holds `projects:read` and
  * not `projects:write` — correct for the read-only case below and wrong for
  * every other one, where a missing New project button would look like a bug in
  * the page rather than in the fixture.
+ *
+ * `route` is how a reload or a pasted link is expressed: the wrapper mounts a
+ * `MemoryRouter` at it, so a page rendered at `/projects?project=<id>` has
+ * been told nothing except what the address says.
  */
-function renderPage() {
-  return render(<ProjectsPage />, {
-    wrapperOptions: { user: mockAdminUser },
-  });
+function renderPage(
+  options: { user?: MockUser; route?: string } = {},
+): ReturnType<typeof render> {
+  return render(
+    <>
+      <ProjectsPage />
+      <LocationProbe />
+    </>,
+    {
+      wrapperOptions: {
+        user: options.user ?? mockAdminUser,
+        route: options.route ?? '/projects',
+      },
+    },
+  );
 }
 
 describe('ProjectsPage', () => {
@@ -293,13 +330,29 @@ describe('ProjectsPage', () => {
     });
 
     it('selects the project it just created', async () => {
-      serveProjects();
-      const asked = serveRepositories({ none: [], [PROJECT_ID]: [] });
+      // The list GROWS, because `useProjects.create` re-reads it rather than
+      // splicing the answer in — and since #461 the header reads the name off
+      // that list rather than off a held object, so a fixture that stayed
+      // empty would be asserting against an API that cannot exist.
+      const listed: Project[] = [];
       server.use(
-        http.post(`${API_BASE}/projects`, () =>
-          HttpResponse.json({ data: projectFixture() }, { status: 201 }),
+        http.get(`${API_BASE}/projects`, () =>
+          HttpResponse.json({
+            data: {
+              items: listed,
+              total: listed.length,
+              page: 1,
+              pageSize: 25,
+              totalPages: listed.length === 0 ? 0 : 1,
+            },
+          }),
         ),
+        http.post(`${API_BASE}/projects`, () => {
+          listed.push(projectFixture());
+          return HttpResponse.json({ data: projectFixture() }, { status: 201 });
+        }),
       );
+      const asked = serveRepositories({ none: [], [PROJECT_ID]: [] });
       const user = userEvent.setup();
 
       renderPage();
@@ -316,6 +369,9 @@ describe('ProjectsPage', () => {
         await screen.findByRole('heading', { name: 'Billing Platform' }),
       ).toBeInTheDocument();
       await waitFor(() => expect(asked).toContain(PROJECT_ID));
+      // In the address, not only on screen: a create that selected the project
+      // in local state would leave a reload back on the unassigned bucket.
+      expect(locationNow()).toBe(`/projects?project=${PROJECT_ID}`);
     });
   });
 
@@ -520,6 +576,267 @@ describe('ProjectsPage', () => {
         await screen.findByLabelText('Repository acme/widgets'),
       ).toBeInTheDocument();
       expect(asked[asked.length - 1]).toBe('none');
+    });
+  });
+
+  /**
+   * The selection is a query parameter, not local state (#461).
+   *
+   * It used to be `useState` here, which made every claim below impossible:
+   * the scope died on reload, could not be linked to, and could not be handed
+   * to `/steering`. The cases are the ones a plausible move-it-to-the-URL gets
+   * wrong — a URL written but not read, a URL read but not written, and a
+   * header that renders the unassigned bucket while a named project's
+   * repositories load underneath it.
+   */
+  describe('Which project is open lives in the URL', () => {
+    it('opens on the project the address names, and asks the API for it', async () => {
+      serveProjects(projectFixture({ repositoryCount: 1 }));
+      const asked = serveRepositories({
+        none: [],
+        [PROJECT_ID]: [repositoryFixture({ projectId: PROJECT_ID })],
+      });
+
+      // A reload, expressed exactly: the page is told nothing but the address.
+      renderPage({ route: `/projects?project=${PROJECT_ID}` });
+
+      expect(
+        await screen.findByRole('heading', { name: 'Billing Platform' }),
+      ).toBeInTheDocument();
+      await waitFor(() => expect(asked).toEqual([PROJECT_ID]));
+      // The unassigned bucket was never asked for. A page that landed on it
+      // first and corrected itself would show the whole registry under this
+      // project's heading for a frame.
+      expect(asked).not.toContain('none');
+    });
+
+    it('reads the unassigned bucket from an absent parameter and from none', async () => {
+      serveProjects(projectFixture());
+      const asked = serveRepositories({ none: [repositoryFixture()] });
+
+      renderPage({ route: '/projects?project=none' });
+
+      expect(
+        await screen.findByLabelText('Repository acme/widgets'),
+      ).toBeInTheDocument();
+      // `none` is the value `GET /repositories?projectId=` itself takes, so
+      // the address and the request say unassigned the same way.
+      expect(asked).toEqual(['none']);
+      expect(
+        screen.getByRole('heading', { name: 'Unassigned' }),
+      ).toBeInTheDocument();
+    });
+
+    it('writes the selection into the address when a row is clicked', async () => {
+      serveProjects(projectFixture({ repositoryCount: 1 }));
+      serveRepositories({ none: [], [PROJECT_ID]: [] });
+      const user = userEvent.setup();
+
+      renderPage();
+      await screen.findByRole('navigation', { name: 'Projects' });
+      expect(locationNow()).toBe('/projects');
+
+      await user.click(
+        screen.getByRole('button', { name: /Billing Platform/ }),
+      );
+      await waitFor(() =>
+        expect(locationNow()).toBe(`/projects?project=${PROJECT_ID}`),
+      );
+
+      // Back to the bucket CLEARS the parameter rather than writing `none`:
+      // a bare `/projects` is the address the navigation rail already points
+      // at, and the two must be the same page.
+      await user.click(screen.getByRole('button', { name: /^Unassigned/ }));
+      await waitFor(() => expect(locationNow()).toBe('/projects'));
+    });
+
+    it('keeps the project heading when the search filters its row away', async () => {
+      // The URL carries the id; the list carries the name. A search that
+      // removes the selected row must not blank the header over the panel —
+      // the repositories under it have not moved anywhere.
+      server.use(
+        http.get(`${API_BASE}/projects`, ({ request }) => {
+          const search = new URL(request.url).searchParams.get('search');
+          // The selected project matches nothing the operator searched for, so
+          // its row leaves the list while it stays open in the panel.
+          const items =
+            search === null ? [projectFixture({ repositoryCount: 1 })] : [];
+          return HttpResponse.json({
+            data: {
+              items,
+              total: items.length,
+              page: 1,
+              pageSize: 25,
+              totalPages: items.length === 0 ? 0 : 1,
+            },
+          });
+        }),
+      );
+      serveRepositories({ none: [], [PROJECT_ID]: [] });
+      const user = userEvent.setup();
+
+      renderPage({ route: `/projects?project=${PROJECT_ID}` });
+      await screen.findByRole('heading', { name: 'Billing Platform' });
+
+      await user.type(
+        screen.getByLabelText(/search projects/i),
+        'ledger{enter}',
+      );
+
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: /Billing Platform/ }),
+        ).toBeNull(),
+      );
+      expect(
+        screen.getByRole('heading', { name: 'Billing Platform' }),
+      ).toBeInTheDocument();
+      expect(locationNow()).toBe(`/projects?project=${PROJECT_ID}`);
+    });
+
+    it('does not call an unloaded project the unassigned bucket', async () => {
+      // The id is known before the name is. A heading reading "Unassigned"
+      // over a named project's repositories would be wrong about the one
+      // thing that header exists to say.
+      server.use(
+        http.get(`${API_BASE}/projects`, async () => {
+          await delay(50);
+          return HttpResponse.json({
+            data: {
+              items: [projectFixture()],
+              total: 1,
+              page: 1,
+              pageSize: 25,
+              totalPages: 1,
+            },
+          });
+        }),
+      );
+      serveRepositories({ none: [], [PROJECT_ID]: [] });
+
+      renderPage({ route: `/projects?project=${PROJECT_ID}` });
+
+      expect(
+        screen.queryByRole('heading', { name: 'Unassigned' }),
+      ).not.toBeInTheDocument();
+      expect(
+        await screen.findByRole('heading', { name: 'Billing Platform' }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * Steering, reached from what the operator is already looking at (#461).
+   *
+   * The permission is the whole difficulty. Steering is gated on
+   * `workorders:write` and this page on `projects:read` — genuinely different
+   * rights, and epic #457 flags the asymmetry as something to design around
+   * rather than discover later. An account can hold every project permission
+   * there is and no right to steer at all, so the entry point has to be ABSENT
+   * for them rather than disabled or 403-on-click.
+   */
+  describe('Steering from the project screen', () => {
+    /** Every project permission, and no `workorders:write`. */
+    const cannotSteer: MockUser = {
+      ...mockAdminUser,
+      permissions: mockAdminUser.permissions.filter(
+        (permission) => permission !== 'workorders:write',
+      ),
+    };
+
+    it('links to steering with the open project already scoped', async () => {
+      serveProjects(projectFixture({ repositoryCount: 1 }));
+      serveRepositories({ none: [], [PROJECT_ID]: [] });
+
+      renderPage({ route: `/projects?project=${PROJECT_ID}` });
+
+      const link = await screen.findByRole('link', {
+        name: /steer this project/i,
+      });
+      expect(link).toHaveAttribute('href', steerProjectHref(PROJECT_ID));
+    });
+
+    it('links to steering per repository, from the card that names it', async () => {
+      serveProjects(projectFixture({ repositoryCount: 1 }));
+      serveRepositories({
+        none: [],
+        [PROJECT_ID]: [
+          repositoryFixture({ projectId: PROJECT_ID, observeEnabled: true }),
+        ],
+      });
+
+      renderPage({ route: `/projects?project=${PROJECT_ID}` });
+
+      const card = await screen.findByLabelText('Repository acme/widgets');
+      expect(
+        within(card).getByRole('link', { name: /steer/i }),
+      ).toHaveAttribute('href', steerRepositoryHref('acme/widgets'));
+    });
+
+    it('renders no steering entry point at all without workorders:write', async () => {
+      serveProjects(projectFixture({ repositoryCount: 1 }));
+      serveRepositories({
+        none: [],
+        [PROJECT_ID]: [
+          repositoryFixture({ projectId: PROJECT_ID, observeEnabled: true }),
+        ],
+      });
+
+      renderPage({
+        route: `/projects?project=${PROJECT_ID}`,
+        user: cannotSteer,
+      });
+
+      await screen.findByLabelText('Repository acme/widgets');
+      expect(screen.queryByRole('link', { name: /steer/i })).toBeNull();
+      // Absent, not disabled — there is no button under a different name
+      // either. The rest of the screen is untouched, which is what makes this
+      // a permission gate rather than a broken page.
+      expect(screen.queryByRole('button', { name: /steer/i })).toBeNull();
+      expect(
+        screen.getByRole('button', { name: /^edit$/i }),
+      ).toBeInTheDocument();
+    });
+
+    it('offers no link from a repository steering could not reach', async () => {
+      // `useSteeringScopes` builds its options from
+      // `observeEnabled=true&retired=false`. A link from anything else would
+      // open the picker on nothing chosen and look like a dropped selection.
+      serveProjects(projectFixture({ repositoryCount: 2 }));
+      serveRepositories({
+        none: [],
+        [PROJECT_ID]: [
+          repositoryFixture({
+            id: 'unobserved-id',
+            owner: 'acme',
+            name: 'quiet',
+            fullName: 'acme/quiet',
+            projectId: PROJECT_ID,
+            observeEnabled: false,
+          }),
+          repositoryFixture({
+            projectId: PROJECT_ID,
+            observeEnabled: true,
+            retiredAt: '2026-08-02T09:00:00.000Z',
+          }),
+        ],
+      });
+
+      renderPage({ route: `/projects?project=${PROJECT_ID}` });
+
+      const unobserved = await screen.findByLabelText('Repository acme/quiet');
+      expect(within(unobserved).queryByRole('link', { name: /steer/i })).toBe(
+        null,
+      );
+      const retired = screen.getByLabelText('Repository acme/widgets');
+      expect(within(retired).queryByRole('link', { name: /steer/i })).toBe(
+        null,
+      );
+      // The project itself is still steerable: it holds repositories that
+      // could become observable, and the picker states what it reaches.
+      expect(
+        screen.getByRole('link', { name: /steer this project/i }),
+      ).toBeInTheDocument();
     });
   });
 
