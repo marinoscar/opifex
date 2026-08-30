@@ -33,6 +33,10 @@ import {
   projectFixture,
   repositoryFixture,
 } from '../mocks/repositories';
+import {
+  steerProjectHref,
+  steerRepositoryHref,
+} from '../../config/steeringLink';
 import SteeringPage from '../../pages/SteeringPage';
 import type {
   ApplySteeringInput,
@@ -152,8 +156,8 @@ async function chooseScope(
   await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
 }
 
-function renderPage() {
-  return render(<SteeringPage />, { wrapperOptions: { user: steerer } });
+function renderPage(route = '/steering') {
+  return render(<SteeringPage />, { wrapperOptions: { user: steerer, route } });
 }
 
 async function propose(
@@ -702,6 +706,66 @@ describe('SteeringPage', () => {
     // either: an undefined key still serialises out of the body, but a reader
     // of this assertion should be able to see the whole request.
     expect(Object.keys(bodies[0]).sort()).toEqual(['instruction', 'project']);
+  });
+
+  /**
+   * Arriving already scoped, from the project screen (#461).
+   *
+   * The routes are built with `steeringLink`'s own helpers rather than typed
+   * out, so these cases assert that what the project screen WRITES is what
+   * this screen READS. A test spelling the URL by hand would keep passing
+   * through a change to either half of that contract.
+   */
+  it('opens on the project a link named, and sends it without retyping', async () => {
+    const user = userEvent.setup();
+    serveScopes();
+    const bodies = captureProposals(proposalFixture());
+    renderPage(steerProjectHref(PROJECT_ID));
+
+    await screen.findByRole('combobox', { name: /Scope/ });
+    expect(
+      screen.getByText('Applies to: Project: Billing Platform'),
+    ).toBeInTheDocument();
+
+    await propose(user);
+    await screen.findByTestId('proposal-review');
+    expect(bodies[0]).toEqual({
+      instruction: INSTRUCTION,
+      project: PROJECT_ID,
+    });
+  });
+
+  it('opens on the repository a ladder card linked to', async () => {
+    const user = userEvent.setup();
+    serveScopes();
+    const bodies = captureProposals(proposalFixture());
+    // The slug contains a slash, so this also pins that the link survives
+    // being encoded into a query parameter and read back out.
+    renderPage(steerRepositoryHref('acme/legacy'));
+
+    await screen.findByRole('combobox', { name: /Scope/ });
+    await propose(user);
+    await screen.findByTestId('proposal-review');
+    expect(bodies[0]).toEqual({
+      instruction: INSTRUCTION,
+      repository: 'acme/legacy',
+    });
+  });
+
+  it('preselects nothing on a direct visit, exactly as it always has', async () => {
+    const user = userEvent.setup();
+    serveScopes();
+    const bodies = captureProposals(proposalFixture());
+    renderPage();
+
+    await screen.findByRole('combobox', { name: /Scope/ });
+    expect(screen.getByText('Applies to: No scope chosen')).toBeInTheDocument();
+
+    await propose(user);
+    await screen.findByTestId('proposal-review');
+    // No scope field at all — not a project, and not the deployment-wide
+    // sweep an absent field used to mean before ADR-0020.
+    expect(bodies[0]).toEqual({ instruction: INSTRUCTION });
   });
 
   it('reaches a repository in no project, which a project-only picker could not', async () => {

@@ -37,6 +37,7 @@ import {
   projectFixture,
   repositoryFixture,
 } from '../../mocks/repositories';
+import { projectScopeId } from '../../../config/steeringScope';
 import type { RepositorySummary } from '../../../types/cockpit';
 import type { Project } from '../../../types/projects';
 
@@ -129,9 +130,15 @@ async function typeAndPropose(
   );
 }
 
-function renderComposer() {
+function renderComposer(initialScopeId?: string) {
   const onPropose = vi.fn();
-  render(<InstructionComposer disabled={false} onPropose={onPropose} />);
+  render(
+    <InstructionComposer
+      disabled={false}
+      initialScopeId={initialScopeId}
+      onPropose={onPropose}
+    />,
+  );
   return onPropose;
 }
 
@@ -284,6 +291,70 @@ describe('InstructionComposer scope picker', () => {
     // operator arrives at by doing nothing.
     expect(onPropose).toHaveBeenLastCalledWith('hold #14', {
       repository: 'acme/widgets',
+    });
+  });
+
+  /**
+   * The scope handed over by the project screen (#461).
+   *
+   * `initialScopeId` is a SEED: the operator must be able to change it, and an
+   * id naming something this deployment does not have must not leave the
+   * picker pointing at an option nobody can see in the control.
+   */
+  it('opens on the scope it was handed, and sends it untouched', async () => {
+    const user = userEvent.setup();
+    serveScopes(
+      [registered('acme/widgets', PROJECT_ID), registered('acme/legacy')],
+      [projectFixture({ id: PROJECT_ID, name: 'Billing Platform' })],
+    );
+    const onPropose = renderComposer(projectScopeId(PROJECT_ID));
+
+    await screen.findByRole('combobox', { name: /Scope/ });
+    expect(
+      screen.getByText('Applies to: Project: Billing Platform'),
+    ).toBeInTheDocument();
+
+    // Nothing retyped and nothing re-chosen between arriving and proposing.
+    await typeAndPropose(user);
+    expect(onPropose).toHaveBeenCalledWith(INSTRUCTION, {
+      project: PROJECT_ID,
+    });
+  });
+
+  it('opens unscoped when it is handed nothing, as a direct visit does', async () => {
+    serveScopes([registered('acme/widgets'), registered('acme/legacy')]);
+    renderComposer();
+
+    await screen.findByRole('combobox', { name: /Scope/ });
+    expect(screen.getByText('Applies to: No scope chosen')).toBeInTheDocument();
+  });
+
+  it('opens unscoped when the scope it was handed no longer exists', async () => {
+    // A bookmark to a project since deleted, or a repository since retired.
+    // Falling back to unscoped is the narrow answer: since ADR-0020 an
+    // exclusive instruction with no scope is refused rather than swept.
+    serveScopes([registered('acme/widgets'), registered('acme/legacy')]);
+    renderComposer(projectScopeId(OTHER_PROJECT_ID));
+
+    await screen.findByRole('combobox', { name: /Scope/ });
+    expect(screen.getByText('Applies to: No scope chosen')).toBeInTheDocument();
+  });
+
+  it('lets the operator overrule the scope it was handed', async () => {
+    const user = userEvent.setup();
+    serveScopes(
+      [registered('acme/widgets', PROJECT_ID), registered('acme/legacy')],
+      [projectFixture({ id: PROJECT_ID, name: 'Billing Platform' })],
+    );
+    const onPropose = renderComposer(projectScopeId(PROJECT_ID));
+
+    await screen.findByRole('combobox', { name: /Scope/ });
+    await chooseScope(user, 'acme/legacy');
+    await typeAndPropose(user);
+
+    // A seed, not an owner: the link chose where to start, not where to end.
+    expect(onPropose).toHaveBeenCalledWith(INSTRUCTION, {
+      repository: 'acme/legacy',
     });
   });
 
