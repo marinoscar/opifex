@@ -49,6 +49,46 @@ interface ScopedIssue {
   inputLabels: string[];
 }
 
+/** A repository Opifex observes, and the project it belongs to (or none). */
+interface RegisteredRepository {
+  owner: string;
+  name: string;
+  projectId: string | null;
+}
+
+/**
+ * What an instruction reaches, expanded once at request time and stored
+ * nowhere.
+ *
+ * TWO sets, because until ADR-0020 one variable held both jobs and they pull
+ * opposite ways. `resolution` answers "what may a bare `#12` mean"; `sweep`
+ * answers "what does 'everything else' reach". They are the same set whenever
+ * the operator states a scope. They differ only when nobody states one: a bare
+ * `#12` over several registered repositories is refused as
+ * `ambiguous-repository`, while the sweep used to take every registered
+ * repository silently — the identical guess about the identical missing field,
+ * made across an unbounded number of issues instead of one.
+ *
+ * Nothing here is persisted. It is a request-time selector, never a row: a
+ * stored scope would be a second expression of an intent the `factory:` labels
+ * already carry, and `apply` would be left arbitrating between them.
+ */
+interface SteeringScope {
+  /**
+   * How the operator named this scope, as a noun phrase for the messages that
+   * have to say so. NULL when they named none — the one case where
+   * `resolution` and `sweep` part company.
+   */
+  stated: string | null;
+  /** What a bare `#12` may resolve against. */
+  resolution: RepositoryRef[];
+  /**
+   * What "everything else" reaches, or NULL when nobody said and there is more
+   * than one registered repository they could have meant.
+   */
+  sweep: RepositoryRef[] | null;
+}
+
 /**
  * An operator instruction, turned into a PROPOSED diff of label operations
  * (#425, epic #419).
@@ -108,9 +148,7 @@ export class SteeringService {
   async propose(dto: ProposeSteeringDto): Promise<SteeringProposal> {
     const parsed = parseSteeringInstruction(dto.instruction);
     const registered = await this.registeredRepositories();
-    const requested = dto.repository
-      ? this.requireRegistered(dto.repository, registered)
-      : null;
+    const scope = await this.resolveScope(dto, registered);
 
     const unresolved: UnresolvedReference[] = [];
     const scoped = new Map<string, ScopedIssue>();
@@ -127,7 +165,7 @@ export class SteeringService {
     }
 
     for (const target of parsed.targets) {
-      const repo = this.repositoryFor(target, requested, registered);
+      const repo = this.repositoryFor(target, scope, registered);
       if ('unresolved' in repo) {
         unresolved.push(repo.unresolved);
         continue;
@@ -155,45 +193,84 @@ export class SteeringService {
 
     // The "everything else" sweep, and the only place a proposal touches an
     // issue nobody named.
-    const sweepRepos = requested !== null ? [requested] : registered.map(toRef);
+    //
+    // Which is why it, alone, refuses to run on a scope nobody stated
+    // (ADR-0020). `scope.sweep` is null exactly when the operator named no
+    // scope and more than one repository is registered — the same missing
+    // input `repositoryFor` already refuses to guess at for a single issue,
+    // and the sweep used to guess at across every repository at once. A
+    // deployment with one registered repository is unaffected: there is
+    // nothing for "everything else" to be ambiguous about, so `sweep` is that
+    // repository and the instruction runs exactly as before.
+    //
+    // The non-exclusive case keeps reporting `scope.resolution` as the
+    // repositories in view even though nothing is swept, unchanged: no issue
+    // nobody named is touched on that path, so there is nothing to refuse.
+    let sweptRepositories = scope.sweep ?? scope.resolution;
     let candidatesConsidered = 0;
 
     if (parsed.exclusive && parsed.intent === 'ready') {
-      for (const repo of sweepRepos) {
-        // Asked for BY LABEL rather than swept and filtered: the blast radius
-        // of "everything else" is exactly the set of issues the factory would
-        // otherwise act on, and an open issue with no `factory:ready` is not
-        // one of them. It also keeps the request count to one page per
-        // repository instead of one per issue.
-        const { issues } = await this.read.listIssues(repo, {
-          state: 'open',
-          labels: [INPUT_LABELS.READY],
+      if (scope.sweep === null) {
+        // Reported as swept: nothing. An operator reading a refusal beside a
+        // list of ten repositories would reasonably conclude the ten had been
+        // considered, and `candidatesConsidered` stays 0 for the same reason.
+        sweptRepositories = [];
+        unresolved.push({
+          reference: dto.instruction,
+          reason: 'ambiguous-scope',
+          detail:
+            `${registered.length} repositories are registered, so "everything else" could ` +
+            `mean an issue in any of them. Say what this instruction covers: a \`repository\` ` +
+            `as \`owner/name\`, a \`project\`, \`project: "none"\` for the repositories in no ` +
+            `project, or \`allRepositories: true\` to sweep every repository Opifex observes.`,
         });
-        candidatesConsidered += issues.length;
-
-        for (const issue of issues) {
-          const ref = issueRef(repo.owner, repo.name, issue.number);
-          if (scoped.has(ref)) continue;
-
-          const holds = issue.inputLabels.includes(INPUT_LABELS.HOLD);
-          const add: SteerableLabel[] =
-            parsed.elseIntent === 'hold' && !holds ? [INPUT_LABELS.HOLD] : [];
-
-          operations.push({
-            ref,
-            owner: repo.owner,
-            name: repo.name,
-            number: issue.number,
-            title: issue.title,
-            add,
-            remove: [INPUT_LABELS.READY],
-            observedInputLabels: [...issue.inputLabels],
-            reason:
-              parsed.elseIntent === 'hold'
-                ? 'Not named by the instruction, which asked to hold everything else.'
-                : 'Not named by the instruction, which restricted work to the issues it named.',
-            named: false,
+      } else if (scope.sweep.length === 0) {
+        unresolved.push({
+          reference: dto.instruction,
+          reason: 'empty-scope',
+          detail:
+            scope.stated === null
+              ? 'No repository is registered with Opifex, so there is nothing for "everything else" to reach.'
+              : `${scope.stated} contains no observed repository, so there is nothing for ` +
+                `"everything else" to reach. Nothing has been proposed for it.`,
+        });
+      } else {
+        for (const repo of scope.sweep) {
+          // Asked for BY LABEL rather than swept and filtered: the blast radius
+          // of "everything else" is exactly the set of issues the factory would
+          // otherwise act on, and an open issue with no `factory:ready` is not
+          // one of them. It also keeps the request count to one page per
+          // repository instead of one per issue.
+          const { issues } = await this.read.listIssues(repo, {
+            state: 'open',
+            labels: [INPUT_LABELS.READY],
           });
+          candidatesConsidered += issues.length;
+
+          for (const issue of issues) {
+            const ref = issueRef(repo.owner, repo.name, issue.number);
+            if (scoped.has(ref)) continue;
+
+            const holds = issue.inputLabels.includes(INPUT_LABELS.HOLD);
+            const add: SteerableLabel[] =
+              parsed.elseIntent === 'hold' && !holds ? [INPUT_LABELS.HOLD] : [];
+
+            operations.push({
+              ref,
+              owner: repo.owner,
+              name: repo.name,
+              number: issue.number,
+              title: issue.title,
+              add,
+              remove: [INPUT_LABELS.READY],
+              observedInputLabels: [...issue.inputLabels],
+              reason:
+                parsed.elseIntent === 'hold'
+                  ? 'Not named by the instruction, which asked to hold everything else.'
+                  : 'Not named by the instruction, which restricted work to the issues it named.',
+              named: false,
+            });
+          }
         }
       }
     }
@@ -211,7 +288,9 @@ export class SteeringService {
         intent: parsed.intent,
         exclusive: parsed.exclusive,
         elseIntent: parsed.elseIntent,
-        repositories: sweepRepos.map((repo) => `${repo.owner}/${repo.name}`),
+        repositories: sweptRepositories.map(
+          (repo) => `${repo.owner}/${repo.name}`,
+        ),
         candidatesConsidered,
         epics: epicsResolved,
       },
@@ -499,15 +578,106 @@ export class SteeringService {
     };
   }
 
-  /** The repositories Opifex observes. Retired ones are not steerable. */
-  private async registeredRepositories(): Promise<
-    { owner: string; name: string }[]
-  > {
+  /**
+   * The repositories Opifex observes. Retired ones are not steerable.
+   *
+   * `projectId` comes back on this one read rather than from a second query
+   * per scope: a project scope is a filter over rows already in hand, and
+   * `steering.service.spec.ts`'s exact-array assertion on the Prisma calls
+   * propose makes is worth more than the handful of bytes a narrower select
+   * would save.
+   */
+  private async registeredRepositories(): Promise<RegisteredRepository[]> {
     return this.prisma.repository.findMany({
       where: { retiredAt: null, observeEnabled: true },
-      select: { owner: true, name: true },
+      select: { owner: true, name: true, projectId: true },
       orderBy: [{ owner: 'asc' }, { name: 'asc' }],
     });
+  }
+
+  /**
+   * The four scopes an operator may state, expanded to repositories.
+   *
+   * Validation has already refused more than one of them (`proposeSteeringSchema`),
+   * so this is a decision tree and not a precedence rule. The fifth case —
+   * none of them supplied — is the one ADR-0020 changes: resolution keeps
+   * every registered repository, exactly as before, and the sweep gets null
+   * rather than the same list.
+   */
+  private async resolveScope(
+    dto: ProposeSteeringDto,
+    registered: RegisteredRepository[],
+  ): Promise<SteeringScope> {
+    if (dto.repository !== undefined) {
+      const repo = this.requireRegistered(dto.repository, registered);
+      return {
+        stated: `\`${dto.repository}\``,
+        resolution: [repo],
+        sweep: [repo],
+      };
+    }
+
+    if (dto.project !== undefined) {
+      if (dto.project !== 'none') await this.requireProject(dto.project);
+
+      const wanted = dto.project === 'none' ? null : dto.project;
+      const inScope = registered
+        .filter((repo) => (repo.projectId ?? null) === wanted)
+        .map(toRef);
+
+      return {
+        stated:
+          wanted === null
+            ? 'The set of observed repositories in no project'
+            : `Project \`${wanted}\``,
+        resolution: inScope,
+        sweep: inScope,
+      };
+    }
+
+    if (dto.allRepositories === true) {
+      const all = registered.map(toRef);
+      return {
+        stated: 'Every repository Opifex observes',
+        resolution: all,
+        sweep: all,
+      };
+    }
+
+    const all = registered.map(toRef);
+    return {
+      stated: null,
+      resolution: all,
+      // One registered repository leaves nothing to be ambiguous ABOUT, which
+      // is the same shortcut `repositoryFor` takes for a bare `#12`, taken for
+      // the same reason rather than a second time by coincidence.
+      sweep: registered.length > 1 ? null : all,
+    };
+  }
+
+  /**
+   * A `project` naming no project is a 404, not an `unresolved` entry.
+   *
+   * The same line `requireRegistered` draws, in the same place: a request
+   * PARAMETER naming something Opifex does not know about is a caller mistake,
+   * where a reference INSIDE the instruction that cannot be resolved is an
+   * observation about the backlog worth reading.
+   *
+   * Read only for a real project id — `'none'` names the unassigned bucket,
+   * which is a state of `Repository` rather than a row in `projects`, so it
+   * has nothing to look up.
+   */
+  private async requireProject(projectId: string): Promise<void> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true },
+    });
+
+    if (project === null) {
+      throw new NotFoundException(
+        `No project ${projectId} is registered with Opifex, so it cannot be steered.`,
+      );
+    }
   }
 
   private requireRegistered(
@@ -533,10 +703,16 @@ export class SteeringService {
    * must not happen: writing a label to issue 12 of a repository the operator
    * was not thinking about is exactly the harm the `unresolved` collection
    * exists to report instead of causing.
+   *
+   * A fully-qualified `owner/name#12` is checked against every registered
+   * repository and NOT against the scope, deliberately. A scope constrains
+   * what the instruction reaches without being told; an issue written out in
+   * full was told, and the sweep — not this function — is the only place a
+   * proposal touches an issue nobody named.
    */
   private repositoryFor(
     target: ParsedTarget,
-    requested: RepositoryRef | null,
+    scope: SteeringScope,
     registered: { owner: string; name: string }[],
   ): { repo: RepositoryRef } | { unresolved: UnresolvedReference } {
     if (target.owner !== null && target.name !== null) {
@@ -553,19 +729,24 @@ export class SteeringService {
       return { repo };
     }
 
-    if (requested !== null) return { repo: requested };
-
-    if (registered.length === 1) {
-      return { repo: toRef(registered[0]) };
+    // With a `repository` supplied the resolution set is that one repository,
+    // so this single case covers what used to be a separate `requested !== null`
+    // step above it — identically, and with one fewer rule to keep in step.
+    if (scope.resolution.length === 1) {
+      return { repo: scope.resolution[0] };
     }
 
-    if (registered.length === 0) {
+    if (scope.resolution.length === 0) {
       return {
         unresolved: {
           reference: target.reference,
-          reason: 'repository-not-registered',
+          reason:
+            scope.stated === null ? 'repository-not-registered' : 'empty-scope',
           detail:
-            'No repository is registered with Opifex, so there is nothing for a bare issue number to refer to.',
+            scope.stated === null
+              ? 'No repository is registered with Opifex, so there is nothing for a bare issue number to refer to.'
+              : `${scope.stated} contains no observed repository, so there is nothing for ` +
+                `\`${target.reference}\` to refer to.`,
         },
       };
     }
@@ -575,7 +756,10 @@ export class SteeringService {
         reference: target.reference,
         reason: 'ambiguous-repository',
         detail:
-          `${registered.length} repositories are registered, so \`${target.reference}\` could ` +
+          (scope.stated === null
+            ? `${scope.resolution.length} repositories are registered, so `
+            : `${scope.stated} covers ${scope.resolution.length} repositories, so `) +
+          `\`${target.reference}\` could ` +
           `mean any of them. Write it as \`owner/name#${target.number}\`, or send a ` +
           `\`repository\` with the instruction.`,
       },
