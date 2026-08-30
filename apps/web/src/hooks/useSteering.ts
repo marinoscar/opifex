@@ -25,6 +25,12 @@
  * every reshaping of it — sorting, de-duplicating, narrowing to the two
  * steerable labels — turns drift detection off while leaving it looking like
  * it works.
+ *
+ * The same is true of the SCOPE. It is held here only long enough to be sent,
+ * and again only so a refused instruction can be asked again unchanged — never
+ * written anywhere, because a stored scope and the `factory:` labels would be
+ * two expressions of the same intent for the reconciler to arbitrate between
+ * (ADR-0020 decision 4).
  */
 
 import { useCallback, useRef, useState } from 'react';
@@ -35,6 +41,7 @@ import type {
   SteeringApplyResult,
   SteeringOperation,
   SteeringProposal,
+  SteeringScopeRequest,
 } from '../types/steering';
 import { useIsMounted } from './useIsMounted';
 
@@ -60,6 +67,16 @@ export type SteeringTurn =
       instruction: string;
       phase: 'propose' | 'apply';
       failure: SteeringFailure;
+      /**
+       * The scope that produced it, kept so "propose again" asks the same
+       * question.
+       *
+       * Re-proposing a stale instruction without its scope would silently
+       * widen or narrow what the operator originally chose — the mis-scoping
+       * #460 exists to remove, arrived at through the retry button instead of
+       * through a typo.
+       */
+      scope: SteeringScopeRequest;
     }
   | {
       id: string;
@@ -76,7 +93,12 @@ export interface UseSteeringResult {
   pending: SteeringProposal | null;
   isProposing: boolean;
   isApplying: boolean;
-  propose: (instruction: string, repository?: string) => Promise<void>;
+  /**
+   * `scope` carries AT MOST ONE of `repository`, `project` and
+   * `allRepositories` — the API answers 400 to two, and `SteeringScopeRequest`
+   * is a union so a caller cannot be holding both.
+   */
+  propose: (instruction: string, scope?: SteeringScopeRequest) => Promise<void>;
   apply: (
     proposal: SteeringProposal,
     operations: readonly SteeringOperation[],
@@ -130,6 +152,9 @@ type NewTurn = SteeringTurn extends infer T
 export function useSteering(): UseSteeringResult {
   const [turns, setTurns] = useState<SteeringTurn[]>([]);
   const [pending, setPending] = useState<SteeringProposal | null>(null);
+  // The scope that produced `pending`, so an apply refusal can offer to ask
+  // the same question again rather than a wider or narrower one.
+  const [pendingScope, setPendingScope] = useState<SteeringScopeRequest>({});
   const [isProposing, setIsProposing] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   // Every `setState` past an `await` is guarded: an answer landing after the
@@ -143,7 +168,7 @@ export function useSteering(): UseSteeringResult {
   }, []);
 
   const propose = useCallback(
-    async (instruction: string, repository?: string) => {
+    async (instruction: string, scope: SteeringScopeRequest = {}) => {
       const trimmed = instruction.trim();
       if (trimmed.length === 0) return;
 
@@ -151,12 +176,16 @@ export function useSteering(): UseSteeringResult {
       // A new instruction replaces whatever was awaiting confirmation: two
       // live proposals would be two things a Confirm button could mean.
       setPending(null);
+      setPendingScope(scope);
       setIsProposing(true);
 
       try {
+        // Spread, not composed field by field: the scope arrives as one
+        // member of an exclusive union, so there is no branch here that could
+        // send two of the three and earn a 400 the operator never asked for.
         const proposal = await proposeSteering({
           instruction: trimmed,
-          ...(repository ? { repository } : {}),
+          ...scope,
         });
         if (!isMounted()) return;
         append({ kind: 'proposal', instruction: trimmed, proposal });
@@ -168,6 +197,7 @@ export function useSteering(): UseSteeringResult {
           instruction: trimmed,
           phase: 'propose',
           failure: failureFrom(cause),
+          scope,
         });
       } finally {
         if (isMounted()) setIsProposing(false);
@@ -208,6 +238,7 @@ export function useSteering(): UseSteeringResult {
           instruction: proposal.instruction,
           phase: 'apply',
           failure,
+          scope: pendingScope,
         });
         // A stale proposal (409) is retired: it cannot be applied again by
         // definition, and leaving the button live would offer an action the
@@ -219,7 +250,7 @@ export function useSteering(): UseSteeringResult {
         if (isMounted()) setIsApplying(false);
       }
     },
-    [append, isMounted],
+    [append, isMounted, pendingScope],
   );
 
   // Not written as a `setPending` updater with the append inside it: a state
