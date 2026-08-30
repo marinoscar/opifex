@@ -35,7 +35,9 @@ docker compose -f base.compose.yml -f dev.compose.yml up
 ```
 
 The application is served at http://localhost:3535, the API reference at
-http://localhost:3535/api/docs.
+http://localhost:3535/api/docs. That port is the default; it's set by
+`NGINX_PORT` in `infra/compose/.env` (see `docs/ssl-nginx-setup.md`), so a
+given deployment may publish elsewhere.
 
 ## Where to go next
 
