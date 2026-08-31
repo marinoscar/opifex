@@ -1,0 +1,40 @@
+-- Rate-limit history index (#476): supports the read-only history endpoint's
+-- query, "newest-first blocked episodes, optionally filtered by time window,
+-- runner and reason" - which reduces to
+-- `WHERE blocked_reason IS NOT NULL ORDER BY occurred_at DESC` against
+-- `run_events`. No new table and no new column - #476 is explicit that a
+-- `rate_limit_episodes` table would duplicate what `run_events` already
+-- owns (ADR-0018 §1's ledger-vs-copy mistake), so this migration is index
+-- only.
+--
+-- Hand-written: Prisma's schema language has no `WHERE` clause for
+-- `@@index`, so a partial index cannot be declared in schema.prisma at all -
+-- see the doc comment on `RunEvent` for why this is worth the resulting
+-- `prisma migrate diff` drift, the same tradeoff `OperatorSetting`'s
+-- hand-written CHECK constraint accepts in
+-- `20260907120000_operator_settings/migration.sql`.
+--
+-- PARTIAL, not a plain `CREATE INDEX ... (blocked_reason, occurred_at)`,
+-- because `run_events` is named in its own schema doc comment as "the
+-- high-volume table" - every tool call from every run lands a row here, and
+-- `blocked_reason` is NULL for the overwhelming majority of them. A plain
+-- composite index would carry an entry for every one of those NULL rows,
+-- paying storage and a write-time index maintenance cost on every single
+-- `run_events` insert to serve a query that only ever wants the rare
+-- non-NULL ones. The partial predicate below means this index has exactly as
+-- many entries as there are blocked episodes, not as many as there are
+-- events.
+--
+-- Indexed on `occurred_at` alone, not `(blocked_reason, occurred_at)`, even
+-- though the predicate could be dropped in favor of an equality column.
+-- `blocked_reason` only ever takes two values ('rate-limit',
+-- 'quota-exhausted'), and once the partial predicate has already cut the
+-- index down to blocked rows only, filtering further to one reason is a
+-- cheap in-memory Filter over a small row set - not a second index column
+-- worth paying maintenance cost for. `occurred_at` (not `occurred_at DESC`)
+-- because a plain b-tree index is scanned in either direction for free; the
+-- endpoint's `ORDER BY occurred_at DESC` and its optional `occurred_at >=
+-- $since` both come from the same ordered set of entries.
+CREATE INDEX "run_events_blocked_occurred_at_idx"
+  ON "run_events" ("occurred_at")
+  WHERE "blocked_reason" IS NOT NULL;
