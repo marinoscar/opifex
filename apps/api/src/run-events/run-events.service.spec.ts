@@ -127,6 +127,43 @@ describe('RunEventsService', () => {
     return row;
   }
 
+  /**
+   * Give the RunAttempt double a real row to apply its WHERE clause against,
+   * the same discipline `withRunRow` uses above and for the same reason: a
+   * double that answers `{ count: N }` unconditionally cannot tell a WHERE
+   * that matched the open attempt from one that matched a different run or a
+   * different outcome, or nothing at all. Plain equality per column is all
+   * `concludeRun`'s own `runAttempt.updateMany` call needs -- its WHERE is
+   * exactly `{ runId, outcome: 'running' }`, no `OR`/`in`/`lt`.
+   */
+  interface RunAttemptRow {
+    runId: string;
+    outcome: string;
+    [column: string]: unknown;
+  }
+
+  function withRunAttemptRow(
+    initial: Partial<RunAttemptRow> & { outcome: string },
+  ): RunAttemptRow {
+    const row: RunAttemptRow = { runId: RUN_ID, ...initial };
+
+    prisma.runAttempt.updateMany.mockImplementation(
+      (args: {
+        where: Record<string, unknown>;
+        data: Record<string, unknown>;
+      }) => {
+        const matches = Object.entries(args.where).every(
+          ([column, condition]) => row[column] === condition,
+        );
+        if (!matches) return Promise.resolve({ count: 0 });
+        Object.assign(row, args.data);
+        return Promise.resolve({ count: 1 });
+      },
+    );
+
+    return row;
+  }
+
   beforeEach(() => {
     prisma = {
       run: {
@@ -886,6 +923,120 @@ describe('RunEventsService', () => {
       ]);
 
       expect(conclusion().data.status).toBe('failed');
+    });
+  });
+
+  /**
+   * The third leg of the lifecycle rule `openResumedAttempt`'s doc comment
+   * states: "an attempt row is written by whoever writes the corresponding
+   * `Run.status` transition, so the two can never disagree." Dispatch opening
+   * attempt 1 and a resume closing the parked one while opening the next are
+   * both pinned in `run-executor.service.spec.ts`. This is the third writer
+   * that comment names -- `concludeRun` closing whichever attempt is open --
+   * and until now it had no assertion of its own. The fixture
+   * (`runAttempt: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) }`)
+   * was wired so the conclusion path could run at all, which is the worst
+   * kind of gap: it LOOKS covered, because every test in the file above this
+   * one concludes a run with no attempt rows, which is indistinguishable from
+   * the WHERE matching nothing.
+   */
+  describe('closing the open attempt when the run concludes (#477)', () => {
+    it('closes the open attempt as succeeded, dated at the terminal event, carrying its summary', async () => {
+      withRunRow({ status: 'running' });
+      const attempt = withRunAttemptRow({ outcome: 'running' });
+
+      await service.ingest(RUN_ID, [
+        event({
+          type: 'run.completed',
+          occurredAt: '2026-08-21T11:00:00.000Z',
+          summary: 'Added the health endpoint',
+        }),
+      ]);
+
+      expect(attempt.outcome).toBe('succeeded');
+      expect(attempt.endedAt).toEqual(new Date('2026-08-21T11:00:00.000Z'));
+      expect(attempt.stopReason).toBe('Added the health endpoint');
+    });
+
+    it('closes the open attempt as failed, carrying why the run stopped', async () => {
+      withRunRow({ status: 'running' });
+      const attempt = withRunAttemptRow({ outcome: 'running' });
+
+      await service.ingest(RUN_ID, [
+        event({
+          type: 'run.failed',
+          occurredAt: '2026-08-21T11:00:00.000Z',
+          failure: { reason: 'killed for looping' },
+        }),
+      ]);
+
+      expect(attempt.outcome).toBe('failed');
+      expect(attempt.stopReason).toBe('killed for looping');
+    });
+
+    it('targets the run named by the event -- an attempt on a DIFFERENT run is left alone', async () => {
+      // Proves the harness (and the underlying WHERE) checks `runId`, not
+      // only `outcome`: a double that ignored the column entirely would also
+      // pass the two tests above.
+      withRunRow({ status: 'running' });
+      const otherRunsAttempt = withRunAttemptRow({
+        runId: 'a1111111-0000-4000-8000-000000000099',
+        outcome: 'running',
+      });
+
+      await service.ingest(RUN_ID, [event({ type: 'run.completed' })]);
+
+      expect(otherRunsAttempt.outcome).toBe('running');
+    });
+
+    it('leaves an attempt alone once it is no longer `running` -- e.g. one a park already closed', async () => {
+      // Proves the WHERE's other column: `outcome: 'running'` is not
+      // decorative. A run resumed once and blocked again before concluding
+      // has its LATEST attempt open and an earlier one already `blocked`;
+      // only the open one may be touched.
+      withRunRow({ status: 'running' });
+      const alreadyClosed = withRunAttemptRow({ outcome: 'blocked' });
+
+      await service.ingest(RUN_ID, [event({ type: 'run.completed' })]);
+
+      expect(alreadyClosed.outcome).toBe('blocked');
+    });
+
+    it('does not throw when there is no open attempt to close', async () => {
+      // A run dispatched before #477 shipped has no attempt rows at all, and
+      // `runAttempt.updateMany` matching nothing is exactly the row-less
+      // state the default double already answers -- there is no fake row to
+      // assert a WHERE against here, only that the call is shaped correctly
+      // and the ingest still resolves.
+      withRunRow({ status: 'running' });
+
+      await expect(
+        service.ingest(RUN_ID, [
+          event({
+            type: 'run.completed',
+            occurredAt: '2026-08-21T11:00:00.000Z',
+          }),
+        ]),
+      ).resolves.toMatchObject({ accepted: 1 });
+
+      expect(prisma.runAttempt.updateMany).toHaveBeenCalledWith({
+        where: { runId: RUN_ID, outcome: 'running' },
+        data: expect.objectContaining({ outcome: 'succeeded' }),
+      });
+    });
+
+    it('never calls runAttempt.updateMany when the run itself does not conclude', async () => {
+      // The guard the service states explicitly: a redelivered terminal event
+      // matches zero rows on the RUN'S OWN updateMany, and `updated.count > 0`
+      // is what stops it re-dating an attempt that already closed -- not a
+      // second monotonic check on the attempt itself.
+      withRunRow({ status: 'succeeded' });
+      const attempt = withRunAttemptRow({ outcome: 'running' });
+
+      await service.ingest(RUN_ID, [event({ type: 'run.completed' })]);
+
+      expect(attempt.outcome).toBe('running');
+      expect(prisma.runAttempt.updateMany).not.toHaveBeenCalled();
     });
   });
 
