@@ -35,7 +35,9 @@ export interface WatchdogSweepResult {
    * system exists to eliminate.
    */
   judgedRunIds: string[];
-  /** Actions computed. During Phase 3 none of the kills execute. */
+  /**
+   * Actions computed. The `resume` ones execute (#477); no kill does.
+   */
   actions: ReconcileAction[];
   silentRuns: number;
   loopingRuns: number;
@@ -68,7 +70,14 @@ export interface WatchdogSweepResult {
   checkCoverage: CoverageTallies;
   /** Runs newly parked with a scheduled resume. */
   parkedRuns: number;
-  /** Parked runs whose scheduled time has arrived. */
+  /**
+   * Parked runs whose scheduled time has arrived.
+   *
+   * What this tick found DUE, not what it resumed. `ResumeExecutor` re-checks
+   * every admission gate afterwards and can refuse any of them, so the two
+   * numbers legitimately differ and are reported by the components that know
+   * their own half.
+   */
   resumableRuns: number;
   /**
    * Every run this sweep found making NO PROGRESS, and since when (#232).
@@ -99,9 +108,19 @@ export interface WatchdogSweepResult {
  * > A session stalls at 10am. I find out at 2pm. Four hours dead.
  *
  * This is the part that notices. It computes actions and executes none of
- * them — killing a run and re-dispatching from base is Phase 4 machinery
- * (#61, #66), and #54 says so explicitly. What lands here is the detection,
- * the verdict, and the escalation that makes a human aware.
+ * them, which is #54's phase boundary and still holds: what lands here is the
+ * detection, the verdict, and the escalation that makes a human aware.
+ *
+ * Two of the computed actions now reach something. `resume` is executed by
+ * `reconciler/execute/resume.executor.ts` (#477) — this class still only
+ * decides that a park is over. `park` is persisted below, by this class, and
+ * that is the one deliberate exception to "executes none of them": a park is
+ * not an outward action, it is this component recording its own schedule, and
+ * {@link sweepBlocked} says why it cannot live in the executor.
+ *
+ * The kill actions — `kill-and-re-run`, `kill-and-re-plan` — still execute
+ * nowhere. Nothing in the codebase can end a run on a verdict, and the log
+ * lines below say so in the present tense rather than pointing at an issue.
  */
 @Injectable()
 export class WatchdogService {
@@ -216,6 +235,24 @@ export class WatchdogService {
    * which is why a parked run produces no action at all while it waits — the
    * system working should be quiet, and an action every tick would bury the
    * ones that need attention.
+   *
+   * ## Why the PARK is written here and the RESUME is not
+   *
+   * The resume leaves through an action, to `ResumeExecutor`, because it
+   * spends money against a real subscription with nobody watching. The park
+   * does not leave at all: it schedules a time, and the only thing that ever
+   * reads that time is the next tick of this same sweep.
+   *
+   * It is persisted here rather than by an executor for a reason the executor
+   * could not satisfy. `ReconcilerTask.runOnce` skips its acting phase on a
+   * tick whose projection threw, and a park that had not persisted would be
+   * RE-DRAWN with fresh jitter next tick — leaving the run chasing its own
+   * jitter and never actually resuming, which is the failure {@link
+   * decideParking} is written to avoid. Persisting the schedule where the
+   * schedule is decided is what makes the decision idempotent across ticks.
+   *
+   * That also makes this method the single writer of a `resumesAt` PLAN, which
+   * is the invariant `blocked-parking.ts` states and #477 settled.
    */
   private async sweepBlocked(now: Date): Promise<{
     parked: number;
@@ -245,8 +282,14 @@ export class WatchdogService {
         this.logger.log(decision.reason);
       } else if (decision.kind === 'resume') {
         resumable += 1;
+        // Computed here, executed by `ResumeExecutor` later in the same tick
+        // (#477). Logged at `log` rather than `warn`: a park reaching its end
+        // is the system working, and it is the line an operator looks for to
+        // confirm auto-resume is alive. Whether the resume actually happened —
+        // and which gate refused it if not — is that executor's line, because
+        // this class cannot know.
         this.logger.log(
-          `${decision.reason} — computed resume action (not dispatched; Phase 4 wires that, #66)`,
+          `${decision.reason} — handing it to the resume executor`,
         );
       } else if (decision.kind === 'escalate') {
         this.logger.warn(decision.reason);

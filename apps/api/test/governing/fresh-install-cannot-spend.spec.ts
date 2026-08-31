@@ -19,6 +19,7 @@ import { GitHubWriteService } from '../../src/github/write/github-write.service'
 import { GitLivenessService } from '../../src/liveness/git-liveness.service';
 import { EscalationDispatcher } from '../../src/notifications/escalation-dispatcher.service';
 import { MirrorLabelExecutor } from '../../src/reconciler/execute/mirror-label.executor';
+import { ResumeExecutor } from '../../src/reconciler/execute/resume.executor';
 import { SpecFeedbackExecutor } from '../../src/reconciler/execute/spec-feedback.executor';
 import { ReconcileLogService } from '../../src/reconciler/log/reconcile-log.service';
 import { ReconcilerService } from '../../src/reconciler/reconciler.service';
@@ -245,6 +246,18 @@ describe('a fresh install is ready, and cannot spend (ADR-0019, #439)', () => {
             failures: [],
           }),
         } as unknown as SpecFeedbackExecutor,
+        // #477's resume executor, inert. A fresh install has no parked run to
+        // resume; what this file governs is that nothing spends, and a double
+        // that resumed one would be spending.
+        {
+          execute: jest.fn().mockResolvedValue({
+            resumed: 0,
+            refused: 0,
+            observed: 0,
+            unobserved: 0,
+            failures: [],
+          }),
+        } as unknown as ResumeExecutor,
         { drain } as unknown as DispatchQueueService,
         {
           listObserved: jest.fn().mockResolvedValue([]),

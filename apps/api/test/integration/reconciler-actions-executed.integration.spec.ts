@@ -11,6 +11,7 @@ import { GitLivenessService } from '../../src/liveness/git-liveness.service';
 import { EscalationDispatcher } from '../../src/notifications/escalation-dispatcher.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { MirrorLabelExecutor } from '../../src/reconciler/execute/mirror-label.executor';
+import { ResumeExecutor } from '../../src/reconciler/execute/resume.executor';
 import { SpecFeedbackExecutor } from '../../src/reconciler/execute/spec-feedback.executor';
 import { ReconcileLogService } from '../../src/reconciler/log/reconcile-log.service';
 import { ReconcilerService } from '../../src/reconciler/reconciler.service';
@@ -148,6 +149,18 @@ function noopCollaborators() {
         failures: [],
       }),
     } as unknown as SpecFeedbackExecutor,
+    // #477's resume executor. Inert: this file is about actionsExecuted
+    // accounting, and a double that resumed a run would put a write on the
+    // count it exists to measure.
+    resumes: {
+      execute: jest.fn().mockResolvedValue({
+        resumed: 0,
+        refused: 0,
+        observed: 0,
+        unobserved: 0,
+        failures: [],
+      }),
+    } as unknown as ResumeExecutor,
     dispatchQueue: {
       drain: jest.fn().mockResolvedValue({
         dispatched: 0,
@@ -235,6 +248,7 @@ describeIfDb(
         { tick: options.tick } as unknown as ReconcilerService,
         executor,
         collaborators.specFeedback,
+        collaborators.resumes,
         collaborators.dispatchQueue,
         collaborators.repositories,
         collaborators.liveness,
@@ -377,6 +391,7 @@ describeIfDb(
         { tick } as unknown as ReconcilerService,
         executor,
         collaborators.specFeedback,
+        collaborators.resumes,
         collaborators.dispatchQueue,
         collaborators.repositories,
         collaborators.liveness,
@@ -509,6 +524,7 @@ describeIfDb(
         { tick } as unknown as ReconcilerService,
         executor,
         collaborators.specFeedback,
+        collaborators.resumes,
         collaborators.dispatchQueue,
         collaborators.repositories,
         collaborators.liveness,

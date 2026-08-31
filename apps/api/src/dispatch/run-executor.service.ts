@@ -14,6 +14,10 @@ import { RunPollerService } from '../runners/run-poller.service';
 import { OperatorSettingsService } from '../settings/operator-settings/operator-settings.service';
 import type { Runner, WorkOrderSpec } from '../runners/runner.types';
 import type { GeneratedWorkOrder } from '../work-orders/work-order-generator';
+import {
+  RehydrationError,
+  rehydrateWorkOrder,
+} from '../work-orders/work-order-rehydrate';
 import { WorkOrderRecordsService } from '../work-orders/work-order-records.service';
 import { DispatchService } from './dispatch.service';
 import type { DispatchDecision, QueueReason } from './dispatch-policy';
@@ -54,6 +58,71 @@ export type ExecutionResult =
       wouldDispatchTo: string | null;
       reason: string;
     };
+
+/**
+ * Why a resume did not happen, as a value rather than as prose (#477).
+ *
+ * One member per gate, because "the resume was refused" is not an operational
+ * answer — every one of these is a DIFFERENT thing for an operator to do, and
+ * a single refusal string would flatten them into a sentence somebody has to
+ * read to act on. `QueueReason` earns its existence the same way on the
+ * dispatch path.
+ */
+export type ResumeRefusal =
+  /** `dispatch.autoResumeParked` is off. A human resumes it, or turns it on. */
+  | 'auto-resume-disabled'
+  /**
+   * The run is no longer parked.
+   *
+   * Not an error: the watchdog computed the resume from a sweep taken earlier
+   * in the same tick, and a run can report again on its own in between — which
+   * is precisely the case `RunEventsService.resumeRun` handles. Also the
+   * outcome when two ticks race, since the claim below is a guarded write.
+   */
+  | 'not-parked'
+  /**
+   * A human applied `factory:hold`, or the work order left `dispatched` while
+   * the run was parked (quarantined, cancelled, superseded).
+   */
+  | 'held-or-not-dispatched'
+  /** `Repository.dispatchEnabled` was turned off while the run was parked. */
+  | 'repository-dispatch-disabled'
+  /**
+   * The run has already spent its repository's per-run ceiling.
+   *
+   * Its own member rather than folding into `spend-refused`, because it is a
+   * different limit set by a different person in a different place: the
+   * repository's, not the deployment's.
+   */
+  | 'repository-budget-reached'
+  /** The stored row no longer rebuilds into the document that was authorized. */
+  | 'work-order-unrebuildable'
+  /** Nothing in this build can submit to the runner the run was dispatched to. */
+  | 'runner-unavailable'
+  /** The spend gate refused. Carries `QueueReason`'s own vocabulary in the text. */
+  | 'spend-refused'
+  /**
+   * The runner's own ceiling refused the re-invocation.
+   *
+   * The park is restored rather than failed, and this is the one refusal that
+   * is expected to clear itself: the next tick re-plans the park from the
+   * block event and tries again with fresh jitter.
+   */
+  | 'runner-at-capacity';
+
+export type ResumeResult =
+  | {
+      outcome: 'resumed';
+      runId: string;
+      runnerKey: string;
+      /** The `RunAttempt.number` this resume opened. */
+      attempt: number;
+      reason: string;
+    }
+  | { outcome: 'refused'; refusal: ResumeRefusal; reason: string }
+  /** `dispatch.enabled` is off. The whole decision ran; nothing was invoked. */
+  | { outcome: 'observed'; reason: string }
+  | { outcome: 'failed'; runId: string; reason: string };
 
 @Injectable()
 export class RunExecutorService {
@@ -174,6 +243,13 @@ export class RunExecutorService {
         runnerKey: decision.runnerKey,
         runnerVersion: capabilities.version,
         status: 'running',
+        // The FIRST invocation, as a row (#477). Denormalized onto the run in
+        // the same breath, which is what the column's own schema comment says
+        // it is for: "1 on dispatch, incremented by each auto-resume". It was
+        // 0 on every run in the database until now, because nothing ever wrote
+        // either side of that sentence.
+        attemptCount: 1,
+        attempts: { create: { number: 1, outcome: 'running' } },
         // The avoided park (#264), written in the SAME statement as the run
         // rather than after it. See `avoidedParkRow` for why it is written
         // here at all and not where the decision was made.
@@ -209,6 +285,437 @@ export class RunExecutorService {
     } catch (error) {
       return this.recover(runId, workOrder, error);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Resume (#477, and the criterion #66 closed without meeting)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Re-invoke the runner for a run that was parked on a rate limit.
+   *
+   * ## What #66 left, and why the trail read as finished
+   *
+   * #66 closed on 2026-08-23 with *"auto-resume works end to end without human
+   * involvement"* unmet. `decideParking` computed a `resume` decision,
+   * `actionsForParking` turned it into a `resume` ACTION, and nothing anywhere
+   * consumed one — while three comments pointed forward at #66 and #61 as
+   * though the wiring were still coming. Both issues were closed. This method
+   * is the consumer, and those comments now point here.
+   *
+   * The operational cost of the gap was not subtle: a run that hits a usage
+   * limit at 2pm is VISION §1's second origin story, and it also holds its
+   * runner's concurrency slot for the whole park —
+   * {@link OCCUPYING_STATUSES} counts `blocked` deliberately, on the stated
+   * grounds that *"the bound on the cost is auto-resume"*. Until this method
+   * existed, that bound did not.
+   *
+   * ## The same work order, and not a new attempt
+   *
+   * The run row is REUSED. Nothing here creates a `Run`, and nothing touches
+   * `WorkOrder.attempt`:
+   *
+   *  - A new `Run` would double-count the concurrency slot the parked run
+   *    never gave up, and would present in the cockpit as a silent second run
+   *    of the same work order.
+   *  - `WorkOrder.attempt` is the RETRY counter behind VISION §10's metric 4,
+   *    and #66 is explicit that a park is not a failure. Counting a park would
+   *    make the number that reads decomposition quality report quota weather
+   *    instead. The projection already refuses to spend an attempt on a parked
+   *    run (`desired-state.ts`, the `blocked` branch, which returns before the
+   *    ceiling is consulted); this is the other half of that promise, on the
+   *    write side.
+   *
+   * What IS recorded is a `RunAttempt` — see {@link openResumedAttempt} for
+   * why that model stops being an empty table here rather than being deleted.
+   *
+   * ## Every gate, re-checked
+   *
+   * A resume that skipped admission would be a hole around every control the
+   * first dispatch honoured, and the hole would be invisible: the run was
+   * authorized once, hours ago, and everything below can have changed since.
+   * In order, each named where it is checked:
+   *
+   *  1. `dispatch.autoResumeParked` — this behaviour's own switch (#477).
+   *  2. The run is still parked — a guarded write, which is also the lock.
+   *  3. The work order is still `dispatched` — catches quarantine, cancel and
+   *     supersession. A `factory:hold` is checked by the CALLER, because it
+   *     lives on the issue rather than on this row; see `ResumeExecutor`.
+   *  4. `Repository.dispatchEnabled`, exactly as `DispatchQueueService` checks
+   *     it for a first dispatch, and the repository's own per-run budget
+   *     ceiling — which the projection cannot check for a parked run, because
+   *     the `blocked` intent returns before the branch that would.
+   *  5. The stored row still rebuilds into the document that was authorized
+   *     (#154) — the resume runs the authorized thing or nothing.
+   *  6. The hard spend ceiling and the work order's own budget, through the
+   *     same `decideSpendAdmission` the first dispatch went through (#65).
+   *  7. `dispatch.enabled`, which reports what it WOULD have resumed.
+   *  8. The runner's own concurrency ceiling, enforced inside `submit`.
+   *
+   * ## The concurrency slot, stated precisely
+   *
+   * There are two of them and they behave differently, which is why "frees and
+   * re-takes its slot" needs saying rather than assuming:
+   *
+   *  - **The database slot** (`OCCUPYING_STATUSES`) is never freed. `blocked`
+   *    occupies, `running` occupies, and the run moves between them without
+   *    ever leaving the count. That is the point: freeing it would
+   *    over-subscribe the runner the moment the run came back, which
+   *    `dispatch.service.ts` calls the worse failure. So the resume must not
+   *    re-take it either, and it does not — no second row is created, and
+   *    `dispatch.maxConcurrent` is deliberately NOT re-evaluated here, because
+   *    a run already inside the ceiling would otherwise be refused re-entry to
+   *    a slot it is still holding.
+   *  - **The runner's process slot** WAS freed: the CLI exited when it hit the
+   *    limit. `submit` re-takes it, under the runner's own declared ceiling,
+   *    and refuses with `RunnerAtCapacityError` if the fleet filled up while
+   *    this run was parked. That refusal restores the park rather than failing
+   *    the run.
+   *
+   * Never throws. It runs from the reconciler tick, alongside every other
+   * outward step, and one parked run must not abandon the ones behind it.
+   */
+  async resumeParkedRun(runId: string): Promise<ResumeResult> {
+    // FIRST, before a single query. An operator who has turned this off is
+    // owed a system that stops asking the database whether it may spend.
+    if (!this.settings.get('dispatch.autoResumeParked')) {
+      return {
+        outcome: 'refused',
+        refusal: 'auto-resume-disabled',
+        reason:
+          `Auto-resume is disabled, so run ${runId} stays parked until a human acts. ` +
+          'Its runner slot stays occupied while it waits (#477).',
+      };
+    }
+
+    const run = await this.prisma.run.findUnique({
+      where: { id: runId },
+      select: RESUME_SELECT,
+    });
+
+    if (!run || run.status !== 'blocked') {
+      return {
+        outcome: 'refused',
+        refusal: 'not-parked',
+        reason: `Run ${runId} is ${run ? run.status : 'gone'} and no longer parked`,
+      };
+    }
+
+    const identity = run.workOrder.identity;
+
+    // `dispatched` and nothing else. `held` means a human applied
+    // `factory:hold` before the work order was ever dispatched, `quarantined`
+    // means VISION §8 has taken it out of the factory's hands, and `cancelled`
+    // and `superseded` both mean this document is no longer the live one.
+    if (run.workOrder.status !== 'dispatched') {
+      return {
+        outcome: 'refused',
+        refusal: 'held-or-not-dispatched',
+        reason: `${identity} is ${run.workOrder.status}, not dispatched, so its run is not resumed`,
+      };
+    }
+
+    const repository = run.workOrder.repository;
+    if (!repository.dispatchEnabled) {
+      return {
+        outcome: 'refused',
+        refusal: 'repository-dispatch-disabled',
+        reason:
+          `${identity} is not resumed: dispatch is disabled for ` +
+          `${repository.owner}/${repository.name}`,
+      };
+    }
+
+    // The repository's per-run ceiling, re-applied. The projection applies
+    // this same comparison (`desired-state.ts`, the READY branch) and a parked
+    // run never reaches it — the `blocked` intent returns two branches
+    // earlier, deliberately, so that waiting out a quota cannot consume an
+    // attempt. That is right for the attempt counter and it means the ceiling
+    // is not checked for us here, so it is checked here.
+    //
+    // `>=` and the same direction as the projection: at the ceiling is at the
+    // ceiling. A null cost is NOT treated as zero (VISION §6) — an unmeasured
+    // run cannot be shown to have passed a limit, and refusing on that basis
+    // would stop every run on a runner that does not report cost.
+    const repositoryCeiling = repository.budgetCeilingUsd?.toNumber() ?? null;
+    const spentSoFar = run.costUsd?.toNumber() ?? null;
+    if (
+      repositoryCeiling !== null &&
+      spentSoFar !== null &&
+      spentSoFar >= repositoryCeiling
+    ) {
+      const reason =
+        `${identity} is not resumed: it has spent ${spentSoFar}, which has reached the ` +
+        `${repository.owner}/${repository.name} ceiling of ${repositoryCeiling}`;
+      this.logger.warn(reason);
+      return {
+        outcome: 'refused',
+        refusal: 'repository-budget-reached',
+        reason,
+      };
+    }
+
+    let workOrder: GeneratedWorkOrder;
+    try {
+      workOrder = rehydrateWorkOrder(run.workOrder);
+    } catch (error) {
+      if (!(error instanceof RehydrationError)) throw error;
+      // NOT quarantined from here. `DispatchQueueService` quarantines an
+      // unrebuildable row because it is about to hand it to a runner for the
+      // first time; this row was already dispatched and already has an
+      // authorization record posted for it, so flipping it to `quarantined`
+      // would make that record describe something no longer true — the same
+      // rule `HOLDABLE_STATUSES` encodes. It is reported and left parked,
+      // where the undated-block escalation will eventually surface it.
+      this.logger.error(
+        `${identity} cannot be rebuilt from its stored row, so its parked run cannot be ` +
+          `resumed: ${error.message}`,
+      );
+      return {
+        outcome: 'refused',
+        refusal: 'work-order-unrebuildable',
+        reason: error.message,
+      };
+    }
+
+    const runner = this.runnerFor(run.runnerKey);
+    if (!runner) {
+      return {
+        outcome: 'refused',
+        refusal: 'runner-unavailable',
+        reason:
+          `Run ${runId} was dispatched to ${run.runnerKey}, which this build has no ` +
+          'implementation for, so it cannot be resumed',
+      };
+    }
+
+    const capabilities = await runner.capabilities();
+
+    // The same gate, the same function, the same inputs as a first dispatch
+    // (#65). Deliberately re-run rather than trusted from the original
+    // admission: the ceiling may have been lowered, the window may have
+    // rolled, and the fleet has spent money since.
+    //
+    // The order's own ceiling is passed WHOLE rather than reduced by what this
+    // run has already spent. That over-states the remaining exposure, which is
+    // the correct direction for a hard ceiling — `decideSpendAdmission` reasons
+    // about the worst case on purpose — and the money already spent is not
+    // double-counted, because the ledger tally below is a fact about the
+    // window and already includes it.
+    const spend = decideSpendAdmission(
+      this.ceiling.value,
+      await this.ledger.tally(this.ceiling.value.windowDays),
+      {
+        ceilingUsd: workOrder.budgetCeilingUsd,
+        runnerReportsCost: capabilities.reportsCost,
+      },
+    );
+
+    if (!spend.admit) {
+      this.logger.warn(`${identity} not resumed — ${spend.reason}`);
+      return {
+        outcome: 'refused',
+        refusal: 'spend-refused',
+        reason: spend.reason,
+      };
+    }
+
+    if (!this.enabled) {
+      const reason =
+        `DISPATCH DISABLED — would have resumed ${identity} on ` +
+        `${run.runnerKey}@${capabilities.version}, whose park expired at ` +
+        `${run.resumesAt?.toISOString() ?? 'an unrecorded time'}.`;
+      this.logger.warn(reason);
+      return { outcome: 'observed', reason };
+    }
+
+    // THE CLAIM, and the lock. Guarded on `blocked` so two overlapping ticks
+    // cannot both resume one run: the second finds nothing to update, and
+    // `loadBlockedRuns` cannot see the row again once it says `running`.
+    //
+    // Written BEFORE `submit` for the same reason `dispatchWorkOrder` creates
+    // the run before submitting: events start arriving the moment the process
+    // does, and they must not land on a row still claiming to be parked.
+    // `resumesAt` is cleared in the same statement because it IS the park —
+    // see `blocked-parking.ts` for why that column has one meaning and one
+    // writer.
+    const attempt = Math.max(run.attemptCount, 1) + 1;
+    const claimed = await this.prisma.run.updateMany({
+      where: { id: runId, status: 'blocked' },
+      data: { status: 'running', resumesAt: null, attemptCount: attempt },
+    });
+
+    if (claimed.count === 0) {
+      return {
+        outcome: 'refused',
+        refusal: 'not-parked',
+        reason: `Run ${runId} stopped being parked while its resume was being admitted`,
+      };
+    }
+
+    try {
+      const handle = await runner.submit(toSpec(workOrder, runId));
+      // NOT `records.write`. The authorization and execution records were
+      // written when this work order was first dispatched (#63) and are
+      // idempotent per identity, so calling it again would be a no-op that
+      // still spent GitHub reads — and VISION §11 holds that budget back for
+      // the operator. The branch the workspace clones already carries the
+      // execution record's commit.
+      await this.openResumedAttempt(run, attempt, handle.externalId);
+      this.poller.track(runId, runner, handle);
+
+      const reason =
+        `Resumed ${identity} on ${run.runnerKey} as attempt ${attempt}; it was parked on ` +
+        `'${run.events[0]?.blockedReason ?? 'an unreported reason'}' since ` +
+        `${run.events[0]?.occurredAt.toISOString() ?? 'an unrecorded time'}`;
+      this.logger.log(reason);
+
+      return {
+        outcome: 'resumed',
+        runId,
+        runnerKey: run.runnerKey,
+        attempt,
+        reason,
+      };
+    } catch (error) {
+      return this.recoverResume(
+        runId,
+        identity,
+        attempt,
+        run.attemptCount,
+        error,
+      );
+    }
+  }
+
+  /**
+   * The resume failed after the run was claimed. Put it back, or fail it.
+   *
+   * Deliberately NOT {@link recover}: that one DELETES the run row on a
+   * capacity refusal, on the reasoning that a run which never started is not a
+   * run. That reasoning does not survive here — this run started hours ago,
+   * has events, cost and possibly commits behind it, and deleting the row
+   * would cascade every one of them away to record a re-invocation that did
+   * not happen.
+   */
+  private async recoverResume(
+    runId: string,
+    identity: string,
+    attempt: number,
+    previousAttemptCount: number,
+    error: unknown,
+  ): Promise<ResumeResult> {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (error instanceof RunnerAtCapacityError) {
+      // Back to parked, with `resumesAt` left null on purpose. The next
+      // watchdog tick re-plans the park from the block event's reset time and
+      // draws FRESH jitter, which is exactly the spread wanted when a fleet
+      // full of runs is all trying to come back at once — a fixed retry delay
+      // here would re-synchronise them.
+      await this.prisma.run.updateMany({
+        where: { id: runId, status: 'running' },
+        data: { status: 'blocked', attemptCount: previousAttemptCount },
+      });
+      this.logger.warn(`${identity} stays parked: ${message}`);
+      return {
+        outcome: 'refused',
+        refusal: 'runner-at-capacity',
+        reason: message,
+      };
+    }
+
+    await this.prisma.run.updateMany({
+      where: { id: runId, status: 'running' },
+      data: { status: 'failed', endedAt: new Date(), attentionReason: message },
+    });
+
+    this.logger.error(
+      `${identity} failed while being resumed as attempt ${attempt}: ${message}`,
+    );
+    return { outcome: 'failed', runId, reason: message };
+  }
+
+  /**
+   * Close the attempt that was parked, and open the one that replaces it.
+   *
+   * ## Why `RunAttempt` starts being written here rather than being dropped
+   *
+   * The model was declared with the schema and never read or written by a line
+   * of TypeScript — an empty table with a convincing doc comment, which is
+   * worse than no table at all: #476 needed *"the run blocked here and resumed
+   * there"*, found this, and had to fall back to an approximation derived from
+   * `Run.lastEventAt` because joining onto an empty table reports "never
+   * resumed" for everything. Leaving it empty after adding resume would set
+   * exactly that trap for the next person.
+   *
+   * Writing it is also what makes this issue's hardest criterion CHECKABLE
+   * rather than merely asserted. "A resume does not count as an attempt" is a
+   * claim about two different counters: `WorkOrder.attempt` (the retry counter
+   * behind metric 4, untouched here) and the invocation count (recorded here).
+   * With both written, neither has to be inferred from the other.
+   *
+   * ## The lifecycle, and who writes each transition
+   *
+   * An attempt row is written by whoever writes the corresponding `Run.status`
+   * transition, so the two can never disagree:
+   *
+   *  - `dispatchWorkOrder` opens attempt 1, nested in the same statement that
+   *    creates the run.
+   *  - This closes the parked attempt as `blocked` and opens the next.
+   *  - `RunEventsService.concludeRun` closes whichever attempt is open when a
+   *    terminal event arrives.
+   *
+   * A BLOCK does not close an attempt, which is the one that looks wrong and
+   * is not. `RunAttemptOutcome.blocked` means *"parked; a later attempt
+   * resumes it"* — a statement that the invocation ENDED. A run can park while
+   * its process is still alive (the CLI reports a `rate_limit_event` and may
+   * keep going), so closing on the block would record an ending that had not
+   * happened. The resume is the proof that it did, which is why the close
+   * happens here, dated at the resume rather than at the park.
+   *
+   * ## The gap a pre-existing run leaves, on purpose
+   *
+   * A run dispatched before this shipped has `attemptCount = 0` and no attempt
+   * rows. Its first resume opens number 2, leaving no number 1 — an honest gap
+   * saying "attempt 1 was never recorded" rather than a fabricated row
+   * claiming a start time nobody observed.
+   */
+  private async openResumedAttempt(
+    run: ParkedRunRow,
+    attempt: number,
+    runnerRunId: string,
+  ): Promise<void> {
+    const block = run.events[0];
+    const resumedAt = new Date();
+
+    // `updateMany` over every open attempt rather than a targeted update: a
+    // run with two open rows is a bug somewhere upstream, and leaving one of
+    // them open forever would hide it behind a table that merely looks
+    // populated.
+    await this.prisma.runAttempt.updateMany({
+      where: { runId: run.id, outcome: 'running' },
+      data: {
+        outcome: 'blocked',
+        endedAt: resumedAt,
+        stopReason:
+          `parked on '${block?.blockedReason ?? 'an unreported reason'}'` +
+          (block?.blockedUntil
+            ? ` until ${block.blockedUntil.toISOString()}`
+            : ' with no reset time'),
+        blockedUntil: block?.blockedUntil ?? null,
+      },
+    });
+
+    await this.prisma.runAttempt.create({
+      data: {
+        runId: run.id,
+        number: attempt,
+        outcome: 'running',
+        startedAt: resumedAt,
+        runnerRunId,
+      },
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -278,6 +785,80 @@ export interface DispatchWorkOrderInput {
   workOrder: GeneratedWorkOrder;
   /** The `WorkOrder` row's id. The generated document carries the identity. */
   workOrderId: string;
+}
+
+/**
+ * Everything a resume needs about a parked run, in one query.
+ *
+ * The work-order half is exactly `StoredWorkOrder`'s columns plus `status`, so
+ * `rehydrateWorkOrder` type-checks against it: a column dropped from this
+ * select is a compile error rather than a work order silently rebuilt without
+ * a field it was authorized with. `DispatchQueueService.WORK_ORDER_SELECT`
+ * makes the same argument for the first dispatch.
+ *
+ * The newest `run_blocked` event comes along for the ride because the resume
+ * has to be able to SAY what the run was parked on, and because the vendor's
+ * raw reset time lives there — see `blocked-parking.ts` on why that is the
+ * event row's fact rather than the run's.
+ */
+const RESUME_SELECT = {
+  id: true,
+  status: true,
+  runnerKey: true,
+  attemptCount: true,
+  resumesAt: true,
+  costUsd: true,
+  events: {
+    where: { type: 'run_blocked' },
+    orderBy: { occurredAt: 'desc' },
+    take: 1,
+    select: { occurredAt: true, blockedReason: true, blockedUntil: true },
+  },
+  workOrder: {
+    select: {
+      id: true,
+      status: true,
+      identity: true,
+      branch: true,
+      issueNumber: true,
+      issueUrl: true,
+      issueTitle: true,
+      baseCommit: true,
+      attempt: true,
+      taskSpec: true,
+      acceptanceCriteria: true,
+      pathConstraints: true,
+      decisionRefs: true,
+      needs: true,
+      modelTier: true,
+      budgetCeilingUsd: true,
+      wallClockTimeoutMinutes: true,
+      repository: {
+        select: {
+          owner: true,
+          name: true,
+          dispatchEnabled: true,
+          budgetCeilingUsd: true,
+        },
+      },
+    },
+  },
+} as const;
+
+/**
+ * The parts of that row {@link RunExecutorService.openResumedAttempt} reads.
+ *
+ * Structural rather than `Prisma.RunGetPayload<...>`: the attempt writer needs
+ * an id and the block it is closing, and naming only those keeps it callable
+ * from a test with a two-field object instead of a whole generated payload.
+ */
+interface ParkedRunRow {
+  id: string;
+  events: {
+    occurredAt: Date;
+    blockedReason: string | null;
+    blockedUntil: Date | null;
+  }[];
 }
 
 /**

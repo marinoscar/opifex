@@ -26,8 +26,18 @@ import {
  * over-subscribing the moment it does. Over-subscription is the worse failure:
  * it breaks the one number a runner told us about itself.
  *
- * The bound on the cost is #66's auto-resume, which is what stops a blocked
- * run holding a slot indefinitely.
+ * The bound on the cost is auto-resume, and as of #477 that bound actually
+ * exists: `ResumeExecutor` wakes a parked run once its window has rolled, so
+ * the slot is held for the length of the quota window rather than until a
+ * human notices. This comment named #66 as the issue that would provide it;
+ * #66 closed with exactly that criterion unmet, and for as long as it was
+ * unmet a blocked run really did hold its slot indefinitely.
+ *
+ * Note what the resume does NOT do to this count: nothing. The run moves
+ * `blocked` → `running` without ever leaving `OCCUPYING_STATUSES`, which is
+ * the point — freeing the slot on the park and re-taking it on the resume
+ * would re-introduce exactly the over-subscription described above, at the
+ * least convenient moment.
  */
 const OCCUPYING_STATUSES = ['running', 'stalled', 'blocked'] as const;
 
@@ -321,6 +331,12 @@ type MeterWindowRow = MeterWindow & { runnerKey: string };
  * later is used, so routing never treats a runner as refilled while the run
  * that discovered the block is still waiting out its own jitter — erring
  * towards patience, since the cost of being early is another blocked run.
+ *
+ * `resumesAt` is null for a run that blocked since the last watchdog tick,
+ * and has been since #477 made the watchdog its only writer — the plan does
+ * not exist until a tick draws the jitter. The `filter` below already handles
+ * that: the event's `blockedUntil` carries the position on its own, and the
+ * run's plan only ever makes routing MORE patient.
  */
 function quotaPositions(
   blocked: readonly BlockedRunRow[],

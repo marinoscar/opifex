@@ -191,11 +191,11 @@ export interface TickFailure {
  * repository that could not be READ. This is a repository that was written to,
  * or should have been, and something came back wrong.
  *
- * The two executors that produce these return different shapes —
- * `MirrorLabelExecutor` carries the whole `ReconcileAction`, `SpecFeedbackExecutor`
- * carries a repository and an issue number and no action at all — so this is
- * the intersection: what BOTH can actually supply, which is also the minimum
- * #47 asks of evidence. Which action, which target, what error, answerable
+ * The executors that produce these return different shapes —
+ * `MirrorLabelExecutor` and `ResumeExecutor` carry the whole `ReconcileAction`,
+ * `SpecFeedbackExecutor` carries a repository and an issue number and no
+ * action at all — so this is the intersection: what ALL of them can actually
+ * supply, which is also the minimum #47 asks of evidence. Which action, which target, what error, answerable
  * from the tick row without opening a container log.
  *
  * Persisted on `reconcile_ticks.execution_failures`, where the null/`[]`
@@ -205,7 +205,7 @@ export interface TickFailure {
  */
 export interface TickExecutionFailure {
   /** Which executor reported it. */
-  source: 'mirror-label' | 'spec-feedback';
+  source: 'mirror-label' | 'spec-feedback' | 'resume';
   /**
    * What was being attempted.
    *

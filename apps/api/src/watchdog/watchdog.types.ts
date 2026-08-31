@@ -72,7 +72,19 @@ export interface WatchedRunState {
  *
  * A verdict is not an action. It is the finding, and #54's phase boundary is
  * explicit that the ACTION it implies — kill and re-dispatch from base — is
- * Phase 4 machinery (#61, #66). Until then the computed action escalates.
+ * somebody else's to perform.
+ *
+ * That boundary is now partly crossed and partly not, and the difference is
+ * worth stating rather than leaving to a reader to discover. #477 wired the
+ * PARKING half: a `resume` action reaches
+ * `reconciler/execute/resume.executor.ts`, which re-invokes the runner. The
+ * KILL half — this type — still has no executor, and a silence verdict still
+ * escalates to a human rather than killing anything.
+ *
+ * This comment used to defer that to "#61, #66", both of which have closed. A
+ * pointer at a finished issue reads as done; it is not, and it now has no
+ * issue behind it at all. Killing a run destroys work, so it wants its own
+ * decision about who is allowed to and on what evidence — not a footnote here.
  */
 export interface SilenceVerdict {
   runId: string;

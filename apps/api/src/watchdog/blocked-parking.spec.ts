@@ -28,6 +28,22 @@ function blocked(overrides: Partial<BlockedRunState> = {}): BlockedRunState {
   };
 }
 
+/**
+ * A run whose park has already been PLANNED, and consistently so.
+ *
+ * A plan is always its own block's reset PLUS jitter (#477), so a real
+ * `resumesAt` is always LATER than the `resetAt` it was drawn from. A fixture
+ * that puts the plan before the reset is describing a block that has been
+ * superseded by a later one, which `decideParking` now deliberately re-plans —
+ * so it cannot stand in for "already parked and waiting".
+ */
+function parked(resumesInMinutes: number): BlockedRunState {
+  return blocked({
+    resetAt: at(resumesInMinutes - 5),
+    resumesAt: at(resumesInMinutes),
+  });
+}
+
 describe('decideParking', () => {
   describe('a newly blocked run', () => {
     it('parks rather than being killed or counted as a failure', () => {
@@ -108,21 +124,13 @@ describe('decideParking', () => {
     it('waits rather than re-deciding', () => {
       // Re-deciding every tick would move the resume time on each pass and the
       // run would never resume — the jitter would chase itself.
-      const decision = decideParking(
-        blocked({ resumesAt: at(60) }),
-        NOW,
-        () => 0.5,
-      );
+      const decision = decideParking(parked(60), NOW, () => 0.5);
 
       expect(decision.kind).toBe('waiting');
     });
 
     it('resumes once its scheduled time has passed', () => {
-      const decision = decideParking(
-        blocked({ resumesAt: at(-1) }),
-        NOW,
-        () => 0.5,
-      );
+      const decision = decideParking(parked(-1), NOW, () => 0.5);
 
       expect(decision.kind).toBe('resume');
       expect(decision.reason).toContain('has passed');
@@ -196,7 +204,7 @@ describe('actionsForParking', () => {
   });
 
   it('emits a resume action when due', () => {
-    const run = blocked({ resumesAt: at(-1) });
+    const run = parked(-1);
 
     expect(
       actionsForParking(run, decideParking(run, NOW)).map((a) => a.type),
@@ -219,7 +227,7 @@ describe('actionsForParking', () => {
   it('emits NOTHING while a run is simply waiting', () => {
     // A blocked run waiting out its quota is Opifex succeeding. Emitting an
     // action every tick would bury the real ones.
-    const run = blocked({ resumesAt: at(60) });
+    const run = parked(60);
 
     expect(actionsForParking(run, decideParking(run, NOW))).toEqual([]);
   });

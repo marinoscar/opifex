@@ -299,6 +299,28 @@ describe('WatchdogService', () => {
       };
     }
 
+    /**
+     * A blocked row whose park has already been PLANNED, consistently.
+     *
+     * A plan is its block's reset PLUS jitter (#477), so a real `resumesAt` is
+     * always later than the `blockedUntil` it came from. A row with the plan
+     * BEFORE the reset describes a block superseded by a later one, which
+     * `decideParking` now re-plans on purpose — so it cannot stand in for
+     * "already parked".
+     */
+    function plannedRow(resumesInMs: number) {
+      return blockedRow({
+        resumesAt: new Date(NOW.getTime() + resumesInMs),
+        events: [
+          {
+            occurredAt: new Date(NOW.getTime() - 5 * 60_000),
+            blockedReason: 'rate-limit',
+            blockedUntil: new Date(NOW.getTime() + resumesInMs - 60_000),
+          },
+        ],
+      });
+    }
+
     function mockBlocked(rows: unknown[]) {
       prisma.run.findMany.mockImplementation(
         async (query: { where: { status: unknown } }) =>
@@ -325,9 +347,7 @@ describe('WatchdogService', () => {
     it('is silent while a parked run simply waits', async () => {
       // A blocked run waiting out its quota is Opifex succeeding. An action
       // every tick would bury the ones that need attention.
-      mockBlocked([
-        blockedRow({ resumesAt: new Date(NOW.getTime() + 60 * 60_000) }),
-      ]);
+      mockBlocked([plannedRow(60 * 60_000)]);
 
       const result = await service.sweep(NOW);
 
@@ -336,9 +356,7 @@ describe('WatchdogService', () => {
     });
 
     it('computes a resume once the scheduled time has passed', async () => {
-      mockBlocked([
-        blockedRow({ resumesAt: new Date(NOW.getTime() - 60_000) }),
-      ]);
+      mockBlocked([plannedRow(-60_000)]);
 
       const result = await service.sweep(NOW);
 
@@ -391,9 +409,7 @@ describe('WatchdogService', () => {
      */
     it('reports every blocked run as parked dead time, even while waiting', async () => {
       const blockedSince = new Date(NOW.getTime() - 5 * 60_000);
-      mockBlocked([
-        blockedRow({ resumesAt: new Date(NOW.getTime() + 60 * 60_000) }),
-      ]);
+      mockBlocked([plannedRow(60 * 60_000)]);
 
       const result = await service.sweep(NOW);
 

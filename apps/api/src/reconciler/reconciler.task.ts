@@ -24,9 +24,11 @@ import {
 import type { ReconcileAction } from './diff/actions.types';
 import {
   fromMirrorLabels,
+  fromResumes,
   fromSpecFeedback,
 } from './execute/execution-failures';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
+import { ResumeExecutor } from './execute/resume.executor';
 import { SpecFeedbackExecutor } from './execute/spec-feedback.executor';
 import { ReconcileLogService } from './log/reconcile-log.service';
 import { ReconcilerService } from './reconciler.service';
@@ -124,6 +126,11 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
     private readonly reconciler: ReconcilerService,
     private readonly executor: MirrorLabelExecutor,
     private readonly specFeedback: SpecFeedbackExecutor,
+    // The other outward executor the task holds (#477). On the same side of
+    // the compute/act line as the two above: `WatchdogService` decides that a
+    // parked run is due and `ReconcilerService` decides whether a human has
+    // held its issue, and neither of them can act on either conclusion.
+    private readonly resumes: ResumeExecutor,
     private readonly dispatchQueue: DispatchQueueService,
     private readonly repositories: RepositoriesService,
     private readonly liveness: GitLivenessService,
@@ -569,6 +576,52 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Wake the parked runs whose reset time has passed (#477).
+   *
+   * Independently caught, like every other outward step: a resume that threw
+   * must not cost this tick its dispatch drain or its execution record.
+   *
+   * The whole action list goes in, not just the watchdog's half. The executor
+   * needs both — the `resume` actions come from the watchdog, and the decision
+   * about whether a human has since applied `factory:hold` comes from the
+   * projection the reconciler just computed. Handing it the pieces separately
+   * would be handing it the same tick twice.
+   *
+   * A tick with no `record` never reaches here: `runOnce` assigns it from
+   * `reconciler.tick()` on the line above, so a projection that threw skips
+   * this step entirely. That is the fail-closed behaviour the executor's hold
+   * gate depends on, and it is structural rather than a check.
+   */
+  private async resumeParkedRuns(
+    actions: ReconcileAction[],
+    record: TickRecord,
+    acting: ActingPhase,
+  ): Promise<void> {
+    // Nothing to resume is the common case, and it must leave the acting
+    // phase untouched. `executionFailures` distinguishes null ("no
+    // acting-phase executor ran at all this tick") from `[]` ("one ran and
+    // found nothing wrong"), and an executor that reported a clean run on
+    // every quiet tick would erase that distinction — the same reason the
+    // mirror-label step is skipped outright when no repository has opted in.
+    if (!actions.some((action) => action.type === 'resume')) return;
+
+    try {
+      const outcome = await this.resumes.execute(actions, record.projections);
+      // Set after the call returns, for the same reason the mirror-label and
+      // spec-feedback steps do: an executor that threw outright has
+      // established nothing, and `[]` would say it ran clean.
+      acting.ran = true;
+      acting.failures.push(...fromResumes(outcome));
+    } catch (error) {
+      this.logger.error(
+        `Resuming parked runs failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
    * Hand queued work orders to a runner.
    *
    * Independently caught, like every other outward step. Runs BEFORE the
@@ -758,6 +811,18 @@ export class ReconcilerTask implements OnModuleInit, OnModuleDestroy {
       // would silence feedback in exactly the repository where nothing else
       // is happening.
       await this.reportSpecRejections(record, acting);
+
+      // BEFORE the dispatch drain, deliberately. Both spend money and a fleet
+      // at capacity cannot do both, so the order is a policy: finishing work
+      // that has already started beats starting more of it. A parked run is
+      // also holding a concurrency slot that nothing else can use until it
+      // resumes (`dispatch.service.ts`, `OCCUPYING_STATUSES`), so resuming it
+      // first is what frees the fleet rather than what competes with it.
+      //
+      // Also before the early return below: a resume needs the projection this
+      // tick just computed, and the action that triggers it comes from the
+      // watchdog rather than from the diff engine.
+      await this.resumeParkedRuns(actions, record, acting);
 
       // Also before the early return, and for the same reason: a queued work
       // order produces no action, so gating this on the action list would
