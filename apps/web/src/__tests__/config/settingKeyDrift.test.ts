@@ -72,6 +72,15 @@ const MODEL_CONFIG = resolve(
 const STEERING_DTO = resolve(API_SRC, 'steering/dto/steering.dto.ts');
 /** Where `src/types/steering.ts` mirrors it, read as text for the same reason. */
 const WEB_STEERING_TYPES = resolve(HERE, '../../types/steering.ts');
+/**
+ * Rate-limit history (#476): `RATE_LIMIT_REASONS` and `EPISODE_DISPOSITIONS`
+ * are declared here as `as const` arrays, not `z.enum([...])` calls.
+ */
+const QUOTA_HISTORY = resolve(API_SRC, 'quota/quota-history.ts');
+/** `quotaPressureSchema` — the one member of the trio that IS a `z.enum`. */
+const QUOTA_DTO = resolve(API_SRC, 'quota/dto/quota.dto.ts');
+/** Where `src/types/quota.ts` mirrors all three, read as text for the same reason. */
+const WEB_QUOTA_TYPES = resolve(HERE, '../../types/quota.ts');
 
 function apiSource(path: string): string {
   // A missing file is a failure, not a skip. The alternative — quietly passing
@@ -333,5 +342,101 @@ describe('the steering contract the chat surface mirrors', () => {
     expect(
       unionMembers(apiSource(WEB_STEERING_TYPES), 'SkippedReason'),
     ).toEqual(enumValues(apiSource(STEERING_DTO), 'skippedReasonSchema'));
+  });
+});
+
+/**
+ * The quota history vocabulary, in both places it is written down (#476,
+ * #417).
+ *
+ * `apps/web/src/types/quota.ts` mirrors `apps/api/src/quota/quota-history.ts`
+ * by hand — importing it would drag NestJS into this TypeScript project, the
+ * same reason the steering suite above gives. What is different here is the
+ * SHAPE of the API's declaration: `RATE_LIMIT_REASONS` and
+ * `EPISODE_DISPOSITIONS` are `as const` arrays, not `z.enum([...])` calls —
+ * the history DTO builds its zod schemas FROM them
+ * (`z.enum(RATE_LIMIT_REASONS)`, `z.enum(EPISODE_DISPOSITIONS)`), so there is
+ * no `z.enum([...])` call anywhere in `quota-history.ts` naming the members
+ * literally for the steering suite's `enumValues` to find. `arrayMembers`
+ * below is that extractor's sibling for an `as const` array.
+ *
+ * `QuotaPressure` is the one member of the trio that IS a literal
+ * `z.enum([...])` — `quotaPressureSchema` in `quota.dto.ts` — so it is read
+ * with `enumValues` against that file instead, exactly like the steering
+ * enums above.
+ *
+ * A silent divergence here is #417's finding all over again: every web quota
+ * test mocks the hooks or the network, so a web-only reason or disposition
+ * would render fine locally and disagree with the API in production, with
+ * both suites green throughout.
+ */
+describe('the quota history vocabulary the web mirrors (#476)', () => {
+  /** `enumValues`'s sibling: `NAME = [...] as const`, not a `z.enum` call. */
+  function arrayMembers(source: string, name: string): string[] {
+    const declaration = new RegExp(
+      `${name} = \\[([\\s\\S]*?)\\]\\s*as const`,
+    ).exec(source);
+    expect(
+      declaration,
+      `${name} is declared as an \`as const\` array`,
+    ).not.toBeNull();
+    return [...(declaration?.[1] ?? '').matchAll(/'([a-z-]+)'/g)]
+      .map((match) => match[1])
+      .sort();
+  }
+
+  /** A `z.enum([...])` call, read literally — the steering suite's own helper. */
+  function enumValues(source: string, name: string): string[] {
+    const declaration = new RegExp(`${name} = z\\.enum\\(\\[([^\\]]*)\\]`).exec(
+      source,
+    );
+    expect(declaration, `${name} is declared as a z.enum`).not.toBeNull();
+    return [...(declaration?.[1] ?? '').matchAll(/'([a-z-]+)'/g)]
+      .map((match) => match[1])
+      .sort();
+  }
+
+  /** The members of a string-literal union in the web's mirror. */
+  function unionMembers(source: string, name: string): string[] {
+    const declaration = new RegExp(
+      `export type ${name} =([\\s\\S]*?);\\n`,
+    ).exec(source);
+    expect(declaration, `${name} is declared in the web mirror`).not.toBeNull();
+    return [...(declaration?.[1] ?? '').matchAll(/'([a-z-]+)'/g)]
+      .map((match) => match[1])
+      .sort();
+  }
+
+  it('reads an `as const` array the same way a `z.enum` call is read', () => {
+    // The guard against a regex that has quietly stopped matching, extended
+    // to the new shape: without it, every assertion below would pass over an
+    // empty set and this file would be a decorative green tick.
+    const source = apiSource(QUOTA_HISTORY);
+
+    const reasons = arrayMembers(source, 'RATE_LIMIT_REASONS');
+    expect(reasons.length).toBeGreaterThan(0);
+    expect(reasons).toContain('quota-exhausted');
+
+    const dispositions = arrayMembers(source, 'EPISODE_DISPOSITIONS');
+    expect(dispositions.length).toBeGreaterThan(0);
+    expect(dispositions).toContain('unknown');
+  });
+
+  it('knows both reasons the API files under quota, never a flattened "rate limited"', () => {
+    expect(unionMembers(apiSource(WEB_QUOTA_TYPES), 'RateLimitReason')).toEqual(
+      arrayMembers(apiSource(QUOTA_HISTORY), 'RATE_LIMIT_REASONS'),
+    );
+  });
+
+  it('knows every disposition the API can hand back, including `unknown`', () => {
+    expect(
+      unionMembers(apiSource(WEB_QUOTA_TYPES), 'EpisodeDisposition'),
+    ).toEqual(arrayMembers(apiSource(QUOTA_HISTORY), 'EPISODE_DISPOSITIONS'));
+  });
+
+  it('knows every pressure ordinal the vendor can report', () => {
+    expect(unionMembers(apiSource(WEB_QUOTA_TYPES), 'QuotaPressure')).toEqual(
+      enumValues(apiSource(QUOTA_DTO), 'quotaPressureSchema'),
+    );
   });
 });

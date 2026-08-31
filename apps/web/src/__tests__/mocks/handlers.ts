@@ -350,6 +350,34 @@ export const handlers = [
     });
   }),
 
+  /**
+   * `GET /quota` — the live gauge (#231). `GET /quota/events` and
+   * `GET /quota/windows` — the memory beneath it (#476).
+   *
+   * All three empty by default, for the same reason `/events` and `/queue`
+   * are: "no runner has reported a signal" and "nothing was ever blocked" are
+   * real, honest answers, not placeholders standing in for a broken screen.
+   * `QuotaPage.test.tsx` overrides each with `server.use(...)` for the cases
+   * that need rows.
+   */
+  http.get(`${API_BASE}/quota`, () => {
+    return HttpResponse.json({
+      data: { generatedAt: new Date().toISOString(), runners: [] },
+    });
+  }),
+
+  http.get(`${API_BASE}/quota/events`, () => {
+    return HttpResponse.json({
+      data: { items: [], total: 0, page: 1, pageSize: 25, totalPages: 0 },
+    });
+  }),
+
+  http.get(`${API_BASE}/quota/windows`, () => {
+    return HttpResponse.json({
+      data: { items: [], total: 0, page: 1, pageSize: 25, totalPages: 0 },
+    });
+  }),
+
   http.get(`${API_BASE}/health/live`, () => {
     return HttpResponse.json({
       data: {
