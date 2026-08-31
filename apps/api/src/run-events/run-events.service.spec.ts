@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { FactoryMetrics } from '../telemetry/factory-metrics.service';
@@ -311,6 +311,15 @@ describe('RunEventsService', () => {
     });
 
     it('carries the reset time onto the run, so #56 need not re-read events', async () => {
+      // Asserted on the resulting ROW, not on which `updateMany` carried the
+      // field. The earlier shape read `mock.calls[0].data.resumesAt`, which
+      // pinned an implementation detail — that the reset time rode on the
+      // liveness write — rather than the behaviour, that a parked run ends up
+      // holding one. Pinning the call index made the leak it was riding on
+      // (#475 review: `resumesAt` landing on terminal rows) expensive to fix,
+      // which is the tell that the assertion was on the wrong thing.
+      const row = withRunRow({ status: 'running', resumesAt: null });
+
       await service.ingest(RUN_ID, [
         event({
           type: 'run.blocked',
@@ -321,19 +330,317 @@ describe('RunEventsService', () => {
         }),
       ]);
 
-      const [{ data }] = prisma.run.updateMany.mock.calls[0];
-      expect(data.resumesAt).toEqual(new Date('2026-08-21T18:00:00.000Z'));
+      expect(row.resumesAt).toEqual(new Date('2026-08-21T18:00:00.000Z'));
     });
 
     it('sets no resume time for a block with no reset time', async () => {
       // `reason: unknown` with no resetAt — #56 escalates rather than parking
       // forever, and a fabricated resume time would hide that.
+      const row = withRunRow({ status: 'running', resumesAt: null });
+
       await service.ingest(RUN_ID, [
         event({ type: 'run.blocked', blocked: { reason: 'unknown' } }),
       ]);
 
-      const [{ data }] = prisma.run.updateMany.mock.calls[0];
-      expect(data.resumesAt).toBeUndefined();
+      expect(row.resumesAt).toBeNull();
+    });
+  });
+
+  /**
+   * #475: `run.blocked` had never written `Run.status`, so
+   * `WatchdogService.loadBlockedRuns()` matched zero rows forever and the
+   * whole of `watchdog/blocked-parking.ts` was well-tested code that could
+   * not execute in production. Like the #254 tests below, these run against
+   * a row the doubles actually apply their WHERE clauses to — a double that
+   * answers `{ count: 1 }` unconditionally cannot tell a guard that matched
+   * from one that matched nothing, which is exactly how #254 hid for as
+   * long as it did.
+   */
+  describe('parking a run on run.blocked (#475)', () => {
+    it('parks a running run as blocked, carrying resumesAt from resetAt', async () => {
+      const row = withRunRow({ status: 'running' });
+
+      await service.ingest(RUN_ID, [
+        event({
+          type: 'run.blocked',
+          blocked: {
+            reason: 'rate-limit',
+            resetAt: '2026-08-21T18:00:00.000Z',
+          },
+        }),
+      ]);
+
+      expect(row.status).toBe('blocked');
+      expect(row.resumesAt).toEqual(new Date('2026-08-21T18:00:00.000Z'));
+    });
+
+    it('parks a stalled run as blocked, leaving resumesAt unset when the block is undated', async () => {
+      // `reason: unknown` with no resetAt — #56 escalates after
+      // UNDATED_BLOCK_PATIENCE_MS rather than parking forever, and a
+      // fabricated resume time would hide that from it.
+      const row = withRunRow({ status: 'stalled', resumesAt: null });
+
+      await service.ingest(RUN_ID, [
+        event({ type: 'run.blocked', blocked: { reason: 'unknown' } }),
+      ]);
+
+      expect(row.status).toBe('blocked');
+      expect(row.resumesAt).toBeNull();
+    });
+
+    it('does not drag a succeeded run into blocked by a late-arriving block', async () => {
+      // Excluded from BLOCKABLE_STATUSES deliberately: nothing resumes a run
+      // that already ended, so a park is not a state a finished run can enter.
+      const row = withRunRow({ status: 'succeeded', resumesAt: null });
+
+      await service.ingest(RUN_ID, [
+        event({
+          type: 'run.blocked',
+          blocked: {
+            reason: 'rate-limit',
+            resetAt: '2026-08-21T18:00:00.000Z',
+          },
+        }),
+      ]);
+
+      expect(row.status).toBe('succeeded');
+      // The status was never the whole of the park. `resumesAt` asserts "the
+      // system will handle it; acting is wasted effort" (`cockpit/dto`), and
+      // on a run nothing will ever look at again that is a lie the operator
+      // has no way to detect. It rode on the unguarded liveness write until
+      // the #475 review moved it under this same guard.
+      expect(row.resumesAt).toBeNull();
+    });
+
+    it('refuses to park a quarantined run', async () => {
+      // VISION §8: a run cannot clear its own quarantine, and a
+      // runner-reported block parking one would be doing exactly that.
+      const row = withRunRow({ status: 'quarantined', resumesAt: null });
+
+      await service.ingest(RUN_ID, [
+        event({
+          type: 'run.blocked',
+          blocked: {
+            reason: 'rate-limit',
+            resetAt: '2026-08-21T18:00:00.000Z',
+          },
+        }),
+      ]);
+
+      expect(row.status).toBe('quarantined');
+      // Neither half of the park lands. A quarantined run showing a resume
+      // time would tell the operator it was being handled automatically,
+      // which is the opposite of what quarantine means.
+      expect(row.resumesAt).toBeNull();
+    });
+
+    it('does not park via a stale block event older than lastEventAt', async () => {
+      // The same monotonic guard `lastEventAt` uses: an event too old to move
+      // liveness forward must not move the status either.
+      const row = withRunRow({
+        status: 'running',
+        lastEventAt: new Date('2026-08-21T11:00:00.000Z'),
+        resumesAt: null,
+      });
+
+      await service.ingest(RUN_ID, [
+        event({
+          type: 'run.blocked',
+          occurredAt: '2026-08-21T10:00:00.000Z',
+          blocked: {
+            reason: 'rate-limit',
+            resetAt: '2026-08-21T18:00:00.000Z',
+          },
+        }),
+      ]);
+
+      expect(row.status).toBe('running');
+      expect(row.lastEventAt).toEqual(new Date('2026-08-21T11:00:00.000Z'));
+      expect(row.resumesAt).toBeNull();
+    });
+  });
+
+  /**
+   * The block a batch ENDS on, not merely one it contains (#475). A block
+   * followed by something else in the same window describes a run that hit a
+   * wall and either got past it or finished before the flush — parking it
+   * anyway would be the wrong error of the two available, since the watchdog
+   * eventually notices a real block through silence but nothing notices a
+   * wrongly parked run.
+   */
+  describe('the block a batch ends on, not merely one it contains (#475)', () => {
+    it('does not transit blocked when the same batch also concludes the run', async () => {
+      const row = withRunRow({ status: 'running', resumesAt: null });
+
+      await service.ingest(RUN_ID, [
+        event({
+          eventId: 'block',
+          type: 'run.blocked',
+          occurredAt: '2026-08-21T10:00:00.000Z',
+          blocked: {
+            reason: 'rate-limit',
+            resetAt: '2026-08-21T18:00:00.000Z',
+          },
+        }),
+        event({
+          eventId: 'fail',
+          type: 'run.failed',
+          occurredAt: '2026-08-21T10:05:00.000Z',
+          failure: { reason: 'killed for looping' },
+        }),
+      ]);
+
+      expect(row.status).toBe('failed');
+      expect(row.resumesAt).toBeNull();
+
+      // Never passed through `blocked` on the way there.
+      const statuses = prisma.run.updateMany.mock.calls
+        .map(
+          ([call]) => (call as { data: Record<string, unknown> }).data.status,
+        )
+        .filter(Boolean);
+      expect(statuses).toEqual(['failed']);
+    });
+
+    it('does not park when a block is followed by a later heartbeat in the same batch', async () => {
+      const row = withRunRow({ status: 'running' });
+
+      await service.ingest(RUN_ID, [
+        event({
+          eventId: 'block',
+          type: 'run.blocked',
+          occurredAt: '2026-08-21T10:00:00.000Z',
+          blocked: {
+            reason: 'rate-limit',
+            resetAt: '2026-08-21T18:00:00.000Z',
+          },
+        }),
+        event({
+          eventId: 'hb',
+          type: 'run.heartbeat',
+          occurredAt: '2026-08-21T10:05:00.000Z',
+        }),
+      ]);
+
+      expect(row.status).toBe('running');
+    });
+  });
+
+  describe('a blocked run that reports again (#254, #475)', () => {
+    it('returns to running and clears resumesAt', async () => {
+      const row = withRunRow({
+        status: 'blocked',
+        resumesAt: new Date('2026-08-21T18:00:00.000Z'),
+        lastEventAt: new Date('2026-08-21T09:00:00.000Z'),
+      });
+
+      await service.ingest(RUN_ID, [event({ type: 'run.heartbeat' })]);
+
+      expect(row.status).toBe('running');
+      expect(row.resumesAt).toBeNull();
+    });
+
+    it('does not un-park via a stale heartbeat older than lastEventAt', async () => {
+      const row = withRunRow({
+        status: 'blocked',
+        resumesAt: new Date('2026-08-21T18:00:00.000Z'),
+        lastEventAt: new Date('2026-08-21T11:00:00.000Z'),
+      });
+
+      await service.ingest(RUN_ID, [
+        event({ occurredAt: '2026-08-21T10:00:00.000Z' }),
+      ]);
+
+      expect(row.status).toBe('blocked');
+      expect(row.resumesAt).toEqual(new Date('2026-08-21T18:00:00.000Z'));
+    });
+
+    it('still concludes normally when a terminal event arrives', async () => {
+      const row = withRunRow({
+        status: 'blocked',
+        resumesAt: new Date('2026-08-21T18:00:00.000Z'),
+      });
+
+      await service.ingest(RUN_ID, [
+        event({
+          type: 'run.completed',
+          occurredAt: '2026-08-21T11:00:00.000Z',
+        }),
+      ]);
+
+      expect(row.status).toBe('succeeded');
+      expect(row.endedAt).toEqual(new Date('2026-08-21T11:00:00.000Z'));
+    });
+  });
+
+  describe('a redelivered block is a no-op (#475)', () => {
+    it('does not rewrite the status or re-announce a park that already happened', async () => {
+      // Seeded with `lastEventAt` at the instant of the block that parked it,
+      // because that is what a redelivery actually looks like: the writer of
+      // `blocked` sets both columns in one batch, so a `blocked` row with a
+      // null `lastEventAt` is a state the service cannot produce.
+      //
+      // The distinction matters. This test used to seed exactly that
+      // impossible row and lean on `blocked` being absent from
+      // BLOCKABLE_STATUSES, which read as though the status set were the
+      // protection. It is not — `advanced.count` is, the same monotonic gate
+      // `lastEventAt` uses — and leaning on the set hid the case below, where
+      // a genuinely newer block must be let through.
+      const row = withRunRow({
+        status: 'blocked',
+        lastEventAt: new Date('2026-08-21T10:00:00.000Z'),
+        resumesAt: new Date('2026-08-21T18:00:00.000Z'),
+      });
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+
+      try {
+        await service.ingest(RUN_ID, [
+          event({
+            type: 'run.blocked',
+            blocked: {
+              reason: 'rate-limit',
+              resetAt: '2026-08-21T18:00:00.000Z',
+            },
+          }),
+        ]);
+
+        expect(row.status).toBe('blocked');
+        expect(row.resumesAt).toEqual(new Date('2026-08-21T18:00:00.000Z'));
+        expect(logSpy).not.toHaveBeenCalledWith(
+          expect.stringContaining('reported blocked'),
+        );
+      } finally {
+        logSpy.mockRestore();
+      }
+    });
+
+    it('lets a NEWER block refresh a reset time the vendor superseded', async () => {
+      // The other side of admitting `blocked` to BLOCKABLE_STATUSES. A runner
+      // that hits a five-hour wall and then a weekly one reports a second,
+      // later `resetAt`; holding the first would resume the run early and
+      // re-block it, which is the loop #56's jitter exists to prevent.
+      const row = withRunRow({
+        status: 'blocked',
+        lastEventAt: new Date('2026-08-21T10:00:00.000Z'),
+        resumesAt: new Date('2026-08-21T18:00:00.000Z'),
+      });
+
+      await service.ingest(RUN_ID, [
+        event({
+          eventId: 'clr-second-window',
+          type: 'run.blocked',
+          occurredAt: '2026-08-21T10:05:00.000Z',
+          blocked: {
+            reason: 'quota-exhausted',
+            resetAt: '2026-08-22T02:00:00.000Z',
+          },
+        }),
+      ]);
+
+      expect(row.status).toBe('blocked');
+      expect(row.resumesAt).toEqual(new Date('2026-08-22T02:00:00.000Z'));
     });
   });
 
