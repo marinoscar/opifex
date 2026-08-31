@@ -2745,6 +2745,199 @@ summary text.
 
 ---
 
+### Quota
+
+Rate-limit HISTORY (#476). `GET /api/quota` is the live gauge — windows that
+have not yet rolled, and where the fleet stands right now — and an episode an
+hour old is invisible to it. The two endpoints below are its memory, built by
+reading and interpreting `run_events` and `quota_windows`, the same tables
+the gauge already reads, rather than a new `rate_limit_episodes` table
+duplicating either (ADR-0018 §1). Both are gated on `runs:read`, the same
+permission that gates the rows they are built from — a separate permission
+here would let someone read blocks on runs they cannot open by going through
+the window instead.
+
+**They are two endpoints, not one response with two arrays.** Episodes are
+offset-paginated on `occurredAt` and filter by `reason`; windows are
+offset-paginated on `resetsAt` and have no `reason` at all. An unpaginated
+sibling array in one response would either repeat in full on every page or
+exist on page 1 only — a contract no generated client can model. The join is
+still expressed in both directions: every episode carries the window it
+blocked against (`window`, null when none is stored), and every window
+carries how many runs blocked against it (`blockedRuns`, `0` being a real
+and useful case — see below).
+
+Both endpoints are **read-only**. Neither this controller nor the services
+behind it write a row.
+
+#### `GET /api/quota/events`
+
+Rate-limit episodes — blocked runs, newest first. Requires `runs:read`.
+
+| Query               | Type      | Default    | Notes                            |
+| ------------------- | --------- | ---------- | -------------------------------- |
+| `page` / `pageSize` | number    | `1` / `25` | `pageSize` max 100.              |
+| `since`             | date-time | —          | Lower bound on `occurredAt`.     |
+| `until`             | date-time | —          | Upper bound on `occurredAt`.     |
+| `runnerKey`         | string    | —          | One runner's blocks only.        |
+| `reason`            | enum      | —          | `rate-limit`, `quota-exhausted`. |
+
+One entry per `run.blocked` event that named a SUBSCRIPTION-level reason. An
+episode has no row of its own — `eventId` is the `run_events` id it came
+from, and there is no new table (#476, ADR-0018 §1).
+
+**`reason` stays `rate-limit` or `quota-exhausted` and is never flattened
+into one "rate limited".** `rate-limit` is the vendor refusing an overage
+while the window is still live, and usually clears in minutes;
+`quota-exhausted` is the window itself spent, and waits for `resetsAt`. Those
+are different operational facts, and an operator asking "was it quota, and
+how bad" is asking which one it was. Blocks that name `awaiting-approval`,
+`upstream-unavailable` or `unknown` never appear here — those are facts
+about one run, not the subscription.
+
+**`disposition` is the point of the endpoint** — what Opifex did about the
+block, as far as stored state can say:
+
+| Value           | Meaning                                                              |
+| --------------- | -------------------------------------------------------------------- |
+| `parked`        | Still blocked, with a resume scheduled.                              |
+| `awaiting-park` | Still blocked, nothing scheduled yet.                                |
+| `escalated`     | A human was told inside this episode. Wins over every other verdict. |
+| `resumed`       | The run reported activity after the block and has not concluded.     |
+| `concluded`     | The run reached a terminal state after the block.                    |
+| `unknown`       | Nothing stored says.                                                 |
+
+`unknown` is a REAL answer, preferred over a guess: the observable facts are
+the run's current status, whether a resume was scheduled, whether a later
+event proves the run reported again, and whether an escalation was raised
+inside the episode, and when none of those says anything, `unknown` is what
+is true. `dispositionBasis` is one sentence naming the observation the
+verdict came from, so no row has to be taken on trust.
+
+`parked` and `awaiting-park` are reachable only for a run's LATEST block
+(`nextBlockAt` null): `Run.status` and `Run.resumesAt` are live state
+describing the block a run is sitting in right now, not one it sat in last
+Tuesday. For the same reason, **`resumesAt` on the response is null on every
+historic episode**, even when the run has a `resumesAt` today — reading
+today's schedule back onto an older block would credit a park to a block
+that was already over. Note that until #475 lands, nothing writes
+`Run.status = 'blocked'`, so `parked` and `awaiting-park` are unreachable and
+recent episodes read `resumed`, `concluded` or `unknown` instead.
+
+**`nextActivityAt` is an upper bound, not the resume instant** — named that
+way on purpose. It comes from the run's next block (proof it ran again,
+since a run cannot block twice without running in between) or, for the
+latest block, from `Run.lastEventAt`. The exact answer would be reading
+`RunAttempt`, but nothing writes that table today (#477). `durationMs` is
+`nextActivityAt - occurredAt`, null while the episode is unbounded.
+
+`window` is the `quota_windows` row the block named, matched on the runner
+and the EXACT reset instant — null means no stored window carries that
+instant, never a nearest-window guess. A vendor-reported reset can drift and
+produce two rows of the same kind; guessing the closer one would present a
+guess with a fact's confidence.
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "eventId": "…",
+        "occurredAt": "2026-08-23T01:04:00.000Z",
+        "blockedUntil": "2026-08-23T06:00:00.000Z",
+        "reason": "rate-limit",
+        "runId": "…",
+        "runStatus": "succeeded",
+        "runnerKey": "claude-code-local",
+        "workOrderIdentity": "wo_opifex_312_a3f91c2_a1",
+        "repository": "marinoscar/opifex",
+        "issueNumber": 312,
+        "disposition": "resumed",
+        "dispositionBasis": "the run reported again at 2026-08-23T05:10:00.000Z",
+        "resumesAt": null,
+        "nextActivityAt": "2026-08-23T05:10:00.000Z",
+        "durationMs": 14760000,
+        "escalation": null,
+        "window": {
+          "kind": "five_hour",
+          "resetsAt": "2026-08-23T06:00:00.000Z",
+          "pressure": "allowed",
+          "peakPressure": "exhausted",
+          "firstObservedAt": "2026-08-23T00:00:00.000Z",
+          "lastObservedAt": "2026-08-23T05:55:00.000Z",
+          "observations": 42
+        }
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "pageSize": 25,
+    "totalPages": 1
+  }
+}
+```
+
+#### `GET /api/quota/windows`
+
+Vendor windows that ever hit the wall, newest reset first. Requires
+`runs:read`.
+
+| Query               | Type      | Default    | Notes                                           |
+| ------------------- | --------- | ---------- | ----------------------------------------------- |
+| `page` / `pageSize` | number    | `1` / `25` | `pageSize` max 100.                             |
+| `since`             | date-time | —          | Matches windows still observed at or after it.  |
+| `until`             | date-time | —          | Matches windows first observed at or before it. |
+| `runnerKey`         | string    | —          |                                                 |
+
+Selected on `peakPressure` reaching `exhausted`, never on `pressure` —
+`pressure` forgets the wall the moment the vendor reports `allowed` again,
+and this endpoint is read after the fact by definition. `pressure` is still
+carried alongside `peakPressure`, because "hit the wall at noon and is fine
+now" and "still at the wall" are different things to be told.
+
+**`since`/`until` is an overlap test against the window's observation
+span** (`lastObservedAt >= since AND firstObservedAt <= until`), not a
+comparison against `resetsAt`. A window first sighted before the range and
+still exhausted inside it is exactly what "did we hit the wall this
+afternoon" is asking about, and a single-instant comparison would miss it.
+
+**`blockedRuns: 0` is the case this endpoint exists for.** A window that
+reached its ceiling with nothing dispatched against it leaves no
+`run_events` row at all and is invisible to `GET /api/quota/events` — and it
+is still a true answer to "when did we hit rate limits", because the ceiling
+was genuinely reached. `blockedEvents` counts blocked EVENTS rather than
+runs, and exceeds `blockedRuns` when one run blocked against the same window
+more than once. Both are counted by the same exact-instant join
+`/api/quota/events`'s `window` field uses: blocked events on this runner
+whose `blockedUntil` equals this window's `resetsAt`.
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "runnerKey": "claude-code-local",
+        "kind": "five_hour",
+        "resetsAt": "2026-08-23T06:00:00.000Z",
+        "pressure": "allowed",
+        "peakPressure": "exhausted",
+        "firstObservedAt": "2026-08-23T00:00:00.000Z",
+        "lastObservedAt": "2026-08-23T05:55:00.000Z",
+        "observations": 42,
+        "blockedRuns": 1,
+        "blockedEvents": 1
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "pageSize": 25,
+    "totalPages": 1
+  }
+}
+```
+
+---
+
 ### Escalations
 
 What needs a human. VISION §9 is explicit that **escalation is an action, not

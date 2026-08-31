@@ -4,6 +4,7 @@ import { PERMISSIONS_KEY } from '../auth/decorators/permissions.decorator';
 import { PERMISSIONS } from '../common/constants/roles.constants';
 import { quotaSummarySchema } from './dto/quota.dto';
 import { QuotaController } from './quota.controller';
+import type { QuotaHistoryService } from './quota-history.service';
 import type { QuotaRunnerReading, QuotaService } from './quota.service';
 
 /**
@@ -56,8 +57,18 @@ describe('QuotaController', () => {
     const quota = {
       readings: jest.fn().mockResolvedValue(readings),
     };
-    const controller = new QuotaController(quota as unknown as QuotaService);
-    return { controller, quota };
+    // #476 added two history endpoints to this controller. They are covered
+    // by their own specs; this stub exists only so the constructor is
+    // satisfiable, and its methods must never be reached by the cases below.
+    const history = {
+      episodes: jest.fn(),
+      exhaustedWindows: jest.fn(),
+    };
+    const controller = new QuotaController(
+      quota as unknown as QuotaService,
+      history as unknown as QuotaHistoryService,
+    );
+    return { controller, quota, history };
   }
 
   it('gates the endpoint on runs:read', () => {

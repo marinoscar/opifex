@@ -34,6 +34,7 @@ import ForumIcon from '@mui/icons-material/Forum';
 import ThumbsUpDownIcon from '@mui/icons-material/ThumbsUpDown';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import PaidIcon from '@mui/icons-material/Paid';
+import BatteryAlertIcon from '@mui/icons-material/BatteryAlert';
 import SettingsIcon from '@mui/icons-material/Settings';
 import PeopleIcon from '@mui/icons-material/People';
 import AdminIcon from '@mui/icons-material/AdminPanelSettings';
@@ -48,6 +49,7 @@ export type DestinationKey =
   | 'steering'
   | 'projects'
   | 'cost'
+  | 'quota'
   | 'settings'
   | 'users'
   | 'system';
@@ -102,6 +104,7 @@ export const DESTINATION_ROUTES: Record<DestinationKey, readonly string[]> = {
   steering: ['/steering'],
   projects: ['/projects'],
   cost: ['/cost'],
+  quota: ['/quota'],
   settings: ['/settings'],
   users: ['/admin/users'],
   system: ['/admin/settings'],
@@ -326,6 +329,30 @@ export const DESTINATIONS: readonly Destination[] = [
     // LIVE as of #80. `runs:read` rather than `projects:read`: cost lives on
     // the run, and gating an aggregate more loosely than its rows would let
     // somebody total up runs they cannot open.
+    status: 'live',
+    permission: 'runs:read',
+  },
+  {
+    key: 'quota',
+    label: 'Quota',
+    compactLabel: 'Quota',
+    Icon: BatteryAlertIcon,
+    path: '/quota',
+    section: 'operate',
+    // LIVE as of #476, gaining its real permission in the same pull request as
+    // the endpoints it reads — the rule this file's header sets. `runs:read`
+    // is what `QuotaController` enforces on all three of its routes (the live
+    // gauge from #231 and the two history routes), and it is the same string
+    // Cost gates on for the same reason: these figures are sums over run
+    // events, and gating an aggregate more loosely than its rows would let
+    // somebody total up runs they cannot open.
+    //
+    // A SEPARATE destination from Cost rather than a section of it. Cost is
+    // money and quota is a window; they are measured to different standards,
+    // the API keeps them in two controllers, and `CostSummaryDto.quota` is
+    // permanently null precisely so the cost screen can say quota is
+    // unavailable rather than look like it forgot. One rail row for both would
+    // put back the confusion that split exists to prevent.
     status: 'live',
     permission: 'runs:read',
   },

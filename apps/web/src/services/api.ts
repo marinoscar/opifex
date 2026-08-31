@@ -258,6 +258,12 @@ import type {
   RepositorySummary,
   WorkOrderDetail,
 } from '../types/cockpit';
+import type {
+  ExhaustedWindow,
+  QuotaSummary,
+  RateLimitEpisode,
+  RateLimitReason,
+} from '../types/quota';
 
 // Allowlist API
 /**
@@ -1387,6 +1393,120 @@ export async function getActivityFeed(
     { signal },
   );
   return page.items;
+}
+
+// ---------------------------------------------------------------------------
+// Quota: the live gauge (#231) and the history behind it (#476)
+// ---------------------------------------------------------------------------
+//
+// Three reads, gated identically on `runs:read` by `QuotaController` — the
+// consumption figures are sums over run events, and gating an aggregate more
+// loosely than its rows would let somebody total up runs they cannot open.
+//
+// They stay three functions because they are three different kinds of fact and
+// the API serves them from three routes. `GET /quota` is a GAUGE with no
+// memory; `GET /quota/events` is what happened to a run inside a window; `GET
+// /quota/windows` is what happened to the window itself, including the windows
+// that hit the wall with nothing dispatched against them. Neither history half
+// subsumes the other — the API's own DTO says so at length — and a client that
+// merged them would have to decide which of the two facts to drop.
+
+/** `GET /quota` — every runner with a live window, and which one binds. */
+export async function getQuotaSummary(
+  signal?: AbortSignal,
+): Promise<QuotaSummary> {
+  return api.get<QuotaSummary>('/quota', { signal });
+}
+
+export interface QuotaEventsPage {
+  items: RateLimitEpisode[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/**
+ * `GET /quota/events` — rate-limit episodes, newest first.
+ *
+ * Only parameters the endpoint actually honours are sent, the rule
+ * `userListColumns.tsx` states: a control the API cannot answer looks live and
+ * does nothing. Read off `quotaEventsQuerySchema` — `page`, `pageSize`
+ * (max 100), `since`, `until`, `runnerKey`, `reason`, and NOTHING else. There
+ * is no `sort`: the order is fixed at newest-first, so declaring a sort union
+ * here would be fabricating a contract.
+ *
+ * `since` and `until` must be full ISO instants (`z.iso.datetime()`), not
+ * dates — see `components/quota/quotaFormat.ts`, which is where a range
+ * selection becomes one.
+ */
+export async function getQuotaEvents(
+  params: {
+    page?: number;
+    pageSize?: number;
+    since?: string;
+    until?: string;
+    runnerKey?: string;
+    reason?: RateLimitReason;
+  } = {},
+  signal?: AbortSignal,
+): Promise<QuotaEventsPage> {
+  const searchParams = new URLSearchParams();
+  if (params.page) searchParams.set('page', String(params.page));
+  if (params.pageSize) searchParams.set('pageSize', String(params.pageSize));
+  if (params.since) searchParams.set('since', params.since);
+  if (params.until) searchParams.set('until', params.until);
+  if (params.runnerKey) searchParams.set('runnerKey', params.runnerKey);
+  if (params.reason) searchParams.set('reason', params.reason);
+
+  const query = searchParams.toString();
+  return api.get<QuotaEventsPage>(
+    query ? `/quota/events?${query}` : '/quota/events',
+    { signal },
+  );
+}
+
+export interface QuotaWindowsPage {
+  items: ExhaustedWindow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/**
+ * `GET /quota/windows` — windows that ever reached `exhausted`, newest reset
+ * first.
+ *
+ * Takes no `reason`, and that is not an omission: a window has none. Its
+ * `since`/`until` are also a different question from the episodes' — they test
+ * OVERLAP against the window's observation span, so a window first sighted
+ * before the range and still exhausted inside it is returned. The same two
+ * values therefore mean slightly different things on the two calls, which is
+ * why they are two functions rather than one with a shared query object.
+ */
+export async function getQuotaWindows(
+  params: {
+    page?: number;
+    pageSize?: number;
+    since?: string;
+    until?: string;
+    runnerKey?: string;
+  } = {},
+  signal?: AbortSignal,
+): Promise<QuotaWindowsPage> {
+  const searchParams = new URLSearchParams();
+  if (params.page) searchParams.set('page', String(params.page));
+  if (params.pageSize) searchParams.set('pageSize', String(params.pageSize));
+  if (params.since) searchParams.set('since', params.since);
+  if (params.until) searchParams.set('until', params.until);
+  if (params.runnerKey) searchParams.set('runnerKey', params.runnerKey);
+
+  const query = searchParams.toString();
+  return api.get<QuotaWindowsPage>(
+    query ? `/quota/windows?${query}` : '/quota/windows',
+    { signal },
+  );
 }
 
 // ---------------------------------------------------------------------------

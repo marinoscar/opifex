@@ -1451,6 +1451,17 @@ model QuotaWindow {
   /// "The current window for this runner": the newest reset instant still
   /// ahead of now.
   @@index([runnerKey, resetsAt])
+  /// No index added for `peakPressure` (#476's history endpoint also reads
+  /// "windows that ever reached `exhausted`", ordered by `resetsAt` or
+  /// `lastObservedAt`). Considered and rejected: unlike `run_events`, this
+  /// table's row count is bounded by (runners x window kinds x reset
+  /// instants observed), not by every tool call of every run - orders of
+  /// magnitude smaller, and small enough that a request scoped to one runner
+  /// already gets there through `[runnerKey, resetsAt]` above, filtering
+  /// `peakPressure` over that runner's handful of rows in memory. An
+  /// unfiltered cross-runner read is a sequential scan either way at this
+  /// row count, so a `peakPressure` index would optimize a case the planner
+  /// would ignore in favor of the seq scan regardless.
   @@map("quota_windows")
 }
 
@@ -1520,6 +1531,27 @@ enum RunEventSource {
 /// Partitioning by `occurredAt` is the escalation if pruning stops keeping up;
 /// it is deliberately NOT done now, because a single-operator install
 /// (VISION §11) will not reach the volume that justifies the operational cost.
+///
+/// ## Rate-limit history index (#476)
+///
+/// `blockedReason` below is NULL for the overwhelming majority of rows -
+/// the same "high-volume table" fact above means a plain
+/// `@@index([blockedReason])` would carry an entry for every one of those
+/// NULLs to serve a query that only ever wants the rare non-NULL ones. The
+/// history endpoint's query is `WHERE blocked_reason IS NOT NULL ORDER BY
+/// occurred_at DESC`, optionally narrowed by runner and time window, which
+/// is what a PARTIAL index - `CREATE INDEX ... ON run_events (occurred_at)
+/// WHERE blocked_reason IS NOT NULL` - is for: it holds exactly the blocked
+/// episodes, not one entry per event.
+///
+/// Prisma's schema language has no `WHERE` clause for `@@index`, so this
+/// index cannot be declared here. It is hand-written instead, in
+/// `prisma/migrations/20260831004247_index_blocked_run_events/migration.sql`,
+/// which is the same tradeoff `OperatorSetting`'s hand-written CHECK
+/// constraint accepts: `prisma migrate diff` will show it as permanent,
+/// unclosable drift against a schema that cannot describe it, in exchange
+/// for not paying write and storage cost on every single insert into this
+/// table to index a column that is NULL almost everywhere.
 model RunEvent {
   id    String @id @default(uuid()) @db.Uuid
   runId String @map("run_id") @db.Uuid
@@ -1559,7 +1591,11 @@ model RunEvent {
   /// column is what makes that check a query rather than a payload scan.
   toolSignature String? @map("tool_signature")
 
-  /// Structured reason and reset time for a `run.blocked` event.
+  /// Structured reason and reset time for a `run.blocked` event. Values
+  /// `'rate-limit'` and `'quota-exhausted'`; NULL for the overwhelming
+  /// majority of rows. Served by a hand-written PARTIAL index rather than an
+  /// `@@index` here - see "Rate-limit history index (#476)" in this model's
+  /// doc comment above.
   blockedReason String?   @map("blocked_reason")
   blockedUntil  DateTime? @map("blocked_until") @db.Timestamptz
 
@@ -1591,6 +1627,12 @@ model RunEvent {
   @@index([runId, toolSignature])
   // Heartbeat pruning (see the retention note above) without a full scan.
   @@index([type, occurredAt])
+  // Rate-limit history (#476): NOT declared here. A partial index on
+  // (occurred_at) WHERE blocked_reason IS NOT NULL serves this instead,
+  // hand-written in
+  // prisma/migrations/20260831004247_index_blocked_run_events/migration.sql
+  // because Prisma's schema language has no WHERE clause for @@index. See
+  // "Rate-limit history index (#476)" in this model's doc comment above.
   @@map("run_events")
 }
 
