@@ -47,23 +47,29 @@ export interface RejectedEvent {
 const CONCLUDABLE_STATUSES = ['running', 'stalled', 'blocked'] as const;
 
 /**
- * The statuses a `run.blocked` event may park a run FROM (#475).
- *
- * Narrower than {@link CONCLUDABLE_STATUSES} by exactly one member, and each
- * exclusion is doing separate work.
+ * The statuses a `run.blocked` event may write a park onto (#475).
  *
  * `succeeded` and `failed` are out because a park is not a state a finished
- * run can enter: a late or redelivered `run.blocked` must not drag a run back
- * out of a terminal status into one it will never leave, since nothing resumes
- * a run that already ended. `quarantined` is out for VISION §8's reason, the
- * same one that keeps it out of the concludable set — a runner-reported event
- * must not move a run a human has deliberately set aside.
+ * run can enter: nothing resumes a run that already ended, so a late
+ * `run.blocked` must not put either a status or a resume time on one.
+ * `quarantined` is out for VISION §8's reason — a runner-reported event must
+ * not move a run a human has deliberately set aside.
  *
- * `blocked` is out because that is where the idempotence comes from. The
- * second delivery of the same block matches nothing, so it neither rewrites
- * the status nor re-announces a park that already happened.
+ * Which leaves the same three as {@link CONCLUDABLE_STATUSES}, and not by
+ * coincidence: both answer one question, *may a runner-reported event still
+ * move this run at all*. An alias rather than a second literal, because two
+ * lists that must agree and are written twice are a list that will eventually
+ * disagree.
+ *
+ * `blocked` is deliberately IN it, which was the harder call. A run already
+ * parked does not need its status rewritten, but it may well need its reset
+ * time rewritten: a runner that hits a five-hour wall and then a weekly one
+ * reports a second, later `resetAt`, and holding the superseded one would make
+ * the run resume early and re-block — the loop the jitter exists to prevent.
+ * Nothing is lost by admitting it, because the idempotence never lived here:
+ * see {@link RunEventsService.blockRun}.
  */
-const BLOCKABLE_STATUSES = ['running', 'stalled'] as const;
+const BLOCKABLE_STATUSES = CONCLUDABLE_STATUSES;
 
 /**
  * The statuses a reporting run returns to `running` FROM (#254, #475).
@@ -300,14 +306,14 @@ export class RunEventsService {
         id: runId,
         OR: [{ lastEventAt: null }, { lastEventAt: { lt: newest } }],
       },
-      data: {
-        lastEventAt: newest,
-        // Carried onto the run so #56 can schedule a resume without re-reading
-        // the event stream. Only set when the batch's last word was a block.
-        ...(parking?.blocked?.resetAt
-          ? { resumesAt: new Date(parking.blocked.resetAt) }
-          : {}),
-      },
+      // `lastEventAt` and the cost roll-up are the only things written
+      // unguarded by status, and that is the whole of what belongs here: they
+      // are facts about the event stream, true of a run whatever state it is
+      // in. Everything that makes a CLAIM about the run — its status, and the
+      // resume time that asserts something will happen to it — is written
+      // below under a status guard. `resumesAt` used to ride along here and
+      // landed on terminal rows (#475 review).
+      data: { lastEventAt: newest },
     });
 
     await this.rollUpCost(runId);
@@ -369,24 +375,54 @@ export class RunEventsService {
    * exists and #56 requires it, but it is new traffic in an operator's queue
    * and should be read as deliberate rather than discovered.
    *
-   * ## The guard
+   * ## The status and the resume time are one write
    *
-   * {@link BLOCKABLE_STATUSES} in the WHERE clause, in the idiom of everything
-   * else here — a read-then-compare would let a run that concluded in between
+   * `resumesAt` is written here rather than alongside `lastEventAt`, and the
+   * review of #475 is why. Riding on the liveness write meant riding on a
+   * WHERE clause with no status filter, so a `run.blocked` arriving after a
+   * run had already succeeded left `resumesAt` set on a terminal row: a
+   * column asserting *the system will handle it, acting is wasted effort*
+   * (`cockpit/dto/runs.dto.ts`) about a run nothing will ever look at again.
+   * That is the same untruthful-state bug #475 exists to fix, one column over,
+   * and it does not become acceptable for being smaller.
+   *
+   * They also belong together on their own merits. A resume time IS the park —
+   * it is the only part of it anything acts on — so a row can never hold one
+   * without the other, or the other without one, if a single guarded write
+   * decides both.
+   *
+   * ## Where the idempotence comes from
+   *
+   * Not from the status set: {@link BLOCKABLE_STATUSES} admits `blocked`. It
+   * comes from `advanced.count` in the caller, the same monotonic gate
+   * `lastEventAt` uses. A run that reached `blocked` necessarily has
+   * `lastEventAt` at the instant of the block that parked it, so a redelivery
+   * of that same block cannot move liveness forward and never reaches this
+   * method at all — while a genuinely NEWER block does, which is exactly the
+   * one whose reset time is worth having.
+   *
+   * The guard that remains is in the WHERE clause, in the idiom of everything
+   * else here: a read-then-compare would let a run that concluded in between
    * be dragged out of its terminal state by the comparison's own staleness.
-   * The set is where each exclusion is argued.
    */
   private async blockRun(
     runId: string,
     parking: RunEventPayload,
   ): Promise<void> {
+    const resetAt = parking.blocked?.resetAt;
+
     const blocked = await this.prisma.run.updateMany({
       where: { id: runId, status: { in: [...BLOCKABLE_STATUSES] } },
-      data: { status: 'blocked' },
+      data: {
+        status: 'blocked',
+        // Carried onto the run so #56 can schedule a resume without re-reading
+        // the event stream. Absent when the runner could not date the block —
+        // a fabricated resume time would hide the very case #56 escalates.
+        ...(resetAt ? { resumesAt: new Date(resetAt) } : {}),
+      },
     });
 
     if (blocked.count > 0) {
-      const resetAt = parking.blocked?.resetAt;
       this.logger.log(
         `Run ${runId} reported blocked ` +
           `(${parking.blocked?.reason ?? 'reason not reported'}); ` +
