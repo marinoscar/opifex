@@ -11,6 +11,7 @@ import { RunPollerService } from '../runners/run-poller.service';
 import type { RunnerCapabilities } from '../runners/runner.types';
 import { makeOperatorSettings } from '../settings/operator-settings/operator-settings.test-double';
 import type { GeneratedWorkOrder } from '../work-orders/work-order-generator';
+import { generateWorkOrder } from '../work-orders/work-order-generator';
 import { WorkOrderRecordsService } from '../work-orders/work-order-records.service';
 import { DispatchService } from './dispatch.service';
 import type { DispatchDecision } from './dispatch-policy';
@@ -86,6 +87,9 @@ describe('RunExecutorService', () => {
   let runCreate: jest.Mock;
   let runDelete: jest.Mock;
   let runUpdateMany: jest.Mock;
+  let runFindUnique: jest.Mock;
+  let runAttemptUpdateMany: jest.Mock;
+  let runAttemptCreate: jest.Mock;
   let workOrderUpdate: jest.Mock;
   let executor: RunExecutorService;
 
@@ -128,7 +132,7 @@ describe('RunExecutorService', () => {
     } as unknown as SpendLedgerService;
   }
 
-  function build(enabled = true): RunExecutorService {
+  function build(enabled = true, autoResumeParked = true): RunExecutorService {
     decide = jest.fn().mockResolvedValue(DISPATCHABLE);
     write = jest.fn().mockResolvedValue({ alreadyRecorded: false });
     submit = jest.fn().mockResolvedValue({
@@ -140,15 +144,30 @@ describe('RunExecutorService', () => {
     runCreate = jest.fn().mockResolvedValue({});
     runDelete = jest.fn().mockResolvedValue({});
     runUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+    runFindUnique = jest.fn().mockResolvedValue(null);
+    runAttemptUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+    runAttemptCreate = jest.fn().mockResolvedValue({});
     workOrderUpdate = jest.fn().mockResolvedValue({});
 
     const prisma = {
-      run: { create: runCreate, delete: runDelete, updateMany: runUpdateMany },
+      run: {
+        create: runCreate,
+        delete: runDelete,
+        updateMany: runUpdateMany,
+        findUnique: runFindUnique,
+      },
+      runAttempt: {
+        updateMany: runAttemptUpdateMany,
+        create: runAttemptCreate,
+      },
       workOrder: { update: workOrderUpdate },
     } as unknown as PrismaService;
 
     const settings = makeOperatorSettings({
-      overrides: { 'dispatch.enabled': enabled },
+      overrides: {
+        'dispatch.enabled': enabled,
+        'dispatch.autoResumeParked': autoResumeParked,
+      },
     });
 
     const runner = {
@@ -829,6 +848,371 @@ describe('RunExecutorService', () => {
       });
 
       expect(ledger.tally).toHaveBeenCalledWith(7);
+    });
+  });
+
+  /**
+   * `resumeParkedRun` (#477) -- the piece #66 closed without meeting.
+   *
+   * `rehydrateWorkOrder` and `decideSpendAdmission` run for REAL here rather
+   * than as doubles, the same way `DispatchQueueService`'s own suite tests the
+   * first-dispatch path: the fixture is a work order the real generator
+   * produced, flattened the way `RESUME_SELECT` shapes it, so a row that
+   * would fail rehydration fails for the same reason a real one would.
+   */
+  describe('resuming a parked run (#477)', () => {
+    const RUN_ID = 'a1000000-0000-4000-8000-000000000001';
+    const BLOCKED_AT = new Date('2026-08-23T14:00:00.000Z');
+    const RESET_AT = new Date('2026-08-23T18:00:00.000Z');
+
+    function resumableWorkOrder(overrides: Record<string, unknown> = {}) {
+      const generated = generateWorkOrder({
+        issue: {
+          repository: { owner: 'acme', name: 'widgets' },
+          issueNumber: 42,
+          title: 'Add a health endpoint',
+          issueUrl: 'https://github.com/acme/widgets/issues/42',
+          taskSpec: 'Add a health endpoint',
+          acceptanceCriteria: ['It returns 200'],
+          pathConstraints: [],
+          decisionRefs: [],
+          needs: ['full-streaming'],
+        },
+        baseCommit: 'a3f91c2000000000000000000000000000000000',
+        attempt: 1,
+        budgetCeilingUsd: 5,
+        wallClockTimeoutMinutes: null,
+      });
+      if (!generated.ok) throw new Error('fixture did not generate');
+      const w = generated.workOrder;
+
+      return {
+        id: WORK_ORDER_ID,
+        status: 'dispatched',
+        identity: w.identity,
+        branch: w.branch,
+        issueNumber: w.issueNumber,
+        issueUrl: w.issueUrl,
+        issueTitle: w.issueTitle,
+        baseCommit: w.baseCommit,
+        attempt: w.attempt,
+        taskSpec: w.taskSpec,
+        acceptanceCriteria: w.acceptanceCriteria,
+        pathConstraints: w.pathConstraints,
+        decisionRefs: w.decisionRefs,
+        needs: w.needs,
+        modelTier: w.modelTier ?? null,
+        budgetCeilingUsd: w.budgetCeilingUsd,
+        wallClockTimeoutMinutes: w.wallClockTimeoutMinutes,
+        repository: {
+          owner: 'acme',
+          name: 'widgets',
+          dispatchEnabled: true,
+          budgetCeilingUsd: null,
+        },
+        ...overrides,
+      };
+    }
+
+    function parkedRun(overrides: Record<string, unknown> = {}) {
+      return {
+        id: RUN_ID,
+        status: 'blocked',
+        runnerKey: 'claude-code-local',
+        attemptCount: 1,
+        resumesAt: RESET_AT,
+        costUsd: null,
+        events: [
+          {
+            occurredAt: BLOCKED_AT,
+            blockedReason: 'rate-limit',
+            blockedUntil: RESET_AT,
+          },
+        ],
+        workOrder: resumableWorkOrder(),
+        ...overrides,
+      };
+    }
+
+    const resume = () => executor.resumeParkedRun(RUN_ID);
+
+    beforeEach(() => {
+      executor = build();
+    });
+
+    describe('every member of ResumeRefusal', () => {
+      it("'auto-resume-disabled': the switch is off, and the database is never asked", async () => {
+        executor = build(true, false);
+
+        const result = await resume();
+
+        expect(result).toMatchObject({
+          outcome: 'refused',
+          refusal: 'auto-resume-disabled',
+        });
+        expect(runFindUnique).not.toHaveBeenCalled();
+      });
+
+      it("'not-parked': the run already moved on", async () => {
+        runFindUnique.mockResolvedValue(parkedRun({ status: 'running' }));
+
+        const result = await resume();
+
+        expect(result).toMatchObject({
+          outcome: 'refused',
+          refusal: 'not-parked',
+        });
+      });
+
+      it("'not-parked': the run is gone entirely", async () => {
+        runFindUnique.mockResolvedValue(null);
+
+        const result = await resume();
+
+        expect(result).toMatchObject({
+          outcome: 'refused',
+          refusal: 'not-parked',
+        });
+        expect(result.reason).toContain('gone');
+      });
+
+      it("'not-parked': two ticks racing for the same run -- the guarded write IS the lock", async () => {
+        // The row still reads `blocked` when admission runs; a second tick
+        // claimed it first, so the `updateMany` below matches nothing. This is
+        // not a bug path, it is the concurrency control.
+        runFindUnique.mockResolvedValue(parkedRun());
+        runUpdateMany.mockResolvedValue({ count: 0 });
+
+        const result = await resume();
+
+        expect(result).toMatchObject({
+          outcome: 'refused',
+          refusal: 'not-parked',
+        });
+        expect(result.reason).toContain('stopped being parked');
+        expect(submit).not.toHaveBeenCalled();
+      });
+
+      it.each(['held', 'quarantined', 'cancelled', 'superseded'])(
+        "'held-or-not-dispatched': the work order is '%s'",
+        async (status) => {
+          runFindUnique.mockResolvedValue(
+            parkedRun({ workOrder: resumableWorkOrder({ status }) }),
+          );
+
+          const result = await resume();
+
+          expect(result).toMatchObject({
+            outcome: 'refused',
+            refusal: 'held-or-not-dispatched',
+          });
+        },
+      );
+
+      it("'repository-dispatch-disabled': the repository turned dispatch off while parked", async () => {
+        runFindUnique.mockResolvedValue(
+          parkedRun({
+            workOrder: resumableWorkOrder({
+              repository: {
+                owner: 'acme',
+                name: 'widgets',
+                dispatchEnabled: false,
+                budgetCeilingUsd: null,
+              },
+            }),
+          }),
+        );
+
+        const result = await resume();
+
+        expect(result).toMatchObject({
+          outcome: 'refused',
+          refusal: 'repository-dispatch-disabled',
+        });
+      });
+
+      it("'repository-budget-reached': the only place this is checked for a parked run, since the 'blocked' projection intent returns before dispatch's own check", async () => {
+        runFindUnique.mockResolvedValue(
+          parkedRun({
+            costUsd: { toNumber: () => 10 },
+            workOrder: resumableWorkOrder({
+              repository: {
+                owner: 'acme',
+                name: 'widgets',
+                dispatchEnabled: true,
+                budgetCeilingUsd: { toNumber: () => 10 },
+              },
+            }),
+          }),
+        );
+
+        const result = await resume();
+
+        expect(result).toMatchObject({
+          outcome: 'refused',
+          refusal: 'repository-budget-reached',
+        });
+      });
+
+      it("'work-order-unrebuildable': the stored row no longer rebuilds into what was authorized", async () => {
+        runFindUnique.mockResolvedValue(
+          parkedRun({
+            workOrder: resumableWorkOrder({ branch: 'not-the-derived-branch' }),
+          }),
+        );
+
+        const result = await resume();
+
+        expect(result).toMatchObject({
+          outcome: 'refused',
+          refusal: 'work-order-unrebuildable',
+        });
+      });
+
+      it("'runner-unavailable': dispatched to a runner this build has no implementation for", async () => {
+        runFindUnique.mockResolvedValue(
+          parkedRun({ runnerKey: 'claude-code-cloud' }),
+        );
+
+        const result = await resume();
+
+        expect(result).toMatchObject({
+          outcome: 'refused',
+          refusal: 'runner-unavailable',
+        });
+      });
+
+      it("'spend-refused': the hard spend ceiling, through the same decideSpendAdmission the first dispatch uses", async () => {
+        ceiling = { limitUsd: 10, malformed: null, windowDays: 30 };
+        tally = { ...tally, totalUsd: 10, reportedUsd: 10 };
+        executor = build();
+        runFindUnique.mockResolvedValue(parkedRun());
+
+        const result = await resume();
+
+        expect(result).toMatchObject({
+          outcome: 'refused',
+          refusal: 'spend-refused',
+        });
+        expect(submit).not.toHaveBeenCalled();
+      });
+
+      it("'runner-at-capacity': restores the park with a NULL plan, so the next tick re-plans with fresh jitter", async () => {
+        runFindUnique.mockResolvedValue(parkedRun({ attemptCount: 3 }));
+        submit.mockRejectedValue(
+          new RunnerAtCapacityError('claude-code-local is at its ceiling'),
+        );
+
+        const result = await resume();
+
+        expect(result).toMatchObject({
+          outcome: 'refused',
+          refusal: 'runner-at-capacity',
+        });
+        // The claim (first call) already cleared resumesAt to null.
+        expect(runUpdateMany.mock.calls[0][0].data.resumesAt).toBeNull();
+        // The recovery (last call) restores `blocked` and the ORIGINAL
+        // attempt count, and does not touch `resumesAt` again -- so it stays
+        // null rather than being reset to some other value, leaving the next
+        // watchdog tick to plan a fresh one.
+        expect(runUpdateMany).toHaveBeenLastCalledWith({
+          where: { id: RUN_ID, status: 'running' },
+          data: { status: 'blocked', attemptCount: 3 },
+        });
+      });
+    });
+
+    it("'observed': dispatch.enabled is off, and still reports what it WOULD have resumed", async () => {
+      executor = build(false);
+      runFindUnique.mockResolvedValue(parkedRun());
+
+      const result = await resume();
+
+      expect(result.outcome).toBe('observed');
+      expect(result.reason).toContain('claude-code-local');
+      expect(submit).not.toHaveBeenCalled();
+      expect(runUpdateMany).not.toHaveBeenCalled();
+    });
+
+    describe('the two invariants (#66, #477)', () => {
+      it('opens a RunAttempt without incrementing WorkOrder.attempt', async () => {
+        // Both halves in the SAME test so they cannot drift apart: the retry
+        // counter behind VISION §10 metric 4 is untouched by a resume...
+        runFindUnique.mockResolvedValue(parkedRun({ attemptCount: 1 }));
+
+        const result = await resume();
+
+        expect(result).toMatchObject({ outcome: 'resumed', attempt: 2 });
+        expect(workOrderUpdate).not.toHaveBeenCalled();
+        // ...while the invocation count gains its own row.
+        expect(runAttemptCreate).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            runId: RUN_ID,
+            number: 2,
+            outcome: 'running',
+          }),
+        });
+      });
+
+      it('closes the parked attempt as blocked, dated at the resume rather than the park', async () => {
+        // A block does not close an attempt: the invocation can still be
+        // alive when the CLI reports a rate-limit event. The resume is the
+        // proof that it ended, which is why the close happens here.
+        runFindUnique.mockResolvedValue(parkedRun());
+
+        await resume();
+
+        expect(runAttemptUpdateMany).toHaveBeenCalledWith({
+          where: { runId: RUN_ID, outcome: 'running' },
+          data: expect.objectContaining({
+            outcome: 'blocked',
+            blockedUntil: RESET_AT,
+            stopReason: expect.stringContaining('rate-limit'),
+          }),
+        });
+      });
+
+      it('leaves an honest gap for a run dispatched before attempts were recorded', async () => {
+        // attemptCount 0 -- a run from before #477. Its first resume opens
+        // number 2, and there is no number 1 row: a fabricated attempt 1
+        // would claim a start time nobody actually observed.
+        runFindUnique.mockResolvedValue(parkedRun({ attemptCount: 0 }));
+
+        const result = await resume();
+
+        expect(result).toMatchObject({ outcome: 'resumed', attempt: 2 });
+        expect(runAttemptCreate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ number: 2 }),
+          }),
+        );
+      });
+    });
+
+    it('claims the row and clears resumesAt in the SAME statement, before submitting', async () => {
+      runFindUnique.mockResolvedValue(parkedRun());
+
+      await resume();
+
+      expect(runUpdateMany).toHaveBeenCalledWith({
+        where: { id: RUN_ID, status: 'blocked' },
+        data: { status: 'running', resumesAt: null, attemptCount: 2 },
+      });
+      expect(runUpdateMany.mock.invocationCallOrder[0]).toBeLessThan(
+        submit.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('never re-writes the authorization or execution records on a resume', async () => {
+      // Those were posted when the work order was first dispatched (#63) and
+      // are idempotent per identity, so calling `write` again would be a
+      // no-op that still spent a GitHub read -- budget VISION §11 holds back
+      // for the operator.
+      runFindUnique.mockResolvedValue(parkedRun());
+
+      await resume();
+
+      expect(write).not.toHaveBeenCalled();
     });
   });
 });

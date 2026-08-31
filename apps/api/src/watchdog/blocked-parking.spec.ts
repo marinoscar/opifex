@@ -137,6 +137,47 @@ describe('decideParking', () => {
     });
   });
 
+  describe('supersession: a newer block re-plans the park (#477)', () => {
+    // A plan is always its own block's reset PLUS jitter, so `resumesAt` is
+    // always strictly later than the `resetAt` it was drawn from — UNLESS a
+    // second, later block has since reset the run and its reset time has
+    // overtaken the plan. `>` and not `>=` is the whole of that argument:
+    // a plan drawn from THIS reset can never equal it, so equality can only
+    // mean the plan has not been superseded by anything newer.
+    it('re-plans when the reset has overtaken the existing plan (strictly greater)', () => {
+      const run = blocked({
+        resetAt: at(300), // a later block's reset...
+        resumesAt: at(60), // ...has overtaken the plan drawn from the first
+      });
+
+      const decision = decideParking(run, NOW, () => 0.5);
+
+      expect(decision.kind).toBe('park');
+      if (decision.kind !== 'park') return;
+      expect(decision.reason).toContain('re-park');
+      expect(decision.reason).toContain('supersedes');
+      expect(decision.resumeAt.getTime()).toBeGreaterThanOrEqual(
+        at(300).getTime(),
+      );
+    });
+
+    it('does NOT re-plan at the boundary, when the reset exactly equals the plan', () => {
+      // Equal is not "newer". A plan is always strictly later than the reset
+      // it was drawn from, so a reset equal to the plan is not evidence of a
+      // second block — treating `>=` as the test here would re-plan on every
+      // ordinary tick once the block's own reset time arrived, which is
+      // exactly the resume path below, not this one.
+      const run = blocked({
+        resetAt: at(60),
+        resumesAt: at(60),
+      });
+
+      const decision = decideParking(run, NOW, () => 0.5);
+
+      expect(decision.kind).not.toBe('park');
+    });
+  });
+
   describe('a block with NO reset time', () => {
     it('waits at first, rather than escalating immediately', () => {
       const decision = decideParking(
