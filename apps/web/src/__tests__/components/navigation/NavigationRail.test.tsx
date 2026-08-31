@@ -413,6 +413,7 @@ describe('NavigationRail', () => {
         '/steering',
         '/projects',
         '/cost',
+        '/quota',
         '/settings',
         '/admin/users',
         '/admin/settings',

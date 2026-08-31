@@ -30,6 +30,7 @@ const TrustPage = lazy(() => import('./pages/TrustPage'));
 const TrustGrantDetailPage = lazy(() => import('./pages/TrustGrantDetailPage'));
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
 const CostPage = lazy(() => import('./pages/CostPage'));
+const QuotaPage = lazy(() => import('./pages/QuotaPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const UserSettingsPage = lazy(() => import('./pages/UserSettingsPage'));
 // `/admin/settings` — the Control Center (#347, epic #332). It replaced
@@ -201,6 +202,28 @@ function AppRoutes() {
                   }
                 />
                 <Route path="/cost" element={<CostPage />} />
+                {/* Quota (#231's gauge, #476's history). Gated on
+                    `runs:read`, the string `QuotaController` enforces on all
+                    three of its routes — the same one Cost gates on, and for
+                    the same reason: these are sums over run events, and gating
+                    an aggregate more loosely than its rows would let somebody
+                    total up runs they cannot open. Unlike `/cost` and `/runs`,
+                    whose guards predate their endpoints, this route carries the
+                    `RequirePermission` from the start: there is a controller
+                    behind it enforcing exactly this string, so a viewer without
+                    it should be turned away at the door rather than shown a
+                    screen of 403s. */}
+                <Route
+                  path="/quota"
+                  element={
+                    <RequirePermission
+                      permission="runs:read"
+                      fallback={<Navigate to="/" replace />}
+                    >
+                      <QuotaPage />
+                    </RequirePermission>
+                  }
+                />
                 <Route path="/settings" element={<UserSettingsPage />} />
                 {/* Route-level AUTHORIZATION, not just authentication.
                     `ProtectedRoute` above only establishes that someone is

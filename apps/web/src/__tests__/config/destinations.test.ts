@@ -354,6 +354,10 @@ describe('destinations — the table itself', () => {
       'dashboard',
       'projects',
       'queue',
+      // #476, in the same pull request as the cockpit surface over
+      // `QuotaController`'s three routes (the #231 gauge and the two history
+      // reads). The permission arrived with it, as the header's rule requires.
+      'quota',
       'runs',
       'settings',
       // #426, in the same pull request as the chat surface over
@@ -511,6 +515,10 @@ describe('destinations — the bottom-bar split', () => {
       'steering',
       'projects',
       'cost',
+      // Quota sits in the sheet rather than the bar for the same reason Cost
+      // does: it is a screen somebody reads when they are already asking why
+      // nothing moved, not one they reach for with a thumb.
+      'quota',
       'settings',
       'users',
       'system',
