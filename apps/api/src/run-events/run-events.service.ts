@@ -47,6 +47,35 @@ export interface RejectedEvent {
 const CONCLUDABLE_STATUSES = ['running', 'stalled', 'blocked'] as const;
 
 /**
+ * The statuses a `run.blocked` event may park a run FROM (#475).
+ *
+ * Narrower than {@link CONCLUDABLE_STATUSES} by exactly one member, and each
+ * exclusion is doing separate work.
+ *
+ * `succeeded` and `failed` are out because a park is not a state a finished
+ * run can enter: a late or redelivered `run.blocked` must not drag a run back
+ * out of a terminal status into one it will never leave, since nothing resumes
+ * a run that already ended. `quarantined` is out for VISION §8's reason, the
+ * same one that keeps it out of the concludable set — a runner-reported event
+ * must not move a run a human has deliberately set aside.
+ *
+ * `blocked` is out because that is where the idempotence comes from. The
+ * second delivery of the same block matches nothing, so it neither rewrites
+ * the status nor re-announces a park that already happened.
+ */
+const BLOCKABLE_STATUSES = ['running', 'stalled'] as const;
+
+/**
+ * The statuses a reporting run returns to `running` FROM (#254, #475).
+ *
+ * Both describe a run that is not producing events — `stalled` because the
+ * watchdog found it silent, `blocked` because its runner said it hit a wall —
+ * and both are contradicted by the same evidence: an event arriving. See
+ * {@link RunEventsService.resumeRun} for why one method serves both.
+ */
+const RESUMABLE_STATUSES = ['stalled', 'blocked'] as const;
+
+/**
  * Accepts runner-reported events, validates them against the contract, and
  * persists them.
  *
@@ -255,7 +284,14 @@ export class RunEventsService {
       .map((event) => new Date(event.occurredAt))
       .reduce((latest, at) => (at > latest ? at : latest));
 
-    const blocked = events.find((event) => event.type === 'run.blocked');
+    const terminal = terminalEventIn(events);
+
+    // The block the batch ended on, and only when the batch does not also
+    // conclude the run. Both halves of that are argued where they are decided:
+    // {@link blockingEventIn} for why the LAST word rather than any block, and
+    // the transition below for why a run that concludes never transits
+    // `blocked` on the way there.
+    const parking = terminal ? undefined : blockingEventIn(events);
 
     const advanced = await this.prisma.run.updateMany({
       // The guard is in the WHERE clause rather than a read-then-compare, so
@@ -267,22 +303,33 @@ export class RunEventsService {
       data: {
         lastEventAt: newest,
         // Carried onto the run so #56 can schedule a resume without re-reading
-        // the event stream. Only set when the batch actually contained a block.
-        ...(blocked?.blocked?.resetAt
-          ? { resumesAt: new Date(blocked.blocked.resetAt) }
+        // the event stream. Only set when the batch's last word was a block.
+        ...(parking?.blocked?.resetAt
+          ? { resumesAt: new Date(parking.blocked.resetAt) }
           : {}),
       },
     });
 
     await this.rollUpCost(runId);
 
-    const terminal = terminalEventIn(events);
-
-    // A run that is about to conclude is not un-stalled first: the conclusion
-    // below already accepts a stalled run, and writing `running` on the way
-    // past would put a state through the row that never actually happened.
+    // Both status transitions hang off `advanced.count`, which is the same
+    // monotonic guard `lastEventAt` uses rather than a second one derived
+    // here: an event too old to move liveness forward must not move the status
+    // either.
+    //
+    // A run that is about to conclude is neither parked nor un-stalled first:
+    // the conclusion below already accepts a stalled or blocked run, and
+    // writing `blocked` or `running` on the way past would put a state through
+    // the row that never actually happened. #475 extends that existing rule to
+    // the block rather than inventing a second one — a run that blocks and
+    // fails in one delivery never sat parked, so nothing should record that it
+    // did.
     if (!terminal && advanced.count > 0) {
-      await this.resumeStalledRun(runId, newest);
+      if (parking) {
+        await this.blockRun(runId, parking);
+      } else {
+        await this.resumeRun(runId, newest);
+      }
     }
 
     if (terminal) {
@@ -291,7 +338,68 @@ export class RunEventsService {
   }
 
   /**
-   * Return a stalled run to `running` when it starts reporting again (#254).
+   * Park the run on the block its runner just reported (#475).
+   *
+   * ## Why this had to exist at all
+   *
+   * `RunStatus.blocked` is defined in the schema as *"parked with a reset
+   * time; auto-resumes without a human"*, and until this method nothing in the
+   * codebase ever wrote it. Both readers of that status —
+   * `WatchdogService.loadBlockedRuns` and `DispatchService.loadQuotaBlocks` —
+   * therefore matched zero rows forever. `sweepBlocked` never parked, never
+   * escalated and never found a run to wake, so the whole of
+   * `watchdog/blocked-parking.ts` was well-tested code that could not execute
+   * in production, and VISION §1's second origin story — *"an agent hits a
+   * rate limit at 2pm, I find out at 6pm; four hours dead"* — was the failure
+   * the status existed to answer and the one it was silently not answering.
+   *
+   * This supplies the missing writer and nothing more. No schema change was
+   * needed, and nothing here resumes anything: wiring the `park`/`resume`
+   * actions to an executor is #477's, and this change only makes the status
+   * truthful enough for that issue to have something to act on.
+   *
+   * ## A real behaviour change, visible from the first parked run
+   *
+   * Once runs actually reach `blocked`, `sweepBlocked` starts finding them —
+   * which is the point, but it is not only the quiet half. A block whose
+   * runner could not supply a reset time now escalates to a human after
+   * `UNDATED_BLOCK_PATIENCE_MS` (30 minutes), where previously it was silent.
+   * `decideParking` has always said so; it has never had a row to say it
+   * about. That escalation is the designed behaviour of code that already
+   * exists and #56 requires it, but it is new traffic in an operator's queue
+   * and should be read as deliberate rather than discovered.
+   *
+   * ## The guard
+   *
+   * {@link BLOCKABLE_STATUSES} in the WHERE clause, in the idiom of everything
+   * else here — a read-then-compare would let a run that concluded in between
+   * be dragged out of its terminal state by the comparison's own staleness.
+   * The set is where each exclusion is argued.
+   */
+  private async blockRun(
+    runId: string,
+    parking: RunEventPayload,
+  ): Promise<void> {
+    const blocked = await this.prisma.run.updateMany({
+      where: { id: runId, status: { in: [...BLOCKABLE_STATUSES] } },
+      data: { status: 'blocked' },
+    });
+
+    if (blocked.count > 0) {
+      const resetAt = parking.blocked?.resetAt;
+      this.logger.log(
+        `Run ${runId} reported blocked ` +
+          `(${parking.blocked?.reason ?? 'reason not reported'}); ` +
+          (resetAt
+            ? `resets at ${resetAt}.`
+            : 'no reset time, so #56 escalates rather than parking forever.'),
+      );
+    }
+  }
+
+  /**
+   * Return a stalled or blocked run to `running` when it reports again
+   * (#254, #475).
    *
    * ## The choice this makes, and why
    *
@@ -323,11 +431,44 @@ export class RunEventsService {
    *
    * `advanced.count` is the same monotonic guard `lastEventAt` uses, reused
    * rather than re-derived: an old or redelivered event that could not make a
-   * live run look staler must not make a stalled one look alive either.
+   * live run look staler must not make a stalled one look alive either. The
+   * same applies to a parked one: a redelivered event cannot unpark a run.
    *
-   * The write is still guarded on `status: 'stalled'` in the WHERE clause, in
-   * the idiom of everything else here — a read-then-compare would let a run
-   * that concluded in between be dragged back out of its terminal state.
+   * The write is still guarded on {@link RESUMABLE_STATUSES} in the WHERE
+   * clause, in the idiom of everything else here — a read-then-compare would
+   * let a run that concluded in between be dragged back out of its terminal
+   * state.
+   *
+   * ## Extended to `blocked`, rather than given a sibling (#475)
+   *
+   * One method, with a two-status guard. The alternative considered was a
+   * separate `resumeBlockedRun`, and it loses on the only ground that matters
+   * here: the argument above is not an argument about stalling. It is that
+   * `Run.status` is present tense, so a run whose events are flowing must not
+   * keep a status describing a state it has left — and `blocked` (*"parked
+   * with a reset time"*) is as false of a reporting run as `stalled` is. A
+   * sibling would restate that reasoning in a second place, perform the same
+   * single write of the same value under the same monotonic gate, and differ
+   * only in its WHERE clause. Two writers of one column whose agreement is a
+   * matter of upkeep is how the two-sources-of-truth bug starts.
+   *
+   * What this is NOT is #477's auto-resume. Nothing here wakes a run; this
+   * records that a run woke on its own, which is exactly the case the status
+   * must stop claiming a park for.
+   *
+   * ## `resumesAt` is cleared, unlike `attentionReason` below
+   *
+   * A stale resume time is not merely untidy. `decideParking` short-circuits
+   * to `waiting` whenever `resumesAt` is in the future, so a run that blocked,
+   * resumed, and blocked again with no reset time would sit on the FIRST
+   * park's schedule and never reach the patience check that escalates it —
+   * silently, which is the failure mode #56 exists to remove. The watchdog
+   * already takes care to date the CURRENT block from its own event; this is
+   * the other half of that.
+   *
+   * Nothing is lost by clearing it. The reset time the runner reported is on
+   * the event row as `blockedUntil`, which is where `loadBlockedRuns` reads
+   * `resetAt` from in the first place, and `run_events` is append-only.
    *
    * ## `attentionReason` is deliberately left alone
    *
@@ -345,10 +486,10 @@ export class RunEventsService {
    * exists to NOTICE disagreement between the two sources rather than to
    * reconcile them, and quietly reconciling one here would undo that.
    */
-  private async resumeStalledRun(runId: string, newest: Date): Promise<void> {
+  private async resumeRun(runId: string, newest: Date): Promise<void> {
     const resumed = await this.prisma.run.updateMany({
-      where: { id: runId, status: 'stalled' },
-      data: { status: 'running' },
+      where: { id: runId, status: { in: [...RESUMABLE_STATUSES] } },
+      data: { status: 'running', resumesAt: null },
     });
 
     if (resumed.count > 0) {
@@ -552,8 +693,9 @@ export class RunEventsService {
  * failure is malformed, but picking deterministically beats picking by array
  * order.
  *
- * Lifted out of `concludeRun` because the resume path needs the same answer:
- * a run that is about to conclude must not be un-stalled on the way there.
+ * Lifted out of `concludeRun` because both intermediate transitions need the
+ * same answer: a run that is about to conclude must be neither un-stalled nor
+ * parked on the way there.
  */
 function terminalEventIn(
   events: RunEventPayload[],
@@ -567,6 +709,39 @@ function terminalEventIn(
         new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime(),
     )
     .pop();
+}
+
+/**
+ * The `run.blocked` event a batch ENDS on, or undefined.
+ *
+ * Deliberately not "the batch contained a block". A batch is a window of a
+ * runner's stream, and a block followed by a heartbeat inside that same window
+ * describes a run that hit a wall and got past it before the flush. Parking it
+ * would be the wrong error of the two available: `stream-json-mapper.ts` makes
+ * the same call about a `status: 'allowed'` rate-limit line, and for the same
+ * reason — the watchdog eventually notices a real block through silence, but
+ * it has nothing that notices a wrongly parked run.
+ *
+ * Stricter than {@link terminalEventIn}, which takes the last terminal event
+ * even when something non-terminal follows it, and the asymmetry is the states
+ * themselves rather than an oversight: a conclusion is absorbing, so nothing
+ * reported after it can still be true, while a block is a state a run leaves
+ * under its own power the moment it reports again.
+ *
+ * Equal `occurredAt` values fall to the runner's own ordering, because `sort`
+ * is stable — whichever it put last in the batch is its last word.
+ */
+function blockingEventIn(
+  events: RunEventPayload[],
+): RunEventPayload | undefined {
+  const last = [...events]
+    .sort(
+      (a, b) =>
+        new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime(),
+    )
+    .pop();
+
+  return last?.type === 'run.blocked' ? last : undefined;
 }
 
 /**
