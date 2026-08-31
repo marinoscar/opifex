@@ -228,12 +228,19 @@ VISION §4: the orchestrator is a **reconciler, not a job queue**. Each tick
    state and produces a list of `ReconcileAction`s (`diff/actions.types.ts`):
    mirror-label writes, escalations, dispatch signals. Nothing here executes
    anything — the diff engine only computes.
-4. **Execute** — two separate executors, gated independently:
+4. **Execute** — three separate executors, gated independently:
    - `execute/mirror-label.executor.ts` writes the `factory/*` mirror labels,
      gated by a repository's `mirrorLabelsEnabled` flag **and**
      `GITHUB_WRITES_ENABLED`.
    - `execute/spec-feedback.executor.ts` comments on an issue when its work
      order was rejected for a spec-quality reason.
+   - `execute/resume.executor.ts` re-invokes a parked run's runner once its
+     planned resume time has passed, gated by `dispatch.autoResumeParked`
+     (#477). It consumes `resume` actions the **watchdog** computed (§3.5),
+     not the diff engine's own action list, and `ReconcilerTask` calls it
+     from a separate site ahead of the dispatch drain — a parked run holds
+     its runner's concurrency slot until it resumes, so freeing that slot
+     outranks starting new work.
 5. **Record** — every tick, quiet or not, is persisted by
    `log/reconcile-log.service.ts` and readable at `GET /api/reconciler/ticks`
    (`reconciler.controller.ts`), retained for `RECONCILER_LOG_RETENTION_DAYS`.
@@ -354,11 +361,20 @@ observed state:
 - `loop-detection.ts` — tool-call signature repeating → `kill-and-re-plan`.
   Reported `unavailable` (not "no loop found") for a runner whose
   `streamingFidelity` cannot support it — see `check-coverage.ts`.
-- `blocked-parking.ts` — a dated rate-limit block → park with jitter,
-  auto-resume (issue #56).
+- `blocked-parking.ts` — a dated rate-limit block → park with jitter, then
+  resume once due — **executed**, not merely computed, since #477
+  (`execute/resume.executor.ts`, §3.1). `Run.resumesAt` is this control
+  plane's own planned resume instant, jitter included, and the watchdog is
+  its only writer; the vendor's raw reset lives on the `run_blocked` event's
+  `blockedUntil` instead (see the module comment in `blocked-parking.ts` for
+  the full argument). This has not been exercised against a real Claude
+  usage limit — #481 asks whether a real rate limit produces a `blocked` run
+  at all, or whether the CLI's own exit concludes the run `failed` instead,
+  in which case this path never engages.
 
-None of the watchdog's kill/re-run/re-plan actions execute yet; they are
-computed and, like the reconciler's own actions, recorded. `dead-time.service.ts`
+Auto-resume is the one watchdog action that executes. Kill-and-re-run and
+kill-and-re-plan still do not: they are computed and, like the reconciler's
+own unwired action types, only recorded. `dead-time.service.ts`
 (`apps/api/src/dead-time/`) keeps the ledger behind VISION §10 metric 2
 ("dead time per day") from the same sweep.
 

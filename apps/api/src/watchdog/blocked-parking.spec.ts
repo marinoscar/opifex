@@ -28,6 +28,22 @@ function blocked(overrides: Partial<BlockedRunState> = {}): BlockedRunState {
   };
 }
 
+/**
+ * A run whose park has already been PLANNED, and consistently so.
+ *
+ * A plan is always its own block's reset PLUS jitter (#477), so a real
+ * `resumesAt` is always LATER than the `resetAt` it was drawn from. A fixture
+ * that puts the plan before the reset is describing a block that has been
+ * superseded by a later one, which `decideParking` now deliberately re-plans —
+ * so it cannot stand in for "already parked and waiting".
+ */
+function parked(resumesInMinutes: number): BlockedRunState {
+  return blocked({
+    resetAt: at(resumesInMinutes - 5),
+    resumesAt: at(resumesInMinutes),
+  });
+}
+
 describe('decideParking', () => {
   describe('a newly blocked run', () => {
     it('parks rather than being killed or counted as a failure', () => {
@@ -108,24 +124,57 @@ describe('decideParking', () => {
     it('waits rather than re-deciding', () => {
       // Re-deciding every tick would move the resume time on each pass and the
       // run would never resume — the jitter would chase itself.
-      const decision = decideParking(
-        blocked({ resumesAt: at(60) }),
-        NOW,
-        () => 0.5,
-      );
+      const decision = decideParking(parked(60), NOW, () => 0.5);
 
       expect(decision.kind).toBe('waiting');
     });
 
     it('resumes once its scheduled time has passed', () => {
-      const decision = decideParking(
-        blocked({ resumesAt: at(-1) }),
-        NOW,
-        () => 0.5,
-      );
+      const decision = decideParking(parked(-1), NOW, () => 0.5);
 
       expect(decision.kind).toBe('resume');
       expect(decision.reason).toContain('has passed');
+    });
+  });
+
+  describe('supersession: a newer block re-plans the park (#477)', () => {
+    // A plan is always its own block's reset PLUS jitter, so `resumesAt` is
+    // always strictly later than the `resetAt` it was drawn from — UNLESS a
+    // second, later block has since reset the run and its reset time has
+    // overtaken the plan. `>` and not `>=` is the whole of that argument:
+    // a plan drawn from THIS reset can never equal it, so equality can only
+    // mean the plan has not been superseded by anything newer.
+    it('re-plans when the reset has overtaken the existing plan (strictly greater)', () => {
+      const run = blocked({
+        resetAt: at(300), // a later block's reset...
+        resumesAt: at(60), // ...has overtaken the plan drawn from the first
+      });
+
+      const decision = decideParking(run, NOW, () => 0.5);
+
+      expect(decision.kind).toBe('park');
+      if (decision.kind !== 'park') return;
+      expect(decision.reason).toContain('re-park');
+      expect(decision.reason).toContain('supersedes');
+      expect(decision.resumeAt.getTime()).toBeGreaterThanOrEqual(
+        at(300).getTime(),
+      );
+    });
+
+    it('does NOT re-plan at the boundary, when the reset exactly equals the plan', () => {
+      // Equal is not "newer". A plan is always strictly later than the reset
+      // it was drawn from, so a reset equal to the plan is not evidence of a
+      // second block — treating `>=` as the test here would re-plan on every
+      // ordinary tick once the block's own reset time arrived, which is
+      // exactly the resume path below, not this one.
+      const run = blocked({
+        resetAt: at(60),
+        resumesAt: at(60),
+      });
+
+      const decision = decideParking(run, NOW, () => 0.5);
+
+      expect(decision.kind).not.toBe('park');
     });
   });
 
@@ -196,7 +245,7 @@ describe('actionsForParking', () => {
   });
 
   it('emits a resume action when due', () => {
-    const run = blocked({ resumesAt: at(-1) });
+    const run = parked(-1);
 
     expect(
       actionsForParking(run, decideParking(run, NOW)).map((a) => a.type),
@@ -219,7 +268,7 @@ describe('actionsForParking', () => {
   it('emits NOTHING while a run is simply waiting', () => {
     // A blocked run waiting out its quota is Opifex succeeding. Emitting an
     // action every tick would bury the real ones.
-    const run = blocked({ resumesAt: at(60) });
+    const run = parked(60);
 
     expect(actionsForParking(run, decideParking(run, NOW))).toEqual([]);
   });

@@ -767,8 +767,18 @@ model Run {
   /// index scan over a few hundred runs, not an aggregate over an unbounded
   /// event table.
   lastEventAt DateTime? @map("last_event_at") @db.Timestamptz
-  /// ISO reset time for a `blocked` run; null for every other status. The
-  /// watchdog resumes at this time plus jitter.
+  /// The resume this control plane has PLANNED for a blocked run, jitter
+  /// already applied - not the vendor's reset time. Null for every other
+  /// status, and null again for a run that just blocked, until the next
+  /// watchdog tick plans one.
+  ///
+  /// `WatchdogService.sweepBlocked` is the only writer of a plan; anything
+  /// that observes the park ENDING clears it to null, which is not a second
+  /// writer of the meaning, since two observers can only agree that there is
+  /// no plan. The vendor's raw reset is a different kind of fact - reported
+  /// and immutable - and lives on `run_events.blocked_until`, which is what
+  /// both readers of "when does this resume" actually consult (#477; see the
+  /// module comment on `watchdog/blocked-parking.ts` for the full argument).
   resumesAt   DateTime? @map("resumes_at") @db.Timestamptz
 
   /// One line: what the watchdog concluded and what the operator should do.
@@ -884,6 +894,12 @@ enum RunAttemptOutcome {
 /// and re-run: "how many times did we have to poke this" is an operational
 /// number, and answering it by counting `run.started` events would conflate a
 /// re-invocation with a runner that emits its start event twice.
+///
+/// Written on dispatch, resume and conclusion (#477) - before that the table
+/// existed with no reader or writer anywhere in the codebase. An attempt row
+/// is written by whoever writes the matching `Run.status` transition, so the
+/// two can never disagree; see `RunExecutorService.openResumedAttempt` and
+/// `RunEventsService.concludeRun` for the lifecycle.
 model RunAttempt {
   id     String @id @default(uuid()) @db.Uuid
   runId  String @map("run_id") @db.Uuid
@@ -902,7 +918,10 @@ model RunAttempt {
   /// Why this invocation ended, one line.
   stopReason   String?   @map("stop_reason")
   /// Structured block reason with its reset time, when the outcome is
-  /// `blocked` - a rate limit, a quota window. What the resume schedule reads.
+  /// `blocked` - a rate limit, a quota window. A historical record of what
+  /// THIS attempt hit, not what the resume schedule reads - that is
+  /// `run_events.blocked_until`, the vendor's own report (see `Run.resumesAt`
+  /// and the module comment on `watchdog/blocked-parking.ts`).
   blockedUntil DateTime? @map("blocked_until") @db.Timestamptz
 
   costUsd Decimal? @map("cost_usd") @db.Decimal(10, 4)

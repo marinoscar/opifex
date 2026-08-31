@@ -14,6 +14,7 @@ import {
 } from '../settings/operator-settings/operator-settings.test-double';
 import { WatchdogService } from '../watchdog/watchdog.service';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
+import { ResumeExecutor } from './execute/resume.executor';
 import { SpecFeedbackExecutor } from './execute/spec-feedback.executor';
 import { ReconcileLogService } from './log/reconcile-log.service';
 import { ReconcilerService } from './reconciler.service';
@@ -66,6 +67,8 @@ describe('ReconcilerTask', () => {
 
   let tick: jest.Mock;
   let report: jest.Mock;
+  /** #477's resume executor, stubbed to find nothing to resume. */
+  let resumeParked: jest.Mock;
   let execute: jest.Mock;
   let drain: jest.Mock;
   let listObserved: jest.Mock;
@@ -126,6 +129,9 @@ describe('ReconcilerTask', () => {
       { tick } as unknown as ReconcilerService,
       { execute } as unknown as MirrorLabelExecutor,
       { report } as unknown as SpecFeedbackExecutor,
+      // #477's resume executor. Inert by default; a spec about resumes
+      // replaces `resumeParked` before rebuilding.
+      { execute: resumeParked } as unknown as ResumeExecutor,
       { drain } as unknown as DispatchQueueService,
       { listObserved } as unknown as RepositoriesService,
       {
@@ -176,6 +182,13 @@ describe('ReconcilerTask', () => {
 
   beforeEach(() => {
     tick = jest.fn().mockResolvedValue(tickRecord());
+    resumeParked = jest.fn().mockResolvedValue({
+      resumed: 0,
+      refused: 0,
+      observed: 0,
+      unobserved: 0,
+      failures: [],
+    });
     report = jest.fn().mockResolvedValue({
       posted: 0,
       alreadyTold: 0,

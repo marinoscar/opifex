@@ -10,6 +10,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { WatchdogModule } from '../watchdog/watchdog.module';
 import { WorkOrdersModule } from '../work-orders/work-orders.module';
 import { MirrorLabelExecutor } from './execute/mirror-label.executor';
+import { ResumeExecutor } from './execute/resume.executor';
 import { SpecFeedbackExecutor } from './execute/spec-feedback.executor';
 import { RepositoriesModule } from '../repositories/repositories.module';
 import { ReconcileLogCleanupTask } from './log/reconcile-log.cleanup.task';
@@ -98,6 +99,13 @@ import { TickLeaseService } from './tick-lease.service';
     // spec was refused (#155). On the same side of the compute/act line as
     // the label executor, behind its own per-repository flag.
     SpecFeedbackExecutor,
+    // Waking a run parked on a rate limit (#477). The most consequential of
+    // the three: it spends real money with no human present at the moment it
+    // spends. It reaches `RunExecutorService` through `DispatchModule`, which
+    // this module already imports for the queue drain — so the same executor,
+    // the same spend gate and the same `dispatch.enabled` switch cover a
+    // resume and a first dispatch, rather than a second path around them.
+    ResumeExecutor,
     ReconcilerTask,
   ],
   exports: [ReconcilerService, ReconcileLogService],

@@ -375,21 +375,34 @@ export class RunEventsService {
    * exists and #56 requires it, but it is new traffic in an operator's queue
    * and should be read as deliberate rather than discovered.
    *
-   * ## The status and the resume time are one write
+   * ## This no longer writes `resumesAt`, and #477 is why
    *
-   * `resumesAt` is written here rather than alongside `lastEventAt`, and the
-   * review of #475 is why. Riding on the liveness write meant riding on a
-   * WHERE clause with no status filter, so a `run.blocked` arriving after a
-   * run had already succeeded left `resumesAt` set on a terminal row: a
-   * column asserting *the system will handle it, acting is wasted effort*
-   * (`cockpit/dto/runs.dto.ts`) about a run nothing will ever look at again.
-   * That is the same untruthful-state bug #475 exists to fix, one column over,
-   * and it does not become acceptable for being smaller.
+   * It did, briefly, and the reasoning was sound as far as it went: a resume
+   * time IS the park, so a single guarded write should decide both. What that
+   * missed is that the value written here and the value the watchdog writes
+   * are not the same quantity. This one is the VENDOR'S raw reset instant; the
+   * watchdog's is that instant plus jitter — *our plan*. One column, two
+   * meanings, two writers, and the first always won because `decideParking`
+   * short-circuits to `waiting` the moment `resumesAt` is in the future. A
+   * dated block therefore never reached `park` and `JITTER_FRACTION` was never
+   * applied to one: every run parked against the same quota window would have
+   * woken in the same instant, which is the thundering herd the jitter exists
+   * to prevent (#477, finding 1).
    *
-   * They also belong together on their own merits. A resume time IS the park —
-   * it is the only part of it anything acts on — so a row can never hold one
-   * without the other, or the other without one, if a single guarded write
-   * decides both.
+   * `blocked-parking.ts` states the resolution and argues it. The half of it
+   * that lands here: **the vendor's reset stays on the event row as
+   * `blockedUntil`**, which is where `WatchdogService.loadBlockedRuns` reads
+   * `resetAt` from anyway and where `DispatchService.loadQuotaBlocks` reads it
+   * for routing. Nothing is lost by not denormalizing it onto the run — both
+   * readers already prefer the event — and the run's column is left free to
+   * mean exactly one thing.
+   *
+   * The consequence, stated so it is not discovered: a just-blocked run has a
+   * NULL `resumesAt` until the next watchdog tick plans one. The cockpit reads
+   * that as "no resume is scheduled yet", which is true for those few seconds,
+   * and `quotaPositions` in `dispatch.service.ts` already falls back to
+   * `blockedUntil` when the run has no plan, so routing still sees the runner
+   * as out of quota in the meantime.
    *
    * ## Where the idempotence comes from
    *
@@ -413,13 +426,10 @@ export class RunEventsService {
 
     const blocked = await this.prisma.run.updateMany({
       where: { id: runId, status: { in: [...BLOCKABLE_STATUSES] } },
-      data: {
-        status: 'blocked',
-        // Carried onto the run so #56 can schedule a resume without re-reading
-        // the event stream. Absent when the runner could not date the block —
-        // a fabricated resume time would hide the very case #56 escalates.
-        ...(resetAt ? { resumesAt: new Date(resetAt) } : {}),
-      },
+      // The status, and only the status. `resumesAt` is the watchdog's plan
+      // and the watchdog is its only writer — see the comment above, and
+      // `blocked-parking.ts` for the decision.
+      data: { status: 'blocked' },
     });
 
     if (blocked.count > 0) {
@@ -427,7 +437,7 @@ export class RunEventsService {
         `Run ${runId} reported blocked ` +
           `(${parking.blocked?.reason ?? 'reason not reported'}); ` +
           (resetAt
-            ? `resets at ${resetAt}.`
+            ? `resets at ${resetAt}, and the next watchdog tick schedules the resume.`
             : 'no reset time, so #56 escalates rather than parking forever.'),
       );
     }
@@ -505,6 +515,13 @@ export class RunEventsService {
    * Nothing is lost by clearing it. The reset time the runner reported is on
    * the event row as `blockedUntil`, which is where `loadBlockedRuns` reads
    * `resetAt` from in the first place, and `run_events` is append-only.
+   *
+   * Clearing is not a second WRITER of the column in the sense #477 rules out.
+   * `blocked-parking.ts` states the invariant as: one component computes a
+   * resume plan, and that is the watchdog. Anything that OBSERVES the park
+   * ending erases the plan, because a plan that has been overtaken is not a
+   * fact about anything. Both `RunExecutorService.resumeParkedRun` and this
+   * method do that, and they cannot disagree — `null` has one meaning.
    *
    * ## `attentionReason` is deliberately left alone
    *
@@ -626,6 +643,33 @@ export class RunEventsService {
     });
 
     if (updated.count > 0) {
+      // The invocation ends with the run (#477). Guarded on `updated.count`
+      // rather than run unconditionally, so a redelivered terminal event —
+      // which matched zero rows above — cannot re-date an attempt that was
+      // closed on the first delivery.
+      //
+      // `updateMany` over the open attempts rather than a targeted update: the
+      // caller knows the run, not which attempt number is live, and a run with
+      // two open rows is an upstream bug that must not be hidden behind a
+      // table that merely looks populated. A run dispatched before attempts
+      // were written has none, matches nothing, and is left alone.
+      //
+      // Why here at all, when `RunExecutorService` opens the rows: an attempt
+      // row is written by whoever writes the corresponding `Run.status`
+      // transition, so the two can never disagree. This method is the only
+      // writer of a terminal run status, so it is the only place that can
+      // truthfully close the last attempt.
+      await this.prisma.runAttempt.updateMany({
+        where: { runId, outcome: 'running' },
+        data: {
+          outcome: succeeded ? 'succeeded' : 'failed',
+          endedAt: new Date(terminal.occurredAt),
+          stopReason: succeeded
+            ? (terminal.summary ?? null)
+            : (terminal.failure?.reason ?? 'run failed'),
+        },
+      });
+
       this.logger.log(
         `Run ${runId} concluded ${succeeded ? 'succeeded' : 'failed'}` +
           (result?.pullRequestUrl ? ` with ${result.pullRequestUrl}` : ''),
