@@ -1107,6 +1107,35 @@ export const OPERATOR_SETTINGS = {
     help: 'Lets a preview-tier runner be load-bearing when no GA fallback exists (ADR-0007). With a single runner the fallback cannot exist, so without this every work order queues forever — which is why it ships on (ADR-0019). It is a safety rule’s bypass, not its removal: turn it back off once a GA runner exists.',
   }),
 
+  'dispatch.autoResumeParked': booleanSetting({
+    envVar: 'DISPATCH_AUTO_RESUME_PARKED',
+    // ON, and the reason it is on is the issue that added it. #66 closed with
+    // "auto-resume works end to end without human involvement" unmet, and
+    // VISION §1's second origin story — "an agent hits a rate limit at 2pm, I
+    // find out at 6pm; four hours dead" — is the failure that criterion
+    // existed to answer. Shipping the switch off would have re-created the
+    // gap it closes on every install that never found the switch.
+    //
+    // It is still a switch, because ADR-0018's rule is not about the default:
+    // this is the one thing in the system that spends money with NO human
+    // present at the moment it spends it — the human authorized the work
+    // order hours earlier, and the resume acts on that authorization while
+    // they are asleep. An operator who wants that stopped must not have to
+    // stop the whole factory (`dispatch.enabled`) to get it.
+    default: true,
+    secret: false,
+    // Read at the moment of each resume, in `RunExecutorService.resumeParkedRun`,
+    // and nothing holds a copy: the executor asks per parked run, per tick.
+    // Turning it off therefore binds the very next tick, including for runs
+    // already parked and already past their reset time.
+    reload: 'live',
+    group: 'dispatch',
+    label: 'Auto-resume parked runs',
+    // It re-invokes a runner against a real subscription with nobody watching.
+    dangerous: true,
+    help: 'Whether a run parked on a rate limit is re-invoked once its reset time (plus jitter) has passed, without a human. On by default — a parked run that is never resumed is the four-hours-dead failure Opifex exists to remove, and it holds its runner’s concurrency slot the whole time. Every gate the first dispatch respected is re-checked before it spends: the hard spend ceiling, the work order’s own budget, the repository’s dispatch flag, and a factory:hold applied while it was parked. Off, a parked run waits for a human and the tick reports what it WOULD have resumed.',
+  }),
+
   'dispatch.retryCeiling': integerSetting({
     envVar: 'DISPATCH_RETRY_CEILING',
     default: 3,
