@@ -592,12 +592,12 @@ neither `RECONCILER_ENABLED` nor a database row exists, the key resolves to
 some other value by a careless `?? false` (or `?? true`) somewhere on the
 read path. That distinction is not academic: `reconciler.enabled`,
 `runners.claudeCodeLocal.enabled`, `dispatch.enabled`,
-`dispatch.allowPreviewRunner`, `github.writesEnabled` and
-`supervisor.standDownWhenBlocked` are the switches in the registry that
-default **on** — an absent-coerces-to-false bug on any one of them would
-silently invert it, which is precisely the failure mode #439's own fix to
-`booleanSetting` (see the ADR) was written against for the boolean parser
-one layer further down.
+`dispatch.allowPreviewRunner`, `dispatch.autoResumeParked`,
+`github.writesEnabled` and `supervisor.standDownWhenBlocked` are the switches
+in the registry that default **on** — an absent-coerces-to-false bug on any
+one of them would silently invert it, which is precisely the failure mode
+#439's own fix to `booleanSetting` (see the ADR) was written against for the
+boolean parser one layer further down.
 
 **A stored row always outranks the environment**, which is the part that
 actually produces the "I edited `.env` and nothing happened" confusion this
@@ -720,6 +720,29 @@ decides, and no work already in flight contradicts the new value.
 > deployment that leaves the reconciler off does not fill its logs with a
 > no-op every interval. To see that a live toggle actually took effect,
 > read the tick log (`GET /api/reconciler/ticks`), not the boot line.
+
+> **Worked example: `dispatch.autoResumeParked`
+> (`DISPATCH_AUTO_RESUME_PARKED`, #477).** `RunExecutorService.resumeParkedRun`
+> reads this key at the moment of each resume — once per parked run, per
+> reconciler tick — and nothing anywhere holds a copy of it. Turning it off
+> therefore binds the very next tick, including for a run whose planned
+> resume instant has already passed: `Run.resumesAt` is this control plane's
+> own plan for when to re-invoke the runner, jitter included, not the
+> vendor's raw reset (`apps/api/src/watchdog/blocked-parking.ts`'s module
+> comment is the record of that decision, #477) — and a plan already in the
+> past does not exempt the run from the check. Off, the tick reports what it
+> WOULD have resumed and the run stays parked for a human to look at.
+>
+> **Turning it off is not free, and the cost is worth stating plainly.** A
+> run's runner concurrency slot is deliberately never freed while the run is
+> parked, so a parked run left un-resumed keeps occupying that slot for as
+> long as it stays parked — an operator who disables auto-resume to watch a
+> resume by hand is also, for that whole interval, holding one slot of fleet
+> capacity hostage to their own attention. This is a genuine trade against
+> VISION §1's "four hours dead" origin story, which is why the key defaults
+> **on**: turning it off is for an operator who wants to be the one who
+> decides when a specific parked run goes back to work, not a setting to
+> leave off by habit.
 
 **`next-unit`** — the next read decides for work not yet started, but work
 already in flight carries a copy of the old value, because that copy is
